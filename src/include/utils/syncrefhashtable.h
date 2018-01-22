@@ -4,7 +4,12 @@
  *	  Interface for a synchronized, refcounted hashtable.
  *
  *
- * Copyright (c) 2012, EMC Corp.
+ * Portions Copyright (c) 2012, EMC Corp.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/utils/syncrefhashtable.h
  *
  *
  *-------------------------------------------------------------------------
@@ -13,7 +18,6 @@
 #ifndef SYNCREFHASHTABLE_H_
 #define SYNCREFHASHTABLE_H_
 
-#include "postgres.h"
 #include "utils/hsearch.h"
 #include "storage/lwlock.h"
 

@@ -4,22 +4,21 @@
  *    Support routines for scans on various table type.
  *
  * Portions Copyright (c) 2006 - present, EMC/Greenplum
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execScan.c,v 1.43 2008/01/01 19:45:49 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execScan.c,v 1.46 2009/04/02 20:59:10 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "codegen/codegen_wrapper.h"
 
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "utils/memutils.h"
-#include "utils/debugbreak.h"
 
 /*
  * getScanMethod
@@ -527,7 +526,7 @@ MarkRestrNotAllowed(ScanState *scanState)
 	}
 
 	ereport(ERROR,
-			(errcode(ERRCODE_GP_INTERNAL_ERROR),
+			(errcode(ERRCODE_INTERNAL_ERROR),
 			 errmsg("Mark/Restore is not allowed in %s", scan)));
 	
 }

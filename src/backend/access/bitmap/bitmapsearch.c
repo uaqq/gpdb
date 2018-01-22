@@ -3,11 +3,14 @@
  * bitmapsearch.c
  *	  Search routines for on-disk bitmap index access method.
  *
+ * Portions Copyright (c) 2007-2010 Greenplum Inc
+ * Portions Copyright (c) 2010-2012 EMC Corporation
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ * Porions Copyright (c) 2006-2008, PostgreSQL Global Development Group
  *
- * Copyright (c) 2006-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL$
+ *	  src/backend/access/bitmap/bitmapsearch.c
  *
  *-------------------------------------------------------------------------
  */
@@ -20,6 +23,7 @@
 #include "storage/lmgr.h"
 #include "parser/parse_oper.h"
 #include "utils/lsyscache.h"
+#include "utils/snapmgr.h"
 
 typedef struct ItemPos
 {
@@ -266,15 +270,10 @@ read_words(Relation rel, Buffer lovBuffer, OffsetNumber lovOffset,
 				  BlockNumber *nextBlockNoP, BM_HRL_WORD *headerWords, 
 				  BM_HRL_WORD *words, uint32 *numOfWordsP, bool *readLastWords)
 {
-	MIRROREDLOCK_BUFMGR_DECLARE;
-
 	if (BlockNumberIsValid(*nextBlockNoP))
 	{
 		Buffer bitmapBuffer;
-		
-		// -------- MirroredLock ----------
-		MIRROREDLOCK_BUFMGR_LOCK;
-		
+
 		bitmapBuffer = _bitmap_getbuf(rel, *nextBlockNoP, BM_READ);
 
 		Page			bitmapPage;
@@ -294,9 +293,6 @@ read_words(Relation rel, Buffer lovBuffer, OffsetNumber lovOffset,
 		*nextBlockNoP = bo->bm_bitmap_next;
 
 		_bitmap_relbuf(bitmapBuffer);
-		
-		MIRROREDLOCK_BUFMGR_UNLOCK;
-		// -------- MirroredLock ----------
 		
 		*readLastWords = false;
 
@@ -339,10 +335,7 @@ read_words(Relation rel, Buffer lovBuffer, OffsetNumber lovOffset,
 	{
 		BMLOVItem	lovItem;
 		Page		lovPage;
-		
-		// -------- MirroredLock ----------
-		MIRROREDLOCK_BUFMGR_LOCK;
-		
+
 		LockBuffer(lovBuffer, BM_READ);
 
 		lovPage = BufferGetPage(lovBuffer);
@@ -366,10 +359,7 @@ read_words(Relation rel, Buffer lovBuffer, OffsetNumber lovOffset,
 		}
 
 		LockBuffer(lovBuffer, BUFFER_LOCK_UNLOCK);
-		
-		MIRROREDLOCK_BUFMGR_UNLOCK;
-		// -------- MirroredLock ----------
-		
+
 		*readLastWords = true;
 	}
 }
@@ -381,8 +371,6 @@ read_words(Relation rel, Buffer lovBuffer, OffsetNumber lovOffset,
 void
 _bitmap_findbitmaps(IndexScanDesc scan, ScanDirection dir  __attribute__((unused)))
 {
-	MIRROREDLOCK_BUFMGR_DECLARE;
-
 	BMScanOpaque			so;
 	BMScanPosition			scanPos;
 	Buffer					metabuf;
@@ -414,10 +402,7 @@ _bitmap_findbitmaps(IndexScanDesc scan, ScanDirection dir  __attribute__((unused
 			return;
 		}
 	}
-	
-	// -------- MirroredLock ----------
-	MIRROREDLOCK_BUFMGR_LOCK;
-	
+
 	metabuf = _bitmap_getbuf(scan->indexRelation, BM_METAPAGE, BM_READ);
 	metapage = _bitmap_get_metapage_data(scan->indexRelation, metabuf);
 
@@ -467,7 +452,7 @@ _bitmap_findbitmaps(IndexScanDesc scan, ScanDirection dir  __attribute__((unused
 			scanPos->nvec++;
 		}
 
-		scanDesc = index_beginscan(lovHeap, lovIndex, ActiveSnapshot,
+		scanDesc = index_beginscan(lovHeap, lovIndex, GetActiveSnapshot(),
 								   scan->numberOfKeys, scanKeys);
 
 		/*
@@ -520,10 +505,7 @@ _bitmap_findbitmaps(IndexScanDesc scan, ScanDirection dir  __attribute__((unused
 	}
 
 	_bitmap_relbuf(metabuf);
-	
-	MIRROREDLOCK_BUFMGR_UNLOCK;
-	// -------- MirroredLock ----------
-	
+
 	if (scanPos->nvec == 0)
 	{
 		scanPos->done = true;
@@ -554,15 +536,10 @@ static void
 init_scanpos(IndexScanDesc scan, BMVector bmScanPos, BlockNumber lovBlock,
 			 OffsetNumber lovOffset)
 {
-	MIRROREDLOCK_BUFMGR_DECLARE;
-
 	Page 					lovPage;
 	BMLOVItem				lovItem;
 
 	bmScanPos->bm_lovOffset = lovOffset;
-	
-	// -------- MirroredLock ----------
-	MIRROREDLOCK_BUFMGR_LOCK;
 	
 	bmScanPos->bm_lovBuffer = _bitmap_getbuf(scan->indexRelation, lovBlock, 
 										     BM_READ);
@@ -579,8 +556,4 @@ init_scanpos(IndexScanDesc scan, BMVector bmScanPos, BlockNumber lovBlock,
 							CurrentMemoryContext);	
 
 	LockBuffer(bmScanPos->bm_lovBuffer, BUFFER_LOCK_UNLOCK);
-	
-	MIRROREDLOCK_BUFMGR_UNLOCK;
-	// -------- MirroredLock ----------
-	
 }

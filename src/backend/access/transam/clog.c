@@ -23,10 +23,10 @@
  * for aborts (whether sync or async), since the post-crash assumption would
  * be that such transactions failed anyway.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/clog.c,v 1.46 2008/01/01 19:45:46 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/clog.c,v 1.53 2009/06/11 14:48:54 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -35,8 +35,8 @@
 #include "access/clog.h"
 #include "access/slru.h"
 #include "access/transam.h"
+#include "pg_trace.h"
 #include "postmaster/bgwriter.h"
-#include "cdb/cdbpersistentstore.h"
 
 /*
  * Defines for CLOG page sizes.  A page is the same BLCKSZ as is used
@@ -80,54 +80,183 @@ static int	ZeroCLOGPage(int pageno, bool writeXlog);
 static bool CLOGPagePrecedes(int page1, int page2);
 static void WriteZeroPageXlogRec(int pageno);
 static void WriteTruncateXlogRec(int pageno);
+static void TransactionIdSetPageStatus(TransactionId xid, int nsubxids,
+						   TransactionId *subxids, XidStatus status,
+						   XLogRecPtr lsn, int pageno);
+static void TransactionIdSetStatusBit(TransactionId xid, XidStatus status,
+						  XLogRecPtr lsn, int slotno);
+static void set_status_by_pages(int nsubxids, TransactionId *subxids,
+					XidStatus status, XLogRecPtr lsn);
 
-char *XidStatus_Name(XidStatus status)
-{
-	switch (status)
-	{
-	case TRANSACTION_STATUS_IN_PROGRESS:
-		return "In-Progress";
-	case TRANSACTION_STATUS_COMMITTED:
-		return "Committed";
-	case TRANSACTION_STATUS_ABORTED:
-		return "Aborted";
-	case TRANSACTION_STATUS_SUB_COMMITTED:
-		return "Sub-Transaction Committed";
-
-	default:
-		return "Unknown";
-	}
-}
 
 /*
- * Record the final state of a transaction in the commit log.
+ * TransactionIdSetTreeStatus
+ *
+ * Record the final state of transaction entries in the commit log for
+ * a transaction and its subtransaction tree. Take care to ensure this is
+ * efficient, and as atomic as possible.
+ *
+ * xid is a single xid to set status for. This will typically be
+ * the top level transactionid for a top level commit or abort. It can
+ * also be a subtransaction when we record transaction aborts.
+ *
+ * subxids is an array of xids of length nsubxids, representing subtransactions
+ * in the tree of xid. In various cases nsubxids may be zero.
  *
  * lsn must be the WAL location of the commit record when recording an async
  * commit.	For a synchronous commit it can be InvalidXLogRecPtr, since the
  * caller guarantees the commit record is already flushed in that case.  It
  * should be InvalidXLogRecPtr for abort cases, too.
  *
+ * In the commit case, atomicity is limited by whether all the subxids are in
+ * the same CLOG page as xid.  If they all are, then the lock will be grabbed
+ * only once, and the status will be set to committed directly.  Otherwise
+ * we must
+ *	 1. set sub-committed all subxids that are not on the same page as the
+ *		main xid
+ *	 2. atomically set committed the main xid and the subxids on the same page
+ *	 3. go over the first bunch again and set them committed
+ * Note that as far as concurrent checkers are concerned, main transaction
+ * commit as a whole is still atomic.
+ *
+ * Example:
+ *		TransactionId t commits and has subxids t1, t2, t3, t4
+ *		t is on page p1, t1 is also on p1, t2 and t3 are on p2, t4 is on p3
+ *		1. update pages2-3:
+ *					page2: set t2,t3 as sub-committed
+ *					page3: set t4 as sub-committed
+ *		2. update page1:
+ *					set t1 as sub-committed,
+ *					then set t as committed,
+					then set t1 as committed
+ *		3. update pages2-3:
+ *					page2: set t2,t3 as committed
+ *					page3: set t4 as committed
+ *
  * NB: this is a low-level routine and is NOT the preferred entry point
- * for most uses; TransactionLogUpdate() in transam.c is the intended caller.
+ * for most uses; functions in transam.c are the intended callers.
+ *
+ * XXX Think about issuing FADVISE_WILLNEED on pages that we will need,
+ * but aren't yet in cache, as well as hinting pages not to fall out of
+ * cache yet.
  */
 void
-TransactionIdSetStatus(TransactionId xid, XidStatus status, XLogRecPtr lsn)
+TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	MIRRORED_LOCK_DECLARE;
+	int			pageno = TransactionIdToPage(xid);		/* get page of parent */
+	int			i;
 
-	int			pageno = TransactionIdToPage(xid);
-	int			byteno = TransactionIdToByte(xid);
-	int			bshift = TransactionIdToBIndex(xid) * CLOG_BITS_PER_XACT;
+	Assert(status == TRANSACTION_STATUS_COMMITTED ||
+		   status == TRANSACTION_STATUS_ABORTED);
+
+	/*
+	 * See how many subxids, if any, are on the same page as the parent, if
+	 * any.
+	 */
+	for (i = 0; i < nsubxids; i++)
+	{
+		if (TransactionIdToPage(subxids[i]) != pageno)
+			break;
+	}
+
+	/*
+	 * Do all items fit on a single page?
+	 */
+	if (i == nsubxids)
+	{
+		/*
+		 * Set the parent and all subtransactions in a single call
+		 */
+		TransactionIdSetPageStatus(xid, nsubxids, subxids, status, lsn,
+								   pageno);
+	}
+	else
+	{
+		int			nsubxids_on_first_page = i;
+
+		/*
+		 * If this is a commit then we care about doing this correctly (i.e.
+		 * using the subcommitted intermediate status).  By here, we know
+		 * we're updating more than one page of clog, so we must mark entries
+		 * that are *not* on the first page so that they show as subcommitted
+		 * before we then return to update the status to fully committed.
+		 *
+		 * To avoid touching the first page twice, skip marking subcommitted
+		 * for the subxids on that first page.
+		 */
+		if (status == TRANSACTION_STATUS_COMMITTED)
+			set_status_by_pages(nsubxids - nsubxids_on_first_page,
+								subxids + nsubxids_on_first_page,
+								TRANSACTION_STATUS_SUB_COMMITTED, lsn);
+
+		/*
+		 * Now set the parent and subtransactions on same page as the parent,
+		 * if any
+		 */
+		pageno = TransactionIdToPage(xid);
+		TransactionIdSetPageStatus(xid, nsubxids_on_first_page, subxids, status,
+								   lsn, pageno);
+
+		/*
+		 * Now work through the rest of the subxids one clog page at a time,
+		 * starting from the second page onwards, like we did above.
+		 */
+		set_status_by_pages(nsubxids - nsubxids_on_first_page,
+							subxids + nsubxids_on_first_page,
+							status, lsn);
+	}
+}
+
+/*
+ * Helper for TransactionIdSetTreeStatus: set the status for a bunch of
+ * transactions, chunking in the separate CLOG pages involved. We never
+ * pass the whole transaction tree to this function, only subtransactions
+ * that are on different pages to the top level transaction id.
+ */
+static void
+set_status_by_pages(int nsubxids, TransactionId *subxids,
+					XidStatus status, XLogRecPtr lsn)
+{
+	int			pageno = TransactionIdToPage(subxids[0]);
+	int			offset = 0;
+	int			i = 0;
+
+	while (i < nsubxids)
+	{
+		int			num_on_page = 0;
+
+		while (TransactionIdToPage(subxids[i]) == pageno && i < nsubxids)
+		{
+			num_on_page++;
+			i++;
+		}
+
+		TransactionIdSetPageStatus(InvalidTransactionId,
+								   num_on_page, subxids + offset,
+								   status, lsn, pageno);
+		offset = i;
+		pageno = TransactionIdToPage(subxids[offset]);
+	}
+}
+
+/*
+ * Record the final state of transaction entries in the commit log for
+ * all entries on a single page.  Atomic only on this page.
+ *
+ * Otherwise API is same as TransactionIdSetTreeStatus()
+ */
+static void
+TransactionIdSetPageStatus(TransactionId xid, int nsubxids,
+						   TransactionId *subxids, XidStatus status,
+						   XLogRecPtr lsn, int pageno)
+{
 	int			slotno;
-	char	   *byteptr;
-	char		byteval;
-	int			debugStatus;
+	int			i;
 
 	Assert(status == TRANSACTION_STATUS_COMMITTED ||
 		   status == TRANSACTION_STATUS_ABORTED ||
-		   status == TRANSACTION_STATUS_SUB_COMMITTED);
-
-	MIRRORED_LOCK;
+		   (status == TRANSACTION_STATUS_SUB_COMMITTED && !TransactionIdIsValid(xid)));
 
 	LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
 
@@ -138,37 +267,90 @@ TransactionIdSetStatus(TransactionId xid, XidStatus status, XLogRecPtr lsn)
 	 * mustn't let it reach disk until we've done the appropriate WAL flush.
 	 * But when lsn is invalid, it's OK to scribble on a page while it is
 	 * write-busy, since we don't care if the update reaches disk sooner than
-	 * we think.  Hence, pass write_ok = XLogRecPtrIsInvalid(lsn).
+	 * we think.
 	 */
 	slotno = SimpleLruReadPage(ClogCtl, pageno, XLogRecPtrIsInvalid(lsn), xid);
-	byteptr = ClogCtl->shared->page_buffer[slotno] + byteno;
 
-	debugStatus = ((*byteptr >> bshift) & CLOG_XACT_BITMASK);
-	if (debugStatus != 0 &&
-		debugStatus != TRANSACTION_STATUS_SUB_COMMITTED &&
-		debugStatus != status)
+	/*
+	 * Set the main transaction id, if any.
+	 *
+	 * If we update more than one xid on this page while it is being written
+	 * out, we might find that some of the bits go to disk and others don't.
+	 * If we are updating commits on the page with the top-level xid that
+	 * could break atomicity, so we subcommit the subxids first before we mark
+	 * the top-level commit.
+	 */
+	if (TransactionIdIsValid(xid))
 	{
-		elog(FATAL,"TransactionIdSetStatus invalid for transaction %u current status '%s' (0x%x) and new status '%s' (0x%x)",
-			 xid, 
-			 XidStatus_Name(debugStatus),
-			 debugStatus,
-			 XidStatus_Name(status),
-			 status);
+		/* Subtransactions first, if needed ... */
+		if (status == TRANSACTION_STATUS_COMMITTED)
+		{
+			for (i = 0; i < nsubxids; i++)
+			{
+				Assert(ClogCtl->shared->page_number[slotno] == TransactionIdToPage(subxids[i]));
+				TransactionIdSetStatusBit(subxids[i],
+										  TRANSACTION_STATUS_SUB_COMMITTED,
+										  lsn, slotno);
+			}
+		}
+
+		/* ... then the main transaction */
+		TransactionIdSetStatusBit(xid, status, lsn, slotno);
 	}
 
+	/* Set the subtransactions */
+	for (i = 0; i < nsubxids; i++)
+	{
+		Assert(ClogCtl->shared->page_number[slotno] == TransactionIdToPage(subxids[i]));
+		TransactionIdSetStatusBit(subxids[i], status, lsn, slotno);
+	}
 
-	/* Current state should be 0, subcommitted or target state */
-	Assert(((*byteptr >> bshift) & CLOG_XACT_BITMASK) == 0 ||
-		   ((*byteptr >> bshift) & CLOG_XACT_BITMASK) == TRANSACTION_STATUS_SUB_COMMITTED ||
-		   ((*byteptr >> bshift) & CLOG_XACT_BITMASK) == status);
+	ClogCtl->shared->page_dirty[slotno] = true;
+
+	LWLockRelease(CLogControlLock);
+}
+
+/*
+ * Sets the commit status of a single transaction.
+ *
+ * Must be called with CLogControlLock held
+ */
+static void
+TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, int slotno)
+{
+	int			byteno = TransactionIdToByte(xid);
+	int			bshift = TransactionIdToBIndex(xid) * CLOG_BITS_PER_XACT;
+	char	   *byteptr;
+	char		byteval;
+	char		curval;
+
+	byteptr = ClogCtl->shared->page_buffer[slotno] + byteno;
+	curval = (*byteptr >> bshift) & CLOG_XACT_BITMASK;
+
+	/*
+	 * When replaying transactions during recovery we still need to perform
+	 * the two phases of subcommit and then commit. However, some transactions
+	 * are already correctly marked, so we just treat those as a no-op which
+	 * allows us to keep the following Assert as restrictive as possible.
+	 */
+	if (InRecovery && status == TRANSACTION_STATUS_SUB_COMMITTED &&
+		curval == TRANSACTION_STATUS_COMMITTED)
+		return;
+
+	/*
+	 * Current state change should be from 0 or subcommitted to target state
+	 * or we should already be there when replaying changes during recovery.
+	 */
+	Assert(curval == 0 ||
+		   (curval == TRANSACTION_STATUS_SUB_COMMITTED &&
+			status != TRANSACTION_STATUS_IN_PROGRESS) ||
+		   curval == status);
 
 	/* note this assumes exclusive access to the clog page */
 	byteval = *byteptr;
 	byteval &= ~(((1 << CLOG_BITS_PER_XACT) - 1) << bshift);
 	byteval |= (status << bshift);
 	*byteptr = byteval;
-
-	ClogCtl->shared->page_dirty[slotno] = true;
 
 	/*
 	 * Update the group LSN if the transaction completion LSN is higher.
@@ -185,10 +367,6 @@ TransactionIdSetStatus(TransactionId xid, XidStatus status, XLogRecPtr lsn)
 		if (XLByteLT(ClogCtl->shared->group_lsn[lsnindex], lsn))
 			ClogCtl->shared->group_lsn[lsnindex] = lsn;
 	}
-
-	LWLockRelease(CLogControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 /*
@@ -209,8 +387,6 @@ TransactionIdSetStatus(TransactionId xid, XidStatus status, XLogRecPtr lsn)
 XidStatus
 TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			pageno = TransactionIdToPage(xid);
 	int			byteno = TransactionIdToByte(xid);
 	int			bshift = TransactionIdToBIndex(xid) * CLOG_BITS_PER_XACT;
@@ -218,8 +394,6 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 	int			lsnindex;
 	char	   *byteptr;
 	XidStatus	status;
-
-	MIRRORED_LOCK;		// Since reading can cause eviction of another page (which requires writing).
 
 	/* lock is acquired by SimpleLruReadPage_ReadOnly */
 
@@ -233,58 +407,8 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 
 	LWLockRelease(CLogControlLock);
 
-	MIRRORED_UNLOCK;
-
 	return status;
 }
-
-
-/* 
- * Interrogate the state of a transaction in the commit log, but 
- * allow situations were the status can not be retrieved.
- * 
- * The parameter valid is a pointer to a boolean. The value it points too 
- * will be "true" if the fuction's return value is a valid XidStatus, and
- * false if the function's return value is not a valid XidStatus.  
- *
- * return the XidStatus of the transaction (only 
- */
-XidStatus
-InRecoveryTransactionIdGetStatus(TransactionId xid, bool *valid)
-{
-  MIRRORED_LOCK_DECLARE;
-
-  int                     pageno = TransactionIdToPage(xid);
-  int                     byteno = TransactionIdToByte(xid);
-  int                     bshift = TransactionIdToBIndex(xid) * CLOG_BITS_PER_XACT;
-  int                     slotno;
-  char       *byteptr;
-  XidStatus       status;
-
-  MIRRORED_LOCK;          // Since reading can cause eviction of another page (which requires writing).                                        
-
-  /* lock is acquired by SimpleLruReadPage_ReadOnly */
-
-  slotno = SimpleLruReadPage_ReadOnly(ClogCtl, pageno, xid, valid);
-
-  if (valid != NULL && *valid == false)
-    {
-    /* The returned slotno is invalid. */ 
-    MIRRORED_UNLOCK
-    return TRANSACTION_STATUS_IN_PROGRESS;
-    }
-
-  byteptr = ClogCtl->shared->page_buffer[slotno] + byteno;
-
-  status = (*byteptr >> bshift) & CLOG_XACT_BITMASK;
-
-  LWLockRelease(CLogControlLock);
-
-  MIRRORED_UNLOCK;
-
-  return status;
-}
-
 
 /*
  * Find the next lowest transaction with a logged or recorded status.
@@ -295,8 +419,6 @@ CLOGScanForPrevStatus(
 	TransactionId 			*indexXid,
 	XidStatus				*status)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	TransactionId highXid;
 	int pageno;
 	TransactionId lowXid;
@@ -313,8 +435,6 @@ CLOGScanForPrevStatus(
 	highXid = (*indexXid) - 1;
 	if (highXid < FirstNormalTransactionId)
 		return false;
-
-	MIRRORED_LOCK;
 
 	while (true)
 	{
@@ -336,8 +456,6 @@ CLOGScanForPrevStatus(
 		{
 			LWLockRelease(CLogControlLock);
 
-			MIRRORED_UNLOCK;
-
 			*indexXid = InvalidTransactionId;
 			*status = TRANSACTION_STATUS_IN_PROGRESS;	// Set it to something.
 			return false;
@@ -356,8 +474,6 @@ CLOGScanForPrevStatus(
 			{
 				LWLockRelease(CLogControlLock);
 
-				MIRRORED_UNLOCK;
-
 				*indexXid = xid;
 				return true;
 			}
@@ -367,8 +483,6 @@ CLOGScanForPrevStatus(
 
 		if (lowXid == FirstNormalTransactionId)
 		{
-			MIRRORED_UNLOCK;
-
 			*indexXid = InvalidTransactionId;
 			*status = TRANSACTION_STATUS_IN_PROGRESS;	// Set it to something.
 			return false;
@@ -376,8 +490,6 @@ CLOGScanForPrevStatus(
 		
 		highXid = lowXid - 1;	// Go to last xid of previous page.
 	}
-
-	MIRRORED_UNLOCK;
 
 	return false;	// We'll never reach this.
 }
@@ -434,11 +546,7 @@ CLOGShmemInit(void)
 void
 BootStrapCLOG(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			slotno;
-
-	MIRRORED_LOCK;
 
 	LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
 
@@ -450,8 +558,6 @@ BootStrapCLOG(void)
 	Assert(!ClogCtl->shared->page_dirty[slotno]);
 
 	LWLockRelease(CLogControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 /*
@@ -466,18 +572,12 @@ BootStrapCLOG(void)
 static int
 ZeroCLOGPage(int pageno, bool writeXlog)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			slotno;
-
-	MIRRORED_LOCK;
 
 	slotno = SimpleLruZeroPage(ClogCtl, pageno);
 
 	if (writeXlog)
 		WriteZeroPageXlogRec(pageno);
-
-	MIRRORED_UNLOCK;
 
 	return slotno;
 }
@@ -489,12 +589,8 @@ ZeroCLOGPage(int pageno, bool writeXlog)
 void
 StartupCLOG(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	TransactionId xid = ShmemVariableCache->nextXid;
 	int			pageno = TransactionIdToPage(xid);
-
-	MIRRORED_LOCK;
 
 	LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
 
@@ -534,8 +630,6 @@ StartupCLOG(void)
 	}
 
 	LWLockRelease(CLogControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 /*
@@ -544,14 +638,10 @@ StartupCLOG(void)
 void
 ShutdownCLOG(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
-	MIRRORED_LOCK;
-
 	/* Flush dirty CLOG pages to disk */
+	TRACE_POSTGRESQL_CLOG_CHECKPOINT_START(false);
 	SimpleLruFlush(ClogCtl, false);
-
-	MIRRORED_UNLOCK;
+	TRACE_POSTGRESQL_CLOG_CHECKPOINT_DONE(false);
 }
 
 /*
@@ -560,14 +650,10 @@ ShutdownCLOG(void)
 void
 CheckPointCLOG(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
-	MIRRORED_LOCK;
-
 	/* Flush dirty CLOG pages to disk */
+	TRACE_POSTGRESQL_CLOG_CHECKPOINT_START(true);
 	SimpleLruFlush(ClogCtl, true);
-
-	MIRRORED_UNLOCK;
+	TRACE_POSTGRESQL_CLOG_CHECKPOINT_DONE(true);
 }
 
 
@@ -582,8 +668,6 @@ CheckPointCLOG(void)
 void
 ExtendCLOG(TransactionId newestXact)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			pageno;
 
 	/*
@@ -596,16 +680,12 @@ ExtendCLOG(TransactionId newestXact)
 
 	pageno = TransactionIdToPage(newestXact);
 
-	MIRRORED_LOCK;
-
 	LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
 
 	/* Zero the page and make an XLOG entry about it */
 	ZeroCLOGPage(pageno, true);
 
 	LWLockRelease(CLogControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 
@@ -627,8 +707,6 @@ ExtendCLOG(TransactionId newestXact)
 void
 TruncateCLOG(TransactionId oldestXact)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			cutoffPage;
 
 	/*
@@ -637,22 +715,15 @@ TruncateCLOG(TransactionId oldestXact)
 	 */
 	cutoffPage = TransactionIdToPage(oldestXact);
 
-	MIRRORED_LOCK;
-
 	/* Check to see if there's any files that could be removed */
 	if (!SlruScanDirectory(ClogCtl, cutoffPage, false))
-	{
-		MIRRORED_UNLOCK;
 		return;					/* nothing to remove */
-	}
 
 	/* Write XLOG record and flush XLOG to disk */
 	WriteTruncateXlogRec(cutoffPage);
 
 	/* Now we can remove the old CLOG segment(s) */
 	SimpleLruTruncate(ClogCtl, cutoffPage);
-
-	MIRRORED_UNLOCK;
 }
 
 
@@ -721,11 +792,10 @@ WriteTruncateXlogRec(int pageno)
 void
 clog_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	uint8		info = record->xl_info & ~XLR_INFO_MASK;
 
-	MIRRORED_LOCK;
+	/* Backup blocks are not used in clog records */
+	Assert(!(record->xl_info & XLR_BKP_BLOCK_MASK));
 
 	if (info == CLOG_ZEROPAGE)
 	{
@@ -758,8 +828,6 @@ clog_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
 	}
 	else
 		elog(PANIC, "clog_redo: unknown op code %u", info);
-
-	MIRRORED_UNLOCK;
 }
 
 void

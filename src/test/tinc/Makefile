@@ -24,18 +24,15 @@ tincmmgrregress:
 	@echo regression test tincmmgr
 	make -C tincmmgr regress
 
-TESTER=tinc.py
+TESTER= \
+	export PGDATABASE=gptest && \
+	export TINCHOME=$(PWD) && \
+	export TINCREPOHOME=$(TINCHOME)/tincrepo && \
+	export PYTHONPATH=$(TINCHOME):$(TINCHOME)/ext:$(PYTHONPATH):$(TINCREPOHOME) && \
+	export PATH=$(TINCHOME):$(TINCHOME)/ext:$(TINCHOME)/ext/unittest2:$(TINCHOME)/sbin/:$(PATH) && \
+	tinc.py
 
 DISCOVER=discover
-
-storage_targets: discover_targets non_discover_targets
-
-discover_targets: storage walrep_multinode \
-	pgtwophase \
-	filerep_schematopology_crashrecov
-
-non_discover_targets: aoco_compression filerep_end_to_end fts
-
 
 # cs-storage
 # The following targets are pulled from:
@@ -53,38 +50,25 @@ aocoalter_catalog_loaders:
 	-s storage/aoco_alter \
 	-s catalog/mpp25256 \
 	-s catalog/oid_inconsistency \
-	-s catalog/udf_exception_handling \
-	-s storage/loaders
+	-s catalog/udf_exception_handling
 
 storage_uao_and_transactionmanagement:
 	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests \
 	-s storage/transaction_management \
-	-s storage/basic \
 	-s storage/uao
 
+# WALREP_FIXME: there are no "peristent" tests anymore. Rename this
+# target, and fix concourse pipelines accordingly.
 storage_persistent_accessmethods_and_vacuum:
 	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests/storage \
-	-s persistent \
 	-s access_methods \
 	-s vacuum \
 	-q "class!=XidlimitsTests"
 
-storage_filerep:
-	$(TESTER) $(DISCOVER) \
-	-q "class!=Mpp18816" \
-	-s tincrepo/mpp/gpdb/tests/storage/filerep
-
 # cs-walrepl-multinode
-# The following targets are pulled from:
-# http://pulse-cloud.gopivotal.com/admin/projects/cs-walrepl-multinode
-#
-# Refer to the properties of the pulse project and individual build
-# stages for configuration requirements.
-
 walrep_1:
 	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests/storage/walrepl \
 	-s gpactivatestandby \
-	-s gpcrondump \
 	-s gpinitstandby \
 	-s gpstart \
 	-s gpstate \
@@ -94,8 +78,6 @@ walrep_1:
 walrep_2:
 	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests/storage/walrepl \
 	-s basebackup \
-	-s crash \
-	-s filerep \
 	-s oom \
 	-s regress \
 	-s smart_shutdown \
@@ -103,177 +85,15 @@ walrep_2:
 	-s walreceiver \
 	-s walsender \
 	-s xact \
+	-s crash \
 	-q "class!=DDLTestCase" \
 	-q "class!=DMLTestCase"
 
-
-# cs-aoco-compression
-# The following targets are pulled from:
-# http://pulse-cloud.gopivotal.com/admin/projects/cs-aoco-compression
-#
-# Refer to the properties of the pulse project and individual build
-# stages for configuration requirements.
-
-aoco_compression_large_01:
-	$(TESTER) mpp.gpdb.tests.storage.aoco_compression.test_func_aococompression_large_01
-
-aoco_compression_large_02:
-	$(TESTER) mpp.gpdb.tests.storage.aoco_compression.test_func_aococompression_large_02
-
-aoco_compression_large_03:
-	$(TESTER) mpp.gpdb.tests.storage.aoco_compression.test_func_aococompression_large_03
-
-aoco_compression_large_04:
-	$(TESTER) mpp.gpdb.tests.storage.aoco_compression.test_func_aococompression_large_04
-
-aoco_compression_small:
-	$(TESTER) mpp.gpdb.tests.storage.aoco_compression.test_func_aococompression_small
-
-aoco_compression_small_serial:
-	$(TESTER) mpp.gpdb.tests.storage.aoco_compression.test_func_aococompression_small_serial
-
-# cs-filerep-end-to-end
-# The following targets are pulled from:
-# http://pulse-cloud.gopivotal.com/admin/projects/cs-filerep-end-to-end
-#
-# Refer to the properties of the pulse project and individual build
-# stages for configuration requirements.
-
-filerep_end_to_end_full_primary:
-	$(TESTER) mpp.gpdb.tests.storage.filerep_end_to_end.test_filerep_e2e.FilerepE2EScenarioTestCase.test_full_primary
-
-filerep_end_to_end_incr_primary:
-	$(TESTER) mpp.gpdb.tests.storage.filerep_end_to_end.test_filerep_e2e.FilerepE2EScenarioTestCase.test_incr_primary
-
-filerep_end_to_end_full_mirror:
-	$(TESTER) mpp.gpdb.tests.storage.filerep_end_to_end.test_filerep_e2e.FilerepE2EScenarioTestCase.test_full_mirror
-
-filerep_end_to_end_incr_mirror:
-	$(TESTER) mpp.gpdb.tests.storage.filerep_end_to_end.test_filerep_e2e.FilerepE2EScenarioTestCase.test_incr_mirror
-
-
-# cs-pg-two-phase
-# The following targets are pulled from:
-# http://pulse-cloud.gopivotal.com/admin/projects/cs-pg-two-phase
-#
-# Refer to the properties of the pulse project and individual build
-# stages for configuration requirements.
-
-test_pg_twophase_01_10:
+test_pg_twophase:
 	$(TESTER) $(DISCOVER) \
 	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_pg_twophase_01_10.py
-
-test_pg_twophase_11_20:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_pg_twophase_11_20.py
-
-test_pg_twophase_21_30:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_pg_twophase_21_30.py
-
-test_pg_twophase_31_40:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_pg_twophase_31_40.py
-
-test_pg_twophase_41_49:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_pg_twophase_41_49.py
-
-test_switch_01_12:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_switch_01_12.py
-
-test_switch_13_24:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_switch_13_24.py
-
-test_switch_25_33:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_switch_25_33.py
-
-
-# cs-fts
-# The following targets are pulled from:
-# http://pulse-cloud.gopivotal.com/admin/projects/cs-fts
-#
-# Refer to the properties of the pulse project and individual build
-# stages for configuration requirements.
-
-fts_transitions_part01:
-	$(TESTER) mpp.gpdb.tests.storage.fts.fts_transitions.test_fts_transitions_01
-
-fts_transitions_part02:
-	$(TESTER) mpp.gpdb.tests.storage.fts.fts_transitions.test_fts_transitions_02
-
-fts_transitions_part03:
-	$(TESTER) mpp.gpdb.tests.storage.fts.fts_transitions.test_fts_transitions_03
-
-# cs-filerep-schema-topology-crashrecov
-# The following targets are pulled from:
-# http://pulse-cloud.gopivotal.com/admin/projects/cs-filerep-schema-topology-crashrecov
-#
-# Refer to the properties of the pulse project and individual build
-# stages for configuration requirements.
-
-crash_recovery_04_10:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/crashrecovery \
-	-p test_suspendcheckpoint_crashrecovery_04_to_10.py
-
-crash_recovery_11_20:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/crashrecovery \
-	-p test_suspendcheckpoint_crashrecovery_11_to_20.py
-
-crash_recovery_21_30:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/crashrecovery \
-	-p test_suspendcheckpoint_crashrecovery_21_to_30.py
-
-crash_recovery_31_42:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/crashrecovery \
-	-p test_suspendcheckpoint_crashrecovery_31_to_42.py
-
-crash_recovery_schema_topology:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/crashrecovery \
-	-p test_crash_recovery_schema_topology.py \
-	-p test_reindex_pg_class.py
-
-
-# Crash recovery test during ptrebuild
-
-persistent_table_rebuild:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/persistent_tables \
-	-p test_PT_RebuildPT.py
-
-# Optimizer functional tests
-optimizer_functional_part1:
-	$(TESTER) $(DISCOVER) \
-	-s partitioning \
-	-s query \
-	-s ddl \
-	-q tags=ORCA \
-	-q tags!=FEATURE_BRANCH_ONLY \
-	-q tags!=dpe
-
-optimizer_functional_part2:
-	$(TESTER) $(DISCOVER) \
-	-s dml \
-	-s functions \
-	-q tags=ORCA \
-	-q tags!=FEATURE_BRANCH_ONLY \
-	-q tags!=dpe
+	-p test_pg_twophase.py \
+	-p test_switch.py
 
 runaway_query:
 	$(TESTER) \
@@ -288,3 +108,20 @@ memory_accounting:
 	$(TESTER) \
 		resource_management.memory_accounting.test_oom.OOMTestCase \
 		resource_management.memory_accounting.too_many_exec_accounts.test_exec_accounts
+
+# gpexpand test
+gpexpand_1:
+	$(TESTER) $(DISCOVER) \
+	-s mpp/gpdb/tests/utilities/gpexpand \
+	-q tags=part1
+
+gpexpand_2:
+	$(TESTER) $(DISCOVER) \
+	-s mpp/gpdb/tests/utilities/gpexpand \
+	-q tags=part2
+
+# mpp interconnect test
+mpp_interconnect:
+	make -C tincrepo/mpp/gpdb/tests/dispatch/interconnect/ickm all distribute
+	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests \
+	-s dispatch/interconnect

@@ -6,7 +6,12 @@
  * The client is given direct access to the write buffer for appending
  * buffers efficiency.
  *        
- * Copyright (c) 2007, greenplum inc
+ * Portions Copyright (c) 2007, greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/cdb/cdbbufferedappend.h
  *
  *-------------------------------------------------------------------------
  */
@@ -14,7 +19,7 @@
 #define CDBBUFFEREDAPPEND_H
 
 #include "storage/fd.h"
-#include "cdb/cdbmirroredappendonly.h"
+#include "storage/relfilenode.h"
 
 typedef struct BufferedAppend
 {
@@ -65,13 +70,11 @@ typedef struct BufferedAppend
 	 * File level members.
 	 */
 	File 				 file;
+	RelFileNode			relFileNode;
+	int32				segmentFileNum;
     char				 *filePathName;
     int64                fileLen;
     int64				 fileLen_uncompressed; /* for calculating compress ratio */
-
-	int64				initialSetFilePosition;
-
-	MirroredAppendOnlyOpen		mirroredOpen;
 
 } BufferedAppend;
 
@@ -104,6 +107,8 @@ extern void BufferedAppendInit(
 extern void BufferedAppendSetFile(
     BufferedAppend       *bufferedAppend,
     File 				 file,
+	RelFileNode			 relfilenode,
+	int32				 segmentFileNum,
     char				 *filePathName,
     int64				 eof,
     int64				 eof_uncompressed);
@@ -160,13 +165,7 @@ extern void BufferedAppendFinishBuffer(
     int32				 usedLen_uncompressed);
 
 /*
- * Returns the current file’s length.
- */
-extern int64 BufferedAppendFileLen(
-    BufferedAppend *bufferedAppend);
-
-/*
- * Flushes the current file for append.  Caller is resposible for closing
+ * Flushes the current file for append.  Caller is responsible for closing
  * the file afterwards.
  */
 extern void BufferedAppendCompleteFile(

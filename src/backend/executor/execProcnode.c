@@ -8,12 +8,13 @@
  *	 processing.
  *
  * Portions Copyright (c) 2005-2008, Greenplum inc
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execProcnode.c,v 1.63 2008/10/04 21:56:53 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execProcnode.c,v 1.65 2009/01/01 17:23:41 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -86,6 +87,7 @@
 #include "executor/nodeBitmapAnd.h"
 #include "executor/nodeBitmapHeapscan.h"
 #include "executor/nodeBitmapIndexscan.h"
+#include "executor/nodeDynamicBitmapIndexscan.h"
 #include "executor/nodeBitmapOr.h"
 #include "executor/nodeCtescan.h"
 #include "executor/nodeFunctionscan.h"
@@ -105,6 +107,7 @@
 #include "executor/nodeTidscan.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
+#include "executor/nodeWindowAgg.h"
 #include "executor/nodeWorktablescan.h"
 #include "miscadmin.h"
 
@@ -126,17 +129,8 @@
 #include "executor/nodeSplitUpdate.h"
 #include "executor/nodeTableFunction.h"
 #include "executor/nodeTableScan.h"
-#include "executor/nodeWindow.h"
 #include "pg_trace.h"
 #include "tcop/tcopprot.h"
-#include "utils/debugbreak.h"
-
-#include "codegen/codegen_wrapper.h"
-
-#ifdef CDB_TRACE_EXECUTOR
-#include "nodes/print.h"
-static void ExecCdbTraceNode(PlanState *node, bool entry, TupleTableSlot *result);
-#endif   /* CDB_TRACE_EXECUTOR */
 
  /* flags bits for planstate walker */
 #define PSW_IGNORE_INITPLAN    0x01
@@ -159,12 +153,6 @@ static CdbVisitOpt planstate_walk_kids(PlanState *planstate,
 				 CdbVisitOpt (*walker) (PlanState *planstate, void *context),
 					void *context,
 					int flags);
-
-static void
-			EnrollQualList(PlanState *result);
-
-static void
-			EnrollProjInfoTargetList(PlanState *result, ProjectionInfo *ProjInfo);
 
 /*
  * setSubplanSliceId
@@ -228,13 +216,6 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 	MemoryAccountIdType curMemoryAccountId = MEMORY_OWNER_TYPE_Undefined;
 
-	StringInfo	codegenManagerName = makeStringInfo();
-
-	appendStringInfo(codegenManagerName, "%s-%d-%d", "execProcnode", node->plan_node_id, node->type);
-	void	   *CodegenManager = CodeGeneratorManagerCreate(codegenManagerName->data);
-
-	START_CODE_GENERATOR_MANAGER(CodegenManager);
-	{
 
 	int localMotionId = LocallyExecutingSliceIndex(estate);
 
@@ -324,8 +305,14 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			break;
 
 		case T_RecursiveUnion:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, Sequence);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
 			result = (PlanState *) ExecInitRecursiveUnion((RecursiveUnion *) node,
 														  estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
 			break;
 
 		case T_BitmapAnd:
@@ -365,34 +352,6 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			{
 			result = (PlanState *) ExecInitTableScan((TableScan *) node,
 													 estate, eflags);
-
-			/*
-			 * Enroll ExecVariableList in codegen_manager
-			 */
-			if (NULL != result)
-			{
-				ScanState *scanState = (ScanState *) result;
-				ProjectionInfo *projInfo = result->ps_ProjInfo;
-				if (NULL != scanState &&
-				    scanState->tableType == TableTypeHeap &&
-				    NULL != projInfo &&
-				    projInfo->pi_isVarList &&
-				    NULL != projInfo->pi_targetlist)
-				{
-					enroll_ExecVariableList_codegen(ExecVariableList,
-							&projInfo->ExecVariableList_gen_info.ExecVariableList_fn, projInfo, scanState->ss_ScanTupleSlot);
-				}
-			}
-
-			/*
-			 * Enroll targetlist & quals' expression evaluation functions
-			 * in codegen_manager
-			 */
-			EnrollQualList(result);
-			if (NULL !=result)
-			{
-			  EnrollProjInfoTargetList(result, result->ps_ProjInfo);
-			}
 			}
 			END_MEMORY_ACCOUNT();
 			break;
@@ -446,8 +405,19 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 			START_MEMORY_ACCOUNT(curMemoryAccountId);
 			{
-			result = (PlanState *) ExecInitBitmapIndexScan((BitmapIndexScan *) node,
-														   estate, eflags);
+				result = (PlanState *) ExecInitBitmapIndexScan((BitmapIndexScan *) node,
+															   estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
+			break;
+
+		case T_DynamicBitmapIndexScan:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, DynamicBitmapIndexScan);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
+				result = (PlanState *) ExecInitDynamicBitmapIndexScan((DynamicBitmapIndexScan *) node,
+																	  estate, eflags);
 			}
 			END_MEMORY_ACCOUNT();
 			break;
@@ -541,13 +511,25 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			break;
 
 		case T_CteScan:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, CteScan);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
 			result = (PlanState *) ExecInitCteScan((CteScan *) node,
 												   estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
 			break;
 
 		case T_WorkTableScan:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, WorkTableScan);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
 			result = (PlanState *) ExecInitWorkTableScan((WorkTableScan *) node,
 														 estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
 			break;
 
 			/*
@@ -631,33 +613,17 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			{
 			result = (PlanState *) ExecInitAgg((Agg *) node,
 												 estate, eflags);
-			/*
-			 * Enroll targetlist & quals' expression evaluation functions
-			 * in codegen_manager
-			 */
-			EnrollQualList(result);
-			if (NULL != result)
-			{
-			  AggState* aggstate = (AggState*)result;
-			  for (int aggno = 0; aggno < aggstate->numaggs; aggno++)
-			  {
-			    AggStatePerAgg peraggstate = &aggstate->peragg[aggno];
-			    EnrollProjInfoTargetList(result, peraggstate->evalproj);
-			  }
-			  enroll_AdvanceAggregates_codegen(advance_aggregates,
-			        &aggstate->AdvanceAggregates_gen_info.AdvanceAggregates_fn,
-			        aggstate);			}
 			}
 			END_MEMORY_ACCOUNT();
 			break;
 
-		case T_Window:
-			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, Window);
+		case T_WindowAgg:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, WindowAgg);
 
 			START_MEMORY_ACCOUNT(curMemoryAccountId);
 			{
-			result = (PlanState *) ExecInitWindow((Window *) node,
-											   estate, eflags);
+			result = (PlanState *) ExecInitWindowAgg((WindowAgg *) node,
+													 estate, eflags);
 			}
 			END_MEMORY_ACCOUNT();
 			break;
@@ -813,123 +779,15 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 	if (estate->es_instrument && result != NULL)
 		result->instrument = InstrAlloc(1);
 
+	/* Also set up gpmon counters */
+	InitPlanNodeGpmonPkt(node, &result->gpmon_pkt, estate);
+
 	if (result != NULL)
 	{
 		SAVE_EXECUTOR_MEMORY_ACCOUNT(result, curMemoryAccountId);
-		result->CodegenManager = CodegenManager;
-		/*
-		 * Generate code only if current node is not alien or
-		 * if it is from 'explain codegen` / `explain analyze codegen` query
-		 */
-		bool isExplainCodegenOnMaster = (Gp_segment == -1) &&
-				(eflags & EXEC_FLAG_EXPLAIN_CODEGEN) &&
-				(eflags & EXEC_FLAG_EXPLAIN_ONLY);
-
-		bool isExplainAnalyzeCodegenOnMaster = (Gp_segment == -1) &&
-				(eflags & EXEC_FLAG_EXPLAIN_CODEGEN) &&
-				!(eflags & EXEC_FLAG_EXPLAIN_ONLY);
-
-		if (!isAlienPlanNode ||
-				isExplainAnalyzeCodegenOnMaster ||
-				isExplainCodegenOnMaster)
-		{
-			(void) CodeGeneratorManagerGenerateCode(CodegenManager);
-			if (isExplainAnalyzeCodegenOnMaster ||
-					isExplainCodegenOnMaster)
-			{
-				CodeGeneratorManagerAccumulateExplainString(CodegenManager);
-			}
-			if (!isExplainCodegenOnMaster)
-			{
-				(void) CodeGeneratorManagerPrepareGeneratedFunctions(CodegenManager);
-			}
-		}
 	}
-	}
-	END_CODE_GENERATOR_MANAGER();
-
 	return result;
 }
-
-/* ----------------------------------------------------------------
- *	  EnrollQualList
- *
- *	  Enroll Qual List's expr state from PlanState for codegen.
- * ----------------------------------------------------------------
- */
-void
-EnrollQualList(PlanState *result)
-{
-#ifdef USE_CODEGEN
-	if (NULL == result ||
-		NULL == result->qual)
-	{
-		return;
-	}
-
-	ListCell   *l;
-
-	foreach(l, result->qual)
-	{
-		ExprState  *exprstate = (ExprState *) lfirst(l);
-
-		enroll_ExecEvalExpr_codegen(exprstate->evalfunc,
-									&exprstate->evalfunc,
-									exprstate,
-									result->ps_ExprContext,
-									result
-			);
-	}
-
-#endif
-}
-
-/* ----------------------------------------------------------------
- *	  EnrollProjInfoTargetList
- *
- *	  Enroll Targetlist from ProjectionInfo to Codegen
- * ----------------------------------------------------------------
- */
-void
-EnrollProjInfoTargetList(PlanState *result, ProjectionInfo *ProjInfo)
-{
-#ifdef USE_CODEGEN
-	if (NULL == ProjInfo ||
-		NULL == ProjInfo->pi_targetlist)
-	{
-		return;
-	}
-	if (ProjInfo->pi_isVarList)
-	{
-		/*
-		 * Skip generating expression evaluation for VAR elements in the
-		 * target list since ExecVariableList will take of that
-		 * TODO(shardikar) Re-evaluate this condition once we codegen
-		 * ExecTargetList
-		 */
-		return;
-	}
-
-	ListCell   *l;
-
-	foreach(l, ProjInfo->pi_targetlist)
-	{
-		GenericExprState *gstate = (GenericExprState *) lfirst(l);
-
-		if (NULL == gstate->arg ||
-			NULL == gstate->arg->evalfunc)
-		{
-			continue;
-		}
-		enroll_ExecEvalExpr_codegen(gstate->arg->evalfunc,
-									&gstate->arg->evalfunc,
-									gstate->arg,
-									ProjInfo->pi_exprContext,
-									result);
-	}
-#endif
-}
-
 
 /* ----------------------------------------------------------------
  *		ExecSliceDependencyNode
@@ -985,8 +843,6 @@ ExecProcNode(PlanState *node)
 {
 	TupleTableSlot *result = NULL;
 
-	START_CODE_GENERATOR_MANAGER(node->CodegenManager);
-	{
 	START_MEMORY_ACCOUNT(node->plan->memoryAccountId);
 	{
 
@@ -1001,12 +857,8 @@ ExecProcNode(PlanState *node)
 	if (QueryFinishPending && !IsA(node, MotionState))
 		return NULL;
 
-#ifdef CDB_TRACE_EXECUTOR
-	ExecCdbTraceNode(node, true, NULL);
-#endif   /* CDB_TRACE_EXECUTOR */
-
-	if(node->plan)
-		PG_TRACE4(execprocnode__enter, Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+	if (node->plan)
+		TRACE_POSTGRESQL_EXECPROCNODE_ENTER(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
 	if (node->chgParam != NULL) /* something changed */
 		ExecReScan(node, NULL); /* let ReScan handle this */
@@ -1161,8 +1013,8 @@ ExecProcNode(PlanState *node)
 			result = ExecShareInputScan((ShareInputScanState *) node);
 			break;
 
-		case T_WindowState:
-			result = ExecWindow((WindowState *) node);
+		case T_WindowAggState:
+			result = ExecWindowAgg((WindowAggState *) node);
 			break;
 
 		case T_RepeatState:
@@ -1195,15 +1047,17 @@ ExecProcNode(PlanState *node)
 			break;
 	}
 
+	if (!TupIsNull(result))
+	{
+		Gpmon_Incr_Rows_Out(&node->gpmon_pkt);
+		CheckSendPlanStateGpmonPkt(node);
+	}
+
 	if (node->instrument)
 		InstrStopNode(node->instrument, TupIsNull(result) ? 0.0 : 1.0);
 
 	if (node->plan)
-		PG_TRACE4(execprocnode__exit, Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
-
-#ifdef CDB_TRACE_EXECUTOR
-	ExecCdbTraceNode(node, false, result);
-#endif   /* CDB_TRACE_EXECUTOR */
+		TRACE_POSTGRESQL_EXECPROCNODE_EXIT(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
 	/*
 	 * Eager free and squelch the subplans, unless it's a nested subplan.
@@ -1231,8 +1085,6 @@ ExecProcNode(PlanState *node)
 
 	}
 	END_MEMORY_ACCOUNT();
-	}
-	END_CODE_GENERATOR_MANAGER();
 	return result;
 }
 
@@ -1261,7 +1113,7 @@ MultiExecProcNode(PlanState *node)
 
 	START_MEMORY_ACCOUNT(node->plan->memoryAccountId);
 {
-	PG_TRACE4(execprocnode__enter, Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+	TRACE_POSTGRESQL_EXECPROCNODE_ENTER(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
 	if (node->chgParam != NULL) /* something changed */
 		ExecReScan(node, NULL); /* let ReScan handle this */
@@ -1280,6 +1132,10 @@ MultiExecProcNode(PlanState *node)
 			result = MultiExecBitmapIndexScan((BitmapIndexScanState *) node);
 			break;
 
+		case T_DynamicBitmapIndexScanState:
+			result = MultiExecDynamicBitmapIndexScan((DynamicBitmapIndexScanState *) node);
+			break;
+
 		case T_BitmapAndState:
 			result = MultiExecBitmapAnd((BitmapAndState *) node);
 			break;
@@ -1294,7 +1150,7 @@ MultiExecProcNode(PlanState *node)
 			break;
 	}
 
-	PG_TRACE4(execprocnode__exit, Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+	TRACE_POSTGRESQL_EXECPROCNODE_EXIT(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 }
 	END_MEMORY_ACCOUNT();
 	return result;
@@ -1420,8 +1276,8 @@ ExecCountSlotsNode(Plan *node)
 		case T_Agg:
 			return ExecCountSlotsAgg((Agg *) node);
 
-		case T_Window:
-			return ExecCountSlotsWindow((Window *) node);
+		case T_WindowAgg:
+			return 0;
 
 		case T_Unique:
 			return ExecCountSlotsUnique((Unique *) node);
@@ -1674,6 +1530,10 @@ ExecEndNode(PlanState *node)
 			ExecEndBitmapIndexScan((BitmapIndexScanState *) node);
 			break;
 
+		case T_DynamicBitmapIndexScanState:
+			ExecEndDynamicBitmapIndexScan((DynamicBitmapIndexScanState *) node);
+			break;
+
 		case T_BitmapHeapScanState:
 			ExecEndBitmapHeapScan((BitmapHeapScanState *) node);
 			break;
@@ -1751,8 +1611,8 @@ ExecEndNode(PlanState *node)
 			ExecEndAgg((AggState *) node);
 			break;
 
-		case T_WindowState:
-			ExecEndWindow((WindowState *) node);
+		case T_WindowAggState:
+			ExecEndWindowAgg((WindowAggState *) node);
 			break;
 
 		case T_UniqueState:
@@ -1803,225 +1663,10 @@ ExecEndNode(PlanState *node)
 			break;
 	}
 
-	if (codegen)
-	{
-		/*
-		 * if codegen guc is true, then assert if CodegenManager is NULL
-		 */
-		Assert(NULL != node->CodegenManager);
-		CodeGeneratorManagerDestroy(node->CodegenManager);
-		node->CodegenManager = NULL;
-	}
-
 	estate->currentSliceIdInPlan = origSliceIdInPlan;
 	estate->currentExecutingSliceId = origExecutingSliceId;
 }
 
-
-#ifdef CDB_TRACE_EXECUTOR
-/* ----------------------------------------------------------------
- *	ExecCdbTraceNode
- *
- *	Trace entry and exit from ExecProcNode on an executor node.
- * ----------------------------------------------------------------
- */
-void
-ExecCdbTraceNode(PlanState *node, bool entry, TupleTableSlot *result)
-{
-	bool		willReScan = FALSE;
-	bool		willReturnTuple = FALSE;
-	Plan	   *plan = NULL;
-	const char *nameTag = NULL;
-	const char *extraTag = "";
-	char		extraTagBuffer[20];
-
-	/*
-	 * Don't trace NULL nodes..
-	 */
-	if (node == NULL)
-		return;
-
-	plan = node->plan;
-	Assert(plan != NULL);
-	Assert(result == NULL || !entry);
-	willReScan = (entry && node->chgParam != NULL);
-	willReturnTuple = (!entry && !TupIsNull(result));
-
-	switch (nodeTag(node))
-	{
-			/*
-			 * control nodes
-			 */
-		case T_ResultState:
-			nameTag = "Result";
-			break;
-
-		case T_AppendState:
-			nameTag = "Append";
-			break;
-
-		case T_SequenceState:
-			nameTag = "Sequence";
-			break;
-
-			/*
-			 * scan nodes
-			 */
-		case T_SeqScanState:
-			nameTag = "SeqScan";
-			break;
-
-		case T_TableScanState:
-			nameTag = "TableScan";
-			break;
-
-		case T_DynamicTableScanState:
-			nameTag = "DynamicTableScan";
-			break;
-
-		case T_IndexScanState:
-			nameTag = "IndexScan";
-			break;
-
-		case T_BitmapIndexScanState:
-			nameTag = "BitmapIndexScan";
-			break;
-
-		case T_BitmapHeapScanState:
-			nameTag = "BitmapHeapScan";
-			break;
-
-		case T_BitmapAppendOnlyScanState:
-			nameTag = "BitmapAppendOnlyScan";
-			break;
-
-		case T_TidScanState:
-			nameTag = "TidScan";
-			break;
-
-		case T_SubqueryScanState:
-			nameTag = "SubqueryScan";
-			break;
-
-		case T_FunctionScanState:
-			nameTag = "FunctionScan";
-			break;
-
-		case T_TableFunctionState:
-			nameTag = "TableFunctionScan";
-			break;
-
-		case T_ValuesScanState:
-			nameTag = "ValuesScan";
-			break;
-
-			/*
-			 * join nodes
-			 */
-		case T_NestLoopState:
-			nameTag = "NestLoop";
-			break;
-
-		case T_MergeJoinState:
-			nameTag = "MergeJoin";
-			break;
-
-		case T_HashJoinState:
-			nameTag = "HashJoin";
-			break;
-
-			/*
-			 * share inpt nodess
-			 */
-		case T_ShareInputScanState:
-			nameTag = "ShareInputScan";
-			break;
-
-			/*
-			 * materialization nodes
-			 */
-		case T_MaterialState:
-			nameTag = "Material";
-			break;
-
-		case T_SortState:
-			nameTag = "Sort";
-			break;
-
-		case T_GroupState:
-			nameTag = "Group";
-			break;
-
-		case T_AggState:
-			nameTag = "Agg";
-			break;
-
-		case T_WindowState:
-			nameTag = "Window";
-			break;
-
-		case T_UniqueState:
-			nameTag = "Unique";
-			break;
-
-		case T_HashState:
-			nameTag = "Hash";
-			break;
-
-		case T_SetOpState:
-			nameTag = "SetOp";
-			break;
-
-		case T_LimitState:
-			nameTag = "Limit";
-			break;
-
-		case T_MotionState:
-			nameTag = "Motion";
-			{
-				snprintf(extraTagBuffer, sizeof extraTagBuffer, " %d", ((Motion *) plan)->motionID);
-				extraTag = &extraTagBuffer[0];
-			}
-			break;
-
-		case T_RepeatState:
-			nameTag = "Repeat";
-			break;
-
-			/*
-			 * DML nodes
-			 */
-		case T_DMLState:
-			ExecEndDML((DMLState *) node);
-			break;
-		case T_SplitUpdateState:
-			nameTag = "SplitUpdate";
-			break;
-		case T_AssertOp:
-			nameTag = "AssertOp";
-			break;
-		case T_RowTriggerState:
-			nameTag = "RowTrigger";
-			break;
-		default:
-			nameTag = "*unknown*";
-			break;
-	}
-
-	if (entry)
-	{
-		elog(DEBUG4, "CDB_TRACE_EXECUTOR: Exec %s%s%s", nameTag, extraTag, willReScan ? " (will ReScan)." : ".");
-	}
-	else
-	{
-		elog(DEBUG4, "CDB_TRACE_EXECUTOR: Return from %s%s with %s tuple.", nameTag, extraTag, willReturnTuple ? "a" : "no");
-		if (willReturnTuple)
-			print_slot(result);
-	}
-
-	return;
-}
-#endif   /* CDB_TRACE_EXECUTOR */
 
 
 /* -----------------------------------------------------------------------

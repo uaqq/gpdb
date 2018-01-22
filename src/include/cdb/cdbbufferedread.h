@@ -6,14 +6,18 @@
  * The client is given direct access to large read buffer for reading
  * buffers efficiency.
  *        
- * Copyright (c) 2007, greenplum inc
+ * Portions Copyright (c) 2007, greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/cdb/cdbbufferedread.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef CDBBUFFEREDREAD_H
 #define CDBBUFFEREDREAD_H
 
-#include "postgres.h"
 #include "storage/fd.h"
 
 typedef struct BufferedRead

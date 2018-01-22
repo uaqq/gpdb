@@ -1,11 +1,17 @@
-/*
- * execHeapScan.c
- *   Support routines for scanning Heap tables.
+/*-------------------------------------------------------------------------
  *
+ * execBitmapHeapScan.c
+ *	  Support routines for scanning Heap tables using bitmaps.
+ *
+ * Portions Copyright (c) 2014-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * Copyright (c) 2014 Pivotal, Inc.
+ *
+ * IDENTIFICATION
+ *	    src/backend/executor/execBitmapHeapScan.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
@@ -23,7 +29,6 @@
 #include "miscadmin.h"
 #include "parser/parsetree.h"
 #include "cdb/cdbvars.h" /* gp_select_invisible */
-#include "cdb/cdbfilerepprimary.h"
 #include "nodes/tidbitmap.h"
 
 /*

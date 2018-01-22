@@ -1,6 +1,11 @@
 @gpcheckcat
 Feature: gpcheckcat tests
 
+    @logging
+    Scenario: gpcheckcat should log into gpAdminLogs
+        When the user runs "gpcheckcat -l"
+        Then verify that the utility gpcheckcat ever does logging into the user's "gpAdminLogs" directory
+
     @all
     Scenario: run all the checks in gpcheckcat
         Given database "all_good" is dropped and recreated
@@ -24,13 +29,12 @@ Feature: gpcheckcat tests
         And psql should print "(1 row)" to stdout
         When the user runs "gpcheckcat leak_db"
         Then gpchekcat should return a return code of 0
-        Then gpcheckcat should print "Found and dropped 1 unbound temporary schemas" to stdout
+        Then gpcheckcat should print "Found and dropped 2 unbound temporary schemas" to stdout
         And the user runs "psql leak_db -f test/behave/mgmt_utils/steps/data/gpcheckcat/leaked_schema.sql"
         Then psql should return a return code of 0
         And psql should print "(0 rows)" to stdout
         And verify that the schema "good_schema" exists in "leak_db"
         And the user runs "dropdb leak_db"
-        And verify that a log was created by gpcheckcat in the user's "gpAdminLogs" directory
 
     @unique_index
     Scenario: gpcheckcat should report unique index violations
@@ -42,7 +46,6 @@ Feature: gpcheckcat tests
         Then gpcheckcat should return a return code of 3
         And gpcheckcat should print "Table pg_compression has a violated unique index: pg_compression_compname_index" to stdout
         And the user runs "dropdb unique_index_db"
-        And verify that a log was created by gpcheckcat in the user's "gpAdminLogs" directory
 
     @miss_attr_table
     Scenario Outline: gpcheckcat should discover missing attributes for tables
@@ -356,13 +359,13 @@ Feature: gpcheckcat tests
         And the user runs "psql constraint_g_db -f test/behave/mgmt_utils/steps/data/gpcheckcat/create_invalid_constraint.sql"
         Then psql should return a return code of 0
         When the user runs "gpcheckcat -g repair_dir constraint_g_db"
-        Then gpcheckcat should return a return code of 3
+        Then gpcheckcat should return a return code of 1
         Then gpcheckcat should print "repair script\(s\) generated in dir repair_dir" to stdout
         Then the path "repair_dir" is found in cwd "1" times
         Then run all the repair scripts in the dir "repair_dir"
         And the path "repair_dir" is removed from current working directory
         When the user runs "gpcheckcat -g repair_dir constraint_g_db"
-        Then gpcheckcat should return a return code of 3
+        Then gpcheckcat should return a return code of 0
         Then the path "repair_dir" is found in cwd "0" times
         And the user runs "dropdb constraint_g_db"
         And the path "repair_dir" is removed from current working directory
@@ -405,16 +408,3 @@ Feature: gpcheckcat tests
         Then gpcheckcat should print "Name of test which found this issue: dependency_pg_type" to stdout
         Then gpcheckcat should print "Table pg_type has a dependency issue on oid .* at content 0" to stdout
         And the user runs "dropdb gpcheckcat_dependency"
-
-    @persistent
-    Scenario: gpcheckcat should report persistence errors # we need to run this test at the end because it makes the database go into a PANIC state.
-        Given database "persistent_db" is dropped and recreated
-        And there is a "heap" table "myheaptable1" in "persistent_db" with data
-        And there is a "heap" table "myheaptable2" in "persistent_db" with data
-        And there is a "heap" table "myheaptable3" in "persistent_db" with data
-        And there is a "heap" table "myheaptable4" in "persistent_db" with data
-        And there is a "heap" table "myheaptable5" in "persistent_db" with data
-        And the user runs "psql persistent_db -c "select gp_delete_persistent_relation_node_entry(ctid) from (select ctid from gp_persistent_relation_node where relfilenode_oid=(select relfilenode from pg_class where relname = 'myheaptable2')) as unwanted;""
-        And the user runs "psql persistent_db -c "select gp_delete_persistent_relation_node_entry(ctid) from (select ctid from gp_persistent_relation_node where relfilenode_oid=(select relfilenode from pg_class where relname = 'myheaptable3')) as unwanted;""
-        When the user runs "gpcheckcat -R persistent persistent_db"
-        Then gpcheckcat should print "Failed test\(s\) that are not reported here: persistent" to stdout

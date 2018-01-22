@@ -1,19 +1,28 @@
-/*
+/*-------------------------------------------------------------------------
+ *
  * pg_attribute_encoding.c
+ *	  Routines to manipulation and retrieve column encoding information.
  *
- * Routines to manipulation and retrieve column encoding information.
+ * Portions Copyright (c) EMC, 2011
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  *
- * Copyright (c) EMC, 2011
+ *
+ * IDENTIFICATION
+ *	    src/backend/catalog/pg_attribute_encoding.c
+ *
+ *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
-#include "fmgr.h"
 
 #include "access/genam.h"
 #include "access/reloptions.h"
+#include "access/xact.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_attribute_encoding.h"
 #include "catalog/pg_compression.h"
 #include "catalog/dependency.h"
+#include "fmgr.h"
 #include "parser/analyze.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
@@ -23,6 +32,7 @@
 #include "utils/rel.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /*
  * Add a single attribute encoding entry.
@@ -224,7 +234,7 @@ AddDefaultRelationAttributeOptions(Relation rel, List *options)
 
 	ce = transformStorageEncodingClause(ce);
 
-	opts = transformRelOptions(PointerGetDatum(NULL), ce, true, false);
+	opts = transformRelOptions(PointerGetDatum(NULL), ce, NULL, NULL, true, false);
 
 	for (attno = 1; attno <= RelationGetNumberOfAttributes(rel); attno++)
 		add_attribute_encoding_entry(RelationGetRelid(rel),
@@ -269,6 +279,8 @@ AddRelationAttributeEncodings(Relation rel, List *attr_encodings)
 
 		attoptions = transformRelOptions(PointerGetDatum(NULL),
 										 encoding,
+										 NULL,
+										 NULL,
 										 true,
 										 false);
 

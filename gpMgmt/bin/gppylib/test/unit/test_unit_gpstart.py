@@ -5,7 +5,7 @@ import sys
 
 from mock import Mock, patch
 
-from gparray import GpDB, GpArray
+from gparray import Segment, GpArray
 from gppylib.operations.startSegments import StartSegmentsResult
 from gppylib.test.unit.gp_unittest import GpTestCase, run_tests
 
@@ -42,14 +42,11 @@ class GpStart(GpTestCase):
             patch('gpstart.GpArray.getSegmentsByContentId', return_value=self.segments_by_content_id),
             patch('gpstart.GpArray.getSegmentsGroupedByValue',
                   side_effect=[{2: self.primary0, 3: self.primary1}, [], []]),
-            patch('gpstart.catalog.getCollationSettings', return_value=("x", "x", "x")),
             patch('gpstart.GpDbidFile'),
             patch('gpstart.GpEraFile'),
             patch('gpstart.userinput'),
             patch('gpstart.HeapChecksum'),
             patch('gpstart.log_to_file_only'),
-            patch("gpstart.is_filespace_configured", return_value=True),
-            patch("gpstart.CheckFilespaceConsistency"),
             patch("gpstart.StartSegmentsOperation"),
             patch("gpstart.base.WorkerPool"),
             patch("gpstart.gp.MasterStart.local"),
@@ -57,9 +54,6 @@ class GpStart(GpTestCase):
             patch("gpstart.TableLogger"),
             patch('gpstart.PgControlData'),
         ])
-
-        self.mockFilespaceConsistency = self.get_mock_from_apply_patch("CheckFilespaceConsistency")
-        self.mockFilespaceConsistency.return_value.run.return_value = True
 
         self.mock_start_result = self.get_mock_from_apply_patch('StartSegmentsOperation')
         self.mock_start_result.return_value.startSegments.return_value.getSuccessfulSegments.return_value = start_result.getSuccessfulSegments()
@@ -233,18 +227,18 @@ class GpStart(GpTestCase):
         self.subject.logger.error.assert_any_call("gpstart error: Heap checksum settings are not consistent across the cluster.")
 
     def _createGpArrayWith2Primary2Mirrors(self):
-        self.master = GpDB.initFromString(
-            "1|-1|p|p|s|u|mdw|mdw|5432|5532|/data/master||/data/master/base/10899,/data/master/base/1,/data/master/base/10898,/data/master/base/25780,/data/master/base/34782")
-        self.primary0 = GpDB.initFromString(
-            "2|0|p|p|s|u|sdw1|sdw1|40000|41000|/data/primary0||/data/primary0/base/10899,/data/primary0/base/1,/data/primary0/base/10898,/data/primary0/base/25780,/data/primary0/base/34782")
-        self.primary1 = GpDB.initFromString(
-            "3|1|p|p|s|u|sdw2|sdw2|40001|41001|/data/primary1||/data/primary1/base/10899,/data/primary1/base/1,/data/primary1/base/10898,/data/primary1/base/25780,/data/primary1/base/34782")
-        self.mirror0 = GpDB.initFromString(
-            "4|0|m|m|s|u|sdw2|sdw2|50000|51000|/data/mirror0||/data/mirror0/base/10899,/data/mirror0/base/1,/data/mirror0/base/10898,/data/mirror0/base/25780,/data/mirror0/base/34782")
-        self.mirror1 = GpDB.initFromString(
-            "5|1|m|m|s|u|sdw1|sdw1|50001|51001|/data/mirror1||/data/mirror1/base/10899,/data/mirror1/base/1,/data/mirror1/base/10898,/data/mirror1/base/25780,/data/mirror1/base/34782")
-        self.standby = GpDB.initFromString(
-            "6|-1|m|m|s|u|sdw3|sdw3|5433|5533|/data/standby||/data/standby/base/10899,/data/standby/base/1,/data/standby/base/10898,/data/standby/base/25780,/data/standby/base/34782")
+        self.master = Segment.initFromString(
+            "1|-1|p|p|s|u|mdw|mdw|5432|/data/master")
+        self.primary0 = Segment.initFromString(
+            "2|0|p|p|s|u|sdw1|sdw1|40000|/data/primary0")
+        self.primary1 = Segment.initFromString(
+            "3|1|p|p|s|u|sdw2|sdw2|40001|/data/primary1")
+        self.mirror0 = Segment.initFromString(
+            "4|0|m|m|s|u|sdw2|sdw2|50000|/data/mirror0")
+        self.mirror1 = Segment.initFromString(
+            "5|1|m|m|s|u|sdw1|sdw1|50001|/data/mirror1")
+        self.standby = Segment.initFromString(
+            "6|-1|m|m|s|u|sdw3|sdw3|5433|/data/standby")
         return GpArray([self.master, self.primary0, self.primary1, self.mirror0, self.mirror1])
 
     def _get_env(self, arg):

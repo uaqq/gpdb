@@ -9,7 +9,6 @@
 #include "cdb/cdbvars.h"
 #include "utils/workfile_mgr.h"
 #include "storage/fd.h"
-#include "postmaster/primary_mirror_mode.h"
 
 typedef pg_crc32 BFZ_CHECKSUM_TYPE;
 
@@ -49,6 +48,12 @@ bfz_string_to_compression(const char *string)
 			if (!pg_strcasecmp(*a, string))
 				return i;
 	return -1;
+}
+
+static const char *
+bfz_compression_to_string(int index)
+{
+	return compression_algorithms[index].name[0];
 }
 
 #define BFZ_CHECKSUM_EQ(c1, c2) EQ_CRC32C(c1, c2)
@@ -155,18 +160,7 @@ read_bfz_buffer(bfz_t *bfz, char *buffer)
 	int bytesRead = 0;
 	struct bfz_freeable_stuff *fs = bfz->freeable_stuff;
 	int dataSize = 0;
-	char *oldBuffer = NULL;
 	
-	/*
-	 * Copy the original buffer so that we can simulate a torn page
-	 * later.
-	 */
-	if (gp_workfile_faultinject)
-	{
-		oldBuffer = palloc(sizeof(fs->buffer));
-		memcpy(oldBuffer, buffer, sizeof(fs->buffer));
-	}
-
 	bytesRead = fs->read_ex(bfz, buffer, sizeof(fs->buffer));
 	Assert(bytesRead <= sizeof(fs->buffer));
 
@@ -174,33 +168,6 @@ read_bfz_buffer(bfz_t *bfz, char *buffer)
 		return 0;
 
 	dataSize = bytesRead;
-
-	/*
-	 * If size is greater than WORKFILE_SAFEWRITE_SIZE, and the GUC
-	 * gp_workfile_faultinject is on, we simulate a torn page
-	 * if this block is chosen to do so.
-	 */
-	if (dataSize > WORKFILE_SAFEWRITE_SIZE &&
-		gp_workfile_faultinject)
-	{
-		if (bfz->blockNo == bfz->chosenBlockNo)
-		{
-			Assert(oldBuffer != NULL);
-			
-			/*
-			 * Simulate a torn page by copying the data after
-			 * WORKFILE_SAFEWRITE_SIZE in the old buffer into
-			 * the new buffer.
-			 */
-			memcpy(buffer + WORKFILE_SAFEWRITE_SIZE,
-				   oldBuffer + WORKFILE_SAFEWRITE_SIZE,
-				   sizeof(fs->buffer) - WORKFILE_SAFEWRITE_SIZE);
-			elog(NOTICE, "Simulate a torn page at block " INT64_FORMAT, bfz->blockNo);
-		}
-	}
-
-	if (gp_workfile_faultinject)
-		pfree(oldBuffer);
 
 	if (bfz->has_checksum)
 	{
@@ -311,11 +278,6 @@ bfz_create_internal(const char *fileName, bool open_existing,
 
 	bfz_handle->has_checksum = gp_workfile_checksumming;
 
-	if (gp_workfile_checksumming || gp_workfile_faultinject)
-	{
-		srandom((unsigned int) time(NULL));
-	}
-
 	bfz_handle->numBlocks = bfz_handle->blockNo = bfz_handle->chosenBlockNo = 0;
 	
 	fs = bfz_handle->freeable_stuff;
@@ -406,8 +368,10 @@ bfz_append_end(bfz_t * thiz)
 				(errcode(ERRCODE_IO_ERROR),
 				errmsg("could not seek in temporary file: %m")));
 
-	elog(DEBUG1, "bfz file size uncompressed %lld, compressed %lld, savings %d%%",
-		 (long long) tot_bytes, (long long) tot_compressed,
+	elog(DEBUG1, "bfz file size uncompressed " INT64_FORMAT ", compressed with %s to " INT64_FORMAT", savings %d%%",
+		 tot_bytes,
+		 bfz_compression_to_string(thiz->compression_index),
+		 tot_compressed,
 		 tot_bytes == 0 ? 0 : (int) ((tot_bytes - tot_compressed) * 100 / tot_bytes));
 
 	return tot_compressed;
@@ -440,14 +404,6 @@ bfz_scan_begin(bfz_t * thiz)
 	fs->tot_bytes = 0L;
 
 	MemoryContextSwitchTo(oldcxt);
-
-	if (gp_workfile_faultinject)
-	{
-		thiz->chosenBlockNo = (((double)random()) / ((double)MAX_RANDOM_VALUE)) * thiz->numBlocks;
-		elog(LOG, "Test workfile checksumming: choose block " INT64_FORMAT
-			 " to simulate a torn page",
-			 thiz->chosenBlockNo);
-	}
 }
 
 void

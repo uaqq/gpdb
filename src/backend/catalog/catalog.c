@@ -5,12 +5,12 @@
  *		bits of hard-wired knowledge
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/catalog.c,v 1.72.2.1 2008/02/20 17:44:14 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/catalog.c,v 1.83 2009/06/11 14:48:54 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "access/genam.h"
+#include "access/sysattr.h"
 #include "access/transam.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
@@ -39,91 +40,74 @@
 #include "catalog/pg_resgroup.h"
 #include "catalog/pg_shdepend.h"
 #include "catalog/pg_shdescription.h"
-#include "catalog/pg_filespace.h"
-#include "catalog/pg_filespace_entry.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_trigger.h"
 
-#include "catalog/gp_configuration.h"
-#include "catalog/gp_configuration.h"
+#include "catalog/gp_configuration_history.h"
 #include "catalog/gp_segment_config.h"
-#include "catalog/gp_fault_strategy.h"
 
-#include "catalog/gp_persistent.h"
-#include "catalog/gp_global_sequence.h"
 #include "catalog/gp_id.h"
 #include "catalog/gp_version.h"
 #include "catalog/toasting.h"
-#include "catalog/gp_policy.h"
 
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "utils/fmgroids.h"
-#include "utils/relcache.h"
-#include "utils/lsyscache.h"
+#include "utils/rel.h"
+#include "utils/tqual.h"
 
-#include "cdb/cdbpersistenttablespace.h"
 #include "cdb/cdbvars.h"
 
-#define OIDCHARS	10			/* max chars printed by %u */
+#define OIDCHARS		10		/* max chars printed by %u */
+#define FORKNAMECHARS	4		/* max chars for a fork name */
 
-static char *
-GetFilespacePathForTablespace(Oid tablespaceOid)
+/*
+ * Lookup table of fork name by fork number.
+ *
+ * If you add a new entry, remember to update the errhint below, and the
+ * documentation for pg_relation_size(). Also keep FORKNAMECHARS above
+ * up-to-date.
+ */
+const char *forkNames[] = {
+	"main",						/* MAIN_FORKNUM */
+	"fsm",						/* FSM_FORKNUM */
+	"vm"						/* VISIBILITYMAP_FORKNUM */
+};
+
+/*
+ * forkname_to_number - look up fork number by name
+ */
+ForkNumber
+forkname_to_number(char *forkName)
 {
-	PersistentTablespaceGetFilespaces tablespaceGetFilespaces;
-	Oid filespaceOid;
+	ForkNumber	forkNum;
 
-	/* All other tablespaces are accessed via filespace locations */
-	char *primary_path;
-	char *mirror_path;	/* unused */
+	for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+		if (strcmp(forkNames[forkNum], forkName) == 0)
+			return forkNum;
 
-	Assert(tablespaceOid != GLOBALTABLESPACE_OID);
-	Assert(tablespaceOid != DEFAULTTABLESPACE_OID);
-	
-	/* Lookup filespace location from the persistent object layer. */
-	tablespaceGetFilespaces = 
-			PersistentTablespace_TryGetPrimaryAndMirrorFilespaces(
-														tablespaceOid, 
-														&primary_path, 
-														&mirror_path,
-														&filespaceOid);
-	switch (tablespaceGetFilespaces)
-	{
-	case PersistentTablespaceGetFilespaces_TablespaceNotFound:
-		ereport(ERROR, 
-				(errcode(ERRCODE_CDB_INTERNAL_ERROR),
-				 errmsg("Unable to find entry for tablespace OID = %u when forming file-system path",
-						tablespaceOid)));
-		break;
-			
-	case PersistentTablespaceGetFilespaces_FilespaceNotFound:
-		ereport(ERROR, 
-				(errcode(ERRCODE_CDB_INTERNAL_ERROR),
-				 errmsg("Unable to find entry for filespace OID = %u when forming file-system path for tablespace OID = %u",
-				 		filespaceOid,
-						tablespaceOid)));
-		break;
-					
-	case PersistentTablespaceGetFilespaces_Ok:
-		// Go below and pass back the result.
-		break;
-		
-	default:
-		elog(ERROR, "Unexpected tablespace filespace fetch result: %d",
-			 tablespaceGetFilespaces);
-	}
-	
-	/*
-	 * We immediately throw out the mirror_path because it is not
-	 * relevant here.
-	 */
-	if (mirror_path)
-		pfree(mirror_path);
-	Assert(primary_path != NULL);
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg("invalid fork name"),
+			 errhint("Valid fork names are \"main\", \"fsm\", and \"vm\".")));
+	return InvalidForkNumber;	/* keep compiler quiet */
+}
 
-	return primary_path;
+/*
+ * Return directory name within tablespace location to use, for this server.
+ * This is the GDPB replacement for PostgreSQL's TABLESPACE_VERSION_DIRECTORY
+ * constant.
+ */
+const char *
+tablespace_version_directory(void)
+{
+	static char path[MAXPGPATH];
+
+	snprintf(path, MAXPGPATH, "%s_db%d", GP_TABLESPACE_VERSION_DIRECTORY, GpIdentity.dbid);
+
+	return path;
 }
 
 /*
@@ -132,57 +116,79 @@ GetFilespacePathForTablespace(Oid tablespaceOid)
  * Result is a palloc'd string.
  */
 char *
-relpath(RelFileNode rnode)
+relpath(RelFileNode rnode, ForkNumber forknum)
 {
 	int			pathlen;
 	char	   *path;
-	int 		snprintfResult;
 
 	if (rnode.spcNode == GLOBALTABLESPACE_OID)
 	{
 		/* Shared system relations live in {datadir}/global */
 		Assert(rnode.dbNode == 0);
-		pathlen = 7 + OIDCHARS + 1;
+		pathlen = 7 + OIDCHARS + 1 + FORKNAMECHARS + 1;
 		path = (char *) palloc(pathlen);
-		snprintfResult =
-			snprintf(path, pathlen, "global/%u",
-					 rnode.relNode);
-		
+		if (forknum != MAIN_FORKNUM)
+			snprintf(path, pathlen, "global/%u_%s",
+					 rnode.relNode, forkNames[forknum]);
+		else
+			snprintf(path, pathlen, "global/%u", rnode.relNode);
 	}
 	else if (rnode.spcNode == DEFAULTTABLESPACE_OID)
 	{
 		/* The default tablespace is {datadir}/base */
-		pathlen = 5 + OIDCHARS + 1 + OIDCHARS + 1;
+		pathlen = 5 + OIDCHARS + 1 + OIDCHARS + 1 + FORKNAMECHARS + 1;
 		path = (char *) palloc(pathlen);
-		snprintfResult =
+		if (forknum != MAIN_FORKNUM)
+			snprintf(path, pathlen, "base/%u/%u_%s",
+					 rnode.dbNode, rnode.relNode, forkNames[forknum]);
+		else
 			snprintf(path, pathlen, "base/%u/%u",
 					 rnode.dbNode, rnode.relNode);
 	}
 	else
 	{
-		char *primary_path;
-
-		/* All other tablespaces are accessed via filespace locations */
-		primary_path = GetFilespacePathForTablespace(rnode.spcNode);
-
-		/* 
-		 * We should develop an interface for the above that doesn't
-		 * require reallocating to a slightly larger size...
-		 */
-		pathlen = strlen(primary_path)+1+OIDCHARS+1+OIDCHARS+1+OIDCHARS+1;
-		path = (char *) palloc(pathlen);
-		snprintfResult =
-			snprintf(path, pathlen, "%s/%u/%u/%u",
-					 primary_path, rnode.spcNode, rnode.dbNode, rnode.relNode);
-
-		/* Throw away the allocation we got from persistent layer */
-		pfree(primary_path);
+		/* All other tablespaces are accessed via symlinks */
+		if (forknum != MAIN_FORKNUM)
+			path = psprintf("pg_tblspc/%u/%s/%u/%u_%s",
+					 rnode.spcNode, tablespace_version_directory(),
+					 rnode.dbNode, rnode.relNode, forkNames[forknum]);
+		else
+			path = psprintf("pg_tblspc/%u/%s/%u/%u",
+					 rnode.spcNode, tablespace_version_directory(),
+					 rnode.dbNode, rnode.relNode);
 	}
-	
-	Assert(snprintfResult >= 0);
-	Assert(snprintfResult < pathlen);
-
 	return path;
+}
+
+/*
+ * Like relpath(), but gets the directory containing the data file
+ * and the filename separately.
+ */
+void
+reldir_and_filename(RelFileNode rnode, ForkNumber forknum,
+					char **dir, char **filename)
+{
+	char	   *path;
+	int			i;
+
+	path = relpath(rnode, forknum);
+
+	/*
+	 * The base path is like "<path>/<rnode>". Split it into
+	 * path and filename parts.
+	 */
+	for (i = strlen(path) - 1; i >= 0; i--)
+	{
+		if (path[i] == '/')
+			break;
+	}
+	if (i <= 0 || path[i] != '/')
+		elog(ERROR, "unexpected path: \"%s\"", path);
+
+	*dir = pnstrdup(path, i);
+	*filename = pstrdup(&path[i + 1]);
+
+	pfree(path);
 }
 
 /*
@@ -197,7 +203,6 @@ GetDatabasePath(Oid dbNode, Oid spcNode)
 {
 	int			pathlen;
 	char	   *path;
-	int 		snprintfResult;
 
 	if (spcNode == GLOBALTABLESPACE_OID)
 	{
@@ -205,197 +210,23 @@ GetDatabasePath(Oid dbNode, Oid spcNode)
 		Assert(dbNode == 0);
 		pathlen = 6 + 1;
 		path = (char *) palloc(pathlen);
-
-		// Using strncpy is error prone.
-		snprintfResult =
-			snprintf(path, pathlen, "global");
+		snprintf(path, pathlen, "global");
 	}
 	else if (spcNode == DEFAULTTABLESPACE_OID)
 	{
 		/* The default tablespace is {datadir}/base */
 		pathlen = 5 + OIDCHARS + 1;
 		path = (char *) palloc(pathlen);
-		snprintfResult =
-			snprintf(path, pathlen, "base/%u",
-					 dbNode);
+		snprintf(path, pathlen, "base/%u",
+				 dbNode);
 	}
 	else
 	{
-		char *primary_path;
-
-		/* All other tablespaces are accessed via filespace locations */
-		primary_path = GetFilespacePathForTablespace(spcNode);
-
-		/* 
-		 * We should develop an interface for the above that doesn't
-		 * require reallocating to a slightly larger size...
-		 */
-		pathlen = strlen(primary_path)+1+OIDCHARS+1+OIDCHARS+1;
-		path = (char *) palloc(pathlen);
-		snprintfResult =
-			snprintf(path, pathlen, "%s/%u/%u",
-					 primary_path, spcNode, dbNode);
-
-		/* Throw away the allocation we got from persistent layer */
-		pfree(primary_path);
+		/* All other tablespaces are accessed via symlinks */
+		path = psprintf("pg_tblspc/%u/%s/%u",
+						spcNode, tablespace_version_directory(), dbNode);
 	}
-	
-	Assert(snprintfResult >= 0);
-	Assert(snprintfResult < pathlen);
-
 	return path;
-}
-
-
-void FormDatabasePath(
-	char *databasePath,
-
-	char *filespaceLocation,
-
-	Oid tablespaceOid,
-
-	Oid databaseOid)
-{
-	int			targetMaxLen = MAXPGPATH + 1;
-	int 		snprintfResult;
-
-	if (tablespaceOid == GLOBALTABLESPACE_OID)
-	{
-		/* Shared system relations live in {datadir}/global */
-		Assert(databaseOid == 0);
-		Assert(filespaceLocation == NULL);
-
-		// Using strncpy is error prone.
-		snprintfResult =
-			snprintf(databasePath, targetMaxLen, "global");
-	}
-	else if (tablespaceOid == DEFAULTTABLESPACE_OID)
-	{
-		/* The default tablespace is {datadir}/base */
-		Assert(filespaceLocation == NULL);
-
-		snprintfResult =
-			snprintf(databasePath, targetMaxLen, "base/%u",
-					 databaseOid);
-	}
-	else
-	{
-		/* All other tablespaces are in filespace locations */
-		Assert(filespaceLocation != NULL);
-
-		snprintfResult =
-			snprintf(databasePath, targetMaxLen, "%s/%u/%u",
-					 filespaceLocation, tablespaceOid, databaseOid);
-	}
-
-	if (snprintfResult < 0)
-		elog(ERROR, "FormDatabasePath formatting error");
-
-	/*
-	 * Magically truncating the result to fit in the target string is unacceptable here
-	 * because it can result in the wrong file-system object being referenced.
-	 */
-	if (snprintfResult >= targetMaxLen)
-		elog(ERROR, "FormDatabasePath formatting result length %d exceeded the maximum length %d",
-					snprintfResult,
-					targetMaxLen);
-}
-
-void FormTablespacePath(
-	char *tablespacePath,
-
-	char *filespaceLocation,
-
-	Oid tablespaceOid)
-{
-	int			targetMaxLen = MAXPGPATH + 1;
-	int 		snprintfResult;
-
-	if (tablespaceOid == GLOBALTABLESPACE_OID)
-	{
-		/* Shared system relations live in {datadir}/global */
-		Assert(filespaceLocation == NULL);
-
-		// Using strncpy is error prone.
-		snprintfResult =
-			snprintf(tablespacePath, targetMaxLen, "global");
-	}
-	else if (tablespaceOid == DEFAULTTABLESPACE_OID)
-	{
-		/* The default tablespace is {datadir}/base */
-		Assert(filespaceLocation == NULL);
-
-		// Using strncpy is error prone.
-		snprintfResult =
-			snprintf(tablespacePath, targetMaxLen, "base");
-	}
-	else
-	{
-		/* All other tablespaces are in filespace locations */
-		Assert(filespaceLocation != NULL);
-		snprintfResult =
-			snprintf(tablespacePath, targetMaxLen, "%s/%u",
-					 filespaceLocation, tablespaceOid);
-	}
-
-	if (snprintfResult < 0)
-		elog(ERROR, "FormTablespacePath formatting error");
-
-	/*
-	 * Magically truncating the result to fit in the target string is unacceptable here
-	 * because it can result in the wrong file-system object being referenced.
-	 */
-	if (snprintfResult >= targetMaxLen)
-		elog(ERROR, "FormTablespacePath formatting result length %d exceeded the maximum length %d",
-					snprintfResult,
-					targetMaxLen);
-}
-
-
-void 
-FormRelationPath(char *relationPath, char *filespaceLocation, RelFileNode rnode)
-{
-	int			targetMaxLen = MAXPGPATH + 1;
-	int 		snprintfResult;
-
-	if (rnode.spcNode == GLOBALTABLESPACE_OID)
-	{
-		/* Shared system relations live in {datadir}/global */
-		Assert(rnode.dbNode == 0);
-		
-		snprintfResult =
-			snprintf(relationPath, targetMaxLen, "global/%u",
-					 rnode.relNode);
-	}
-	else if (rnode.spcNode == DEFAULTTABLESPACE_OID)
-	{
-		/* The default tablespace is {datadir}/base */
-		
-		snprintfResult =
-			snprintf(relationPath, targetMaxLen, "base/%u/%u",
-					 rnode.dbNode, rnode.relNode);
-	}
-	else
-	{
-		snprintfResult =
-			snprintf(relationPath, targetMaxLen, "%s/%u/%u/%u",
-				filespaceLocation,
-				rnode.spcNode,
-				rnode.dbNode,
-				rnode.relNode);
-	}	
-
-	if (snprintfResult < 0)
-		elog(ERROR, "FormRelationPath formatting error");
-
-	/*
-	 * Magically truncating the result to fit in the target string is unacceptable here
-	 * because it can result in the wrong file-system object being referenced.
-	 */
-	if (snprintfResult >= targetMaxLen)
-		elog(ERROR, "FormRelationPath formatting result length %d exceeded the maximum length %d",
-					snprintfResult,
-					targetMaxLen);
 }
 
 /*
@@ -574,15 +405,8 @@ IsSharedRelation(Oid relationId)
 		return true;
 
 	/* GPDB additions */
-	if (relationId == FileSpaceRelationId ||
-		relationId == GpIdRelationId ||
+	if (relationId == GpIdRelationId ||
 		relationId == GpVersionRelationId ||
-
-		relationId == GpPersistentRelationNodeRelationId ||
-		relationId == GpPersistentDatabaseNodeRelationId ||
-		relationId == GpPersistentTablespaceNodeRelationId ||
-		relationId == GpPersistentFilespaceNodeRelationId ||
-		relationId == GpGlobalSequenceRelationId ||
 
 		/* MPP-6929: metadata tracking */
 		relationId == StatLastShOpRelationId ||
@@ -592,13 +416,8 @@ IsSharedRelation(Oid relationId)
 		relationId == ResQueueCapabilityRelationId ||
 		relationId == ResGroupRelationId ||
 		relationId == ResGroupCapabilityRelationId ||
-		relationId == GpFaultStrategyRelationId ||
-		relationId == GpConfigurationRelationId ||
 		relationId == GpConfigHistoryRelationId ||
-		relationId == GpDbInterfacesRelationId ||
-		relationId == GpInterfacesRelationId ||
 		relationId == GpSegmentConfigRelationId ||
-		relationId == FileSpaceEntryRelationId ||
 
 		relationId == AuthTimeConstraintRelationId)
 		return true;
@@ -619,10 +438,7 @@ IsSharedRelation(Oid relationId)
 		return true;
 
 	/* GPDB added indexes */
-	if (relationId == FilespaceOidIndexId ||
-		relationId == FilespaceNameIndexId ||
-
-		/* MPP-6929: metadata tracking */
+	if (/* MPP-6929: metadata tracking */
 		relationId == StatLastShOpClassidObjidIndexId ||
 		relationId == StatLastShOpClassidObjidStaactionnameIndexId ||
 
@@ -641,14 +457,8 @@ IsSharedRelation(Oid relationId)
 		relationId == ResGroupCapabilityResgroupidResLimittypeIndexId ||
 		relationId == AuthIdRolResQueueIndexId ||
 		relationId == AuthIdRolResGroupIndexId ||
-		relationId == GpConfigurationContentDefinedprimaryIndexId ||
-		relationId == GpConfigurationDbidIndexId ||
-		relationId == GpDbInterfacesDbidIndexId ||
-		relationId == GpInterfacesInterfaceidIndexId ||
 		relationId == GpSegmentConfigContentPreferred_roleIndexId ||
-		relationId == GpSegmentConfigDbidIndexId ||
-		relationId == FileSpaceEntryFsefsoidIndexId ||
-		relationId == FileSpaceEntryFsefsoidFsedbidIndexId)
+		relationId == GpSegmentConfigDbidIndexId)
 	{
 		return true;
 	}
@@ -664,10 +474,7 @@ IsSharedRelation(Oid relationId)
 
 	/* GPDB added toast tables and their indexes */
 	if (relationId == GpSegmentConfigToastTable ||
-		relationId == GpSegmentConfigToastIndex ||
-
-		relationId == PgFileSpaceEntryToastTable ||
-		relationId == PgFileSpaceEntryToastIndex)
+		relationId == GpSegmentConfigToastIndex)
 	{
 		return true;
 	}
@@ -742,7 +549,6 @@ GetNewOid(Relation relation)
 {
 	Oid			newOid;
 	Oid			oidIndex;
-	Relation	indexrel;
 
 	/* If relation doesn't have OIDs at all, caller is confused */
 	Assert(relation->rd_rel->relhasoids);
@@ -770,11 +576,9 @@ GetNewOid(Relation relation)
 	}
 
 	/* Otherwise, use the index to find a nonconflicting OID */
-	indexrel = index_open(oidIndex, AccessShareLock);
 	do {
-		newOid = GetNewOidWithIndex(relation, indexrel);
+		newOid = GetNewOidWithIndex(relation, oidIndex, ObjectIdAttributeNumber);
 	} while(!IsOidAcceptable(newOid));
-	index_close(indexrel, AccessShareLock);
 
 	/*
 	 * Most catalog objects need to have the same OID in the master and all
@@ -799,16 +603,17 @@ GetNewOid(Relation relation)
  * an index that will not be recognized by RelationGetOidIndex: TOAST tables
  * and pg_largeobject have indexes that are usable, but have multiple columns
  * and are on ordinary columns rather than a true OID column.  This code
- * will work anyway, so long as the OID is the index's first column.
+ * will work anyway, so long as the OID is the index's first column.  The
+ * caller must pass in the actual heap attnum of the OID column, however.
  *
  * Caller must have a suitable lock on the relation.
  */
 Oid
-GetNewOidWithIndex(Relation relation, Relation indexrel)
+GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
 {
 	Oid			newOid;
 	SnapshotData SnapshotDirty;
-	IndexScanDesc scan;
+	SysScanDesc scan;
 	ScanKeyData key;
 	bool		collides;
 
@@ -822,17 +627,17 @@ GetNewOidWithIndex(Relation relation, Relation indexrel)
 		newOid = GetNewObjectId();
 
 		ScanKeyInit(&key,
-					(AttrNumber) 1,
+					oidcolumn,
 					BTEqualStrategyNumber, F_OIDEQ,
 					ObjectIdGetDatum(newOid));
 
 		/* see notes above about using SnapshotDirty */
-		scan = index_beginscan(relation, indexrel,
-							   &SnapshotDirty, 1, &key);
+		scan = systable_beginscan(relation, indexId, true,
+								  &SnapshotDirty, 1, &key);
 
-		collides = HeapTupleIsValid(index_getnext(scan, ForwardScanDirection));
+		collides = HeapTupleIsValid(systable_getnext(scan));
 
-		index_endscan(scan);
+		systable_endscan(scan);
 	} while (collides);
 
 	return newOid;
@@ -896,7 +701,7 @@ GetNewSequenceRelationOid(Relation relation)
 		if (!collides)
 		{
 			/* Check for existing file of same name */
-			rpath = relpath(rnode);
+			rpath = relpath(rnode, MAIN_FORKNUM);
 			fd = BasicOpenFile(rpath, O_RDONLY | PG_BINARY, 0);
 
 			if (fd >= 0)
@@ -973,7 +778,7 @@ GetNewRelFileNode(Oid reltablespace, bool relisshared)
 			continue;
 
 		/* Check for existing file of same name */
-		rpath = relpath(rnode);
+		rpath = relpath(rnode, MAIN_FORKNUM);
 		fd = BasicOpenFile(rpath, O_RDONLY | PG_BINARY, 0);
 
 		if (fd >= 0)

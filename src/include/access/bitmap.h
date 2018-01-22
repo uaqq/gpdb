@@ -6,7 +6,7 @@
  * Copyright (c) 2006-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	$PostgreSQL$
+ *	src/include/access/bitmap.h
  *
  *-------------------------------------------------------------------------
  */
@@ -19,7 +19,6 @@
 #include "access/relscan.h"
 #include "access/sdir.h"
 #include "access/xlogutils.h"
-#include "nodes/tidbitmap.h"
 #include "storage/lock.h"
 #include "miscadmin.h"
 
@@ -578,8 +577,6 @@ typedef BMScanOpaqueData *BMScanOpaque;
 typedef struct xl_bm_bitmapwords
 {
 	RelFileNode 	bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
 
 	/* The block number for the bitmap page */
 	BlockNumber		bm_blkno;
@@ -636,8 +633,6 @@ typedef struct xl_bm_bitmapwords
 typedef struct xl_bm_updatewords
 {
 	RelFileNode		bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
 
 	BlockNumber		bm_lov_blkno;
 	OffsetNumber	bm_lov_offset;
@@ -667,8 +662,6 @@ typedef struct xl_bm_updatewords
 typedef struct xl_bm_updateword
 {
 	RelFileNode		bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
 
 	BlockNumber		bm_blkno;
 	int				bm_word_no;
@@ -680,8 +673,6 @@ typedef struct xl_bm_updateword
 typedef struct xl_bm_lovitem
 {
 	RelFileNode 	bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
 
 	BlockNumber		bm_lov_blkno;
 	OffsetNumber	bm_lov_offset;
@@ -693,9 +684,6 @@ typedef struct xl_bm_lovitem
 typedef struct xl_bm_newpage
 {
 	RelFileNode 	bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
-
 	BlockNumber		bm_new_blkno;
 } xl_bm_newpage;
 
@@ -706,8 +694,6 @@ typedef struct xl_bm_newpage
 typedef struct xl_bm_bitmappage
 {
 	RelFileNode 	bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
 
 	BlockNumber		bm_bitmap_blkno;
 
@@ -726,8 +712,6 @@ typedef struct xl_bm_bitmappage
 typedef struct xl_bm_bitmap_lastwords
 {
 	RelFileNode 	bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
 
 	BM_HRL_WORD		bm_last_compword;
 	BM_HRL_WORD		bm_last_word;
@@ -743,9 +727,6 @@ typedef struct xl_bm_bitmap_lastwords
 typedef struct xl_bm_metapage
 {
 	RelFileNode 	bm_node;
-	ItemPointerData bm_persistentTid;
-	int64 			bm_persistentSerialNum;
-
 	Oid				bm_lov_heapId;		/* the relation id for the heap */
 	Oid				bm_lov_indexId;		/* the relation id for the index */
 	/* the block number for the last LOV pages. */
@@ -757,7 +738,7 @@ extern Datum bmbuild(PG_FUNCTION_ARGS);
 extern Datum bminsert(PG_FUNCTION_ARGS);
 extern Datum bmbeginscan(PG_FUNCTION_ARGS);
 extern Datum bmgettuple(PG_FUNCTION_ARGS);
-extern Datum bmgetmulti(PG_FUNCTION_ARGS);
+extern Datum bmgetbitmap(PG_FUNCTION_ARGS);
 extern Datum bmrescan(PG_FUNCTION_ARGS);
 extern Datum bmendscan(PG_FUNCTION_ARGS);
 extern Datum bmmarkpos(PG_FUNCTION_ARGS);
@@ -809,10 +790,6 @@ extern uint64 _bitmap_findnexttid(BMBatchWords *words,
 								  BMIterateResult *result);
 extern void _bitmap_findnexttids(BMBatchWords *words,
 								 BMIterateResult *result, uint32 maxTids);
-extern bool _bitmap_getbitmapinpage(BMBatchWords* words,
-									BMIterateResult* result,
-									BlockNumber nextBlockNo,
-									PagetableEntry* entry);
 #ifdef NOT_USED /* we might use this later */
 extern void _bitmap_intersect(BMBatchWords **batches, uint32 numBatches,
 						   BMBatchWords *result);
@@ -870,5 +847,9 @@ extern void bitmap_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record)
 extern void bitmap_xlog_startup(void);
 extern void bitmap_xlog_cleanup(void);
 extern bool bitmap_safe_restartpoint(void);
+
+/* reloptions.c */
+#define BITMAP_MIN_FILLFACTOR		10
+#define BITMAP_DEFAULT_FILLFACTOR	100
 
 #endif

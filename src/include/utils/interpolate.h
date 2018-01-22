@@ -1,14 +1,19 @@
 /*-----------------------------------------------------------------------
+ *
  * interpolate.h
  *
- * Copyright (c) 2012, Greenplum inc
+ * Portions Copyright (c) 2012, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/utils/interpolate.h
  *
  *-----------------------------------------------------------------------
  */
 #ifndef _INTERPOLATE_H_
 #define _INTERPOLATE_H_
 
-#include "postgres.h"
 #include "fmgr.h"
 
 extern Datum

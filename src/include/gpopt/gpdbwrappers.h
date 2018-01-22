@@ -19,6 +19,7 @@
 #include "access/attnum.h"
 #include "utils/faultinjector.h"
 #include "parser/parse_coerce.h"
+#include "utils/lsyscache.h"
 
 // fwd declarations
 typedef struct SysScanDescData *SysScanDesc;
@@ -182,11 +183,11 @@ namespace gpdb {
 			char elmalign, Datum **elemsp, bool **nullsp, int *nelemsp);
 
 	// attribute stats slot
-	bool FGetAttrStatsSlot(HeapTuple statstuple, Oid atttype, int32 atttypmod, int reqkind,
-			Oid reqop, Datum **values, int *nvalues, float4 **numbers, int *nnumbers);
+	bool FGetAttrStatsSlot(AttStatsSlot *sslot, HeapTuple statstuple, int reqkind,
+			Oid reqop, int flags);
 
 	// free attribute stats slot
-	void FreeAttrStatsSlot(Oid atttype, Datum *values, int nvalues, float4 *numbers, int nnumbers);
+	void FreeAttrStatsSlot(AttStatsSlot *sslot);
 
 	// attribute statistics
 	HeapTuple HtAttrStats(Oid relid, AttrNumber attnum);
@@ -205,6 +206,9 @@ namespace gpdb {
 
 	// data access property of given function
 	char CFuncDataAccess(Oid funcid);
+
+	// exec location property of given function
+	char CFuncExecLocation(Oid funcid);
 
 	// trigger name
 	char *SzTriggerName(Oid triggerid);
@@ -253,6 +257,12 @@ namespace gpdb {
 
 	// get equality operator for given type
 	Oid OidEqualityOp(Oid oidType);
+
+	// get equality operator for given ordering op (i.e. < or >)
+	Oid OidEqualityOpForOrderingOp(Oid opno, bool *reverse);
+	
+	// get ordering operator for given equality op (i.e. =)
+	Oid OidOrderingOpForEqualityOp(Oid opno, bool *reverse);
 
 	// function name
 	char *SzFuncName(Oid funcid);
@@ -484,11 +494,8 @@ namespace gpdb {
 	// check whether table with the given oid is a regular table and not part of a partitioned table
 	bool FRelPartIsNone(Oid relid);
 
-	// check whether partitioning type encodes hash partitioning
-	bool FHashPartitioned(char c);
-
 	// check whether a relation is inherited
-	bool FHasSubclass(Oid oidRel);
+	bool FHasSubclassSlow(Oid oidRel);
 
     // check whether a relation has parquet children
     bool FHasParquetChildren(Oid oidRel);
@@ -534,6 +541,9 @@ namespace gpdb {
 
 	// get external table entry with given oid
 	ExtTableEntry *Pexttable(Oid relationId);
+
+	// get external table entry with given oid
+	List *PlExternalScanUriList(ExtTableEntry *ext, bool *isMasterOnlyP);
 
 	// return the first member of the given targetlist whose expression is
 	// equal to the given expression, or NULL if no such member exists
@@ -592,7 +602,7 @@ namespace gpdb {
 	void CheckRTPermissions(List *plRangeTable);
 	
 	// get index operator family properties
-	void IndexOpProperties(Oid opno, Oid opfamily, int *strategy, Oid *subtype, bool *recheck);
+	void IndexOpProperties(Oid opno, Oid opfamily, int *strategy, Oid *subtype);
 	
 	// get oids of families this operator belongs to
 	List *PlScOpOpFamilies(Oid opno);
@@ -628,6 +638,14 @@ namespace gpdb {
 	// Does the metadata cache need to be reset (because of a catalog
 	// table has been changed?)
 	bool FMDCacheNeedsReset(void);
+
+	// functions for tracking ORCA memory consumption
+	void *OptimizerAlloc(size_t size);
+
+	void OptimizerFree(void *ptr);
+
+	// returns true if a query cancel is requested in GPDB
+	bool FAbortRequested(void);
 
 } //namespace gpdb
 

@@ -5,12 +5,14 @@
  * A in-memory bitstream implementation.
  * Useful for reading and writing individual bits from a char buffer
  * 
- * Copyright (c) 2013, Pivotal.
+ * Copyright (c) 2013-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/utils/bitstream.h
  *
  *------------------------------------------------------------------------------
 */
-#include "postgres.h"
-
 #ifndef CDB_BITSTREAM_H
 #define CDB_BITSTREAM_H
 

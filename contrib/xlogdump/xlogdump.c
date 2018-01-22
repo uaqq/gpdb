@@ -543,15 +543,9 @@ dumpXLogRecord(XLogRecord *record, bool header_only)
 			print_rmgr_seq(curRecPtr, record, info);
 			break;
 
-		case RM_MMXLOG_ID:
-			print_rmgr_mmxlog(curRecPtr, record, info);
-			break;
-
-#ifdef USE_SEGWALREP
 		case RM_APPEND_ONLY_ID:
 			print_rmgr_ao(curRecPtr, record, info);
 			break;
-#endif		/* USE_SEGWALREP */
 
 		default:
 			fprintf(stderr, "Unknown RMID %d.\n", record->xl_rmid);
@@ -585,9 +579,10 @@ print_backup_blocks(XLogRecPtr cur, XLogRecord *rec)
 		getSpaceName(bkb.node.spcNode, spaceName, sizeof(spaceName));
 		getDbName(bkb.node.dbNode, dbName, sizeof(dbName));
 		getRelName(bkb.node.relNode, relName, sizeof(relName));
-		snprintf(buf, sizeof(buf), "bkpblock[%d]: s/d/r:%s/%s/%s blk:%u hole_off/len:%u/%u\n", 
-				i+1, spaceName, dbName, relName,
-				bkb.block, bkb.hole_offset, bkb.hole_length);
+		snprintf(buf, sizeof(buf), "bkpblock[%d]: s/d/r:%s/%s/%s blk:%u hole_off/len:%u/%u apply:%d\n",
+				 i+1, spaceName, dbName, relName,
+				 bkb.block, bkb.hole_offset, bkb.hole_length,
+				 (bkb.block_info & BLOCK_APPLY) != 0);
 		blk += sizeof(BkpBlock) + (BLCKSZ - bkb.hole_length);
 
 		if (!enable_stats)

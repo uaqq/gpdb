@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -48,7 +48,7 @@ class high_transaction_id(MPPTestCase):
         """
 
         # @note: need a class to get GPDB configuration, need to get primary/mirror segment location
-        sqlcmd = "select fselocation from gp_segment_configuration, pg_filespace_entry where dbid=fsedbid and content=0"
+        sqlcmd = "select datadir from gp_segment_configuration where content=0"
         with dbconn.connect(dbconn.DbURL()) as conn:
             segments = dbconn.execSQL(conn, sqlcmd)
 

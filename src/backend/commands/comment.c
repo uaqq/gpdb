@@ -4,10 +4,10 @@
  *
  * PostgreSQL object comments utility code.
  *
- * Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2009, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/comment.c,v 1.100 2008/01/01 19:45:48 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/comment.c,v 1.107 2009/06/11 14:48:55 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -24,7 +24,6 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_description.h"
 #include "catalog/pg_extension.h"
-#include "catalog/pg_filespace.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
@@ -45,7 +44,6 @@
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
 #include "commands/extension.h"
-#include "commands/filespace.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -58,6 +56,8 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
+
 #include "cdb/cdbvars.h"
 #include "cdb/cdbdisp_query.h"
 
@@ -89,7 +89,6 @@ static void CommentOpFamily(List *qualname, List *arguments, char *comment);
 static void CommentLargeObject(List *qualname, char *comment);
 static void CommentCast(List *qualname, List *arguments, char *comment);
 static void CommentTablespace(List *qualname, char *comment);
-static void CommentFilespace(List *qualname, char *comment);
 static void CommentRole(List *qualname, char *comment);
 static void CommentResourceQueue(List *qualname, char *comment);
 static void CommentTSParser(List *qualname, char *comment);
@@ -166,9 +165,6 @@ CommentObject(CommentStmt *stmt)
 			break;
 		case OBJECT_TABLESPACE:
 			CommentTablespace(stmt->objname, stmt->comment);
-			break;
-		case OBJECT_FILESPACE:
-			CommentFilespace(stmt->objname, stmt->comment);
 			break;
 		case OBJECT_RESQUEUE:
 			CommentResourceQueue(stmt->objname, stmt->comment);
@@ -688,47 +684,6 @@ CommentTablespace(List *qualname, char *comment)
 }
 
 /*
- * CommentFilespace --
- *
- * This routine is used to add/drop any user-comments a user might
- * have regarding a filespace.  The filespace is specified by name
- * and, if found, and the user has appropriate permissions, a
- * comment will be added/dropped using the CreateSharedComments() routine.
- *
- */
-static void
-CommentFilespace(List *qualname, char *comment)
-{
-	Relation    rel;
-	char	   *filespace;
-	Oid			oid;
-
-	if (list_length(qualname) != 1)
-		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("filespace name may not be qualified")));
-	filespace = strVal(linitial(qualname));
-
-	rel = heap_open(FileSpaceRelationId, RowShareLock);
-	oid = get_filespace_oid(rel, filespace);
-	heap_close(rel, RowShareLock);
-	if (!OidIsValid(oid))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("filespace \"%s\" does not exist", filespace)));
-		return;
-	}
-
-	/* Check object security */
-	if (!pg_filespace_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_FILESPACE, filespace);
-
-	/* Call CreateSharedComments() to create/drop the comments */
-	CreateSharedComments(oid, FileSpaceRelationId, comment);
-}
-
-/*
  * CommentRole --
  *
  * This routine is used to add/drop any user-comments a user might
@@ -938,7 +893,7 @@ CommentType(List *typename, char *comment)
 
 	if (!pg_type_ownercheck(oid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
-					   TypeNameToString(tname));
+					   format_type_be(oid));
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, TypeRelationId, 0, comment);
@@ -1517,8 +1472,8 @@ CommentCast(List *qualname, List *arguments, char *comment)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("cast from type %s to type %s does not exist",
-						TypeNameToString(sourcetype),
-						TypeNameToString(targettype))));
+						format_type_be(sourcetypeid),
+						format_type_be(targettypeid))));
 
 	/* Get the OID of the cast */
 	castOid = HeapTupleGetOid(tuple);
@@ -1529,8 +1484,8 @@ CommentCast(List *qualname, List *arguments, char *comment)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be owner of type %s or type %s",
-						TypeNameToString(sourcetype),
-						TypeNameToString(targettype))));
+						format_type_be(sourcetypeid),
+						format_type_be(targettypeid))));
 
 	ReleaseSysCache(tuple);
 

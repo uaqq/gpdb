@@ -4,41 +4,42 @@
  *	  routines for defining a rewrite rule
  *
  * Portions Copyright (c) 2006-2009, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteDefine.c,v 1.130 2008/10/04 21:56:54 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteDefine.c,v 1.138 2009/06/11 14:49:01 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_rewrite.h"
+#include "catalog/storage.h"
 #include "miscadmin.h"
-#include "optimizer/clauses.h"
-#include "parser/parse_expr.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parse_utilcmd.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rewriteSupport.h"
-#include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
-#include "cdb/cdbvars.h"
-#include "cdb/cdbdisp_query.h"
-#include "cdb/cdbmirroredfilesysobj.h"
+#include "utils/tqual.h"
+
 #include "catalog/heap.h"
-#include "cdb/cdbpersistentfilesysobj.h"
+#include "cdb/cdbdisp_query.h"
+#include "cdb/cdbvars.h"
 
 
 static void checkRuleResultList(List *targetList, TupleDesc resultDesc,
@@ -249,6 +250,22 @@ DefineQueryRewrite(char *rulename,
 	event_relation = heap_open(event_relid, AccessExclusiveLock);
 
 	/*
+	 * Verify relation is of a type that rules can sensibly be applied to.
+	 */
+	if (event_relation->rd_rel->relkind != RELKIND_RELATION &&
+		event_relation->rd_rel->relkind != RELKIND_VIEW)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a table or view",
+						RelationGetRelationName(event_relation))));
+
+	if (!allowSystemTableModsDDL && IsSystemRelation(event_relation))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied: \"%s\" is a system catalog",
+						RelationGetRelationName(event_relation))));
+
+	/*
 	 * Check user has permission to apply rules to this relation.
 	 */
 	if (!pg_class_ownercheck(event_relid, GetUserId()))
@@ -377,7 +394,11 @@ DefineQueryRewrite(char *rulename,
 		 *
 		 * If so, check that the relation is empty because the storage for the
 		 * relation is going to be deleted.  Also insist that the rel not have
-		 * any triggers, indexes, or child tables.
+		 * any triggers, indexes, or child tables.	(Note: these tests are too
+		 * strict, because they will reject relations that once had such but
+		 * don't anymore.  But we don't really care, because this whole
+		 * business of converting relations to views is just a kluge to allow
+		 * loading ancient pg_dump files.)
 		 */
 		if (event_relation->rd_rel->relkind != RELKIND_VIEW)
 		{
@@ -398,7 +419,7 @@ DefineQueryRewrite(char *rulename,
 								RelationGetRelationName(event_relation))));
 			heap_endscan(scanDesc);
 
-			if (event_relation->rd_rel->reltriggers != 0)
+			if (event_relation->rd_rel->relhastriggers)
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("could not convert table \"%s\" to a view because it has triggers",
@@ -493,74 +514,7 @@ DefineQueryRewrite(char *rulename,
 	 * XXX what about getting rid of its TOAST table?  For now, we don't.
 	 */
 	if (RelisBecomingView)
-	{
-		PersistentFileSysRelStorageMgr relStorageMgr;
-
-		relStorageMgr = ((RelationIsAoRows(event_relation) || RelationIsAoCols(event_relation)) ?
-														PersistentFileSysRelStorageMgr_AppendOnly:
-														PersistentFileSysRelStorageMgr_BufferPool);
-		
-		if (relStorageMgr == PersistentFileSysRelStorageMgr_BufferPool)
-		{
-			MirroredFileSysObj_ScheduleDropBufferPoolRel(event_relation);
-			
-			DeleteGpRelationNodeTuple(
-							event_relation,
-							/* segmentFileNum */ 0);
-		}
-		else
-		{
-			Relation relNodeRelation;
-
-			GpRelationNodeScan	gpRelationNodeScan;
-			
-			HeapTuple tuple;
-			
-			int32 segmentFileNum;
-			
-			ItemPointerData persistentTid;
-			int64 persistentSerialNum;
-			
-			relNodeRelation = heap_open(GpRelationNodeRelationId, RowExclusiveLock);
-
-			GpRelationNodeBeginScan(
-							SnapshotNow,
-							relNodeRelation,
-							event_relation->rd_id,
-							event_relation->rd_rel->reltablespace,
-							event_relation->rd_rel->relfilenode,
-							&gpRelationNodeScan);
-			
-			while ((tuple = GpRelationNodeGetNext(
-									&gpRelationNodeScan,
-									&segmentFileNum,
-									&persistentTid,
-									&persistentSerialNum)))
-			{
-				if (Debug_persistent_print)
-					elog(Persistent_DebugPrintLevel(), 
-						 "DefineQueryRewrite: For Append-Only relation %u relfilenode %u scanned segment file #%d, serial number " INT64_FORMAT " at TID %s for DROP",
-						 event_relation->rd_id,
-						 event_relation->rd_rel->relfilenode,
-						 segmentFileNum,
-						 persistentSerialNum,
-						 ItemPointerToString(&persistentTid));
-				
-				simple_heap_delete(relNodeRelation, &tuple->t_self);
-				
-				MirroredFileSysObj_ScheduleDropAppendOnlyFile(
-												&event_relation->rd_node,
-												segmentFileNum,
-												event_relation->rd_rel->relname.data,
-												&persistentTid,
-												persistentSerialNum);
-			}
-			
-			GpRelationNodeEndScan(&gpRelationNodeScan);
-		
-			heap_close(relNodeRelation, RowExclusiveLock);		
-		}
-	}
+		RelationDropStorage(event_relation);
 
 	/* Close rel, but keep lock till commit... */
 	heap_close(event_relation, NoLock);

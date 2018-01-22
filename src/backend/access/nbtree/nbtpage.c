@@ -4,12 +4,12 @@
  *	  BTree-specific page management code for the Postgres btree access
  *	  method.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtpage.c,v 1.106.2.1 2010/08/29 19:33:36 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtpage.c,v 1.113 2009/05/05 19:02:22 tgl Exp $
  *
  *	NOTES
  *	   Postgres btree pages look like ordinary relation pages.	The opaque
@@ -22,13 +22,17 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"	/* For RelationFetchGpRelationNodeForXLog. */
 #include "access/nbtree.h"
 #include "access/transam.h"
 #include "miscadmin.h"
+#include "storage/bufmgr.h"
 #include "storage/freespace.h"
+#include "storage/indexfsm.h"
 #include "storage/lmgr.h"
 #include "utils/inval.h"
-#include "access/heapam.h"	/* For RelationFetchGpRelationNodeForXLog. */
+#include "utils/snapmgr.h"
+
 
 /*
  *	_bt_initmetapage() -- Fill a page buffer with a correct metapage image
@@ -100,8 +104,6 @@ _bt_getroot(Relation rel, int access)
 	BlockNumber rootblkno;
 	uint32		rootlevel;
 	BTMetaPageData *metad;
-
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
 
 	/*
 	 * Try to use previously-cached metapage data to find the root.  This
@@ -176,9 +178,6 @@ _bt_getroot(Relation rel, int access)
 			return InvalidBuffer;
 		}
 
-		// Fetch gp_persistent_relation_node information that will be added to XLOG record.
-		RelationFetchGpRelationNodeForXLog(rel);
-		
 		/* trade in our read lock for a write lock */
 		LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 		LockBuffer(metabuf, BT_WRITE);
@@ -232,7 +231,7 @@ _bt_getroot(Relation rel, int access)
 			XLogRecPtr	recptr;
 			XLogRecData rdata;
 
-			xl_btreenode_set(&(xlrec.btreenode), rel);
+			xlrec.node = rel->rd_node;
 			xlrec.rootblk = rootblkno;
 			xlrec.level = 0;
 
@@ -342,8 +341,6 @@ _bt_gettrueroot(Relation rel)
 	uint32		rootlevel;
 	BTMetaPageData *metad;
 
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-
 	/*
 	 * We don't try to use cached metapage data here, since (a) this path is
 	 * not performance-critical, and (b) if we are here it suggests our cache
@@ -439,8 +436,7 @@ _bt_checkpage(Relation rel, Buffer buf)
 	/*
 	 * Additionally check that the special area looks sane.
 	 */
-	if (((PageHeader) (page))->pd_special !=
-		(BLCKSZ - MAXALIGN(sizeof(BTPageOpaqueData))))
+	if (PageGetSpecialSize(page) != MAXALIGN(sizeof(BTPageOpaqueData)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
 				 errmsg("index \"%s\" contains corrupted page at block %u",
@@ -465,8 +461,6 @@ Buffer
 _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 {
 	Buffer		buf;
-
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
 
 	if (blkno != P_NEW)
 	{
@@ -508,7 +502,7 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 		 */
 		for (;;)
 		{
-			blkno = GetFreeIndexPage(&rel->rd_node);
+			blkno = GetFreeIndexPage(rel);
 			if (blkno == InvalidBlockNumber)
 				break;
 			buf = ReadBuffer(rel, blkno);
@@ -561,7 +555,7 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 
 		/* Initialize the new page before returning it */
 		page = BufferGetPage(buf);
-		Assert(PageIsNew((PageHeader) page));
+		Assert(PageIsNew(page));
 		_bt_pageinit(page, BufferGetPageSize(buf));
 	}
 
@@ -575,15 +569,17 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
  * This is equivalent to _bt_relbuf followed by _bt_getbuf, with the
  * exception that blkno may not be P_NEW.  Also, if obuf is InvalidBuffer
  * then it reduces to just _bt_getbuf; allowing this case simplifies some
- * callers. The motivation for using this is to avoid two entries to the
- * bufmgr when one will do.
+ * callers.
+ *
+ * The original motivation for using this was to avoid two entries to the
+ * bufmgr when one would do.  However, now it's mainly just a notational
+ * convenience.  The only case where it saves work over _bt_relbuf/_bt_getbuf
+ * is when the target page is the same one already in the buffer.
  */
 Buffer
 _bt_relandgetbuf(Relation rel, Buffer obuf, BlockNumber blkno, int access)
 {
 	Buffer		buf;
-
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
 
 	Assert(blkno != P_NEW);
 	if (BufferIsValid(obuf))
@@ -602,8 +598,6 @@ _bt_relandgetbuf(Relation rel, Buffer obuf, BlockNumber blkno, int access)
 void
 _bt_relbuf(Relation rel __attribute__((unused)), Buffer buf)
 {
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-
 	UnlockReleaseBuffer(buf);
 }
 
@@ -668,12 +662,7 @@ _bt_delitems(Relation rel, Buffer buf,
 	Page		page;
 	BTPageOpaque opaque;
 
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-
 	page = BufferGetPage(buf);
-
-	// Fetch gp_persistent_relation_node information that will be added to XLOG record.
-	RelationFetchGpRelationNodeForXLog(rel);
 
 	/* No ereport(ERROR) until changes are logged */
 	START_CRIT_SECTION();
@@ -707,7 +696,7 @@ _bt_delitems(Relation rel, Buffer buf,
 		XLogRecPtr	recptr;
 		XLogRecData rdata[2];
 
-		xl_btreenode_set(&(xlrec.btreenode), rel);
+		xlrec.node = rel->rd_node;
 		xlrec.block = BufferGetBlockNumber(buf);
 
 		rdata[0].data = (char *) &xlrec;
@@ -768,8 +757,6 @@ _bt_parent_deletion_safe(Relation rel, BlockNumber target, BTStack stack)
 	Buffer		pbuf;
 	Page		page;
 	BTPageOpaque opaque;
-
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
 
 	/*
 	 * In recovery mode, assume the deletion being replayed is valid.  We
@@ -881,11 +868,6 @@ _bt_pagedel(Relation rel, Buffer buf, BTStack stack, bool vacuum_full)
 	BTMetaPageData *metad = NULL;
 	Page		page;
 	BTPageOpaque opaque;
-
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-
-	// Fetch gp_persistent_relation_node information that will be added to XLOG record.
-	RelationFetchGpRelationNodeForXLog(rel);
 
 	/*
 	 * We can never delete rightmost pages nor root pages.	While at it, check
@@ -1254,7 +1236,8 @@ _bt_pagedel(Relation rel, Buffer buf, BTStack stack, bool vacuum_full)
 		XLogRecData rdata[5];
 		XLogRecData *nextrdata;
 
-		xl_btreetid_set(&(xlrec.target), rel, parent, poffset);
+		xlrec.target.node = rel->rd_node;
+		ItemPointerSet(&(xlrec.target.tid), parent, poffset);
 		xlrec.deadblk = target;
 		xlrec.leftblk = leftsib;
 		xlrec.rightblk = rightsib;

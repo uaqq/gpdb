@@ -95,7 +95,7 @@ d = mkpath('config')
 if not os.path.exists(d):
     os.mkdir(d)
 
-def write_config_file(mode='insert', reuse_flag='',columns_flag='0',mapping='0',portNum='8081',database='reuse_gptest',host='localhost',formatOpts='text',file='data/external_file_01.txt',table='texttable',format='text',delimiter="'|'",escape='',quote='',truncate='False'):
+def write_config_file(mode='insert', reuse_flag='',columns_flag='0',mapping='0',portNum='8081',database='reuse_gptest',host='localhost',formatOpts='text',file='data/external_file_01.txt',table='texttable',format='text',delimiter="'|'",escape='',quote='',truncate='False',log_errors=None, error_limit='0',error_table=None,externalSchema=None,staging_table=None):
 
     f = open(mkpath('config/config_file'),'w')
     f.write("VERSION: 1.0.0.1")
@@ -130,6 +130,12 @@ def write_config_file(mode='insert', reuse_flag='',columns_flag='0',mapping='0',
         f.write("\n           - s_n9: text")
     if format:
         f.write("\n    - FORMAT: "+format)
+    if log_errors:
+        f.write("\n    - LOG_ERRORS: true")
+        f.write("\n    - ERROR_LIMIT: " + error_limit)
+    if error_table:
+        f.write("\n    - ERROR_TABLE: " + error_table)
+        f.write("\n    - ERROR_LIMIT: " + error_limit)
     if delimiter:
         f.write("\n    - DELIMITER: "+delimiter)
     if escape:
@@ -166,8 +172,13 @@ def write_config_file(mode='insert', reuse_flag='',columns_flag='0',mapping='0',
         f.write("\n           n7: s_n7")
         f.write("\n           n8: s_n8")
         f.write("\n           n9: s_n9")
+    if externalSchema:
+        f.write("\n   EXTERNAL:")
+        f.write("\n    - SCHEMA: "+externalSchema)
     f.write("\n   PRELOAD:")
     f.write("\n    - REUSE_TABLES: "+reuse_flag)
+    if staging_table:
+        f.write("\n    - STAGING_TABLE: "+staging_table)
     f.write("\n")
     f.close()
 
@@ -414,7 +425,7 @@ class GPLoad_FormatOpts_TestCase(unittest.TestCase):
 
     def test_00_gpload_formatOpts_setup(self):
         "0  gpload setup"
-        for num in range(1,22):
+        for num in range(1,29):
            f = open(mkpath('query%d.sql' % num),'w')
            f.write("\! gpload -f "+mkpath('config/config_file')+ " -d reuse_gptest\n"+"\! gpload -f "+mkpath('config/config_file')+ " -d reuse_gptest\n")
            f.close()
@@ -559,6 +570,95 @@ class GPLoad_FormatOpts_TestCase(unittest.TestCase):
         copy_data('external_file_01.txt','data_file.txt')
         write_config_file(reuse_flag='true',formatOpts='text',file='data_file.txt',table='texttable',escape="E'\\\\'")
         self.doTest(21)
+    def test_22_gpload_error_count(self):
+        "22  gpload error count"
+        f = open(mkpath('query22.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from csvtable;'")
+        f.close()
+        f = open(mkpath('data/large_file.csv'),'w')
+        for i in range(0, 10000):
+            if i % 2 == 0:
+                f.write('1997,Ford,E350,"ac, abs, moon",3000.00,a\n')
+            else:
+                f.write('1997,Ford,E350,"ac, abs, moon",3000.00\n')
+        f.close()
+        copy_data('large_file.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='csvtable',format='csv',delimiter="','",log_errors=True,error_limit='90000000')
+        self.doTest(22)
+    def test_23_gpload_error_count(self):
+        "23  gpload error_table"
+        file = mkpath('setup.sql')
+        runfile(file)
+        f = open(mkpath('query23.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from csvtable;'")
+        f.close()
+        f = open(mkpath('data/large_file.csv'),'w')
+        for i in range(0, 10000):
+            if i % 2 == 0:
+                f.write('1997,Ford,E350,"ac, abs, moon",3000.00,a\n')
+            else:
+                f.write('1997,Ford,E350,"ac, abs, moon",3000.00\n')
+        f.close()
+        copy_data('large_file.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='csvtable',format='csv',delimiter="','",error_table="err_table",error_limit='90000000')
+        self.doTest(23)
+    def test_24_gpload_error_count(self):
+        "24  gpload error count with ext schema"
+        file = mkpath('setup.sql')
+        runfile(file)
+        f = open(mkpath('query24.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from csvtable;'")
+        f.close()
+        f = open(mkpath('data/large_file.csv'),'w')
+        for i in range(0, 10000):
+            if i % 2 == 0:
+                f.write('1997,Ford,E350,"ac, abs, moon",3000.00,a\n')
+            else:
+                f.write('1997,Ford,E350,"ac, abs, moon",3000.00\n')
+        f.close()
+        copy_data('large_file.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='csvtable',format='csv',delimiter="','",log_errors=True,error_limit='90000000',externalSchema='test')
+        self.doTest(24)
+    def test_25_gpload_ext_staging_table(self):
+        "25  gpload reuse ext_staging_table if it is configured"
+        file = mkpath('setup.sql')
+        runfile(file)
+        f = open(mkpath('query25.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from csvtable;'")
+        f.close()
+        copy_data('external_file_13.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='csvtable',format='csv',delimiter="','",log_errors=True,error_limit='10',staging_table='staging_table')
+        self.doTest(25)
+    def test_26_gpload_ext_staging_table_with_externalschema(self):
+        "26  gpload reuse ext_staging_table if it is configured with externalschema"
+        file = mkpath('setup.sql')
+        runfile(file)
+        f = open(mkpath('query26.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from csvtable;'")
+        f.close()
+        copy_data('external_file_13.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='csvtable',format='csv',delimiter="','",log_errors=True,error_limit='10',staging_table='staging_table',externalSchema='test')
+        self.doTest(26)
+    def test_27_gpload_ext_staging_table_with_externalschema(self):
+        "27  gpload reuse ext_staging_table if it is configured with externalschema"
+        file = mkpath('setup.sql')
+        runfile(file)
+        f = open(mkpath('query27.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from test.csvtable;'")
+        f.close()
+        copy_data('external_file_13.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='test.csvtable',format='csv',delimiter="','",log_errors=True,error_limit='10',staging_table='staging_table',externalSchema="'%'")
+        self.doTest(27)
+    def test_28_gpload_ext_staging_table_with_dot(self):
+        "28  gpload reuse ext_staging_table if it is configured with dot"
+        file = mkpath('setup.sql')
+        runfile(file)
+        f = open(mkpath('query28.sql'),'a')
+        f.write("\! psql -d reuse_gptest -c 'select count(*) from test.csvtable;'")
+        f.close()
+        copy_data('external_file_13.csv','data_file.csv')
+        write_config_file(reuse_flag='true',formatOpts='csv',file='data_file.csv',table='test.csvtable',format='csv',delimiter="','",log_errors=True,error_limit='10',staging_table='t.staging_table')
+        self.doTest(28)
 
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(GPLoad_FormatOpts_TestCase)

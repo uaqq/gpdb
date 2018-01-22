@@ -47,7 +47,7 @@ LargeObjectCreate(Oid loid)
 	 */
 	for (i = 0; i < Natts_pg_largeobject; i++)
 	{
-		values[i] = (Datum) 0;
+		values[i] = (Datum) NULL;
 		nulls[i] = false;
 	}
 
@@ -88,7 +88,7 @@ LargeObjectDrop(Oid loid)
 
 	pg_largeobject = heap_open(LargeObjectRelationId, RowExclusiveLock);
 
-	sd = systable_beginscan(pg_largeobject, LargeObjectLoidPagenoIndexId, true,
+	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
 							SnapshotNow, 1, skey);
 
 	while ((tuple = systable_getnext(sd)) != NULL)
@@ -125,7 +125,7 @@ LargeObjectExists(Oid loid)
 
 	pg_largeobject = heap_open(LargeObjectRelationId, AccessShareLock);
 
-	sd = systable_beginscan(pg_largeobject, LargeObjectLoidPagenoIndexId, true,
+	sd = systable_beginscan(pg_largeobject, LargeObjectLOidPNIndexId, true,
 							SnapshotNow, 1, skey);
 
 	if (systable_getnext(sd) != NULL)

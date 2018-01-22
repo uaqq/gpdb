@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,6 @@ import os
 import tinctest
 from tinctest.lib import local_path
 from mpp.lib.PSQL import PSQL
-from mpp.lib.gpfilespace import Gpfilespace
 from mpp.lib.config import GPDBConfig
 from mpp.lib.filerep_util import Filerepe2e_Util
 from mpp.gpdb.tests.storage.lib.common_utils import copy_files_to_segments, copy_files_to_master
@@ -31,18 +30,27 @@ class PgtwoPhaseTestCase(ScenarioTestCase, MPPTestCase):
     ''' Testing state of prepared transactions upon crash-recovery'''
 
     def __init__(self, methodName):
-        self.gpfile = Gpfilespace()
         self.filereputil = Filerepe2e_Util()
         super(PgtwoPhaseTestCase,self).__init__(methodName)
     
     def setUp(self):
-        '''Create filespace '''
-        self.gpfile.create_filespace('filespace_test_a')
+        if (PSQL.run_sql_command("select count(*) from pg_tablespace WHERE spcname = 'twophase_test_ts'", flags ='-q -t').strip() == '0'):
+            if not os.path.exists('/tmp/twophase_test_ts'):
+                os.mkdir('/tmp/twophase_test_ts')
+            PSQL.run_sql_command("CREATE TABLESPACE twophase_test_ts LOCATION '/tmp/twophase_test_ts';", dbname='postgres')
+
+        if (PSQL.run_sql_command("select count(*) from pg_tablespace WHERE spcname = 'twophase_test_ts2'", flags ='-q -t').strip() == '0'):
+            if not os.path.exists('/tmp/twophase_test_ts2'):
+                os.mkdir('/tmp/twophase_test_ts2')
+            PSQL.run_sql_command("CREATE TABLESPACE twophase_test_ts2 LOCATION '/tmp/twophase_test_ts2';", dbname='postgres')
+
+        if not os.path.exists('/tmp/twophase_create_tablespace_test_ts'):
+            os.mkdir('/tmp/twophase_create_tablespace_test_ts')
         super(PgtwoPhaseTestCase,self).setUp()
-        
+
     def tearDown(self):
-        ''' Cleanup up the filespace created , reset skip chekpoint fault'''
-        self.gpfile.drop_filespace('filespace_test_a')
+        # Note: We don't destroy the tablespaces. We'll rather leave them around, so that
+        # they can be reused by subsequent tests.
         port = os.getenv('PGPORT')
         self.filereputil.inject_fault(f='checkpoint', y='reset', r='primary', o='0', p=port)
         super(PgtwoPhaseTestCase,self).tearDown()

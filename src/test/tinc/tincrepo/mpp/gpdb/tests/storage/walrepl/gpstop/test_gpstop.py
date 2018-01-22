@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -52,7 +52,6 @@ class GpstopTestCase(MPPTestCase):
    def tearDown(self):
        self.gputil.remove_standby()
        self.gputil.run('gpstart -a')
-       self.gputil.run('gprecoverseg -a')
 
    def test_gpstop_from_master(self):
        self.assertTrue(self.gputil.gpstop_and_verify())

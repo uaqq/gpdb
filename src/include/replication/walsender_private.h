@@ -84,9 +84,22 @@ typedef struct WalSnd
 	int			sync_standby_priority;
 
 	bool		synchronous;
+
+	/*
+	 * Records time when PID was set to 0, either during initialization or due
+	 * to disconnection. This helps to detect time passed since mirror didn't
+	 * connect.
+	 */
+	pg_time_t   marked_pid_zero_at_time;
 } WalSnd;
 
 extern WalSnd *MyWalSnd;
+
+typedef enum
+{
+	WALSNDERROR_NONE = 0,
+	WALSNDERROR_WALREAD
+} WalSndError;
 
 /* There is one WalSndCtl struct for the whole database cluster */
 typedef struct
@@ -123,6 +136,19 @@ typedef struct
 	 * Note:- Valid only when atleast one walsender is alive
 	 */
 	XLogRecPtr	walsnd_xlogCleanUpTo;
+
+	/*
+	 * Indicate error state of WalSender, for example, missing XLOG for mirror
+	 * to stream.
+	 *
+	 * Note: If we want to support multiple mirrors, this data structure
+	 * need to be redesigned (e.g. using WalSndError[]). We cannot store this
+	 * field in the walsnds[] array below, because the walsnds[] only
+	 * tracks the live wal senders. Hence, if the wal sender goes away
+	 * with certain error, the error state will go away with it.
+	 *
+	 */
+	WalSndError error;
 
 	WalSnd		walsnds[1];		/* VARIABLE LENGTH ARRAY */
 } WalSndCtlData;

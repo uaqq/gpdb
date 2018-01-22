@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -156,8 +156,9 @@ class _ScenarioStep(object):
                     continue
                 tinctest.logger.error("Worker %s failed execution \n %s" %(ret[0], ret[1]))
                 error_msg = ''
-                if ret[1] and len(ret[1].split('\n')) >= 2:
-                    error_msg = ret[1].split('\n')[-2]
+                #if ret[1] and len(ret[1].split('\n')) >= 2:
+                #    error_msg = ret[1].split('\n')[-2]
+                error_msg = ret[1]
                 if self.fail_fast:
                     raise ScenarioExecutionException("Failing step at the first failure. Worker %s failed execution : %s\n" %(ret[0], error_msg))
                 else:

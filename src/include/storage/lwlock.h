@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/lwlock.h,v 1.38 2008/01/01 19:45:59 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/storage/lwlock.h,v 1.42 2009/03/03 08:11:24 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -57,7 +57,6 @@ typedef enum LWLockId
 	ProcArrayLock,
 	SInvalReadLock,
 	SInvalWriteLock,
-	FreeSpaceLock,
 	WALInsertLock,
 	WALWriteLock,
 	ControlFileLock,
@@ -80,17 +79,8 @@ typedef enum LWLockId
 	DistributedLogControlLock,
 	SeqServerControlLock,
 	AOSegFileLock,
-	PersistentObjLock,
-	FileRepShmemLock,
-	FileRepAckShmemLock,	
-	FileRepAckHashShmemLock,
-	ChangeTrackingTransitionLock,
-	ChangeTrackingWriteLock,
-	ChangeTrackingCompactLock,
-	MirroredLock,
 	ResQueueLock,
 	ResGroupLock,
-	FileRepAppendOnlyCommitCountLock,
 	SyncRepLock,
 	ErrorLogLock,
 	FirstWorkfileMgrLock,
@@ -101,7 +91,7 @@ typedef enum LWLockId
 	RelfilenodeGenLock,
 	FilespaceHashLock,
 	TablespaceHashLock,
-
+	GpReplicationConfigFileLock,
 	/* must be last except for MaxDynamicLWLock: */
 	NumFixedLWLocks,
 
@@ -126,7 +116,6 @@ extern void LWLockAcquire(LWLockId lockid, LWLockMode mode);
 extern bool LWLockConditionalAcquire(LWLockId lockid, LWLockMode mode);
 extern void LWLockRelease(LWLockId lockid);
 extern void LWLockReleaseAll(void);
-extern void LWLockWaitCancel(void);
 extern bool LWLockHeldByMe(LWLockId lockid);
 extern bool LWLockHeldExclusiveByMe(LWLockId lockid);
 

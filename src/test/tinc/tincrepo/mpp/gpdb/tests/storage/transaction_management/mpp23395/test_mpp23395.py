@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -26,12 +26,6 @@ import os
 import time
 
 class mpp23395(MPPTestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        super(mpp23395, cls).setUpClass()
-        recoverseg = GpRecover()
-        recoverseg.recover_rebalance_segs()
 
     def tearDown(self):
         self.util.inject_fault(f='dtm_broadcast_commit_prepared', y='reset', seg_id=1);

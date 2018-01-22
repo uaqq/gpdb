@@ -2,10 +2,10 @@
  * dbsize.c
  *		object size functions
  *
- * Copyright (c) 2002-2008, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2009, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/dbsize.c,v 1.16.2.2 2010/01/23 21:29:12 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/dbsize.c,v 1.24 2009/06/11 14:49:03 momjian Exp $
  *
  */
 
@@ -34,11 +34,11 @@
 #include "utils/int8.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
+#include "utils/rel.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 
 #include "cdb/cdbvars.h"
-#include "cdb/cdbpersistenttablespace.h"
 
 
 static int64
@@ -160,10 +160,10 @@ static int64
 calculate_database_size(Oid dbOid)
 {
 	int64		totalsize;
+	DIR		   *dirdesc;
+	struct dirent *direntry;
+	char		dirpath[MAXPGPATH];
 	char		pathname[MAXPGPATH];
-	Relation    rel;
-	HeapScanDesc scandesc;
-	HeapTuple   tuple;
 	AclResult	aclresult;
 
 	/* User must have connect privilege for target database */
@@ -172,38 +172,38 @@ calculate_database_size(Oid dbOid)
 		aclcheck_error(aclresult, ACL_KIND_DATABASE,
 					   get_database_name(dbOid));
 
-	/* Scan through all tablespaces */
-	rel = heap_open(TableSpaceRelationId, AccessShareLock);
-	scandesc = heap_beginscan(rel, SnapshotNow, 0, NULL);
-	tuple = heap_getnext(scandesc, ForwardScanDirection);
-	totalsize = 0;
-	while (HeapTupleIsValid(tuple))
+	/* Shared storage in pg_global is not counted */
+
+	/* Include pg_default storage */
+	snprintf(pathname, MAXPGPATH, "base/%u", dbOid);
+	totalsize = db_dir_size(pathname);
+
+	/* Scan the non-default tablespaces */
+	snprintf(dirpath, MAXPGPATH, "pg_tblspc");
+	dirdesc = AllocateDir(dirpath);
+	if (!dirdesc)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open tablespace directory \"%s\": %m",
+						dirpath)));
+
+	while ((direntry = ReadDir(dirdesc, dirpath)) != NULL)
 	{
-		char *priFilespace, *mirFilespace;
-		Oid   tsOid;
-		
-		tsOid = HeapTupleGetOid(tuple);
-		
-		/* Don't include shared relations */
-		if (tsOid != GLOBALTABLESPACE_OID)
-		{			
-			/* Find the filespace path for this tablespace */
-			PersistentTablespace_GetPrimaryAndMirrorFilespaces(
-				tsOid, &priFilespace, &mirFilespace);
+		CHECK_FOR_INTERRUPTS();
 
-			/* Build the path for this database in this tablespace */
-			FormDatabasePath(pathname, priFilespace, tsOid, dbOid);
-			
-			totalsize += db_dir_size(pathname);
-		}
+		if (strcmp(direntry->d_name, ".") == 0 ||
+			strcmp(direntry->d_name, "..") == 0)
+			continue;
 
-		tuple = heap_getnext(scandesc, ForwardScanDirection);
+		snprintf(pathname, MAXPGPATH, "pg_tblspc/%s/%s/%u",
+				 direntry->d_name, tablespace_version_directory(), dbOid);
+		totalsize += db_dir_size(pathname);
 	}
-	heap_endscan(scandesc);
-	heap_close(rel, AccessShareLock);
+
+	FreeDir(dirdesc);
 
 	/* Complain if we found no trace of the DB at all */
-	if (totalsize == 0)
+	if (!totalsize)
 		ereport(ERROR,
 				(ERRCODE_UNDEFINED_DATABASE,
 				 errmsg("database with OID %u does not exist", dbOid)));
@@ -287,7 +287,8 @@ calculate_tablespace_size(Oid tblspcOid)
 	else if (tblspcOid == GLOBALTABLESPACE_OID)
 		snprintf(tblspcPath, MAXPGPATH, "global");
 	else
-		snprintf(tblspcPath, MAXPGPATH, "pg_tblspc/%u", tblspcOid);
+		snprintf(tblspcPath, MAXPGPATH, "pg_tblspc/%u/%s", tblspcOid,
+				 tablespace_version_directory());
 
 	dirdesc = AllocateDir(tblspcPath);
 
@@ -384,73 +385,82 @@ pg_tablespace_size_name(PG_FUNCTION_ARGS)
  * database.  So we handle all cases, instead. 
  */
 static int64
-calculate_relation_size(Relation rel)
+calculate_relation_size(Relation rel, ForkNumber forknum)
 {
 	int64		totalsize = 0;
 	char	   *relationpath;
 	char		pathname[MAXPGPATH];
+	unsigned int segcount = 0;
 
-    struct stat fst;
-    int i;
+	relationpath = relpath(rel->rd_node, forknum);
 
-	relationpath = relpath(rel->rd_node);
+if (RelationIsHeap(rel))
+{
+	/* Ordinary relation, including heap and index.
+	 * They take form of relationpath, or relationpath.%d
+	 * There will be no holes, therefore, we can stop we
+	 * we reach the first non-exist file.
+	 */
+	for (segcount = 0;; segcount++)
+	{
+		struct stat fst;
 
-    if(RelationIsHeap(rel))
-    {
-        /* Ordinary relation, including heap and index.
-         * They take form of relationpath, or relationpath.%d
-         * There will be no holes, therefore, we can stop we
-         * we reach the first non-exist file.
-         */
-        for(i=0; ; ++i)
-        {
-            if (i==0)
-                snprintf(pathname, MAXPGPATH, "%s", relationpath); 
-            else
-                snprintf(pathname, MAXPGPATH, "%s.%d", relationpath, i);
+		CHECK_FOR_INTERRUPTS();
 
-            if (stat(pathname, &fst) >= 0)
-                totalsize += fst.st_size;
-            else
-            {
-                if (errno == ENOENT)
-                    break;
-                else
-                    ereport(ERROR, (errcode_for_file_access(), 
-                                    errmsg("could not stat file %s: %m", pathname)
-                                ));
-            }
-        }
-    }
-	else if (RelationIsAoRows(rel))
+		if (segcount == 0)
+			snprintf(pathname, MAXPGPATH, "%s",
+					 relationpath);
+		else
+			snprintf(pathname, MAXPGPATH, "%s.%u",
+					 relationpath, segcount);
+
+		if (stat(pathname, &fst) < 0)
+		{
+			if (errno == ENOENT)
+				break;
+			else
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not stat file %s: %m", pathname)));
+		}
+		totalsize += fst.st_size;
+	}
+}
+/* AO tables don't have any extra forks. */
+else if (forknum == MAIN_FORKNUM)
+{
+	if (RelationIsAoRows(rel))
+	{
 		totalsize = GetAOTotalBytes(rel, SnapshotNow);
+	}
 	else if (RelationIsAoCols(rel))
-		totalsize = GetAOCSTotalBytes(rel, SnapshotNow);
-           
+	{
+		totalsize = GetAOCSTotalBytes(rel, SnapshotNow, true);
+	}
+}
+
     /* RELSTORAGE_VIRTUAL has no space usage */
     return totalsize;
 }
 
-
 Datum
-pg_relation_size_oid(PG_FUNCTION_ARGS)
+pg_relation_size(PG_FUNCTION_ARGS)
 {
 	Oid			relOid = PG_GETARG_OID(0);
+	text	   *forkName = PG_GETARG_TEXT_P(1);
 	Relation	rel;
 	int64		size = 0;
-	
+
 	/**
 	 * This function is peculiar in that it does its own dispatching.
 	 * It does not work on entry db since we do not support dispatching
 	 * from entry-db currently.
 	 */
 	if (Gp_role == GP_ROLE_EXECUTE && Gp_segment == -1)
-	{
 		elog(ERROR, "This query is not currently supported by GPDB.");
-	}
 
 	rel = try_relation_open(relOid, AccessShareLock, false);
-		
+
 	/*
 	 * While we scan pg_class with an MVCC snapshot,
  	 * someone else might drop the table. It's better to return NULL for
@@ -458,12 +468,13 @@ pg_relation_size_oid(PG_FUNCTION_ARGS)
 	 */
 	if (!RelationIsValid(rel))
   		PG_RETURN_NULL();
-	
+
 	if (relOid == 0 || rel->rd_node.relNode == 0)
 		size = 0;
 	else
-		size = calculate_relation_size(rel); 
-	
+		size = calculate_relation_size(rel,
+									   forkname_to_number(text_to_cstring(forkName)));
+
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		StringInfoData buffer;
@@ -472,15 +483,10 @@ pg_relation_size_oid(PG_FUNCTION_ARGS)
 
 		schemaName = get_namespace_name(get_rel_namespace(relOid));
 		if (schemaName == NULL)
-		{
 			elog(ERROR, "Cannot find schema for oid %d", relOid);
-		}
-
 		relName = get_rel_name(relOid);
 		if (relName == NULL)
-		{
 			elog(ERROR, "Cannot find relation for oid %d", relOid);
-		}
 
 		initStringInfo(&buffer);
 
@@ -494,89 +500,6 @@ pg_relation_size_oid(PG_FUNCTION_ARGS)
 	PG_RETURN_INT64(size);
 }
 
-Datum
-pg_relation_size_name(PG_FUNCTION_ARGS)
-{
-	text	   *relname = PG_GETARG_TEXT_P(0);
-	RangeVar   *relrv;
-	Relation	rel;
-	int64		size;
-	
-	/**
-	 * This function is peculiar in that it does its own dispatching.
-	 * It does not work on entry db since we do not support dispatching
-	 * from entry-db currently.
-	 */
-	if (Gp_role == GP_ROLE_EXECUTE && Gp_segment == -1)
-	{
-		elog(ERROR, "This query is not currently supported by GPDB.");
-	}
-	
-	relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
-	
-	if (Gp_role == GP_ROLE_EXECUTE && relrv->schemaname != NULL)
-	{
-		Oid namespaceId;
-		Oid relOid;
-		/*
-		 * Do this the hard way, because the optimizer wants to be
-		 * able to use this function on relations the user might not
-		 * have direct access to.
-		 */
-
-		AcceptInvalidationMessages();
-
-		namespaceId = GetSysCacheOid1(NAMESPACENAME,
-									  CStringGetDatum(relrv->schemaname));
-		relOid = get_relname_relid(relrv->relname, namespaceId);
-		if (!OidIsValid(relOid))
-		{
-			size = 0;
-			PG_RETURN_INT64(size);
-		}
-		
-		/* Let relation_open do the rest */
-		rel = try_relation_open(relOid, AccessShareLock, false);
-	}
-	else
-		rel = try_relation_openrv(relrv, AccessShareLock, false);
-		
-	/*
-	 * While we scan pg_class with an MVCC snapshot,
-	 * someone else might drop the table. It's better to return NULL for
-	 * already-dropped tables than throw an error and abort the whole query.
-	 */
-	if (!RelationIsValid(rel))
-  		PG_RETURN_NULL();
-	
-	if (rel->rd_node.relNode == 0)
-		size = 0;
-	else
-		size = calculate_relation_size(rel); 
-	
-	if (Gp_role == GP_ROLE_DISPATCH)
-	{
-		char * rawname;
-		StringInfoData buffer;
-		
-		initStringInfo(&buffer);
-		
-		rawname = DatumGetCString(DirectFunctionCall1(textout,
-													  PointerGetDatum(relname)));
-		
-		initStringInfo(&buffer);
-
-		appendStringInfo(&buffer, "select sum(pg_relation_size('%s'))::int8 from gp_dist_random('gp_id');", rawname);
-
-		size += get_size_from_segDBs(buffer.data);
-	}
-
-	relation_close(rel, AccessShareLock);
-
-	PG_RETURN_INT64(size);
-}
-
-
 /*
  *	Compute the on-disk size of files for the relation according to the
  *	stat function, including heap data, index data, toast data, aoseg data,
@@ -589,6 +512,7 @@ calculate_total_relation_size(Oid Relid)
 	Oid			toastOid;
 	int64		size;
 	ListCell   *cell;
+	ForkNumber	forkNum;
 
 	heapRel = try_relation_open(Relid, AccessShareLock, false);
 
@@ -596,12 +520,16 @@ calculate_total_relation_size(Oid Relid)
 		return 0;
 
 	toastOid = heapRel->rd_rel->reltoastrelid;
-	
+
 	/* Get the heap size */
 	if (Relid == 0 || heapRel->rd_node.relNode == 0)
 		size = 0;
 	else
-		size = calculate_relation_size(heapRel); 
+	{
+		size = 0;
+		for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+			size += calculate_relation_size(heapRel, forkNum);
+	}
 
 	/* Include any dependent indexes */
 	if (heapRel->rd_rel->relhasindex)
@@ -617,7 +545,8 @@ calculate_total_relation_size(Oid Relid)
 
 			if (RelationIsValid(iRel))
 			{
-				size += calculate_relation_size(iRel); 
+				for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+					size += calculate_relation_size(iRel, forkNum);
 
 				relation_close(iRel, AccessShareLock);
 			}
@@ -652,7 +581,7 @@ calculate_total_relation_size(Oid Relid)
 }
 
 Datum
-pg_total_relation_size_oid(PG_FUNCTION_ARGS)
+pg_total_relation_size(PG_FUNCTION_ARGS)
 {
 	int64		size = 0;
 	Oid			relOid = PG_GETARG_OID(0);
@@ -687,56 +616,9 @@ pg_total_relation_size_oid(PG_FUNCTION_ARGS)
 
 		initStringInfo(&buffer);
 
-		appendStringInfo(&buffer, "select sum(pg_total_relation_size('%s.%s'))::int8 from gp_dist_random('gp_id');", quote_identifier(schemaName), quote_identifier(relName));
+		appendStringInfo(&buffer, "select pg_catalog.sum(pg_catalog.pg_total_relation_size('%s.%s'))::int8 from gp_dist_random('gp_id');",
+						 quote_identifier(schemaName), quote_identifier(relName));
 
-		size += get_size_from_segDBs(buffer.data);
-	}
-
-	PG_RETURN_INT64(size);
-}
-
-Datum
-pg_total_relation_size_name(PG_FUNCTION_ARGS)
-{
-	int64		size = 0;
-	text	   *relname = PG_GETARG_TEXT_P(0);
-	RangeVar   *relrv;
-	Oid			relid;
-
-	relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
-	
-	if (Gp_role == GP_ROLE_EXECUTE && relrv->schemaname != NULL)
-	{
-		Oid namespaceId;
-		/*
-		 * Do this the hard way to avoid access check we don't want
-		 */
-		AcceptInvalidationMessages();
-
-		namespaceId = GetSysCacheOid1(NAMESPACENAME,
-									  CStringGetDatum(relrv->schemaname));
-		relid = get_relname_relid(relrv->relname, namespaceId);
-	}
-	else
-		relid = RangeVarGetRelid(relrv, true);
-
-	if (!OidIsValid(relid))
-		PG_RETURN_NULL();
-
-	size = calculate_total_relation_size(relid);
-	
-	if (Gp_role == GP_ROLE_DISPATCH)
-	{
-		char * rawname;
-		StringInfoData buffer;
-		
-		initStringInfo(&buffer);
-		
-		rawname = DatumGetCString(DirectFunctionCall1(textout,
-													  PointerGetDatum(relname)));
-		
-		appendStringInfo(&buffer, "select sum(pg_total_relation_size('%s'))::int8 from gp_dist_random('gp_id');", rawname);
-		
 		size += get_size_from_segDBs(buffer.data);
 	}
 
@@ -750,41 +632,39 @@ Datum
 pg_size_pretty(PG_FUNCTION_ARGS)
 {
 	int64		size = PG_GETARG_INT64(0);
-	char	   *result = palloc(50 + VARHDRSZ);
+	char		buf[64];
 	int64		limit = 10 * 1024;
 	int64		limit2 = limit * 2 - 1;
 
 	if (size < limit)
-		snprintf(VARDATA(result), 50, INT64_FORMAT " bytes", size);
+		snprintf(buf, sizeof(buf), INT64_FORMAT " bytes", size);
 	else
 	{
 		size >>= 9;				/* keep one extra bit for rounding */
 		if (size < limit2)
-			snprintf(VARDATA(result), 50, INT64_FORMAT " kB",
+			snprintf(buf, sizeof(buf), INT64_FORMAT " kB",
 					 (size + 1) / 2);
 		else
 		{
 			size >>= 10;
 			if (size < limit2)
-				snprintf(VARDATA(result), 50, INT64_FORMAT " MB",
+				snprintf(buf, sizeof(buf), INT64_FORMAT " MB",
 						 (size + 1) / 2);
 			else
 			{
 				size >>= 10;
 				if (size < limit2)
-					snprintf(VARDATA(result), 50, INT64_FORMAT " GB",
+					snprintf(buf, sizeof(buf), INT64_FORMAT " GB",
 							 (size + 1) / 2);
 				else
 				{
 					size >>= 10;
-					snprintf(VARDATA(result), 50, INT64_FORMAT " TB",
+					snprintf(buf, sizeof(buf), INT64_FORMAT " TB",
 							 (size + 1) / 2);
 				}
 			}
 		}
 	}
 
-	SET_VARSIZE(result, strlen(VARDATA(result)) + VARHDRSZ);
-
-	PG_RETURN_TEXT_P(result);
+	PG_RETURN_TEXT_P(cstring_to_text(buf));
 }

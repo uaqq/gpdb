@@ -5,9 +5,9 @@
  *
  * Original coding 1998, Jan Wieck.  Heavily revised 2003, Tom Lane.
  *
- * Copyright (c) 1998-2008, PostgreSQL Global Development Group
+ * Copyright (c) 1998-2009, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/utils/numeric.h,v 1.26 2008/01/01 19:45:59 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/utils/numeric.h,v 1.27 2009/01/01 17:24:02 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -89,22 +89,5 @@ extern int cmp_numerics(Numeric num1, Numeric num2);
 extern float8 numeric_li_fraction(Numeric x, Numeric x0, Numeric x1, 
 								  bool *eq_bounds, bool *eq_abscissas);
 extern Numeric numeric_li_value(float8 f, Numeric y0, Numeric y1);
-
-
-/*
- * Routines for avg int type.  The transition datatype is a int64 for count, and a float8 for sum.
- */
-
-typedef struct IntFloatAvgTransdata
-{
-  int32   _len; /* len for varattrib, do not touch directly */
-#if 1
-  int32   pad;  /* pad so int64 and float64 will be 8 bytes aligned */
-#endif
-  int64   count;
-  float8 sum;
-} IntFloatAvgTransdata;
-
-extern Datum intfloat_avg_accum_decum(IntFloatAvgTransdata *transdata, float8 newval, bool acc);
 
 #endif   /* _PG_NUMERIC_H_ */

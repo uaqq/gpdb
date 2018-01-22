@@ -6,6 +6,11 @@
  * Portions Copyright (c) 1996-2006, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2008-2009, Greenplum Inc.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/backend/access/appendonly/appendonlyam.c
  *
  *
  * INTERFACE ROUTINES
@@ -44,7 +49,6 @@
 #include "cdb/cdbappendonlystorage.h"
 #include "cdb/cdbappendonlystorageformat.h"
 #include "cdb/cdbappendonlystoragelayer.h"
-#include "cdb/cdbpersistentfilesysobj.h"
 #include "cdb/cdbvars.h"
 #include "fmgr.h"
 #include "miscadmin.h"
@@ -259,7 +263,7 @@ SetNextFileSegForRead(AppendOnlyScanDesc scan)
 
 		/*
 		 * special case: we are the QD reading from an AO table in utility
-		 * mode (gp_dump). We see entries in the aoseg table but no files or
+		 * mode. We see entries in the aoseg table but no files or
 		 * data actually exist. If we try to open this file we'll get an
 		 * error, so we must skip to the next. For now, we can test if the
 		 * file exists by looking at the eof value - it's always 0 on the QD.
@@ -424,10 +428,6 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 	int64		eof_uncompressed;
 	int64		varblockcount;
 	int32		fileSegNo;
-	ItemPointerData persistentTid;
-	int64		persistentSerialNum;
-	int64		appendOnlyNewEof;
-
 
 	/* Make the 'segment' file name */
 	MakeAOSegmentFileName(aoInsertDesc->aoi_rel,
@@ -461,33 +461,6 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 
 	if (aoInsertDesc->fsInfo == NULL)
 	{
-		/*
-		 * If the entry is not found in the pg_aoseg table, then it better not
-		 * be in gp_relation_node table too. But, we avoid this check for
-		 * segment # 0 because it is typically used by operations similar to
-		 * CTAS etc and the order followed is to first add to
-		 * gp_persistent_relation_node (thus gp_relation_node) and later to
-		 * pg_aoseg table.
-		 */
-		if (gp_appendonly_verify_eof &&
-			aoInsertDesc->cur_segno > 0 &&
-			ReadGpRelationNode(aoInsertDesc->aoi_rel->rd_rel->reltablespace,
-							   aoInsertDesc->aoi_rel->rd_rel->relfilenode,
-							   aoInsertDesc->cur_segno,
-							   &persistentTid,
-							   &persistentSerialNum))
-		{
-			elog(ERROR, "Found gp_relation_node entry for relation name %s, "
-				 "relation Oid %u, relfilenode %u, segment file #%d "
-				 "at PTID: %s, PSN: " INT64_FORMAT " when not expected",
-				 aoInsertDesc->aoi_rel->rd_rel->relname.data,
-				 aoInsertDesc->aoi_rel->rd_id,
-				 aoInsertDesc->aoi_rel->rd_node.relNode,
-				 aoInsertDesc->cur_segno,
-				 ItemPointerToString(&persistentTid),
-				 persistentSerialNum);
-		}
-
 		InsertInitialSegnoEntry(aoInsertDesc->aoi_rel, aoInsertDesc->cur_segno);
 		aoInsertDesc->fsInfo = NewFileSegInfo(aoInsertDesc->cur_segno);
 	}
@@ -511,58 +484,8 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 	{
 		AppendOnlyStorageWrite_TransactionCreateFile(&aoInsertDesc->storageWrite,
 													 aoInsertDesc->appendFilePathName,
-													 eof,
 													 &aoInsertDesc->aoi_rel->rd_node,
-													 aoInsertDesc->cur_segno,
-													 &persistentTid,
-													 &persistentSerialNum);
-	}
-	else
-	{
-		if (!ReadGpRelationNode(aoInsertDesc->aoi_rel->rd_rel->reltablespace,
-								aoInsertDesc->aoi_rel->rd_rel->relfilenode,
-								aoInsertDesc->cur_segno,
-								&persistentTid,
-								&persistentSerialNum))
-		{
-			elog(ERROR, "Did not find gp_relation_node entry for relation name"
-				 " %s, relation id %u, tablespace %u, relfilenode %u, segment file #%d,"
-				 " logical eof " INT64_FORMAT,
-				 aoInsertDesc->aoi_rel->rd_rel->relname.data,
-				 aoInsertDesc->aoi_rel->rd_id,
-				 aoInsertDesc->aoi_rel->rd_rel->reltablespace,
-				 aoInsertDesc->aoi_rel->rd_rel->relfilenode,
-				 aoInsertDesc->cur_segno,
-				 eof);
-		}
-	}
-
-	if (gp_appendonly_verify_eof)
-	{
-		/* Get EOF from gp_persistent_relation_node */
-		appendOnlyNewEof = PersistentFileSysObj_ReadEof(PersistentFsObjType_RelationFile,
-														&persistentTid);
-
-		/*
-		 * Verify if EOF from gp_persistent_relation_node < EOF from pg_aoseg
-		 *
-		 * Note:- EOF from gp_persistent_relation_node has to be less than the
-		 * EOF from pg_aoseg because inside a transaction the actual EOF where
-		 * the data is inserted has to be greater than or equal to Persistent
-		 * Table (PT) stored EOF as persistent table EOF value is updated at
-		 * the end of the transaction.
-		 */
-		if (eof < appendOnlyNewEof)
-		{
-			elog(ERROR, "Unexpected EOF for relation name %s, relfilenode %u, "
-				 "segment file %d. EOF from gp_persistent_relation_node "
-				 INT64_FORMAT " greater than current EOF " INT64_FORMAT,
-				 aoInsertDesc->aoi_rel->rd_rel->relname.data,
-				 aoInsertDesc->aoi_rel->rd_node.relNode,
-				 aoInsertDesc->cur_segno,
-				 appendOnlyNewEof,
-				 eof);
-		}
+													 aoInsertDesc->cur_segno);
 	}
 
 	/*
@@ -574,9 +497,7 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 									eof,
 									eof_uncompressed,
 									&aoInsertDesc->aoi_rel->rd_node,
-									aoInsertDesc->cur_segno,
-									&persistentTid,
-									persistentSerialNum);
+									aoInsertDesc->cur_segno);
 
 	/* reset counts */
 	aoInsertDesc->insertCount = 0;
@@ -769,7 +690,7 @@ AppendOnlyExecutorReadBlock_GetContents(AppendOnlyExecutorReadBlock *executorRea
 			varBlockCheckError = VarBlockIsValid(executorReadBlock->dataBuffer, executorReadBlock->dataLen);
 			if (varBlockCheckError != VarBlockCheckOk)
 				ereport(ERROR,
-						(errcode(ERRCODE_GP_INTERNAL_ERROR),
+						(errcode(ERRCODE_INTERNAL_ERROR),
 						 errmsg("VarBlock  is not valid. "
 								"Valid block check error %d, detail '%s'",
 								varBlockCheckError,
@@ -791,7 +712,7 @@ AppendOnlyExecutorReadBlock_GetContents(AppendOnlyExecutorReadBlock *executorRea
 			if (executorReadBlock->rowCount != executorReadBlock->readerItemCount)
 			{
 				ereport(ERROR,
-						(errcode(ERRCODE_GP_INTERNAL_ERROR),
+						(errcode(ERRCODE_INTERNAL_ERROR),
 						 errmsg("Row count %d in append-only storage header does not match VarBlock item count %d",
 								executorReadBlock->rowCount,
 								executorReadBlock->readerItemCount),
@@ -810,7 +731,7 @@ AppendOnlyExecutorReadBlock_GetContents(AppendOnlyExecutorReadBlock *executorRea
 			if (executorReadBlock->rowCount != 1)
 			{
 				ereport(ERROR,
-						(errcode(ERRCODE_GP_INTERNAL_ERROR),
+						(errcode(ERRCODE_INTERNAL_ERROR),
 						 errmsg("Row count %d in append-only storage header is not 1 for single row",
 								executorReadBlock->rowCount),
 						 errdetail_appendonly_read_storage_content_header(executorReadBlock->storageRead),
@@ -1582,7 +1503,7 @@ finishWriteBlock(AppendOnlyInsertDesc aoInsertDesc)
 				varBlockCheckError = VarBlockIsValid(aoInsertDesc->uncompressedBuffer, dataLen);
 				if (varBlockCheckError != VarBlockCheckOk)
 					ereport(ERROR,
-							(errcode(ERRCODE_GP_INTERNAL_ERROR),
+							(errcode(ERRCODE_INTERNAL_ERROR),
 							 errmsg("Verify block during write found VarBlock is not valid. "
 									"Valid block check error %d, detail '%s'",
 									varBlockCheckError,
@@ -1643,8 +1564,6 @@ appendonly_beginrangescan_internal(Relation relation,
 
 	StringInfoData titleBuf;
 
-	ValidateAppendOnlyMetaDataSnapshot(&appendOnlyMetaDataSnapshot);
-
 	/*
 	 * increment relation ref count while scanning relation
 	 *
@@ -1700,16 +1619,6 @@ appendonly_beginrangescan_internal(Relation relation,
 	attr->compressLevel = relation->rd_appendonly->compresslevel;
 	attr->checksum = relation->rd_appendonly->checksum;
 	attr->safeFSWriteSize = relation->rd_appendonly->safefswritesize;
-
-	/*
-	 * Adding a NOTOAST table attribute in 3.3.3 would require a catalog
-	 * change, so in the interim we will test this with a GUC.
-	 *
-	 * This GUC must have the same value on write and read.
-	 */
-/* 	scan->aos_notoast = relation->rd_appendonly->notoast; */
-	scan->aos_notoast = Debug_appendonly_use_no_toast;
-
 
 	/* UNDONE: We are calling the static header length routine here. */
 	scan->maxDataLen =
@@ -1768,8 +1677,8 @@ appendonly_beginrangescan(Relation relation,
 
 	for (i = 0; i < segfile_count; i++)
 	{
-		seginfo[i] = GetFileSegInfo(relation, appendOnlyMetaDataSnapshot,
-									segfile_no_arr[i]);
+		seginfo[	i] = GetFileSegInfo(relation, appendOnlyMetaDataSnapshot,
+										segfile_no_arr[i]);
 	}
 	return appendonly_beginrangescan_internal(relation,
 											  snapshot,
@@ -1980,7 +1889,7 @@ static bool
 fetchNextBlock(AppendOnlyFetchDesc aoFetchDesc)
 {
 	AppendOnlyExecutorReadBlock *executorReadBlock =
-		&aoFetchDesc->executorReadBlock;
+	&aoFetchDesc->executorReadBlock;
 
 	/*
 	 * Try to read next block.
@@ -2178,8 +2087,7 @@ appendonly_fetch_init(Relation relation,
 
 	AppendOnlyStorageAttributes *attr;
 
-	ValidateAppendOnlyMetaDataSnapshot(&appendOnlyMetaDataSnapshot);
-	PGFunction *fns = NULL;
+	PGFunction *fns;
 
 	StringInfoData titleBuf;
 
@@ -2656,21 +2564,13 @@ appendonly_update(AppendOnlyUpdateDesc aoUpdateDesc,
 	/* tableName */
 #endif
 
-	/*
-	 * We cannot deal with an update tuples with external tuples that may be
-	 * the same as the updated tuple. Compaction would go wild.
-	 */
-	Assert(!MemTupleHasExternal(memTuple, aoUpdateDesc->aoInsertDesc->mt_bind));
-
 	result = AppendOnlyVisimapDelete_Hide(&aoUpdateDesc->visiMapDelete, aoTupleId);
 	if (result != HeapTupleMayBeUpdated)
 		return result;
 
-	Oid			newOid = InvalidOid;	/* new oid should be old oid */
-
 	appendonly_insert(aoUpdateDesc->aoInsertDesc,
 					  memTuple,
-					  &newOid,
+					  InvalidOid,	/* new oid should be old oid */
 					  newAoTupleId);
 
 	return result;
@@ -2906,11 +2806,13 @@ aoInsertDesc->appendOnlyMetaDataSnapshot, //CONCERN:Safe to assume all block dir
   * The output parameter tupleOid is the OID assigned to the tuple (either here or by the
   * caller), or InvalidOid if no OID.  The header fields of *tup are updated
   * to match the stored tuple;
+  *
+  * Unlike heap_insert(), this function doesn't scribble on the input tuple.
   */
-void
+Oid
 appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 				  MemTuple instup,
-				  Oid *tupleOid,
+				  Oid tupleOid,
 				  AOTupleId *aoTupleId)
 {
 	Relation	relation = aoInsertDesc->aoi_rel;
@@ -2933,19 +2835,6 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 #endif
 
 	Insist(RelationIsAoRows(relation));
-	if (relation->rd_rel->relhasoids)
-	{
-		/*
-		 * If the object id of this tuple has already been assigned, trust the
-		 * caller.	There are a couple of ways this can happen.  At initial db
-		 * creation, the backend program sets oids for tuples. When we define
-		 * an index, we set the oid.  Finally, in the future, we may allow
-		 * users to set their own object ids in order to support a persistent
-		 * object store (objects need to contain pointers to one another).
-		 */
-		if (!OidIsValid(MemTupleGetOid(instup, aoInsertDesc->mt_bind)))
-			MemTupleSetOid(instup, aoInsertDesc->mt_bind, GetNewOid(relation));
-	}
 
 	if (aoInsertDesc->useNoToast)
 		need_toast = false;
@@ -2961,13 +2850,39 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 	 * into the relation; instup is the caller's original untoasted data.
 	 */
 	if (need_toast)
-		tup = (MemTuple) toast_insert_or_update(relation, (HeapTuple) instup,
-												NULL, aoInsertDesc->mt_bind,
-												aoInsertDesc->toast_tuple_target,
-												false,	/* errtbl is never AO */
-												true, true);
+		tup = toast_insert_or_update_memtup(relation, instup,
+											NULL, aoInsertDesc->mt_bind,
+											aoInsertDesc->toast_tuple_target,
+											false,	/* errtbl is never AO */
+											0);
 	else
 		tup = instup;
+
+	if (relation->rd_rel->relhasoids)
+	{
+		/*
+		 * Don't modify the input tuple, so make a copy unless we already
+		 * made one. I'm not sure if the input tuple can point to any
+		 * permanent storage, so modifying it might be harmless, but better
+		 * safe than sorry. An AO table with OIDs is a weird beast anyway,
+		 * so performance of this case isn't important.
+		 */
+		if (tup == instup)
+			tup = memtuple_copy_to(instup, NULL, NULL);
+
+		/*
+		 * If the object id of this tuple has already been assigned, trust the
+		 * caller.	There are a couple of ways this can happen.  At initial db
+		 * creation, the backend program sets oids for tuples. When we define
+		 * an index, we set the oid.  Finally, in the future, we may allow
+		 * users to set their own object ids in order to support a persistent
+		 * object store (objects need to contain pointers to one another).
+		 */
+		if (!OidIsValid(tupleOid))
+			tupleOid = GetNewOid(relation);
+
+		MemTupleSetOid(tup, aoInsertDesc->mt_bind, tupleOid);
+	}
 
 	/*
 	 * get space to insert our next item (tuple)
@@ -3115,7 +3030,7 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 
 	Assert(aoInsertDesc->numSequences >= 0);
 
-	*tupleOid = MemTupleGetOid(tup, aoInsertDesc->mt_bind);
+	tupleOid = MemTupleGetOid(tup, aoInsertDesc->mt_bind);
 
 	AOTupleIdInit_Init(aoTupleId);
 	AOTupleIdInit_segmentFileNum(aoTupleId, aoInsertDesc->cur_segno);
@@ -3150,6 +3065,8 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 
 	if (tup != instup)
 		pfree(tup);
+
+	return tupleOid;
 }
 
 /*

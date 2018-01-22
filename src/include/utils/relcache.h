@@ -5,10 +5,11 @@
  *
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/relcache.h,v 1.61 2008/01/01 19:45:59 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/utils/relcache.h,v 1.63 2009/01/01 17:24:02 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -22,6 +23,7 @@
 #include "nodes/pg_list.h"
 #include "catalog/pg_class.h"
 
+
 typedef struct RelationData *Relation;
 
 /* ----------------
@@ -31,8 +33,6 @@ typedef struct RelationData *Relation;
  * ----------------
  */
 typedef Relation *RelationPtr;
-
-struct SysScanDescData; /* defined in access/genam.h */
 
 /*
  * Routines to open (lookup) and close a relcache entry
@@ -61,7 +61,7 @@ extern void RelationInitIndexAccessInfo(Relation relation);
 extern void RelationCacheInitialize(void);
 extern void RelationCacheInitializePhase2(void);
 extern void RelationCacheInitializePhase3(void);
-	
+
 /*
  * Routine to create a relcache entry for an about-to-be-created relation
  */
@@ -107,6 +107,7 @@ extern void IndexSupportInitialize(oidvector *indclass,
 
 /* should be used only by relcache.c and catcache.c */
 extern bool criticalRelcachesBuilt;
+/* should be used only by relcache.c and postinit.c */
 extern bool criticalSharedRelcachesBuilt;
 
 #endif   /* RELCACHE_H */

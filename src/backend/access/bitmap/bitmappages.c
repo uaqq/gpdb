@@ -3,13 +3,18 @@
  * bitmappages.c
  *	  Bitmap index page management code for the bitmap index.
  *
- * Copyright (c) 2006-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2007-2010 Greenplum Inc
+ * Portions Copyright (c) 2010-2012 EMC Corporation
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ * Portions Copyright (c) 2006-2008, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
  *	  src/backend/access/bitmap/bitmappages.c
+ *
  *-------------------------------------------------------------------------
  */
+
 #include "postgres.h"
 #include "miscadmin.h"
 
@@ -20,6 +25,7 @@
 #include "storage/lmgr.h"
 #include "utils/memutils.h"
 #include "utils/lsyscache.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
 /* 
@@ -51,8 +57,6 @@ Buffer
 _bitmap_getbuf(Relation rel, BlockNumber blkno, int access)
 {
 	Buffer buf;
-
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
 
 	if (blkno != P_NEW)
 	{
@@ -104,8 +108,6 @@ _bitmap_getbuf(Relation rel, BlockNumber blkno, int access)
 void
 _bitmap_wrtbuf(Buffer buf)
 {
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-
 	MarkBufferDirty(buf);
 	UnlockReleaseBuffer(buf);
 }
@@ -116,8 +118,6 @@ _bitmap_wrtbuf(Buffer buf)
 void
 _bitmap_relbuf(Buffer buf)
 {
-	MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-
 	UnlockReleaseBuffer(buf);
 }
 
@@ -163,8 +163,6 @@ _bitmap_init_bitmappage(Relation rel __attribute__((unused)), Buffer buf)
 void
 _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 {
-	MIRROREDLOCK_BUFMGR_DECLARE;
-
 	BMMetaPage	mp;
 	HASHCTL		hash_ctl;
 	int			hash_flags;
@@ -179,10 +177,7 @@ _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 	bmstate->bm_tidLocsBuffer->byte_size = 0;
 	bmstate->bm_tidLocsBuffer->lov_blocks = NIL;
 	bmstate->bm_tidLocsBuffer->max_lov_block = InvalidBlockNumber;
-	
-	// -------- MirroredLock ----------
-	MIRROREDLOCK_BUFMGR_LOCK;
-	
+
 	metabuf = _bitmap_getbuf(index, BM_METAPAGE, BM_READ);
 	mp = _bitmap_get_metapage_data(index, metabuf);
 	_bitmap_open_lov_heapandindex(index, mp, &(bmstate->bm_lov_heap),
@@ -190,9 +185,6 @@ _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 								  RowExclusiveLock);
 
 	_bitmap_relbuf(metabuf);
-	
-	MIRROREDLOCK_BUFMGR_UNLOCK;
-	// -------- MirroredLock ----------
 	
 	cur_bmbuild = (BMBuildHashData *)palloc(sizeof(BMBuildHashData));
 	cur_bmbuild->hash_funcs = (FmgrInfo *)
@@ -205,16 +197,16 @@ _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 	for (i = 0; i < bmstate->bm_tupDesc->natts; i++)
 	{
 		Oid			typid = bmstate->bm_tupDesc->attrs[i]->atttypid;
-		Operator	optup;
 		Oid			eq_opr;
 		Oid			eq_function;
 		Oid			left_hash_function;
 		Oid			right_hash_function;
 
-		optup = equality_oper(typid, false);
-		eq_opr = oprid(optup);
-		eq_function = oprfuncid(optup);
-		ReleaseSysCache(optup);
+		get_sort_group_operators(typid,
+								 false, true, false,
+								 NULL, &eq_opr, NULL);
+
+		eq_function = get_opcode(eq_opr);
 
 		if (!get_op_hash_functions(eq_opr,
 								   &left_hash_function,
@@ -277,11 +269,16 @@ _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 
 		for (attno = 0; attno < bmstate->bm_tupDesc->natts; attno++)
 		{
-			RegProcedure	opfuncid;
-			Oid				atttypid;
+			Oid			eq_opr;
+			RegProcedure opfuncid;
+			Oid			atttypid;
 
 			atttypid = bmstate->bm_tupDesc->attrs[attno]->atttypid;
-			opfuncid = equality_oper_funcid(atttypid);
+
+			get_sort_group_operators(atttypid,
+									 false, true, false,
+									 NULL, &eq_opr, NULL);
+			opfuncid = get_opcode(eq_opr);
 
 			ScanKeyEntryInitialize(&(bmstate->bm_lov_scanKeys[attno]), SK_ISNULL, 
 							   attno + 1, BTEqualStrategyNumber, InvalidOid, 
@@ -289,7 +286,7 @@ _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 		}
 
 		bmstate->bm_lov_scanDesc = index_beginscan(bmstate->bm_lov_heap,
-							 bmstate->bm_lov_index, ActiveSnapshot, 
+							 bmstate->bm_lov_index, GetActiveSnapshot(), 
 							 bmstate->bm_tupDesc->natts,
 							 bmstate->bm_lov_scanKeys);
 	}
@@ -300,7 +297,7 @@ _bitmap_init_buildstate(Relation index, BMBuildState *bmstate)
 	 * writes page to the shared buffer, we can't disable WAL archiving.
 	 * We will add this shortly.
 	 */	
-	bmstate->use_wal = !XLog_UnconvertedCanBypassWal() && !index->rd_istemp;
+	bmstate->use_wal = !index->rd_istemp;
 }
 
 /*
@@ -350,8 +347,6 @@ _bitmap_cleanup_buildstate(Relation index, BMBuildState *bmstate)
 void
 _bitmap_init(Relation indexrel, bool use_wal)
 {
-	MIRROREDLOCK_BUFMGR_DECLARE;
-
 	BMMetaPage		metapage;
 	Buffer			metabuf;
 	Page			page;
@@ -370,10 +365,7 @@ _bitmap_init(Relation indexrel, bool use_wal)
 				errmsg("cannot initialize non-empty bitmap index \"%s\"",
 				RelationGetRelationName(indexrel)),
 				errSendAlert(true)));
-	
-	// -------- MirroredLock ----------
-	MIRROREDLOCK_BUFMGR_LOCK;
-	
+
 	/* create the metapage */
 	metabuf = _bitmap_getbuf(indexrel, P_NEW, BM_WRITE);
 	page = BufferGetPage(metabuf);
@@ -432,10 +424,7 @@ _bitmap_init(Relation indexrel, bool use_wal)
 
 	_bitmap_wrtbuf(buf);
 	_bitmap_wrtbuf(metabuf);
-	
-	MIRROREDLOCK_BUFMGR_UNLOCK;
-	// -------- MirroredLock ----------
-	
+
 	pfree(lovItem);
 }
 

@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -51,21 +51,11 @@ class Standby(object):
     def add_catalog_standby(self, dburl, gparray):
         master = gparray.master
 
-        # This will eventually support extra filespaces,
-        # but for now only signle filespace, which is pg_system
-        # is supported.  pg_basebackup also needs to
-        # recognize this setting.
-        #
-        #fsmap = master.getSegmentFilespaces()
-        #fslist = ["['{0}', '{1}']".format(dbarray.getFileSpaceName(fsoid), path)
-        #            for fsoid, path in fsmap.items()]
-        fslist = ["['pg_system', '{0}']".format(self.datadir)]
-
         sql = ("SELECT gp_add_master_standby('{hostname}', '{address}', "
-               "ARRAY[{filespaces}], {port})").format(
+               "'{datadir}', {port})").format(
                 hostname=master.getSegmentHostName(),
                 address=master.getSegmentAddress(),
-                filespaces=', '.join(fslist),
+                datadir=self.datadir,
                 port=self.port)
         self._run_utility_sql(sql)
 
@@ -139,7 +129,7 @@ class Standby(object):
         standby = gparray.standbyMaster
         master = gp.MasterStart("Starting Master Standby",
                                 self.datadir, self.port, standby.dbid,
-                                0, numcontent, None, None, None)
+                                numcontent, None, None, None)
         # -w option would wait forever.
         master.cmdStr = master.cmdStr.replace(' -w', '')
         master.run(validateAfter=True)

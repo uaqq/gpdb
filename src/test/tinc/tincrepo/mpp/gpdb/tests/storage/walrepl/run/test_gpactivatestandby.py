@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -85,7 +85,7 @@ class gpactivatestandby(StandbyRunMixin, MPPTestCase):
                 ' '.join(['gpinitstandby', '-a',
                     '-s', self.standby_host,
                     '-P', self.standby_port,
-                    '-F', 'pg_system:' + self.standby_datadir]))
+                    '-F', self.standby_datadir]))
         cmd.run(validateAfter=True)
 
         nsender = self.wait_for_walsender()

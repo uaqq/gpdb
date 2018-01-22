@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -52,25 +52,6 @@ class AOCSAlterColumnTestCase(ScenarioTestCase, MPPTestCase):
             result = Gpdiff.are_files_equal(aoco_alter_out, aoco_alter_ans, match_sub =[init_file])
             errmsg='Gpdiff are not equal for file '+ sname
             assert result, errmsg
-
-    def test_AOCOAlterColumnChangeTracking_05_addcolumn_largetable(self):
-        ''' 
-        @product_version gpdb: [4.3.2.0-]
-        
-        This tests the behavior of alter table in a failover/changtracking scenario 
-        STEPS:
-        1. Alter table add column
-        2. While the alter is going on, Fail one Primary
-        3. Make sure the trasaction in step 1 is aborted
-        4. gprecoverseg 
-        5. Alter table add column again 
-        6. Make sure transaction in step 5 passes
-        '''
-        tinctest.logger.info("\n ===============================================")
-        tinctest.logger.info("\n Starting Test: test_AOCOAlterColumnChangeTracking_05_addcolumn_largetable ") 
-        tinctest.logger.info("\n ===============================================")
-        self.aoco_alt_obj.run_test_ChangeTracking('largetab-altercol')
-
 
     def test_NegativeAOCOAlter_UtilityMode_06_addcolumn_utilityMode(self):
         ''' 

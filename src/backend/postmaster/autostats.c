@@ -6,6 +6,7 @@
  *
  *
  * Portions Copyright (c) 2005-2015, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -22,6 +23,7 @@
 #include "cdb/cdbpartition.h"
 #include "commands/vacuum.h"
 #include "executor/execdesc.h"
+#include "executor/executor.h"
 #include "nodes/makefuncs.h"
 #include "nodes/plannodes.h"
 #include "parser/parsetree.h"
@@ -71,7 +73,7 @@ autostats_issue_analyze(Oid relationOid)
 	analyzeStmt->rootonly = false;
 	analyzeStmt->relation = relation;	/* not used since we pass relids list */
 	analyzeStmt->va_cols = NIL;
-	vacuum(analyzeStmt, NIL, NULL, false, false);
+	vacuum(analyzeStmt, InvalidOid, false, NULL, false, false);
 	pfree(analyzeStmt);
 }
 
@@ -202,8 +204,7 @@ autostats_get_cmdtype(QueryDesc *queryDesc, AutoStatsCmdType * pcmdType, Oid *pr
 			if (stmt->intoClause != NULL)
 			{
 				/* CTAS */
-				if (queryDesc->estate->es_into_relation_descriptor)
-					relationOid = RelationGetRelid(queryDesc->estate->es_into_relation_descriptor);
+				relationOid = GetIntoRelOid(queryDesc);
 				cmdType = AUTOSTATS_CMDTYPE_CTAS;
 			}
 			break;
@@ -289,7 +290,7 @@ auto_stats(AutoStatsCmdType cmdType, Oid relationOid, uint64 ntuples, bool inFun
 	if (!policyCheck)
 	{
 		elog(DEBUG3, "In mode %s, command %s on (dboid,tableoid)=(%d,%d) modifying " UINT64_FORMAT " tuples did not issue Auto-ANALYZE.",
-			 gpvars_show_gp_autostats_mode(),
+			 lookup_autostats_mode_by_value(actual_gp_autostats_mode),
 			 autostats_cmdtype_to_string(cmdType),
 			 MyDatabaseId,
 			 relationOid,
@@ -300,18 +301,8 @@ auto_stats(AutoStatsCmdType cmdType, Oid relationOid, uint64 ntuples, bool inFun
 
 	if (log_autostats)
 	{
-		const char *autostats_mode;
-
-		if (inFunction)
-		{
-			autostats_mode = gpvars_show_gp_autostats_mode_in_functions();
-		}
-		else
-		{
-			autostats_mode = gpvars_show_gp_autostats_mode();
-		}
 		elog(LOG, "In mode %s, command %s on (dboid,tableoid)=(%d,%d) modifying " UINT64_FORMAT " tuples caused Auto-ANALYZE.",
-			 autostats_mode,
+			 lookup_autostats_mode_by_value(actual_gp_autostats_mode),
 			 autostats_cmdtype_to_string(cmdType),
 			 MyDatabaseId,
 			 relationOid,

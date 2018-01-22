@@ -15,7 +15,6 @@
 #define TWOPHASE_H
 
 #include "access/xlogdefs.h"
-#include "access/xlogmm.h"
 #include "storage/backendid.h"
 #include "storage/proc.h"
 #include "utils/timestamp.h"
@@ -84,13 +83,7 @@ extern void RemoveTwoPhaseFile(TransactionId xid, bool giveWarning);
 
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
-extern void PrepareIntentAppendOnlyCommitWork(char *gid);
-
-extern void PrepareDecrAppendOnlyCommitWork(char *gid);
-
 extern bool FinishPreparedTransaction(const char *gid, bool isCommit, bool raiseErrorIfNotFound);
-
-extern int TwoPhaseRecoverMirror(void);
 
 extern void TwoPhaseAddPreparedTransactionInit(
 					        prepared_transaction_agg_state **ptas

@@ -4,12 +4,13 @@
  *	  POSTGRES lock manager code
  *
  * Portions Copyright (c) 2006-2008, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/lmgr.c,v 1.96.2.1 2008/03/04 19:54:13 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/lmgr.c,v 1.99 2009/01/01 17:23:47 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -20,13 +21,14 @@
 #include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
-#include "catalog/gp_policy.h"     /* CDB: POLICYTYPE_PARTiITIONED */
 #include "catalog/namespace.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "storage/procarray.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"        /* CDB: get_rel_name() */
+
+#include "catalog/gp_policy.h"     /* CDB: POLICYTYPE_PARTiITIONED */
 #include "cdb/cdbvars.h"
 
 
@@ -333,60 +335,6 @@ UnlockRelationForExtension(Relation relation, LOCKMODE lockmode)
 	SET_LOCKTAG_RELATION_EXTEND(tag,
 								relation->rd_lockInfo.lockRelId.dbId,
 								relation->rd_lockInfo.lockRelId.relId);
-
-	LockRelease(&tag, lockmode, false);
-}
-
-/*
- * Separate routine for LockRelationForExtension() because resync workers do not have relation.  
- */
-void
-LockRelationForResyncExtension(RelFileNode *relFileNode, LOCKMODE lockmode)
-{
-	LOCKTAG		tag;
-	
-	SET_LOCKTAG_RELATION_EXTEND(tag,
-								relFileNode->dbNode,
-								relFileNode->relNode);
-	
-	(void) LockAcquire(&tag, lockmode, false, false);
-}
-
-/*
- * Separate routine for UnlockRelationForExtension() because resync workers do not have relation.
- */
-void
-UnlockRelationForResyncExtension(RelFileNode *relFileNode, LOCKMODE lockmode)
-{
-	LOCKTAG		tag;
-	
-	SET_LOCKTAG_RELATION_EXTEND(tag,
-								relFileNode->dbNode,
-								relFileNode->relNode);
-	
-	LockRelease(&tag, lockmode, false);
-}
-
-void
-LockRelationForResynchronize(RelFileNode *relFileNode, LOCKMODE lockmode)
-{
-	LOCKTAG		tag;
-
-	SET_LOCKTAG_RELATION_RESYNCHRONIZE(tag,
-						 relFileNode->dbNode,
-						 relFileNode->relNode);
-
-	(void) LockAcquire(&tag, lockmode, false, false);
-}
-
-void
-UnlockRelationForResynchronize(RelFileNode *relFileNode, LOCKMODE lockmode)
-{
-	LOCKTAG		tag;
-
-	SET_LOCKTAG_RELATION_RESYNCHRONIZE(tag,
-						 relFileNode->dbNode,
-						 relFileNode->relNode);
 
 	LockRelease(&tag, lockmode, false);
 }
@@ -782,6 +730,45 @@ UnlockSharedObject(Oid classid, Oid objid, uint16 objsubid,
 	LockRelease(&tag, lockmode, false);
 }
 
+/*
+ *		LockSharedObjectForSession
+ *
+ * Obtain a session-level lock on a shared-across-databases object.
+ * See LockRelationIdForSession for notes about session-level locks.
+ */
+void
+LockSharedObjectForSession(Oid classid, Oid objid, uint16 objsubid,
+						   LOCKMODE lockmode)
+{
+	LOCKTAG		tag;
+
+	SET_LOCKTAG_OBJECT(tag,
+					   InvalidOid,
+					   classid,
+					   objid,
+					   objsubid);
+
+	(void) LockAcquire(&tag, lockmode, true, false);
+}
+
+/*
+ *		UnlockSharedObjectForSession
+ */
+void
+UnlockSharedObjectForSession(Oid classid, Oid objid, uint16 objsubid,
+							 LOCKMODE lockmode)
+{
+	LOCKTAG		tag;
+
+	SET_LOCKTAG_OBJECT(tag,
+					   InvalidOid,
+					   classid,
+					   objid,
+					   objsubid);
+
+	LockRelease(&tag, lockmode, true);
+}
+
 
 /*
  * Append a description of a lockable object to buf.
@@ -821,12 +808,6 @@ DescribeLockTag(StringInfo buf, const LOCKTAG *tag)
 							 tag->locktag_field4,
 							 tag->locktag_field2,
 							 tag->locktag_field1);
-			break;
-		case LOCKTAG_RELATION_RESYNCHRONIZE:
-			appendStringInfo(buf,
-							 _("resynchronize relation %u of database %u"),
-							 tag->locktag_field1,
-							 tag->locktag_field2);
 			break;
 		case LOCKTAG_RELATION_APPENDONLY_SEGMENT_FILE:
 			appendStringInfo(buf,
@@ -900,7 +881,6 @@ LockTagIsTemp(const LOCKTAG *tag)
 		case LOCKTAG_RELATION_EXTEND:
 		case LOCKTAG_PAGE:
 		case LOCKTAG_TUPLE:
-		case LOCKTAG_RELATION_RESYNCHRONIZE:
 		case LOCKTAG_RELATION_APPENDONLY_SEGMENT_FILE:
 			/* check for lock on a temp relation */
 			/* field1 is dboid, field2 is reloid for all of these */

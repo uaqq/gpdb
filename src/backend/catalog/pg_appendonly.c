@@ -1,14 +1,19 @@
 /*-------------------------------------------------------------------------
-*
-* pg_appendonly.c
-*	  routines to support manipulation of the pg_appendonly relation
-*
-* Portions Copyright (c) 2008, Greenplum Inc
-* Portions Copyright (c) 1996-2006, PostgreSQL Global Development Group
-* Portions Copyright (c) 1994, Regents of the University of California
-*
-*-------------------------------------------------------------------------
-*/
+ *
+ * pg_appendonly.c
+ *	  routines to support manipulation of the pg_appendonly relation
+ *
+ * Portions Copyright (c) 2008, Greenplum Inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ * Portions Copyright (c) 1996-2006, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ *
+ * IDENTIFICATION
+ *	    src/backend/catalog/pg_appendonly.c
+ *
+ *-------------------------------------------------------------------------
+ */
 
 #include "postgres.h"
 
@@ -27,7 +32,6 @@
 #include "utils/syscache.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
-#include "cdb/cdbpersistentfilesysobj.h"
 
 /*
  * Adds an entry into the pg_appendonly catalog table. The entry
@@ -544,15 +548,6 @@ TransferAppendonlyEntry(Oid sourceRelId, Oid targetRelId)
 	{
 		TransferDependencyLink(targetRelId, aovisimaprelid, "aovisimap");
 	}
-
-	if (Debug_persistent_print)
-		elog(Persistent_DebugPrintLevel(), 
-			 "TransferAppendonlyEntry: source relation id %u, target relation id %u, aosegrelid %u, aoblkdirrelid %u, aovisimaprelid %u",
-			 sourceRelId,
-			 targetRelId,
-			 aosegrelid,
-			 aoblkdirrelid,
-			 aovisimaprelid);
 }
 
 /*
@@ -680,18 +675,5 @@ SwapAppendonlyEntries(Oid entryRelId1, Oid entryRelId2)
 			TransferDependencyLink(entryRelId1, aovisimaprelid2, "aovisimap");
 		}
 	}
-
-	if (Debug_persistent_print)
-		elog(Persistent_DebugPrintLevel(), 
-			 "SwapAppendonlyEntries: relation id #1 %u, aosegrelid1 %u, aoblkdirrelid1 %u, aovisimaprelid1 %u"
-			 "relation id #2 %u, aosegrelid2 %u, aoblkdirrelid2 %u, aovisimaprelid2 %u",
-			 entryRelId1,
-			 aosegrelid1,
-			 aoblkdirrelid1,
-			 aovisimaprelid1,
-			 entryRelId2,
-			 aosegrelid2,
-			 aoblkdirrelid2,
-			 aovisimaprelid2);
 }
 

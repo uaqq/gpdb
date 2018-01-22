@@ -269,10 +269,6 @@ IpcSemaphoreCreate(int numSems)
 	mysema.semNum = numSems;
 	PGSemaphoreUnlock(&mysema);
 
-	elog((Debug_print_semaphore_detail ? LOG : DEBUG5),
-		 "created SYSV semaphore set semId %d, semNum %d",
-		 mysema.semId, mysema.semNum);
-
 	return semId;
 }
 
@@ -305,10 +301,6 @@ PGReserveSemaphores(int maxSemas, int port)
 	numSemaSets = 0;
 	nextSemaKey = port * 1000;
 	nextSemaNumber = SEMAS_PER_SET;		/* force sema set alloc on 1st call */
-
-	elog((Debug_print_semaphore_detail ? LOG : DEBUG5),
-		 "maxSemaSets %d, nextSemaKey %d, nextSemaNumber %d",
-		 maxSemaSets, nextSemaKey, nextSemaNumber);
 
 	on_shmem_exit(ReleaseSemaphores, 0);
 }
@@ -353,10 +345,6 @@ PGSemaphoreCreate(PGSemaphore sema)
 	sema->semNum = nextSemaNumber++;
 	/* Initialize it to count 1 */
 	IpcSemaphoreInitialize(sema->semId, sema->semNum, 1);
-
-	elog((Debug_print_semaphore_detail ? LOG : DEBUG5),
-		 "created SYSV semaphore semId %d, semNum %d",
-		 sema->semId, sema->semNum);
 }
 
 /*
@@ -390,11 +378,11 @@ PGSemaphoreLock(PGSemaphore sema, bool interruptOK)
 	 * from the operation prematurely because we were sent a signal.  So we
 	 * try and lock the semaphore again.
 	 *
-	 * Each time around the loop, we check for a cancel/die interrupt.  On
-	 * some platforms, if such an interrupt comes in while we are waiting,
-	 * it will cause the semop() call to exit with errno == EINTR, allowing
-	 * us to service the interrupt (if not in a critical section already)
-	 * during the next loop iteration.
+	 * Each time around the loop, we check for a cancel/die interrupt.	On
+	 * some platforms, if such an interrupt comes in while we are waiting, it
+	 * will cause the semop() call to exit with errno == EINTR, allowing us to
+	 * service the interrupt (if not in a critical section already) during the
+	 * next loop iteration.
 	 *
 	 * Once we acquire the lock, we do NOT check for an interrupt before
 	 * returning.  The caller needs to be able to record ownership of the lock
@@ -420,10 +408,10 @@ PGSemaphoreLock(PGSemaphore sema, bool interruptOK)
 	 *
 	 * On some platforms, signals marked SA_RESTART (which is most, for us)
 	 * will not interrupt the semop(); it will just keep waiting.  Therefore
-	 * it's necessary for cancel/die interrupts to be serviced directly by
-	 * the signal handler.  On these platforms the behavior is really the same
+	 * it's necessary for cancel/die interrupts to be serviced directly by the
+	 * signal handler.	On these platforms the behavior is really the same
 	 * whether the signal arrives just before the semop() begins, or while it
-	 * is waiting.  The loop on EINTR is thus important only for other types
+	 * is waiting.	The loop on EINTR is thus important only for other types
 	 * of interrupts.
 	 */
 	do

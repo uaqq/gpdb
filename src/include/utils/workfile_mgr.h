@@ -4,7 +4,12 @@
  *	  Interface for workfile manager and workfile caching.
  *
  *
- * Copyright (c) 2011, EMC Corp.
+ * Portions Copyright (c) 2011, EMC Corp.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/utils/workfile_mgr.h
  *
  *
  *-------------------------------------------------------------------------
@@ -12,11 +17,11 @@
 #ifndef __WORKFILE_MGR_H__
 #define __WORKFILE_MGR_H__
 
-#include "postgres.h"
 #include "executor/execWorkfile.h"
 #include "utils/sharedcache.h"
 #include "nodes/execnodes.h"
 #include "utils/timestamp.h"
+#include "utils/resowner.h"
 
 /*
  * Workfile management default parameters
@@ -29,8 +34,6 @@
 /* Fixed workfile numbers common for all operators */
 #define WORKFILE_NUM_ALL_PLAN 0
 /* Fixed workfile numbers for each operator type */
-#define WORKFILE_NUM_HASHJOIN_METADATA 1
-#define WORKFILE_NUM_HASHAGG_METADATA 1
 #define WORKFILE_NUM_MKSORT_METADATA 1
 #define WORKFILE_NUM_MKSORT_TAPESET 2
 #define WORKFILE_NUM_TUPLESTORE_DATA 1
@@ -38,13 +41,6 @@
 
 typedef struct
 {
-
-	/* number of buckets in a spilled hashtable */
-	uint32 buckets;
-
-	/* number of leaf (that did not re-spill) files for a hashagg operator */
-	uint32 num_leaf_files;
-
 	/* type of workfiles used by this operator */
 	enum ExecWorkFileType type;
 
@@ -138,9 +134,7 @@ void workfile_mgr_close_set(workfile_set *work_set);
 void workfile_mgr_cleanup(void);
 Size workfile_mgr_shmem_size(void);
 void workfile_mgr_cache_init(void);
-void workfile_mgr_mark_complete(workfile_set *work_set);
 Cache *workfile_mgr_get_cache(void);
-int32 workfile_mgr_clear_cache(int seg_id);
 void workfile_set_update_in_progress_size(workfile_set *work_set, int64 size);
 
 /* Workfile File operations */

@@ -7,6 +7,7 @@
  *		make use of this code.
  *
  * Portions Copyright (c) 2006-2007, Greenplum
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2005, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -36,7 +37,6 @@
 
 #include "cdb/cdbexplain.h"
 #include "cdb/cdbvars.h"
-#include "postmaster/primary_mirror_mode.h"
 
 
 #define HHA_MSG_LVL DEBUG2
@@ -78,7 +78,7 @@ typedef enum InputRecordType
 		Assert((hashtable)->mem_for_metadata > 0); \
 		Assert((hashtable)->mem_for_metadata > (hashtable)->nbuckets * OVERHEAD_PER_BUCKET); \
 		if ((hashtable)->mem_for_metadata >= (hashtable)->max_mem) \
-			ereport(ERROR, (errcode(ERRCODE_GP_INTERNAL_ERROR), \
+			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), \
 				errmsg(ERRMSG_GP_INSUFFICIENT_STATEMENT_MEMORY)));\
 	} while (0)
 
@@ -868,8 +868,6 @@ agg_hash_initial_pass(AggState *aggstate)
 			break;
 		}
 
-		Gpmon_Incr_Rows_In(GpmonPktFromAggState(aggstate));
-
 		if (aggstate->hashslot->tts_tupleDescriptor == NULL)
 		{
 			int size;
@@ -900,7 +898,7 @@ agg_hash_initial_pass(AggState *aggstate)
 
 			if (hashtable->num_ht_groups <= 1)
 				ereport(ERROR,
-						(errcode(ERRCODE_GP_INTERNAL_ERROR),
+						(errcode(ERRCODE_INTERNAL_ERROR),
 								 ERRMSG_GP_INSUFFICIENT_STATEMENT_MEMORY));
 			
 			/*
@@ -939,7 +937,7 @@ agg_hash_initial_pass(AggState *aggstate)
 		}
 			
 		/* Advance the aggregates */
-		call_AdvanceAggregates(aggstate, hashtable->groupaggs->aggs, &(aggstate->mem_manager));
+		advance_aggregates(aggstate, hashtable->groupaggs->aggs, &(aggstate->mem_manager));
 		
 		hashtable->num_tuples++;
 
@@ -1277,7 +1275,6 @@ spill_hash_table(AggState *aggstate)
 	if (hashtable->work_set == NULL)
 	{
 		hashtable->work_set = workfile_mgr_create_set(BFZ, true /* can_be_reused */, &aggstate->ss.ps);
-		hashtable->work_set->metadata.buckets = hashtable->nbuckets;
 		//aggstate->workfiles_created = true;
 	}
 
@@ -1635,7 +1632,7 @@ readHashEntry(AggState *aggstate, BatchFileInfo *file_info,
 	if (ExecWorkFile_Read(file_info->wfile, (char *)p_input_size, sizeof(int32)) !=
 			sizeof(int32))
 	{
-		ereport(ERROR, (errcode(ERRCODE_GP_INTERNAL_ERROR),
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 						errmsg("could not read from temporary file: %m")));
 	}
 
@@ -1646,7 +1643,7 @@ readHashEntry(AggState *aggstate, BatchFileInfo *file_info,
 		tuple_and_aggs = palloc(*p_input_size);
 		int32 read_size = ExecWorkFile_Read(file_info->wfile, tuple_and_aggs, *p_input_size);
 		if (read_size != *p_input_size)
-			ereport(ERROR, (errcode(ERRCODE_GP_INTERNAL_ERROR),
+			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 					errmsg("could not read from temporary file, requesting %d bytes, read %d bytes: %m",
 							*p_input_size, read_size)));
 		MemoryContextSwitchTo(oldcxt);
@@ -1765,7 +1762,7 @@ agg_hash_reload(AggState *aggstate)
 
 			if (hashtable->num_ht_groups <= 1)
 				ereport(ERROR,
-						(errcode(ERRCODE_GP_INTERNAL_ERROR),
+						(errcode(ERRCODE_INTERNAL_ERROR),
 								 ERRMSG_GP_INSUFFICIENT_STATEMENT_MEMORY));
 
 			elog(gp_workfile_caching_loglevel, "HashAgg: respill occurring in agg_hash_reload while loading batch data");
@@ -1804,16 +1801,18 @@ agg_hash_reload(AggState *aggstate)
 				fcinfo.argnull[1] = input_pergroupstate[aggno].transValueIsNull;
 
 				pergroupstate->transValue =
-					invoke_agg_trans_func(&(peraggstate->prelimfn),
-							peraggstate->prelimfn.fn_nargs - 1,
-							pergroupstate->transValue,
-							&(pergroupstate->noTransValue),
-							&(pergroupstate->transValueIsNull),
-							peraggstate->transtypeByVal,
-							peraggstate->transtypeLen,
-							&fcinfo, (void *)aggstate,
-							aggstate->tmpcontext->ecxt_per_tuple_memory,
-							&(aggstate->mem_manager));
+					invoke_agg_trans_func(aggstate,
+										  peraggstate,
+										  &(peraggstate->prelimfn),
+										  peraggstate->prelimfn.fn_nargs - 1,
+										  pergroupstate->transValue,
+										  &(pergroupstate->noTransValue),
+										  &(pergroupstate->transValueIsNull),
+										  peraggstate->transtypeByVal,
+										  peraggstate->transtypeLen,
+										  &fcinfo, (void *)aggstate,
+										  aggstate->tmpcontext->ecxt_per_tuple_memory,
+										  &(aggstate->mem_manager));
 				Assert(peraggstate->transtypeByVal ||
 				       (pergroupstate->transValueIsNull ||
 					PointerIsValid(DatumGetPointer(pergroupstate->transValue))));
@@ -1918,7 +1917,7 @@ reCalcNumberBatches(HashAggTable *hashtable, SpillFile *spill_file)
 	
 	if (hashtable->mem_for_metadata +
 		nbatches * BATCHFILE_METADATA > hashtable->max_mem)
-		ereport(ERROR, (errcode(ERRCODE_GP_INTERNAL_ERROR),
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 				 ERRMSG_GP_INSUFFICIENT_STATEMENT_MEMORY));
 	
 	hashtable->hats.nbatches = nbatches;

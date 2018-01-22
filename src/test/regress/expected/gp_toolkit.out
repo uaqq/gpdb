@@ -273,6 +273,17 @@ select * from gp_toolkit.gp_bloat_diag where bdirelid = 'toolkit_skew'::regclass
 ----------+------------+------------+-------------+-------------+---------
 (0 rows)
 
+-- Check that gp_bloat_diag can deal with big numbers. (This used to provoke an
+-- integer overflow error, before the view was fixed to use numerics for all the
+-- calculations.)
+create table wide_width_test as select * from pg_attribute;
+set allow_system_table_mods=dml ;
+update pg_statistic set stawidth=2034567890 where starelid = (select oid from pg_class where relname='test');
+select * from gp_toolkit.gp_bloat_diag WHERE bdinspname <> 'pg_catalog';
+ bdirelid | bdinspname | bdirelname | bdirelpages | bdiexppages | bdidiag 
+----------+------------+------------+-------------+-------------+---------
+(0 rows)
+
 -- MPP-5871 : ERROR: GetSnapshotData timed out waiting for Writer to set the shared snapshot.
 set client_min_messages='warning';
 CREATE TABLE mpp5871_statistics (
@@ -522,20 +533,6 @@ where pg.oid=gsopai.sopaidpartitionoid and pg.relname like 'gptoolkit_user_table
  gptoolkit_user_table_ao_1_prt_p1_2_prt_2 | t             | t              |                          0
  gptoolkit_user_table_ao_1_prt_p1_2_prt_1 | t             | t              |                          0
 (6 rows)
-
--- Test __gp_localid and __gp_masterid functions. The output of __gp_localid
--- depends on the number of segments, so just check that it returns something.
-select count(*) > 0 from gp_toolkit.__gp_localid;
- ?column? 
-----------
- t
-(1 row)
-
-select * from gp_toolkit.__gp_masterid;
- masterid 
-----------
-       -1
-(1 row)
 
 -- This also depends on the number of segments
 select count(*) > 0 from gp_toolkit.__gp_number_of_segments;

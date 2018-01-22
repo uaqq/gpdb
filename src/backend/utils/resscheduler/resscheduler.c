@@ -4,9 +4,14 @@
  *	  POSTGRES resource scheduling management code.
  *
  *
- * Copyright (c) 2006-2010, Greenplum inc.
+ * Portions Copyright (c) 2006-2010, Greenplum inc.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ *
+ * IDENTIFICATION
+ *	    src/backend/utils/resscheduler/resscheduler.c
  *
  *
 -------------------------------------------------------------------------
@@ -30,6 +35,7 @@
 #include "rewrite/rewriteHandler.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/lmgr.h"
 #include "tcop/tcopprot.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
@@ -38,15 +44,15 @@
 #include "utils/memutils.h"
 #include "utils/resscheduler.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 
 /*
  * GUC variables.
  */
-char                		*gp_resqueue_memory_policy_str = NULL;
-ResManagerMemoryPolicy     	gp_resqueue_memory_policy = RESMANAGER_MEMORY_POLICY_NONE;
-bool						gp_log_resqueue_memory = false;
-int							gp_resqueue_memory_policy_auto_fixed_mem;
-bool						gp_resqueue_print_operator_memory_limits = false;
+int 	gp_resqueue_memory_policy = RESMANAGER_MEMORY_POLICY_NONE;
+bool	gp_log_resqueue_memory = false;
+int		gp_resqueue_memory_policy_auto_fixed_mem;
+bool	gp_resqueue_print_operator_memory_limits = false;
 
 
 int		MaxResourceQueues;						/* Max # of queues. */
@@ -60,12 +66,12 @@ bool	ResourceCleanupIdleGangs;				/* Cleanup idle gangs? */
  * Global variables
  */
 ResSchedulerData	*ResScheduler;	/* Resource Scheduler (shared) data .*/
-Oid				MyQueueId;			/* resource queue for current role. */
+Oid				MyQueueId = InvalidOid;	/* resource queue for current role. */
 static uint32	portalId = 0;		/* id of portal, for tracking cursors. */
 static int32	numHoldPortals = 0;	/* # of holdable cursors tracked. */
 
 /*
- * ResSchedulerShmemSize -- estimate size the schedular structures will need in
+ * ResSchedulerShmemSize -- estimate size the scheduler structures will need in
  *	shared memory.
  *
  */
@@ -112,7 +118,7 @@ ResPortalIncrementShmemSize(void)
 
 
 /*
- * InitResScheduler -- initialize the schedular queues hash in shared memory.
+ * InitResScheduler -- initialize the scheduler queues hash in shared memory.
  *
  * The queuek hash table has no data in it as yet (InitResQueues cannot be 
  * called until catalog access is available.
@@ -287,7 +293,7 @@ ResCreateQueue(Oid queueid, Cost limits[NUM_RES_LIMIT_TYPES], bool overcommit,
 
 	Assert(LWLockHeldExclusiveByMe(ResQueueLock));
 	
-	/* If the new queue pointer is NULL, then we are out of queueus. */
+	/* If the new queue pointer is NULL, then we are out of queues. */
 	if (ResScheduler->num_queues >= MaxResourceQueues)
 		return false;
 
@@ -298,7 +304,7 @@ ResCreateQueue(Oid queueid, Cost limits[NUM_RES_LIMIT_TYPES], bool overcommit,
 	queue = ResQueueHashNew(queueid);
 	Assert(queue != NULL);
 	
-	/* Set queue oid and offset in the schedular array */
+	/* Set queue oid and offset in the scheduler array */
 	queue->queueid = queueid;
 
 	/* Set the number of limits 0 initially. */

@@ -33,8 +33,6 @@ bin/run_operator_tests.pl -
 
 List of Management Scripts Written in Bash
 ------------------------------------------
-bin/gpcrondump          -  Dumps a database 
-bin/gpdbrestore         -  Restores a database dumped from gpcrondump
 bin/gpinitsystem        -  Creates a new Greenplum Database
 bin/gpload              -  Sets env variables and calls gpload.py
 
@@ -61,7 +59,6 @@ bin/gpactivatestandby   -  Activates the Standby Master
 bin/gpaddconfig         -  Edits postgresql.conf file for all segments
 bin/gpdeletesystem      -  Deletes a Greenplum Database
 bin/gpexpand            -  Adds additional segments to a Greenplum Database
-bin/gpfilespace         -  Adds a filespace to a Greenplum Database (partial use of libraries)
 bin/gpinitstandby       -  Initializes standby master
 bin/gplogfilter         -  Filters log files
 bin/gpstart             -  Start a Greenplum Database
@@ -84,18 +81,18 @@ dattimeutils.py  -  Several utility functions for dealing with date/time data
 
 gparray.py
    |
-   +-  GpDB      - Configuration information for a single dbid
+   +-  Segment      - Configuration information for a single dbid
    |
-   +-  GpSegment - Configuration information for a single content id
-   |     \-  Contains multiple GpDB objects
+   +-  SegmentPair - Configuration information for a single content id
+   |     \-  Contains multiple Segment objects
    |
    +-  GpArray   - Configuration information for a Greenplum Database
-         \-  Contains multiple GpSegment objects
+         \-  Contains multiple SegmentPair objects
 
 gphostcache.py   
   |
   +- GpHost      - Information about a single Host
-  |    \- Contains all the GpDB objects on the host
+  |    \- Contains all the Segment objects on the host
   |
   +- GpHostCache - Helps resolve interface->hostname lookups
        \- Contains all the GpHosts referenced in a Greenplum Database

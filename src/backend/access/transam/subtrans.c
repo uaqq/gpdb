@@ -19,10 +19,10 @@
  * data across crashes.  During database startup, we simply force the
  * currently-active page of SUBTRANS to zeroes.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/subtrans.c,v 1.20 2008/01/01 19:45:48 momjian Exp $
+ * $PostgreSQL: pgsql/src/backend/access/transam/subtrans.c,v 1.24 2009/01/01 17:23:36 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -31,8 +31,9 @@
 #include "access/slru.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
+#include "pg_trace.h"
+#include "utils/snapmgr.h"
 #include "utils/tqual.h"
-#include "cdb/cdbpersistentstore.h"
 
 
 /*
@@ -68,8 +69,6 @@ static bool SubTransPagePrecedes(int page1, int page2);
 static void
 SubTransGetData(TransactionId xid, SubTransData* subData)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			pageno = TransactionIdToPage(xid);
 	int			entryno = TransactionIdToEntry(xid);
 	int			slotno;
@@ -85,8 +84,6 @@ SubTransGetData(TransactionId xid, SubTransData* subData)
 		subData->topMostParent = xid;
 		return;
 	}
-
-	MIRRORED_LOCK;
 
 	/* lock is acquired by SimpleLruReadPage_ReadOnly */
 
@@ -104,8 +101,6 @@ SubTransGetData(TransactionId xid, SubTransData* subData)
 
 	LWLockRelease(SubtransControlLock);
 
-	MIRRORED_UNLOCK;
-
 	return;
 }
 
@@ -115,8 +110,6 @@ SubTransGetData(TransactionId xid, SubTransData* subData)
 void
 SubTransSetParent(TransactionId xid, TransactionId parent)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			pageno = TransactionIdToPage(xid);
 	int			entryno = TransactionIdToEntry(xid);
 	int			slotno;
@@ -136,8 +129,6 @@ SubTransSetParent(TransactionId xid, TransactionId parent)
 		subData.topMostParent = InvalidTransactionId;
 	}
 
-	MIRRORED_LOCK;
-
 	LWLockAcquire(SubtransControlLock, LW_EXCLUSIVE);
 
 	slotno = SimpleLruReadPage(SubTransCtl, pageno, true, xid);
@@ -154,8 +145,6 @@ SubTransSetParent(TransactionId xid, TransactionId parent)
 	SubTransCtl->shared->page_dirty[slotno] = true;
 
 	LWLockRelease(SubtransControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 /*
@@ -200,7 +189,7 @@ SUBTRANSShmemInit(void)
 {
 	SubTransCtl->PagePrecedes = SubTransPagePrecedes;
 	SimpleLruInit(SubTransCtl, "SUBTRANS Ctl", NUM_SUBTRANS_BUFFERS, 0,
-				  SubtransControlLock, SUBTRANS_DIR);
+				  SubtransControlLock, "pg_subtrans");
 	/* Override default assumption that writes should be fsync'd */
 	SubTransCtl->do_fsync = false;
 }
@@ -218,11 +207,7 @@ SUBTRANSShmemInit(void)
 void
 BootStrapSUBTRANS(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			slotno;
-
-	MIRRORED_LOCK;
 
 	LWLockAcquire(SubtransControlLock, LW_EXCLUSIVE);
 
@@ -234,8 +219,6 @@ BootStrapSUBTRANS(void)
 	Assert(!SubTransCtl->shared->page_dirty[slotno]);
 
 	LWLockRelease(SubtransControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 /*
@@ -249,15 +232,9 @@ BootStrapSUBTRANS(void)
 static int
 ZeroSUBTRANSPage(int pageno)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int result;
 
-	MIRRORED_LOCK;
-
 	result = SimpleLruZeroPage(SubTransCtl, pageno);
-
-	MIRRORED_UNLOCK;
 
 	return result;
 }
@@ -272,8 +249,6 @@ ZeroSUBTRANSPage(int pageno)
 void
 StartupSUBTRANS(TransactionId oldestActiveXID)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			startPage;
 	int			endPage;
 
@@ -283,9 +258,6 @@ StartupSUBTRANS(TransactionId oldestActiveXID)
 	 * Whenever we advance into a new page, ExtendSUBTRANS will likewise zero
 	 * the new page without regard to whatever was previously on disk.
 	 */
-
-	MIRRORED_LOCK;
-
 	LWLockAcquire(SubtransControlLock, LW_EXCLUSIVE);
 
 	startPage = TransactionIdToPage(oldestActiveXID);
@@ -299,8 +271,6 @@ StartupSUBTRANS(TransactionId oldestActiveXID)
 	(void) ZeroSUBTRANSPage(startPage);
 
 	LWLockRelease(SubtransControlLock);
-
-	MIRRORED_UNLOCK;
 }
 
 /*
@@ -309,19 +279,15 @@ StartupSUBTRANS(TransactionId oldestActiveXID)
 void
 ShutdownSUBTRANS(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
-	MIRRORED_LOCK;
-
 	/*
 	 * Flush dirty SUBTRANS pages to disk
 	 *
 	 * This is not actually necessary from a correctness point of view. We do
 	 * it merely as a debugging aid.
 	 */
+	TRACE_POSTGRESQL_SUBTRANS_CHECKPOINT_START(false);
 	SimpleLruFlush(SubTransCtl, false);
-
-	MIRRORED_UNLOCK;
+	TRACE_POSTGRESQL_SUBTRANS_CHECKPOINT_DONE(false);
 }
 
 /*
@@ -330,10 +296,6 @@ ShutdownSUBTRANS(void)
 void
 CheckPointSUBTRANS(void)
 {
-	MIRRORED_LOCK_DECLARE;
-
-	MIRRORED_LOCK;
-
 	/*
 	 * Flush dirty SUBTRANS pages to disk
 	 *
@@ -341,9 +303,9 @@ CheckPointSUBTRANS(void)
 	 * it merely to improve the odds that writing of dirty pages is done by
 	 * the checkpoint process and not by backends.
 	 */
+	TRACE_POSTGRESQL_SUBTRANS_CHECKPOINT_START(true);
 	SimpleLruFlush(SubTransCtl, true);
-
-	MIRRORED_UNLOCK;
+	TRACE_POSTGRESQL_SUBTRANS_CHECKPOINT_DONE(true);
 }
 
 
@@ -359,10 +321,6 @@ void
 ExtendSUBTRANS(TransactionId newestXact)
 {
 	int			pageno;
-
-	/*
-	 * Caller must have already taken mirrored lock shared.
-	 */
 
 	/*
 	 * No work except at first XID of a page.  But beware: just after
@@ -392,8 +350,6 @@ ExtendSUBTRANS(TransactionId newestXact)
 void
 TruncateSUBTRANS(TransactionId oldestXact)
 {
-	MIRRORED_LOCK_DECLARE;
-
 	int			cutoffPage;
 
 	/*
@@ -401,12 +357,7 @@ TruncateSUBTRANS(TransactionId oldestXact)
 	 * pass the *page* containing oldestXact to SimpleLruTruncate.
 	 */
 	cutoffPage = TransactionIdToPage(oldestXact);
-
-	MIRRORED_LOCK;
-
 	SimpleLruTruncate(SubTransCtl, cutoffPage);
-
-	MIRRORED_UNLOCK;
 }
 
 

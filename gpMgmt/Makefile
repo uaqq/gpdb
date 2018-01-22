@@ -10,11 +10,8 @@ SET_VERSION_SCRIPTS = \
 	bin/gpactivatestandby \
 	bin/gpaddmirrors \
 	bin/gpcheckperf \
-	bin/gpcrondump \
-	bin/gpdbrestore \
 	bin/gpdeletesystem \
 	bin/gpexpand \
-	bin/gpfilespace \
 	bin/gpinitstandby \
 	bin/gpinitsystem \
 	bin/gpload.py \
@@ -132,8 +129,9 @@ install: generate_greenplum_path_file
 	rm -rf $(DESTDIR)$(prefix)/bin/src
 	rm -f $(DESTDIR)$(prefix)/bin/gpchecksubnetcfg
 	rm -rf $(DESTDIR)$(prefix)/bin/gppylib
+	rm -rf $(DESTDIR)$(prefix)/bin/gpload_test
 	find $(DESTDIR)$(prefix)/lib/python/gppylib -name test -type d | xargs rm -rf
 
-clean:
-	@$(MAKE) -C bin $@
-	@$(MAKE) -C sbin $@
+clean distclean:
+	$(MAKE) -C bin $@
+	$(MAKE) -C sbin $@

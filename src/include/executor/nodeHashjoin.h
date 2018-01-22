@@ -4,10 +4,10 @@
  *	  prototypes for nodeHashjoin.c
  *
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/executor/nodeHashjoin.h,v 1.37 2008/01/01 19:45:57 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/executor/nodeHashjoin.h,v 1.38 2009/01/01 17:23:59 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -17,9 +17,6 @@
 #include "nodes/execnodes.h"
 #include "storage/buffile.h"
 
-struct HashJoinBatchSide;               /* #include "executor/hashjoin.h" */
-struct Instrumentation;                 /* #include "executor/instrument.h" */
-
 extern int	ExecCountSlotsHashJoin(HashJoin *node);
 extern HashJoinState *ExecInitHashJoin(HashJoin *node, EState *estate, int eflags);
 extern TupleTableSlot *ExecHashJoin(HashJoinState *node);
@@ -27,13 +24,8 @@ extern void ExecEndHashJoin(HashJoinState *node);
 extern void ExecReScanHashJoin(HashJoinState *node, ExprContext *exprCtxt);
 
 extern void ExecHashJoinSaveTuple(PlanState *ps, MemTuple tuple, uint32 hashvalue,
-								  HashJoinTable hashtable, struct HashJoinBatchSide *batchside,
+								  HashJoinTable hashtable, ExecWorkFile **fileptr,
 								  MemoryContext bfCxt);
 extern void ExecEagerFreeHashJoin(HashJoinState *node);
-
-static inline gpmon_packet_t * GpmonPktFromHashJoinState(HashJoinState *s)
-{
-	return &s->js.ps.gpmon_pkt;
-}
 
 #endif   /* NODEHASHJOIN_H */

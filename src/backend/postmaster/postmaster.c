@@ -33,12 +33,13 @@
  *
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.612 2010/06/16 00:54:16 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/postmaster.c,v 1.583 2009/06/26 20:29:04 tgl Exp $
  *
  * NOTES
  *
@@ -146,14 +147,14 @@
 #include "cdb/cdbtm.h"
 #include "cdb/cdbvars.h"
 
-#include "cdb/cdbfilerep.h"
-
 #ifdef EXEC_BACKEND
 #include "storage/spin.h"
 void SeqServerMain(int argc, char *argv[]);
 
 void FtsProbeMain(int argc, char *argv[]);
 #endif
+
+bool am_mirror = false;
 
 
 /*
@@ -254,9 +255,6 @@ static PrimaryMirrorMode gInitialMode = PMModeMirrorlessSegment;
  * as well.
  */
 static pid_t StartupPID = 0,
-			StartupPass2PID = 0,
-			StartupPass3PID = 0,
-			StartupPass4PID = 0,
 			BgWriterPID = 0,
 			CheckpointerPID = 0,
 			WalWriterPID = 0,
@@ -267,8 +265,6 @@ static pid_t StartupPID = 0,
 			SysLoggerPID = 0,
 			FilerepPID = 0,
 			FilerepPeerResetPID = 0;
-
-#define StartupPidsAllZero() (StartupPID == 0 || StartupPass2PID == 0 || StartupPass3PID == 0 || StartupPass4PID == 0)
 
 static volatile sig_atomic_t filerep_has_signaled_state_change = false;
 static volatile sig_atomic_t filerep_requires_postmaster_reset = false;
@@ -330,18 +326,15 @@ static bool gHaveCalledOnetimeInitFunctions = false;
  * states later than PM_RUN --- Shutdown and FatalError must be consulted
  * to find that out.  FatalError is never true in PM_INIT through PM_RUN
  * states, nor in PM_SHUTDOWN states (because we don't enter those states
- * when trying to recover from a crash).
- *
- * RecoveryError means that we have crashed during recovery, and
+ * when trying to recover from a crash).  It can be true in PM_STARTUP state,
+ * because we don't clear it until we've successfully started WAL redo.
+ * Similarly, RecoveryError means that we have crashed during recovery, and
  * should not try to restart.
  */
 typedef enum
 {
 	PM_INIT,					/* postmaster starting */
 	PM_STARTUP,					/* waiting for startup subprocess */
-	PM_STARTUP_PASS2, 			/* waiting for startup pass 2 subprocess */
-	PM_STARTUP_PASS3,			/* waiting for startup pass 3 subprocess */
-	PM_STARTUP_PASS4,			/* waiting for startup pass 4 subprocess */
 	PM_RECOVERY,				/* in archive recovery mode */
 	PM_RECOVERY_CONSISTENT,		/* consistent recovery mode */
 	PM_RUN,						/* normal "database is alive" state */
@@ -389,9 +382,6 @@ static const char *const gPmStateLabels[] =
 {
 	"init",
     "startup",
-    "startup_pass2",
-    "startup_pass3",
-	"startup_pass4",
     "recovery",
     "recovery_consistent",
     "run",
@@ -493,9 +483,8 @@ extern char *optarg;
 extern int	optind,
 			opterr;
 
-/* If not HAVE_GETOPT, we are using src/port/getopt.c, which has optreset */
-#if defined(HAVE_INT_OPTRESET) || !defined(HAVE_GETOPT)
-extern int	optreset;
+#ifdef HAVE_INT_OPTRESET
+extern int	optreset;			/* might not be declared by system headers */
 #endif
 
 /* some GUC values used in fetching status from status transition */
@@ -510,11 +499,6 @@ extern char    *locale_collate;
 static void getInstallationPaths(const char *argv0);
 static void checkDataDir(void);
 static void checkPgDir(const char *dir);
-static void checkPgDir2(const char *dir);
-
-#ifdef USE_TEST_UTILS
-static void SimExProcExit(void);
-#endif /* USE_TEST_UTILS */
 
 #ifdef USE_BONJOUR
 static void reg_reply(DNSServiceRegistrationReplyErrorType errorCode,
@@ -555,7 +539,6 @@ static int	BackendStartup(Port *port);
 static int	ProcessStartupPacket(Port *port, bool SSLdone);
 static void processCancelRequest(Port *port, void *pkt, MsgType code);
 static void processPrimaryMirrorTransitionRequest(Port *port, void *pkt);
-static void processPrimaryMirrorTransitionQuery(Port *port, void *pkt);
 static int	initMasks(fd_set *rmask);
 static void report_fork_failure_to_client(Port *port, int errnum);
 static enum CAC_state canAcceptConnections(void);
@@ -596,7 +579,7 @@ typedef struct
 	HANDLE		waitHandle;
 	HANDLE		procHandle;
 	DWORD		procId;
-}	win32_deadchild_waitinfo;
+} win32_deadchild_waitinfo;
 
 #endif
 
@@ -653,9 +636,9 @@ typedef struct
 	char		my_exec_path[MAXPGPATH];
 	char		pkglib_path[MAXPGPATH];
 	char		ExtraOptions[MAXPGPATH];
-	char		lc_collate[LOCALE_NAME_BUFLEN];
-	char		lc_ctype[LOCALE_NAME_BUFLEN];
-}	BackendParameters;
+	char		lc_collate[NAMEDATALEN];
+	char		lc_ctype[NAMEDATALEN];
+} BackendParameters;
 
 static void read_backend_variables(char *id, Port *port);
 static void restore_backend_variables(BackendParameters *param, Port *port);
@@ -672,9 +655,6 @@ static void ShmemBackendArrayRemove(Backend *bn);
 #endif   /* EXEC_BACKEND */
 
 #define StartupDataBase()		StartChildProcess(StartupProcess)
-#define StartupPass2DataBase()	StartChildProcess(StartupPass2Process)
-#define StartupPass3DataBase()	StartChildProcess(StartupPass3Process)
-#define StartupPass4DataBase()	StartChildProcess(StartupPass4Process)
 #define StartBackgroundWriter() StartChildProcess(BgWriterProcess)
 #define StartCheckpointer()     StartChildProcess(CheckpointerProcess)
 #define StartWalWriter()		StartChildProcess(WalWriterProcess)
@@ -696,16 +676,6 @@ bool Gp_entry_postmaster = false;
 
 static int Save_MppLocalProcessCounter = 0;
 static DistributedTransactionTimeStamp Save_DtxStartTime = 0;
-
-/** resync status info from cdbfilerepresyncmanager.h **/
-extern struct timeval FileRepResync_GetEstimateResyncCompletionTime(void);
-extern int64 FileRepResync_GetBlocksSynchronized(void);
-extern int64 FileRepResync_GetTotalBlocksToSynchronize(void);
-extern int FileRepResync_GetCurFsobjCount(void);
-extern int FileRepResync_GetTotalFsobjCount(void);
-
-/* changetracking size info from cdbresynchronizechangetracking.h */
-extern int64 ChangeTracking_GetTotalSpaceUsedOnDisk(void);
 
 #ifndef WIN32
 /*
@@ -732,17 +702,6 @@ bool GPIsSegmentDatabase()
 bool GPAreFileReplicationStructuresRequired(void)
 {
     return AreFileReplicationStructuresRequired;
-}
-
-/**
- * filerep process is interested in the bg writer's pid, so
- *   all sets of bgwriter pid should go through this function
- *   so that we update shared memory
- */
-static void SetBGWriterPID(pid_t pid)
-{
-    BgWriterPID = pid;
-    primaryMirrorSetBGWriterPID(pid);
 }
 
 /**
@@ -854,7 +813,7 @@ PostmasterMain(int argc, char *argv[])
 	 * tcop/postgres.c (the option sets should not conflict) and with the
 	 * common help() function in main/main.c.
 	 */
-	while ((opt = getopt(argc, argv, "A:B:bc:D:d:EeFf:h:ijk:lN:mM:nOo:Pp:r:S:sTt:UW:yx:-:")) != -1)
+	while ((opt = getopt(argc, argv, "A:B:bc:D:d:EeFf:h:ijk:lN:mM:nOo:Pp:r:S:sTt:UW:-:")) != -1)
 	{
 		switch (opt)
 		{
@@ -1028,7 +987,6 @@ PostmasterMain(int argc, char *argv[])
 				 * 3. TODO: disable the 4.1 xlog format (stick with the old)
 				 */
 				SetConfigOption("upgrade_mode",                         "true", PGC_POSTMASTER, PGC_S_ARGV);
-				SetConfigOption("gp_permit_persistent_metadata_update", "true", PGC_POSTMASTER, PGC_S_ARGV);
 				SetConfigOption("allow_segment_DML",  		            "true", PGC_POSTMASTER, PGC_S_ARGV);
 				SetConfigOption("allow_system_table_mods",              "all",  PGC_POSTMASTER, PGC_S_ARGV);
 				break;
@@ -1064,15 +1022,6 @@ PostmasterMain(int argc, char *argv[])
 						free(value);
 					break;
 				}
-
-			case 'y':
-				// Indicate that gpstart did not start the standby master.
-				SetConfigOption("master_mirroring_administrator_disable", "true", PGC_POSTMASTER, PGC_S_ARGV);
-				break;
-
-			case 'x': /* standby master dbid */
-				SetConfigOption("gp_standby_dbid", optarg, PGC_POSTMASTER, PGC_S_ARGV);
-				break;
 
 			default:
 				write_stderr("Try \"%s --help\" for more information.\n",
@@ -1153,7 +1102,7 @@ PostmasterMain(int argc, char *argv[])
 	/*
 	 * Check for invalid combinations of GUC settings.
 	 */
-	if (ReservedBackends > MaxBackends)
+	if (ReservedBackends >= MaxBackends)
 	{
 		write_stderr("%s: superuser_reserved_connections must be less than max_connections\n", progname);
 		ExitPostmaster(1);
@@ -1182,6 +1131,12 @@ PostmasterMain(int argc, char *argv[])
              "The contentid value to pass can be determined this server's entry in the segment configuration; it may be -1 for a master, or in utility mode."
              )));
 	}
+
+	/*
+	 * This value of max_wal_senders will be inherited by all the child processes
+	 * through fork(). This value is used by XLogIsNeeded().
+	 */
+	max_wal_senders = 1;
 
 	if ( GpIdentity.numsegments < 0 )
 	{
@@ -1563,7 +1518,7 @@ IsDatabaseInRunMode(void)
 void
 SignalShutdownFilerepProcess(void)
 {
-    if ( Debug_print_server_processes || Debug_filerep_print)
+    if (Debug_print_server_processes)
     {
     	elog(LOG, "Shutting down filerep process");
     }
@@ -1573,7 +1528,7 @@ SignalShutdownFilerepProcess(void)
 void
 SignalShutdownFilerepBackendProcesses(void)
 {
-    if ( Debug_print_server_processes || Debug_filerep_print)
+    if (Debug_print_server_processes)
     {
 	    elog(LOG, "Shutting down filerep backend processes");
     }
@@ -1758,55 +1713,24 @@ static void
 checkPgDir(const char *dir)
 {
 	struct stat st;
-	char buf[strlen(DataDir) + strlen(dir) + 32];
+	/*
+	 * DataDir is known to be smaller than MAXPGPATH, and 'dir' argument is always
+	 * a short constant.
+	 */
+	char		buf[MAXPGPATH + MAXPGPATH];
 
-	snprintf(buf, ARRAY_SIZE(buf), "%s%s", DataDir, dir);
-	buf[ARRAY_SIZE(buf) - 1] = '\0';
+	snprintf(buf, sizeof(buf), "%s%s", DataDir, dir);
 
 	if (stat(buf, &st) != 0)
 	{
 		/* check if pg_log is there */
-		snprintf(buf, ARRAY_SIZE(buf), "%s%s", DataDir, "/pg_log");
+		snprintf(buf, sizeof(buf), "%s%s", DataDir, "/pg_log");
 		if (stat(buf, &st) == 0)
-		{
 			elog(LOG, "System file or directory missing (%s), shutting down segment", dir);
-		}
 
 		/* quit all processes and exit */
 		pmdie(SIGQUIT);
 	}
-}
-
-/*
- * check if file or directory under current transaction filespace exists and is accessible
- */
-static void checkPgDir2(const char *dir)
-{
-	Assert(DataDir);
-
-	struct stat st;
-	char buf[MAXPGPATH];
-	char *path = makeRelativeToTxnFilespace((char*)dir);
-
-	snprintf(buf, MAXPGPATH, "%s", path);
-	buf[ARRAY_SIZE(buf) - 1] = '\0';
-
-	if (stat(buf, &st) != 0)
-	{
-		/* check if pg_log is there */
-		snprintf(buf, ARRAY_SIZE(buf), "%s%s", DataDir, "/pg_log");
-		if (stat(buf, &st) == 0)
-		{
-			elog(LOG, "System file or directory missing (%s), shutting down segment", path);
-		}
-
-		pfree(path);
-		/* quit all processes and exit */
-		pmdie(SIGQUIT);
-		return;
-	}
-	
-	pfree(path);
 }
 
 /*
@@ -1959,52 +1883,6 @@ checkIODataDirectory(void)
 
 	return failure;
 }
-
-#ifdef USE_TEST_UTILS
-/*
- * Simulate an unexpected process exit using SimEx
- */
-static void SimExProcExit()
-{
-	if (gp_simex_init && gp_simex_run && pmState == PM_RUN)
-	{
-		pid_t pid = 0;
-		int sig = 0;
-		const char *procName = NULL;
-		const char *sigName = NULL;
-
-		if (gp_simex_class == SimExESClass_ProcKill)
-		{
-			sig = SIGKILL;
-			sigName = "SIGKILL";
-
-			SimExESSubClass subclass = SimEx_CheckInject();
-			if (subclass == SimExESSubClass_ProcKill_BgWriter)
-			{
-				pid = BgWriterPID;
-				procName = GetServerProcessTitle(pid);
-			}
-			else
-			{
-				Assert(subclass == SimExESSubClass_OK &&
-				       "Unexpected ES subclass for SIGKILL injection");
-			}
-		}
-
-		if (pid != 0)
-		{
-			Assert(sig != 0);
- 			Assert(procName != NULL);
- 			Assert(sigName != NULL);
-
- 			ereport(LOG,
- 					(errmsg_internal("sending %s to %s (%d)", sigName, procName, (int) pid)));
- 			signal_child(pid, sig);
- 		}
- 	}
-}
-#endif /* USE_TEST_UTILS */
-
 
 #ifdef USE_BONJOUR
 
@@ -2188,7 +2066,7 @@ BeginResetOfPostmasterAfterChildrenAreShutDown(void)
 	 * this happens before forking the filerep peer reset process;
 	 * the latter process should not use information from shared memory;
 	 */
-	shmem_exit(0 /*code*/);
+	shmem_exit(1 /*code*/);
 	reset_shared(PostPortNumber, true /*isReset*/);
 
 	/*
@@ -2327,10 +2205,6 @@ ServerLoop(void)
             timeout.tv_usec = 0;
         }
 
-#ifdef USE_TEST_UTILS
-        SimExProcExit();
-#endif /* USE_TEST_UTILS */
-
         errno = 0;
         if (acceptNewConnections)
         {
@@ -2365,20 +2239,16 @@ ServerLoop(void)
 			checkPgDir("/global");
 			checkPgDir("/pg_twophase");
 			checkPgDir("/pg_utilitymodedtmredo");
-			checkPgDir2("pg_distributedlog");
-			checkPgDir2("pg_distributedxidmap");
-			checkPgDir2("pg_multixact");
-			checkPgDir2("pg_subtrans");
-			checkPgDir2("pg_xlog");
-			checkPgDir2("pg_clog");
-			checkPgDir2("pg_multixact/members");
-			checkPgDir2("pg_multixact/offsets");
-			checkPgDir2("pg_xlog/archive_status");	
+			checkPgDir("/pg_distributedlog");
+			checkPgDir("/pg_distributedxidmap");
+			checkPgDir("/pg_multixact");
+			checkPgDir("/pg_subtrans");
+			checkPgDir("/pg_xlog");
+			checkPgDir("/pg_clog");
+			checkPgDir("/pg_multixact/members");
+			checkPgDir("/pg_multixact/offsets");
+			checkPgDir("/pg_xlog/archive_status");	
 		}
-
-#ifdef USE_TEST_UTILS
-		SimExProcExit();
-#endif /* USE_TEST_UTILS */
 
 		/*
 		 * Block all signals until we wait again.  (This makes it safe for our
@@ -2445,10 +2315,6 @@ ServerLoop(void)
 			}
 		}
 
-#ifdef USE_TEST_UTILS
-        SimExProcExit();
-#endif /* USE_TEST_UTILS */
-
         if (!FatalError)
         {
             /* only do primary/mirror transitions if we are NOT during process shutdown because of FatalError...
@@ -2473,17 +2339,17 @@ ServerLoop(void)
 			 * fails, we'll just try again later.
 			 */
 			if (BgWriterPID == 0 &&
-			    pmState > PM_STARTUP_PASS4 &&
+			    pmState > PM_STARTUP &&
 			    pmState < PM_CHILD_STOP_BEGIN)
 			{
-				SetBGWriterPID(StartBackgroundWriter());
+				BgWriterPID = StartBackgroundWriter();
 				if (Debug_print_server_processes)
 					elog(LOG,"restarted 'background writer process' as pid %ld",
 						 (long)BgWriterPID);
 			}
 
 			if (CheckpointerPID == 0 &&
-			    pmState > PM_STARTUP_PASS4 &&
+			    pmState > PM_STARTUP &&
 			    pmState < PM_CHILD_STOP_BEGIN)
 			{
 				CheckpointerPID = StartCheckpointer();
@@ -2516,7 +2382,7 @@ ServerLoop(void)
 
 			/* If we have lost the stats collector, try to start a new one */
 			if (PgStatPID == 0 &&
-			    pmState > PM_STARTUP_PASS4 &&
+			    pmState > PM_STARTUP &&
 			    pmState < PM_CHILD_STOP_BEGIN)
 			{
 				PgStatPID = pgstat_start();
@@ -2532,8 +2398,8 @@ ServerLoop(void)
 				PMSubProc *subProc = &PMSubProcList[s];
 
 				if (subProc->pid == 0 &&
-					StartupPidsAllZero() &&
-					pmState > PM_STARTUP_PASS4 &&
+					StartupPID == 0 &&
+					pmState > PM_STARTUP &&
 					!FatalError &&
 					Shutdown == NoShutdown &&
 					ServiceStartable(subProc))
@@ -2589,13 +2455,31 @@ initMasks(fd_set *rmask)
 
 		if (fd == PGINVALID_SOCKET)
 			break;
-		FD_SET(fd, rmask);
+		FD_SET		(fd, rmask);
+
 		if (fd > maxsock)
 			maxsock = fd;
 	}
 
 	return maxsock + 1;
 }
+
+/*
+ * XXX check to see if we're a mirror.  And if we are: (1) Assume that we
+ * are running as super user. (2) No data pages need to be accessed by this
+ * backend - no snapshot / transaction needed.
+ *
+ * The recovery.conf file is renamed to recovery.done at the end of xlog
+ * replay.  Normal backends can be created thereafter.
+ */
+bool
+IsRoleMirror(void)
+{
+	struct stat stat_buf;
+	return (stat(RECOVERY_COMMAND_FILE, &stat_buf) == 0);
+}
+
+
 
 
 /*
@@ -2623,13 +2507,7 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 		/*
 		 * EOF after SSLdone probably means the client didn't like our
 		 * response to NEGOTIATE_SSL_CODE.	That's not an error condition, so
-		 * don't clutter the log with a complaint.else if (strcmp(nameptr, "replication") == 0)
-			{
-				if (!parse_bool(valptr, &am_walsender))
-					ereport(FATAL,
-							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("invalid value for boolean option \"replication\"")));
-			}
+		 * don't clutter the log with a complaint.
 		 */
 		if (!SSLdone)
 			ereport(COMMERROR,
@@ -2687,14 +2565,6 @@ ProcessStartupPacket(Port *port, bool SSLdone)
             elog(FATAL, "could not disable timer for authorization timeout");
 		elog(LOG, "received transition request packet. processing the request");
 		processPrimaryMirrorTransitionRequest(port, buf);
-		return 127;
-	}
-	else if (proto == PRIMARY_MIRROR_TRANSITION_QUERY_CODE)
-	{
-	    /* disable the authentication timeout in case it takes a long time */
-        if (!disable_sig_alarm(false))
-            elog(FATAL, "could not disable timer for authorization timeout");
-		processPrimaryMirrorTransitionQuery(port, buf);
 		return 127;
 	}
 
@@ -2805,6 +2675,23 @@ retry1:
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 							 errmsg("option not supported: \"replication\"")));
 			}
+			else if (strcmp(nameptr, GPCONN_TYPE) == 0)
+			{
+				if (strcmp(valptr, GPCONN_TYPE_FTS) == 0)
+				{
+					if (GpIdentity.segindex == MASTER_CONTENT_ID)
+						ereport(FATAL,
+								(errcode(ERRCODE_PROTOCOL_VIOLATION),
+								 errmsg("cannot handle FTS connection on master")));
+					elog(LOG, "handling FTS connection");
+					am_ftshandler = true;
+					am_mirror = IsRoleMirror();
+				}
+				else
+					ereport(FATAL,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("invalid value for option: \"%s\"", GPCONN_TYPE)));
+			}
 			else
 			{
 				/* Assume it's a generic GUC option */
@@ -2821,9 +2708,11 @@ retry1:
 		 * given packet length, complain.
 		 */
 		if (offset != len - 1)
+		{
 			ereport(FATAL,
 					(errcode(ERRCODE_PROTOCOL_VIOLATION),
 					 errmsg("invalid startup packet layout: expected terminator as last byte")));
+		}
 	}
 	else
 	{
@@ -2890,7 +2779,7 @@ retry1:
 		port->user_name[NAMEDATALEN - 1] = '\0';
 
 	/* Walsender is not related to a particular database */
-	if (am_walsender)
+	if (am_walsender || am_ftshandler)
 		port->database_name[0] = '\0';
 
 	/*
@@ -2912,6 +2801,8 @@ retry1:
 	switch (port->canAcceptConnections)
 	{
 		case CAC_STARTUP:
+			if (am_ftshandler && am_mirror)
+				break;
 			ereport(FATAL,
 					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
 					 errSendAlert(false),
@@ -2941,11 +2832,19 @@ retry1:
 					 errSendAlert(true),
 					 errmsg("sorry, too many clients already")));
 			break;
+		case CAC_WAITBACKUP:
+			/* GPDB_84_MERGE_FIXME: we don't have a WAITBACKUP state. 
+			 * Do we want to just remove this case entirely? */
+			Assert(port->canAcceptConnections != CAC_WAITBACKUP);
+			break;
 		case CAC_OK:
 			break;
 	}
 
-	SIMPLE_FAULT_INJECTOR(ProcessStartupPacketFault);
+	if (!am_ftshandler)
+	{
+		SIMPLE_FAULT_INJECTOR(ProcessStartupPacketFault);
+	}
 
 	return STATUS_OK;
 }
@@ -3126,20 +3025,18 @@ processTransitionRequest_getMirrorStatus(void)
 
 	getPrimaryMirrorStatusCodes(&pm_mode, &s_state, &d_state, &f_type);
 
-	int64 resyncNumCompleted = FileRepResync_GetBlocksSynchronized();
-	int64 resyncTotalToComplete = FileRepResync_GetTotalBlocksToSynchronize();
-	int64 changeTrackingBytesUsed = ChangeTracking_GetTotalSpaceUsedOnDisk();
+	int64 resyncNumCompleted = 0;
+	int64 resyncTotalToComplete = 0;
+	int64 changeTrackingBytesUsed = 0;
 
-	int fsobjCount = FileRepResync_GetCurFsobjCount();
-	int totalFsobjCount = FileRepResync_GetTotalFsobjCount();
+	int fsobjCount = 0;
+	int totalFsobjCount = 0;
 
 	/**
 	 * Note: call this one AFTER calling the others above -- it will return a sentinel
 	 *       if estimates are invalid, and we want to be sure we get the sentinel
 	 *       (the system can go from valid to invalid estimates but no vice-versa)
 	 */
-	struct timeval estimateResyncCompletionTime = FileRepResync_GetEstimateResyncCompletionTime();
-
 	bool isIOSuspended = primaryMirrorIsIOSuspended();
 	char *databaseStatus;
 
@@ -3196,7 +3093,7 @@ processTransitionRequest_getMirrorStatus(void)
 			 resyncNumCompleted,
 			 resyncTotalToComplete,
 			 changeTrackingBytesUsed,
-			 (int64)estimateResyncCompletionTime.tv_sec,
+			 (int64)0,
 			 totalFsobjCount,
 			 fsobjCount);
 
@@ -3211,22 +3108,8 @@ processTransitionRequest_getStatus(void)
 	sendPrimaryMirrorTransitionResult(statusBuf);
 }
 
-static void
-processTransitionRequest_getCollationAndDataDir(void)
-{
-	char statusBuf[10000 + MAXPGPATH];
 
-	snprintf(statusBuf, sizeof(statusBuf), "Success: lc_collate:%s\n"
-				"lc_monetary:%s\n"
-				"lc_numeric:%s\n"
-				"datadir:%s\n",
-				locale_collate,
-				locale_monetary,
-				locale_numeric,
-				data_directory );
 
-	sendPrimaryMirrorTransitionResult(statusBuf);
-}
 
 static void
 processTransitionRequest_getVersion(void)
@@ -3252,7 +3135,7 @@ static void processTransitionRequest_getFaultInjectStatus(void * buf, int *offse
 		return;
 	}
 
-	if (FaultInjector_IsFaultInjected(FaultInjectorIdentifierStringToEnum(faultName))) {
+	if (FaultInjector_IsFaultInjected(faultName)) {
 		isDone = true;
 	}
 
@@ -3290,9 +3173,9 @@ processTransitionRequest_faultInject(void * inputBuf, int *offsetPtr, int length
 	elog(DEBUG1, "FAULT INJECTED: Name %s Type %s, DDL %s, DB %s, Table %s, NumOccurrences %d  SleepTime %d",
 		 faultName, type, ddlStatement, databaseName, tableName, numOccurrences, sleepTimeSeconds );
 
+	strlcpy(faultInjectorEntry.faultName, faultName, sizeof(faultInjectorEntry.faultName));
 	faultInjectorEntry.faultInjectorIdentifier = FaultInjectorIdentifierStringToEnum(faultName);
-	if (faultInjectorEntry.faultInjectorIdentifier == FaultInjectorIdNotSpecified ||
-		faultInjectorEntry.faultInjectorIdentifier == FaultInjectorIdMax) {
+	if (faultInjectorEntry.faultInjectorIdentifier == FaultInjectorIdNotSpecified) {
 		ereport(COMMERROR, (errcode(ERRCODE_PROTOCOL_VIOLATION),
 							errmsg("could not recognize fault name")));
 
@@ -3420,10 +3303,6 @@ processPrimaryMirrorTransitionRequest(Port *port, void *pkt)
 	{
 		processTransitionRequest_getStatus();
 	}
-	else if (strcmp("getCollationAndDataDirSettings", targetModeStr) == 0)
-	{
-		processTransitionRequest_getCollationAndDataDir();
-    }
 	else if (strcmp("getMirrorStatus", targetModeStr) == 0)
 	{
 		processTransitionRequest_getMirrorStatus();
@@ -3499,13 +3378,6 @@ processPrimaryMirrorTransitionRequest(Port *port, void *pkt)
             args->dataState = DataStateInResync;
 			args->forceFullResync = TRUE;
 			
-			/* 
-			 * The system may have been configured to use a new filespace for transaction files
-			 * when this segment was down. Now when the segment comes up, we need to make sure
-			 * to reload all the info abt the location of txn files from the flat files and hence
-			 * make sure that the mirror starts using the logs at the right location 
-			 */
-			primaryMirrorPopulateFilespaceInfo();
         }
 		else
 		{
@@ -3574,116 +3446,6 @@ processPrimaryMirrorTransitionRequest(Port *port, void *pkt)
 	}
 }
 
-static void
-sendPrimaryMirrorTransitionQuery(uint32 mode, uint32 segstate, uint32 datastate, uint32 faulttype)
-{
-	StringInfoData buf;
-
-	initStringInfo(&buf);
-
-	pq_beginmessage(&buf, '\0');
-
-	pq_sendint(&buf, mode, 4);
-	pq_sendint(&buf, segstate, 4);
-	pq_sendint(&buf, datastate, 4);
-	pq_sendint(&buf, faulttype, 4);
-
-	pq_endmessage(&buf);
-	pq_flush();
-}
-
-/**
- * Called during startup packet processing.
- *
- * Note that we don't worry about freeing memory here because this is
- * called on a new backend which is closed after this operation
- */
-static void
-processPrimaryMirrorTransitionQuery(Port *port, void *pkt)
-{
-	PrimaryMirrorTransitionPacket *transition = (PrimaryMirrorTransitionPacket *) pkt;
-	int length;
-
-	PrimaryMirrorMode pm_mode;
-	SegmentState_e s_state;
-	DataState_e d_state;
-	FaultType_e f_type;
-
-	init_ps_display("filerep status query process", "", "", "");
-
-	length = (int)ntohl(transition->dataLength);
-	if (length != 0)
-	{
-		ereport(COMMERROR, (errcode(ERRCODE_PROTOCOL_VIOLATION),
-				 errmsg("corrupt length value %d in primary mirror query packet", length)));
-		return;
-	}
-
-	SIMPLE_FAULT_INJECTOR(SegmentProbeResponse);
-
-	getPrimaryMirrorStatusCodes(&pm_mode, &s_state, &d_state, &f_type);
-
-	/* check if resync has completed on both primary and mirror */
-	if (pm_mode == PMModePrimarySegment && d_state == DataStateInSync && isResyncRunning())
-	{
-		d_state = DataStateInResync;
-	}
-
-	/* check if segment is mirrorless primary */
-	if (pm_mode == PMModeMirrorlessSegment)
-	{
-		Assert(d_state == DataStateNotInitialized);
-
-		/* report segment as in sync to conform with master's segment configuration */
-		d_state = DataStateInSync;
-	}
-
-	/* in case of a mirroring fault, check if there is a NIC failure */
-	if ((pm_mode == PMModePrimarySegment && f_type == FaultTypeMirror) ||
-	     (pm_mode == PMModeMirrorSegment &&
-	       (f_type == FaultTypeNotInitialized || f_type == FaultTypeMirror)))
-	{
-		if (primaryMirrorCheckNICFailure())
-		{
-			/* report NIC failure to FTS */
-			f_type = FaultTypeNet;
-		}
-	}
-	
-	if (gp_log_fts >= GPVARS_VERBOSITY_VERBOSE)
-	{
-		ereport(LOG, (errmsg("FTS: Probe Request (mode: %s) (segmentState: %s) (dataState: %s) (fault: %s)", 
-			getMirrorModeLabel(pm_mode), getSegmentStateLabel(s_state), getDataStateLabel(d_state), getFaultTypeLabel(f_type))));
-	}
-
-	/*
-	 * FTS apart from below code doesn't perform any disk IO,
-	 * hence adding code to perform reads and writes to segment data directory.
-	 * Several DU cases exposed FTS not detecting server hangs because of IO hang.
-	 * Hence adding this code to perform IO and if some issue will hang similar to other queries,
-	 * causing FTS to detect the problem.
-	 */
-	if (fts_diskio_check)
-	{
-		if (pm_mode == PMModePrimarySegment && 
-			f_type == FaultTypeNotInitialized)
-		{
-			bool failure = checkIODataDirectory();
-			if (failure)
-			{
-				elog(LOG, "FTS_PROBE for IO Check: FAILED");
-				s_state = SegmentStateFault;
-				f_type = FaultTypeIO; 
-
-				FileRep_SetSegmentState(s_state, f_type);
-			}
-		}
-	}
-
-	sendPrimaryMirrorTransitionQuery((uint32)pm_mode, (uint32)s_state, (uint32)d_state, (uint32)f_type);
-
-	return;
-}
 
 /*
  * The client has sent a cancel request packet, not a normal
@@ -3784,9 +3546,6 @@ canAcceptConnections(void)
 
 		if (!FatalError &&
 			(pmState == PM_STARTUP ||
-			 pmState == PM_STARTUP_PASS2 ||
-			 pmState == PM_STARTUP_PASS3 ||
-			 pmState == PM_STARTUP_PASS4 ||
 			 pmState == PM_RECOVERY ||
 			 pmState == PM_RECOVERY_CONSISTENT))
 			return CAC_STARTUP; /* normal startup */
@@ -3983,9 +3742,6 @@ SIGHUP_handler(SIGNAL_ARGS)
 		ProcessConfigFile(PGC_SIGHUP);
 		SignalChildren(SIGHUP);
 		signal_child_if_up(StartupPID, SIGHUP);
-        signal_child_if_up(StartupPass2PID, SIGHUP);
-        signal_child_if_up(StartupPass3PID, SIGHUP);
-        signal_child_if_up(StartupPass4PID, SIGHUP);
 		signal_child_if_up(BgWriterPID, SIGHUP);
 		signal_child_if_up(CheckpointerPID, SIGHUP);
 		signal_child_if_up(WalWriterPID, SIGHUP);
@@ -4004,7 +3760,8 @@ SIGHUP_handler(SIGNAL_ARGS)
 			}
 		}
 		signal_child_if_up(SysLoggerPID, SIGHUP);
-		signal_child_if_up(PgStatPID, SIGHUP);
+		if (PgStatPID != 0)
+			signal_child(PgStatPID, SIGHUP);
 
 		/* Reload authentication config files too */
 		if (!load_hba())
@@ -4104,9 +3861,6 @@ pmdie(SIGNAL_ARGS)
 
 			SignalChildren(SIGQUIT);
 			signal_child_if_up(StartupPID, SIGQUIT);
-            signal_child_if_up(StartupPass2PID, SIGQUIT);
-            signal_child_if_up(StartupPass3PID, SIGQUIT);
-            signal_child_if_up(StartupPass4PID, SIGQUIT);
  			StopServices(0, SIGQUIT);
 			signal_child_if_up(BgWriterPID, SIGQUIT);
 			signal_child_if_up(CheckpointerPID, SIGQUIT);
@@ -4188,9 +3942,6 @@ do_immediate_shutdown_reaper(void)
         }
 
         zeroIfPidEqual(pid, &StartupPID);
-        zeroIfPidEqual(pid, &StartupPass2PID);
-        zeroIfPidEqual(pid, &StartupPass3PID);
-        zeroIfPidEqual(pid, &StartupPass4PID);
 
         /* services */
 		for (s = 0; s < MaxPMSubType; s++)
@@ -4207,109 +3958,6 @@ do_immediate_shutdown_reaper(void)
         zeroIfPidEqual(pid, &PgStatPID);
         zeroIfPidEqual(pid, &FilerepPeerResetPID);
     }
-}
-
-/*
- * Startup succeeded, commence normal operations
- */
-static bool
-CommenceNormalOperations(void)
-{
-	bool didServiceProcessWork = true;
-	int s;
-
-	FatalError = false;
-	pmState = PM_RUN;
-
-	/*
-	 * Load the flat authorization file into postmaster's cache. The
-	 * startup process has recomputed this from the database contents,
-	 * so we wait till it finishes before loading it.
-	 */
-	load_role();
-
-	/*
-	 * Crank up the background writer, if we didn't do that already
-	 * when we entered consistent recovery state.  It doesn't matter
-	 * if this fails, we'll just try again later.
-	 */
-	if (BgWriterPID == 0)
-	{
-		SetBGWriterPID(StartBackgroundWriter());
-		if (Debug_print_server_processes)
-			elog(LOG,"on startup successful: started 'background writer' as pid %ld",
-				 (long)BgWriterPID);
-	}
-
-	if (CheckpointerPID == 0)
-	{
-		CheckpointerPID = StartCheckpointer();
-		if (Debug_print_server_processes)
-			elog(LOG,"on startup successful: started 'checkpointer' as pid %ld",
-				 (long)CheckpointerPID);
-		didServiceProcessWork &= (CheckpointerPID > 0);
-	}
-
-	/*
-	 * Likewise, start other special children as needed.  In a restart
-	 * situation, some of them may be alive already.
-	 */
-	if (Shutdown > NoShutdown && BgWriterPID != 0)
-		signal_child(BgWriterPID, SIGUSR2);
-	else if (Shutdown == NoShutdown)
-	{
-		if (XLogArchivingActive() && PgArchPID == 0)
-		{
-			PgArchPID = pgarch_start();
-			if (Debug_print_server_processes)
-				elog(LOG,"on startup successful: started 'archiver process' as pid %ld",
-					 (long)PgArchPID);
-			didServiceProcessWork &= (PgArchPID > 0);
-		}
-		if (PgStatPID == 0)
-		{
-			PgStatPID = pgstat_start();
-			if (Debug_print_server_processes)
-				elog(LOG,"on startup successful: started 'statistics collector process' as pid %ld",
-					 (long)PgStatPID);
-			didServiceProcessWork &= (PgStatPID > 0);
-		}
-
-		for (s = 0; s < MaxPMSubType; s++)
-		{
-			PMSubProc *subProc = &PMSubProcList[s];
-
-			if (subProc->pid == 0 && ServiceStartable(subProc))
-			{
-				subProc->pid = (subProc->serverStart)();
-
-				if (Debug_print_server_processes)
-					elog(LOG,"on startup successful: started '%s' as pid %ld",
-						 subProc->procName, (long)subProc->pid);
-				didServiceProcessWork &= (subProc->pid > 0);
-			}
-		}
-	}
-
-	/* at this point we are really open for business */
-	{
-		char version[512];
-
-		strlcpy(version, PG_VERSION_STR " compiled on " __DATE__ " " __TIME__,
-			sizeof(version));
-
-#ifdef USE_ASSERT_CHECKING
-		strlcat(version, " (with assert checking)", sizeof(version));
-#endif
-		ereport(LOG,(errmsg("%s", version)));
-
-		ereport(LOG,
-			 (errmsg("database system is ready to accept connections"),
-			  errdetail("%s",version),
-			  errSendAlert(true)));
-	}
-
-	return didServiceProcessWork;
 }
 
 /*
@@ -4410,253 +4058,62 @@ do_reaper()
 			}
 
 			/*
-			 * When we are not doing single backend startup, we do
-			 * multiple startup passes.
-			 *
-			 * If Crash Recovery is needed we do Pass 2 and 3.
-			 *
-			 * Pass 4 is a verification pass done in for a clean shutdown as
-			 * well as after Crash Recovery.
-			 */
-			if (XLogStartupMultipleRecoveryPassesNeeded())
-			{
-			    Assert(StartupPass2PID == 0);
-				StartupPass2PID = StartupPass2DataBase();
-				Assert(StartupPass2PID != 0);
-
-				pmState = PM_STARTUP_PASS2;
-			}
-			else if (XLogStartupIntegrityCheckNeeded())
-			{
-				/*
-				 * Clean shutdown case and wants (and can do) integrity checks.
-				 */
-			    Assert(StartupPass4PID == 0);
-				StartupPass4PID = StartupPass4DataBase();
-				Assert(StartupPass4PID != 0);
-
-				pmState = PM_STARTUP_PASS4;
-			}
-			else
-			{
-				/*
-				 * Startup succeeded, commence normal operations
-				 */
-				if (CommenceNormalOperations())
-					didServiceProcessWork &= true;
-			}
-
-			continue;
-		}
-
-		/*
-		 * Check if this child was a startup pass 2 process.
-		 */
-		if (pid == StartupPass2PID)
-		{
-			StartupPass2PID = 0;
-
-			Assert(isPrimaryMirrorModeAFullPostmaster(true));
-
-			/*
-			 * Unexpected exit of startup process (including FATAL exit)
-			 * during PM_STARTUP is treated as catastrophic. There are no
-			 * other processes running yet, so we can just exit.
-			 */
-			if (pmState == PM_STARTUP_PASS2 && !EXIT_STATUS_0(exitstatus))
-			{
-				LogChildExit(LOG, _("startup pass 2 process"),
-							 pid, exitstatus);
-				ereport(LOG,
-						(errmsg("aborting startup due to startup process failure")));
-				ExitPostmaster(1);
-			}
-
-			/*
-			 * Startup process exited in response to a shutdown request (or it
-			 * completed normally regardless of the shutdown request).
-			 */
-			if (Shutdown > NoShutdown &&
-				(EXIT_STATUS_0(exitstatus) || EXIT_STATUS_1(exitstatus)))
-			{
-				/* PostmasterStateMachine logic does the rest */
-				continue;
-			}
-
-			/*
-			 * Any unexpected exit (including FATAL exit) of the startup
-			 * process is treated as a crash, except that we don't want to
-			 * reinitialize.
-			 */
-			if (!EXIT_STATUS_0(exitstatus))
-			{
-				RecoveryError = true;
-				HandleChildCrash(pid, exitstatus,
-								 _("startup pass 2 process"));
-				continue;
-			}
-
-		    Assert(StartupPass3PID == 0);
-			StartupPass3PID = StartupPass3DataBase();
-			Assert(StartupPass3PID != 0);
-
-			pmState = PM_STARTUP_PASS3;
-			continue;
-		}
-
-		/*
-		 * Check if this child was a startup pass 3 process.
-		 */
-		if (pid == StartupPass3PID)
-		{
-			StartupPass3PID = 0;
-
-			Assert(isPrimaryMirrorModeAFullPostmaster(true));
-
-			/*
-			 * Unexpected exit of startup process (including FATAL exit)
-			 * during PM_STARTUP is treated as catastrophic. There are no
-			 * other processes running yet, so we can just exit.
-			 */
-			if (pmState == PM_STARTUP_PASS3 && !EXIT_STATUS_0(exitstatus))
-			{
-				LogChildExit(LOG, _("startup pass 3 process"),
-							 pid, exitstatus);
-				ereport(LOG,
-						(errmsg("aborting startup due to startup process failure")));
-				ExitPostmaster(1);
-			}
-
-			/*
-			 * Startup process exited in response to a shutdown request (or it
-			 * completed normally regardless of the shutdown request).
-			 */
-			if (Shutdown > NoShutdown &&
-				(EXIT_STATUS_0(exitstatus) || EXIT_STATUS_1(exitstatus)))
-			{
-				/* PostmasterStateMachine logic does the rest */
-				continue;
-			}
-
-			/*
-			 * Any unexpected exit (including FATAL exit) of the startup
-			 * process is treated as a crash, except that we don't want to
-			 * reinitialize.
-			 */
-			if (!EXIT_STATUS_0(exitstatus))
-			{
-				RecoveryError = true;
-				HandleChildCrash(pid, exitstatus,
-								 _("startup pass 3 process"));
-				continue;
-			}
-
-			if (XLogStartupIntegrityCheckNeeded())
-			{
-				/*
-				 * Wants (and can do) integrity checks.
-				 */
-			    Assert(StartupPass4PID == 0);
-				StartupPass4PID = StartupPass4DataBase();
-				Assert(StartupPass4PID != 0);
-
-				pmState = PM_STARTUP_PASS4;
-			}
-			else
-			{
-				/*
-				 * Startup succeeded, commence normal operations
-				 */
-				if (CommenceNormalOperations())
-					didServiceProcessWork &= true;
-			}
-			continue;
-		}
-
-		/*
-		 * Check if this child was a startup pass 4 process.
-		 */
-		if (pid == StartupPass4PID)
-		{
-			StartupPass4PID = 0;
-
-			Assert(isPrimaryMirrorModeAFullPostmaster(true));
-
-			/*
-			 * Unexpected exit of startup process (including FATAL exit)
-			 * during PM_STARTUP is treated as catastrophic. There are no
-			 * other processes running yet, so we can just exit.
-			 */
-			if (pmState == PM_STARTUP_PASS4 && !EXIT_STATUS_0(exitstatus))
-			{
-				LogChildExit(LOG, _("startup pass 4 process"),
-							 pid, exitstatus);
-				ereport(LOG,
-						(errmsg("aborting startup due to startup process failure")));
-				ExitPostmaster(1);
-			}
-
-			/*
-			 * Startup process exited in response to a shutdown request (or it
-			 * completed normally regardless of the shutdown request).
-			 */
-			if (Shutdown > NoShutdown &&
-				(EXIT_STATUS_0(exitstatus) || EXIT_STATUS_1(exitstatus)))
-			{
-				/* PostmasterStateMachine logic does the rest */
-				continue;
-			}
-
-			/*
-			 * Any unexpected exit (including FATAL exit) of the startup
-			 * process is treated as a crash, except that we don't want to
-			 * reinitialize.
-			 */
-			if (!EXIT_STATUS_0(exitstatus))
-			{
-				RecoveryError = true;
-				HandleChildCrash(pid, exitstatus,
-								 _("startup pass 4 process"));
-				continue;
-			}
-
-			/*
-			 * Startup Pass 4 can perform PersistentTable-Catalog verification
-			 * too. But, it is turned on when appropriate GUC is set.
-			 *
-			 * If the GUC is set --
-			 * 1. Both Non-DB specific and DB-specific verification checks
-			 * are executed to see if the system is consistent.
-			 * 2. First run of Pass 4 performs basic integrity checks and
-			 * non-DB specific checks. At the same time, next DB on which DB-specific
-			 * verifications are to be performed is selected.
-			 * 3. This DB selected in #2 will be used in the next cycle of Pass 4
-			 * as a new spawned process for verification purposes. At the same time,
-			 * a new database is selected for the subsequent cycle and thus this
-			 * continues until there are no more DBs left to be verified in the system.
-			 */
-			if (XLogStartup_DoNextPTCatVerificationIteration())
-			{
-				Assert(StartupPass4PID == 0);
-				StartupPass4PID = StartupPass4DataBase();
-				Assert(StartupPass4PID != 0);
-				continue;
-			}
-
-			if (PgStatPID == 0)
-			{
-				PgStatPID = pgstat_start();
-				if (Debug_print_server_processes)
-					elog(LOG,"on startup successful: started 'statistics collector process' as pid %ld",
-						 (long)PgStatPID);
-				didServiceProcessWork &= (PgStatPID > 0);
-			}
-
-			/*
 			 * Startup succeeded, commence normal operations
 			 */
-			if (CommenceNormalOperations())
-				didServiceProcessWork &= true;
+			FatalError = false;
+			pmState = PM_RUN;
+
+			/*
+			 * Load the flat authorization file into postmaster's cache. The
+			 * startup process has recomputed this from the database contents,
+			 * so we wait till it finishes before loading it.
+			 */
+			load_role();
+
+			/*
+			 * Crank up the background writer, if we didn't do that already
+			 * when we entered consistent recovery state.  It doesn't matter
+			 * if this fails, we'll just try again later.
+			 */
+			if (BgWriterPID == 0)
+			{
+				BgWriterPID = StartBackgroundWriter();
+				if (Debug_print_server_processes)
+					elog(LOG,"on startup successful: started 'background writer' as pid %ld",
+						 (long)BgWriterPID);
+			}
+
+			/*
+			 * Likewise, start other special children as needed.  In a restart
+			 * situation, some of them may be alive already.
+			 */
+			if (WalWriterPID == 0)
+				WalWriterPID = StartWalWriter();
+			if (AutoVacuumingActive() && AutoVacPID == 0)
+				AutoVacPID = StartAutoVacLauncher();
+			if (XLogArchivingActive() && PgArchPID == 0)
+				PgArchPID = pgarch_start();
+			if (PgStatPID == 0)
+				PgStatPID = pgstat_start();
+
+			/* at this point we are really open for business */
+			{
+				char version[512];
+
+				strlcpy(version, PG_VERSION_STR " compiled on " __DATE__ " " __TIME__,
+						sizeof(version));
+
+#ifdef USE_ASSERT_CHECKING
+				strlcat(version, " (with assert checking)", sizeof(version));
+#endif
+				ereport(LOG,(errmsg("%s", version)));
+
+				ereport(LOG,
+						(errmsg("database system is ready to accept connections"),
+						 errdetail("%s",version),
+						 errSendAlert(true)));
+			}
+
 			continue;
 		}
 
@@ -4679,7 +4136,7 @@ do_reaper()
 
 				if (ServiceStartable(subProc))
 				{
-					if (StartupPidsAllZero() && 
+					if (StartupPID == 0 &&
 						!FatalError && Shutdown == NoShutdown)
 					{
 						/*
@@ -4715,8 +4172,7 @@ do_reaper()
 		 */
 		if (pid == BgWriterPID)
 		{
-		    SetBGWriterPID(0);
-
+			BgWriterPID = 0;
 			if (EXIT_STATUS_0(exitstatus) &&
 			    (pmState == PM_CHILD_STOP_WAIT_BGWRITER_CHECKPOINT
 			    || (FatalError && pmState >= PM_CHILD_STOP_BEGIN)))
@@ -4804,7 +4260,6 @@ do_reaper()
 				 */
 				if (!EXIT_STATUS_0(exitstatus))
 				{
-					FileRep_SignalChildren(SIGQUIT, false);
 					HandleChildCrash(pid, exitstatus,
 									 _("filerep main process"));
 				}
@@ -4996,9 +4451,6 @@ do_reaper()
 		 */
 		if (CountChildren(BACKEND_TYPE_ALL) != 0 ||
 		    StartupPID != 0 ||
-		    StartupPass2PID != 0 ||
-		    StartupPass3PID != 0 ||
-		    StartupPass4PID != 0 ||
 		    BgWriterPID != 0 ||
 		    CheckpointerPID != 0 ||
 		    FilerepPID  != 0 ||
@@ -5145,12 +4597,6 @@ GetServerProcessTitle(int pid)
 		return "system logger process";
 	if (pid == StartupPID)
 		return "startup process";
-	if (pid == StartupPass2PID)
-		return "startup pass 2 process";
-	if (pid == StartupPass3PID)
-		return "startup pass 3 process";
-	if (pid == StartupPass4PID)
-		return "startup pass 4 process";
 	if (pid == PostmasterPid)
 		return "postmaster process";
 	if (pid == FilerepPID )
@@ -5317,47 +4763,9 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 		signal_child(StartupPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
-	/* Take care of the startup process too */
-	if (pid == StartupPass2PID)
-		StartupPass2PID = 0;
-	else if (StartupPass2PID != 0 && !FatalError)
-	{
-		ereport(DEBUG2,
-				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) StartupPass2PID)));
-		signal_child(StartupPass2PID, (SendStop ? SIGSTOP : SIGQUIT));
-	}
-
-	/* Take care of the startup process too */
-	if (pid == StartupPass3PID)
-		StartupPass3PID = 0;
-	else if (StartupPass3PID != 0 && !FatalError)
-	{
-		ereport(DEBUG2,
-				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) StartupPass3PID)));
-		signal_child(StartupPass3PID, (SendStop ? SIGSTOP : SIGQUIT));
-	}
-	
-	/* Take care of the startup process too */
-	if (pid == StartupPass4PID)
-		StartupPass4PID = 0;
-	else if (StartupPass4PID != 0 && !FatalError)
-	{
-		ereport(DEBUG2,
-				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) StartupPass4PID)));
-		signal_child(StartupPass4PID, (SendStop ? SIGSTOP : SIGQUIT));
-	}
-
-    /* Take care of the bgwriter too */
+	/* Take care of the bgwriter too */
 	if (pid == BgWriterPID)
-    {
-        SetBGWriterPID(0);
-    }
+		BgWriterPID = 0;
 	else if (BgWriterPID != 0 && !FatalError)
 	{
 		ereport((Debug_print_server_processes ? LOG : DEBUG2),
@@ -5759,8 +5167,7 @@ static PMState StateMachineCheck_WaitStartupProcesses(void)
 {
     Assert(pmState == PM_CHILD_STOP_WAIT_STARTUP_PROCESSES);
 
-    bool moveToNextState = StartupPID == 0 && StartupPass2PID == 0 && StartupPass3PID == 0 && StartupPass4PID == 0;
-    return moveToNextState ? (pmState+1) : pmState;
+    return (StartupPID == 0) ? (pmState+1) : pmState;
 }
 
 /**
@@ -5831,15 +5238,12 @@ static PMState StateMachineCheck_WaitBgWriterCheckpointComplete(void)
  ***************************************/
 
 /**
- * Called to transition to PM_CHILD_STOP_WAIT_STARTUP_PROCESSES -- so tell any startup processes to complete
+ * Called to transition to PM_CHILD_STOP_WAIT_STARTUP_PROCESSES -- so tell the startup process to complete
  */
 static void
 StateMachineTransition_ShutdownStartupProcesses(void)
 {
 	signal_child_if_up(StartupPID, SIGTERM);
-	signal_child_if_up(StartupPass2PID, SIGTERM);
-	signal_child_if_up(StartupPass3PID, SIGTERM);
-	signal_child_if_up(StartupPass4PID, SIGTERM);
 	signal_child_if_up(WalReceiverPID, SIGTERM);
 }
 
@@ -5898,9 +5302,7 @@ StateMachineTransition_ShutdownBgWriterWithCheckpoint(void)
 	{
 		/* Start the bgwriter if not running */
 		if (BgWriterPID == 0 )
-		{
-			SetBGWriterPID(StartBackgroundWriter());
-		}
+			BgWriterPID = StartBackgroundWriter();
 	}
 
 	/* SIGUSR2, regardless of shutdown mode */
@@ -6040,9 +5442,6 @@ PostmasterStateMachine(void)
         {
             case PM_INIT:
             case PM_STARTUP:
-            case PM_STARTUP_PASS2:
-			case PM_STARTUP_PASS3:
-			case PM_STARTUP_PASS4:
             case PM_RECOVERY:
             case PM_RECOVERY_CONSISTENT:
             case PM_RUN:
@@ -6124,9 +5523,6 @@ PostmasterStateMachine(void)
         {
             case PM_INIT:
             case PM_STARTUP:
-            case PM_STARTUP_PASS2:
-			case PM_STARTUP_PASS3:
-			case PM_STARTUP_PASS4:
             case PM_RECOVERY:
             case PM_RECOVERY_CONSISTENT:
             case PM_RUN:
@@ -6323,7 +5719,8 @@ BackendStartup(Port *port)
 
 	/* Pass down canAcceptConnections state */
 	port->canAcceptConnections = canAcceptConnections();
-	bn->dead_end = (port->canAcceptConnections != CAC_OK);
+	bn->dead_end = (port->canAcceptConnections != CAC_OK &&
+					port->canAcceptConnections != CAC_WAITBACKUP);
 
 	/*
 	 * Unless it's a dead_end child, assign it a child slot number
@@ -6585,6 +5982,9 @@ BackendInitialize(Port *port)
 	 */
 	if (am_walsender)
 		init_ps_display("wal sender process", port->user_name, remote_ps_data,
+						update_process_title ? "authentication" : "");
+	else if (am_ftshandler)
+		init_ps_display("fts handler process", port->user_name, remote_ps_data,
 						update_process_title ? "authentication" : "");
     else
 	    init_ps_display(port->user_name, port->database_name, remote_ps_data,
@@ -7151,15 +6551,6 @@ SubPostmasterMain(int argc, char *argv[])
 #endif
 
 		/*
-		 * process any libraries that should be preloaded at postmaster start
-		 *
-		 * NOTE: we have to re-load the shared_preload_libraries here because
-		 * this backend is not fork()ed so we can't inherit any shared
-		 * libraries / DLL's from our parent (the postmaster).
-		 */
-		process_shared_preload_libraries();
-
-		/*
 		 * Perform additional initialization and client authentication.
 		 *
 		 * We want to do this before InitProcess() for a couple of reasons: 1.
@@ -7372,7 +6763,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * we'll just try again later.
 		 */
 		Assert(BgWriterPID == 0);
-		SetBGWriterPID(StartBackgroundWriter());
+		BgWriterPID = StartBackgroundWriter();
 
 		pmState = PM_RECOVERY;
 	}
@@ -7509,12 +6900,6 @@ sigusr1_handler(SIGNAL_ARGS)
 	{
 		int16		newdbid;
 
-		/*
-		 * Read back standby dbid to postmaster local from shared memory,
-		 * as this is the single source.
-		 */
-		GpStandbyDbid = GetStandbyDbid();
-
 		newdbid = primaryMirrorGetNewDbid();
 		if (newdbid != InvalidDbid)
 		{
@@ -7524,16 +6909,10 @@ sigusr1_handler(SIGNAL_ARGS)
 			 * startup pass 4, where nobody else has forked dbid value to
 			 * local memory.  This is not the best solution, and at some point
 			 * we should revisit design around dbid.
+			 *
+			 * WALREP_FIXME: Multi-pass recovery is gone. Is this still needed?
 			 */
 			GpIdentity.dbid = newdbid;
-
-			/*
-			 * Also update trans/temp filespace if configured.  This relies on
-			 * the external tool to have updated the flat files already prior
-			 * to the promote time.  Again this is not atomic and risky, but
-			 * given the current design there's not much we can do.
-			 */
-			primaryMirrorPopulateFilespaceInfo();
 		}
 	}
 
@@ -7554,6 +6933,20 @@ sigusr1_handler(SIGNAL_ARGS)
 	PG_SETMASK(&UnBlockSig);
 
 	errno = save_errno;
+}
+
+/*
+ * GPDB_90_MERGE_FIXME: This function should be removed once hot
+ * standby can and will be enabled for mirrors.
+ */
+void SignalPromote(void)
+{
+	FILE *fd;
+	if ((fd = fopen(PROMOTE_SIGNAL_FILE, "w")))
+	{
+		fclose(fd);
+		signal_child(StartupPID, SIGUSR2);
+	}
 }
 
 
@@ -7708,9 +7101,6 @@ StartChildProcess(AuxProcType type)
         case BgWriterProcess:
 		case CheckpointerProcess:
         case StartupProcess:
-        case StartupPass2Process:
-		case StartupPass3Process:
-		case StartupPass4Process:
         case WalWriterProcess:
         case WalReceiverProcess:
             Assert(isPrimaryMirrorModeAFullPostmaster(true));
@@ -7765,18 +7155,6 @@ StartChildProcess(AuxProcType type)
 			case StartupProcess:
 				ereport(LOG,
 						(errmsg("could not fork startup process: %m")));
-				break;
-			case StartupPass2Process:
-				ereport(LOG,
-						(errmsg("could not fork startup pass 2 process: %m")));
-				break;
-			case StartupPass3Process:
-				ereport(LOG,
-						(errmsg("could not fork startup pass 3 process: %m")));
-				break;
-			case StartupPass4Process:
-				ereport(LOG,
-						(errmsg("could not fork startup pass 4 process: %m")));
 				break;
 			case BgWriterProcess:
 				ereport(LOG,
@@ -7834,24 +7212,28 @@ StartAutovacuumWorker(void)
 	 */
 	if (canAcceptConnections() == CAC_OK)
 	{
-		/*
-		 * Compute the cancel key that will be assigned to this session. We
-		 * probably don't need cancel keys for autovac workers, but we'd
-		 * better have something random in the field to prevent unfriendly
-		 * people from sending cancels to them.
-		 */
-		MyCancelKey = PostmasterRandom();
-
 		bn = (Backend *) malloc(sizeof(Backend));
 		if (bn)
 		{
+			/*
+			 * Compute the cancel key that will be assigned to this session.
+			 * We probably don't need cancel keys for autovac workers, but
+			 * we'd better have something random in the field to prevent
+			 * unfriendly people from sending cancels to them.
+			 */
+			MyCancelKey = PostmasterRandom();
+			bn->cancel_key = MyCancelKey;
+
+			/* Autovac workers are not dead_end and need a child slot */
+			bn->dead_end = false;
+			bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
+
 			bn->pid = StartAutoVacWorker();
 			if (bn->pid > 0)
 			{
-				bn->cancel_key = MyCancelKey;
 				bn->is_autovacuum = true;
-				bn->dead_end = false;
-				DLAddHead(BackendList, DLNewElem(bn));
+				DLInitElem(&bn->elem, bn);
+				DLAddHead(BackendList, &bn->elem);
 #ifdef EXEC_BACKEND
 				ShmemBackendArrayAdd(bn);
 #endif
@@ -8017,8 +7399,8 @@ save_backend_variables(BackendParameters *param, Port *port,
 
 	strlcpy(param->ExtraOptions, ExtraOptions, MAXPGPATH);
 
-	strlcpy(param->lc_collate, setlocale(LC_COLLATE, NULL), LOCALE_NAME_BUFLEN);
-	strlcpy(param->lc_ctype, setlocale(LC_CTYPE, NULL), LOCALE_NAME_BUFLEN);
+	strlcpy(param->lc_collate, setlocale(LC_COLLATE, NULL), NAMEDATALEN);
+	strlcpy(param->lc_ctype, setlocale(LC_CTYPE, NULL), NAMEDATALEN);
 
 	return true;
 }

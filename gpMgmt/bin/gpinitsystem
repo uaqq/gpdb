@@ -53,11 +53,10 @@ GP_USER=$USER_NAME
 # System table names
 GP_TBL=gp_id
 GP_CONFIG_TBL=gp_segment_configuration
-PG_SYSTEM_FILESPACE=3052
-GP_FAILOVER_CONFIG_TBL=gp_fault_strategy
 unset PG_CONF_ADD_FILE
 #unset QD_PRIMARY_ARRAY QE_PRIMARY_ARRAY QE_MIRROR_ARRAY
 EXIT_STATUS=0
+STANDBY_FATAL_RET_CODE=2 # copied from gpinitstandby
 # SED_PG_CONF search text values
 PORT_TXT="#port"
 LOG_STATEMENT_TXT="#log_statement ="
@@ -78,6 +77,7 @@ SINGLE_HOST_BATCH_LIMIT=4
 INPUT_CONFIG=""
 OUTPUT_CONFIG=""
 GPHOSTCACHELOOKUP=$WORKDIR/lib/gphostcachelookup.py
+STANDBY_RET_CODE=0
 
 #******************************************************************************
 # DCA Specific Variables
@@ -133,7 +133,7 @@ USAGE () {
 		$ECHO "          Also see gpinitsystem_INSTRUCTIONS file for greater detail on"
 		$ECHO "          the operation and configuration of this script"
 		$ECHO "      -e, <password>, password to set for Greenplum superuser in database [default $GP_PASSWD]"
-		$ECHO "      -F, standby_filespaces [optiona]"
+		$ECHO "      -F, standby_datadir [optiona]"
 		$ECHO "      -h, gp_hostlist_file [optional]"
 		$ECHO "          Contains a list of all segment instance hostnames required to participate in"
 		$ECHO "          the new Greenplum instance. Normally set in gp_config_file."
@@ -233,7 +233,7 @@ CHK_PARAMS () {
 		    unset PORT_BASE SEG_PREFIX DATA_DIRECTORY REPLICATION_PORT_BASE HEAP_CHECKSUM
 
 		    # Make sure it is not a dos file with CTRL M at end of each line
-		    $CAT $CLUSTER_CONFIG|$SED -e 's/$//g' > $TMP_FILE
+		    $TR -d '\r' < $CLUSTER_CONFIG > $TMP_FILE
 		    $MV $TMP_FILE $CLUSTER_CONFIG
 		    LOG_MSG "[INFO]:-Dumping $CLUSTER_CONFIG to logfile for reference"
 		    $CAT $CLUSTER_CONFIG|$GREP -v "^#" >> $LOG_FILE
@@ -310,7 +310,7 @@ CHK_PARAMS () {
 		    do
 			CHK_FILE $FILE
 			if [ $EXISTS -ne 0 ]; then
-			    ERROR_EXIT "[FATAL]:-Problem with $FILE file" 2
+			    ERROR_EXIT "[FATAL]:-Expected file \"$FILE\" not found" 2
 			else
 			    LOG_MSG "[INFO]:-Completed check of file $FILE"
 			fi
@@ -1099,7 +1099,7 @@ DISPLAY_CONFIG () {
         else
             LOG_MSG "[INFO]:-Standby Master             = Not Configured" 1
         fi
-        LOG_MSG "[INFO]:-Primary segment #          = $QE_PRIMARY_COUNT" 1
+        LOG_MSG "[INFO]:-Number of primary segments = $QE_PRIMARY_COUNT" 1
         if [ x"" != x"$STANDBY_HOSTNAME" ];then
             for STANDBY_IP in "${STANDBY_IP_ADDRESS[@]}"
             do
@@ -1115,7 +1115,7 @@ DISPLAY_CONFIG () {
             LOG_MSG "[INFO]:-Replicaton port base       = $REPLICATION_PORT_BASE" 1
             LOG_MSG "[INFO]:-Mirror replicaton port base= $MIRROR_REPLICATION_PORT_BASE" 1
             ((NUM_MIRROR_DIRECTORY=${#MIRROR_DATA_DIRECTORY[@]}))
-            LOG_MSG "[INFO]:-Mirror segment #           = $NUM_MIRROR_DIRECTORY" 1
+            LOG_MSG "[INFO]:-Number of mirror segments  = $NUM_MIRROR_DIRECTORY" 1
             LOG_MSG "[INFO]:-Mirroring config           = ON" 1
             if [ x"$INPUT_CONFIG" != x"" ];then
                 LOG_MSG "[INFO]:-Mirroring type             = Custom" 1
@@ -1187,10 +1187,6 @@ CREATE_QD_DB () {
 		LOG_MSG "[INFO]:-Initializing Master Postgres instance $GP_DIR"
 		$EXPORT_LIB_PATH
 
-        #
-        # note: is_filerep_mirrored is no because the QD is not mirrored by filerep right now (standby master works differently)
-        #
-        
         if [ x"" != x"$LCCOLLATE" ]; then
 			LC_COLLATE_SETTING="--lc-collate=$LCCOLLATE"
 		fi
@@ -1226,7 +1222,6 @@ CREATE_QD_DB () {
 		cmd="$cmd $LC_ALL_SETTINGS"
 		cmd="$cmd --max_connections=$MASTER_MAX_CONNECT"
 		cmd="$cmd --shared_buffers=$MASTER_SHARED_BUFFERS"
-		cmd="$cmd --is_filerep_mirrored=no"
 		if [ x"$HEAP_CHECKSUM" == x"on" ]; then
 			cmd="$cmd --data-checksums"
 		fi
@@ -1304,7 +1299,7 @@ CREATE_QD_DB () {
 		if [ $RETVAL -ne 0 ]; then
 			ERROR_EXIT "[FATAL]:-Could not establish connection to hostname $GP_HOSTNAME. Please check your configuration." 2
 		fi
-		UPDATE_GPCONFIG $GP_PORT $GP_DBID $GP_CONTENT $GP_HOSTNAME $GP_HOSTADDRESS $GP_PORT $GP_DIR p $GP_REPLICATION_PORT
+		UPDATE_GPCONFIG $GP_PORT $GP_DBID $GP_CONTENT $GP_HOSTNAME $GP_HOSTADDRESS $GP_PORT $GP_DIR p
 		LOAD_QE_SYSTEM_DATA $DEFAULTDB
 		SET_VAR $QD_PRIMARY_ARRAY
 		LOG_MSG "[INFO]:-End Function $FUNCNAME"
@@ -1331,27 +1326,15 @@ UPDATE_GPCONFIG () {
 		U_PORT=$6
 		U_DIR=$7
 		U_ROLE=$8
-		if [ $9 -eq 0 ]; then
-			U_REPLICATION_PORT=null
-		else 
-			U_REPLICATION_PORT=$9
-		fi
-
-        if [ $MIRRORING -ne 1 ]; then
-            U_REPLICATION_PORT=null
-        fi
+		U_REPLICATION_PORT=null
 
 		U_DB=$DEFAULTDB
 		CHK_COUNT=`env PGOPTIONS="-c gp_session_role=utility" $PSQL -p $MASTER_PORT -d "$U_DB" -A -t -c "SELECT count(*) FROM $GP_CONFIG_TBL WHERE content=${U_CONTENT} AND preferred_role='${U_ROLE}';" 2>/dev/null` >> $LOG_FILE 2>&1
 		ERROR_CHK $? "obtain psql count Master $GP_CONFIG_TBL" 2
 		if [ $CHK_COUNT -eq 0 ]; then
-				LOG_MSG "[INFO]:-Adding $U_CONTENT on $U_HOSTNAME $U_DIR to system configuration table"
-				env PGOPTIONS="-c gp_session_role=utility" $PSQL -p $MASTER_PORT -d "$U_DB" -c "INSERT INTO $GP_CONFIG_TBL (dbid, content, role, preferred_role, mode, status, hostname, address, port, replication_port) VALUES (${U_DBID}, ${U_CONTENT}, '${U_ROLE}', '${U_ROLE}', 's', 'u', '${U_HOSTNAME}', '${U_ADDRESS}', ${U_PORT}, ${U_REPLICATION_PORT});" >> $LOG_FILE 2>&1
-				ERROR_CHK $? "add $U_CONTENT on $U_HOSTNAME to Master gp_segment_configuration" 2
-
-				LOG_MSG "[INFO]:-Adding $U_CONTENT on $U_HOSTNAME $U_DIR to Master gp_filespace_entry"
-				env PGOPTIONS="-c gp_session_role=utility" $PSQL -p $MASTER_PORT -d "$U_DB" -c "insert into pg_filespace_entry (fsefsoid, fsedbid, fselocation) values (${PG_SYSTEM_FILESPACE}, ${U_DBID}, '${U_DIR}');" >> $LOG_FILE 2>&1
-				ERROR_CHK $? "add $U_CONTENT on $U_HOSTNAME $U_DIR to Master pg_filespace_entry" 2
+				LOG_MSG "[INFO]:-Adding $U_CONTENT on $U_HOSTNAME, path $U_DIR to Master gp_segment_configuration"
+				env PGOPTIONS="-c gp_session_role=utility" $PSQL -p $MASTER_PORT -d "$U_DB" -c "SELECT pg_catalog.gp_add_segment(${U_DBID}::int2, ${U_CONTENT}::int2, '${U_ROLE}', '${U_ROLE}', 's', 'u', ${U_PORT}, '${U_HOSTNAME}', '${U_ADDRESS}', '${U_DIR}');" >> $LOG_FILE 2>&1
+				ERROR_CHK $? "add $U_CONTENT on $U_HOSTNAME in dir $U_DIR to Master gp_segment_configuration" 2
 		else
 				LOG_MSG "[INFO]:-Content $U_CONTENT already exists in gp_segment_configuration system table"
 		fi
@@ -1381,27 +1364,9 @@ LOAD_QE_SYSTEM_DATA () {
 				if [ $RETVAL -ne 0 ]; then
 					ERROR_EXIT "[FATAL]:-Could not establish connection to hostname $GP_HOSTNAME. Please check your configuration." 2
 				fi				
-				UPDATE_GPCONFIG $MASTER_PORT $GP_DBID $GP_CONTENT $GP_HOSTNAME $GP_HOSTADDRESS $GP_PORT $GP_DIR p $GP_REPLICATION_PORT
+				UPDATE_GPCONFIG $MASTER_PORT $GP_DBID $GP_CONTENT $GP_HOSTNAME $GP_HOSTADDRESS $GP_PORT $GP_DIR p
 				LOG_MSG "[INFO]:-Successfully added segment $GP_HOSTADDRESS to Master system tables"
 		done
-		if [ $MIRRORING -eq 1 ]; then
-				for I in "${QE_MIRROR_ARRAY[@]}"
-				do
-					SET_VAR $I
-					LOG_MSG "[INFO]:-Adding segment $GP_HOSTADDRESS, $GP_DBID, $GP_DIR to Master system tables as mirror"
-					GP_HOSTNAME=`HOST_LOOKUP $GP_HOSTADDRESS`
-					if [ x"$GP_HOSTNAME" = x"__lookup_of_hostname_failed__" ]; then
-						ERROR_EXIT "[FATAL]:-Hostname lookup for host $GP_HOSTADDRESS failed." 2
-					fi
-					PING_HOST $GP_HOSTNAME
-					RETVAL=$?
-					if [ $RETVAL -ne 0 ]; then
-						ERROR_EXIT "[FATAL]:-Could not establish connection to hostname $GP_HOSTNAME. Please check your configuration." 2
-					fi					
-					UPDATE_GPCONFIG $MASTER_PORT $GP_DBID $GP_CONTENT $GP_HOSTNAME $GP_HOSTADDRESS $GP_PORT $GP_DIR m $GP_REPLICATION_PORT
-					LOG_MSG "[INFO]:-Successfully added segment $GP_HOSTADDRESS to Master system tables as mirror"
-				done
-		fi
 		LOG_MSG "[INFO]:-End Function $FUNCNAME"
 }
 
@@ -1442,7 +1407,7 @@ CREATE_QES_PRIMARY () {
                 HAS_MIRRORS_OPTION=no
             fi
 
-			$GPCREATESEG $FLAG $$ 1 $I IS_PRIMARY $HAS_MIRRORS_OPTION $INST_COUNT  $LOG_FILE $HEAP_CHECKSUM \
+			$GPCREATESEG $FLAG $$ 1 $I IS_PRIMARY $INST_COUNT  $LOG_FILE $HEAP_CHECKSUM \
 `$ECHO ${MASTER_IP_ADDRESS[@]}|$TR ' ' '~'` \
 `$ECHO ${STANDBY_IP_ADDRESS[@]}|$TR ' ' '~'` &
 			PARALLEL_COUNT $BATCH_LIMIT $BATCH_DEFAULT
@@ -1502,7 +1467,7 @@ CREATE_QES_MIRROR () {
 		    FLAG="-p $PG_CONF_ADD_FILE"
 		fi
 
-		$GPCREATESEG $FLAG $$ 1 ${MIRRORS_ORDERED_BY_CONTENT_ID[$I_INDEX]} ${PRIMARIES_ORDERED_BY_CONTENT_ID[$I_INDEX]} no $INST_COUNT  $LOG_FILE $HEAP_CHECKSUM \
+		$GPCREATESEG $FLAG $$ 1 ${MIRRORS_ORDERED_BY_CONTENT_ID[$I_INDEX]} ${PRIMARIES_ORDERED_BY_CONTENT_ID[$I_INDEX]} $INST_COUNT  $LOG_FILE $HEAP_CHECKSUM \
 `$ECHO ${MASTER_IP_ADDRESS[@]}|$TR ' ' '~'` \
 `$ECHO ${STANDBY_IP_ADDRESS[@]}|$TR ' ' '~'` &
 		PARALLEL_COUNT $BATCH_LIMIT $BATCH_DEFAULT
@@ -1541,6 +1506,7 @@ CREATE_STANDBY_QD () {
 	LOG_MSG "[INFO]:-Start Function $FUNCNAME"
 	if [ ! -f $INIT_STANDBY_PROG ]; then
 		LOG_MSG "[WARN]:-Unable to locate $INIT_STANDBY_PROG, hence unable to initialize standby master $STANDBY_HOSTNAME"
+		STANDBY_RET_CODE=${STANDBY_FATAL_RET_CODE}
 		EXIT_STATUS=1
 	else
 		LOG_MSG "[INFO]:-Starting initialization of standby master $STANDBY_HOSTNAME" 1
@@ -1548,15 +1514,15 @@ CREATE_STANDBY_QD () {
 		if [ x"" != x"$STANDBY_PORT" ]; then
 			INIT_STANDBY_ARGS+=" -P $STANDBY_PORT"
 		fi
-		if [ x"" != x"$STANDBY_FILESPACES" ]; then
-			INIT_STANDBY_ARGS+=" -F $STANDBY_FILESPACES"
+		if [ x"" != x"$STANDBY_DATADIR" ]; then
+			INIT_STANDBY_ARGS+=" -F $STANDBY_DATADIR"
 		fi
 		export MASTER_DATA_DIRECTORY=${MASTER_DIRECTORY}/${SEG_PREFIX}-1;$INIT_STANDBY_PROG -s $STANDBY_HOSTNAME $INIT_STANDBY_ARGS -a
-		RETCODE=$?
-		case $RETCODE in
+		STANDBY_RET_CODE=$?
+		case ${STANDBY_RET_CODE} in
 			0) LOG_MSG "[INFO]:-Successfully completed standby master initialization" 1 ;;
 			1) LOG_MSG "[WARN]:-Non-fatal issue with standby master initialization, check gpstate -f output" 1 ;;
-			*) ERROR_EXIT "[FATAL]:-Initialization of standby master failed"
+			*) LOG_MSG "[WARN]:-Failed to complete standby master initialization" 1
 		esac
 		BACKOUT_COMMAND "$TRUSTED_SHELL ${STANDBY_HOSTNAME} \"$RM -Rf ${QD_DIR}\""
 		BACKOUT_COMMAND "$ECHO \"Removing standby directory ${QD_DIR} on $STANDBY_HOSTNAME\""
@@ -1632,11 +1598,35 @@ CREATE_DATABASE () {
 		LOG_MSG "[INFO]:-End Function $FUNCNAME"
 }
 
+FORCE_FTS_PROBE () {
+    LOG_MSG "[INFO]:-Start Function $FUNCNAME"
+    # loop on gp_segment_configuration to make sure primary/mirror pairs are up and in sync
+    for i in {1..60}; do
+        if [ $i == 60 ]; then
+            $PSQL -p $GP_PORT -d "$DEFAULTDB" -A -t -c "select * from gp_segment_configuration where (mode = 'n' or status = 'd') and content != -1;" >> $LOG_FILE 2>&1
+            $PSQL -p $GP_PORT -d "$DEFAULTDB" -A -t -c "select * from gp_stat_replication where sync_error != 'none' or sync_state != 'sync';" >> $LOG_FILE 2>&1
+            LOG_MSG "[WARN]:" 1
+            LOG_MSG "[WARN]:-Failed to start Greenplum instance; please review gpinitsystem log to determine failure." 1
+            ERROR_EXIT "[FATAL]:-Some primary/mirror segment pairs were found to be not in sync" 2
+            break;
+        fi
+
+        RESULT=$( $PSQL -p $GP_PORT -d "$DEFAULTDB" -A -t -c "select count(*) > 0 from gp_segment_configuration where (mode = 'n' or status = 'd') and content != -1;" )
+        if [ x"$RESULT" == x"f" ]; then
+            break
+        fi
+
+        $PSQL -p $GP_PORT -d "$DEFAULTDB" -c "select gp_request_fts_probe_scan()" >> /dev/null 2>&1
+        sleep 1;
+    done
+    LOG_MSG "[INFO]:-End Function $FUNCNAME"
+}
+
 SCAN_LOG () {
 	LOG_MSG "[INFO]:-Start Function $FUNCNAME"
 	LOG_MSG "[INFO]:-Scanning utility log file for any warning messages" 1
 	SCAN_STRING="\[WARN\]|invalid|warning:|fatal|error"
-	if [ `$EGREP -i "$SCAN_STRING" $LOG_FILE|$GREP -v "\[INFO\]"|$GREP -v "[Start|End] Function ERROR_CHK"|$GREP -v "WARNING: enabling \"trust\" authentication for local connections"|$WC -l` -ne 0 ];then
+	if [ `$EGREP -i "$SCAN_STRING" $LOG_FILE|$GREP -v "\[INFO\]"|$GREP -v "[Start|End] Function ERROR_CHK"|$GREP -v "WARNING: enabling \"trust\" authentication for local connections"|$GREP -v "to the list of known hosts"|$WC -w` -ne 0 ];then
 		LOG_MSG "[WARN]:-*******************************************************" 1
 		LOG_MSG "[WARN]:-Scan of log file indicates that some warnings or errors" 1
 		LOG_MSG "[WARN]:-were generated during the array creation" 1
@@ -1719,7 +1709,7 @@ READ_INPUT_CONFIG () {
     fi
 
     # Make sure it is not a dos file with CTRL M at end of each line
-    $CAT $INPUT_CONFIG|$SED -e 's/$//g' > $TMP_FILE
+    $TR -d '\r' < $INPUT_CONFIG > $TMP_FILE
     $MV $TMP_FILE $INPUT_CONFIG
     LOG_MSG "[INFO]:-Dumping $INPUT_CONFIG to logfile for reference"
     $CAT $INPUT_CONFIG|$GREP -v "^#" >> $LOG_FILE
@@ -1946,7 +1936,7 @@ while getopts ":vaqe:c:l:-:p:m:h:n:s:P:F:b:DB:SI:O:" opt
 				b ) NEW_BUFFERS=$OPTARG ;;
 				s ) STANDBY_HOSTNAME=$OPTARG ;;
 				P ) STANDBY_PORT=$OPTARG ;;
-				F ) STANDBY_FILESPACES=$OPTARG ;;
+				F ) STANDBY_DATADIR=$OPTARG ;;
 				n ) REQ_LOCALE_SETTING=$OPTARG ;;
 				D ) DEBUG_LEVEL=1 ;;
 				B ) BATCH_DEFAULT=$OPTARG ;;
@@ -2038,14 +2028,6 @@ fi
 CREATE_QD_DB		
 
 CREATE_QES_PRIMARY
-if [ $MIRRORING -ne 0 ]; then
-	CREATE_QES_MIRROR
-	# We've created a FILEREP mirror -- set the failover strategy to 'f'
-	env PGOPTIONS="-c gp_session_role=utility" $PSQL -p $MASTER_PORT -d "$U_DB" -c "INSERT INTO $GP_FAILOVER_CONFIG_TBL VALUES ('f');" >> $LOG_FILE 2>&1
-else
-	# We have no FILEREP mirror -- set the failover strategy to 'n'
-	env PGOPTIONS="-c gp_session_role=utility" $PSQL -p $MASTER_PORT -d "$U_DB" -c "INSERT INTO $GP_FAILOVER_CONFIG_TBL VALUES ('n');" >> $LOG_FILE 2>&1
-fi
 if [ $REPORT_FAIL -ne 0 ];then
 	LOG_MSG "[FATAL]:-Errors generated from parallel processes" 1
 	LOG_MSG "[INFO]:-Dumped contents of status file to the log file" 1
@@ -2069,10 +2051,6 @@ else
 	LOG_MSG "[INFO]:-No errors generated from parallel processes" 1
 fi
 
-if [ x"" != x"$STANDBY_HOSTNAME" ];then
-	CREATE_STANDBY_QD
-fi
-
 if [ -f $DCA_VERSION_FILE ]; then
 	SET_DCA_CONFIG_SETTINGS	
 fi
@@ -2087,6 +2065,15 @@ fi
 
 SET_GP_USER_PW
 
+if [ $MIRRORING -ne 0 ]; then
+    CREATE_QES_MIRROR
+    FORCE_FTS_PROBE
+fi
+
+if [ x"" != x"$STANDBY_HOSTNAME" ];then
+	CREATE_STANDBY_QD
+fi
+
 SCAN_LOG
 LOG_MSG "[INFO]:-Greenplum Database instance successfully created" 1
 LOG_MSG "[INFO]:-------------------------------------------------------" 1
@@ -2099,14 +2086,20 @@ LOG_MSG "[INFO]:-   or, use -d ${MASTER_DIRECTORY}/${SEG_PREFIX}-1 option for th
 LOG_MSG "[INFO]:-   Example gpstate -d ${MASTER_DIRECTORY}/${SEG_PREFIX}-1" 1
 LOG_MSG "[INFO]:-Script log file = $LOG_FILE" 1
 LOG_MSG "[INFO]:-To remove instance, run gpdeletesystem utility" 1
+
 if [ x"" != x"$STANDBY_HOSTNAME" ];then
-LOG_MSG "[INFO]:-Standby Master $STANDBY_HOSTNAME has been configured" 1
-LOG_MSG "[INFO]:-To activate the Standby Master Segment in the event of Master" 1
-LOG_MSG "[INFO]:-failure review options for gpactivatestandby" 1
+	case $STANDBY_RET_CODE in
+		0|1)
+			LOG_MSG "[INFO]:-Standby Master $STANDBY_HOSTNAME has been configured" 1
+			LOG_MSG "[INFO]:-To activate the Standby Master Segment in the event of Master" 1
+			LOG_MSG "[INFO]:-failure review options for gpactivatestandby" 1 ;;
+		*) LOG_MSG "[WARN]:-Standby Master failed to initialize" 1
+	esac
 else
-LOG_MSG "[INFO]:-To initialize a Standby Master Segment for this Greenplum instance" 1
-LOG_MSG "[INFO]:-Review options for gpinitstandby" 1
+    LOG_MSG "[INFO]:-To initialize a Standby Master Segment for this Greenplum instance" 1
+    LOG_MSG "[INFO]:-Review options for gpinitstandby" 1
 fi
+
 LOG_MSG "[INFO]:-------------------------------------------------------" 1
 LOG_MSG "[INFO]:-The Master ${MASTER_DATA_DIRECTORY}/$PG_HBA post gpinitsystem" 1
 LOG_MSG "[INFO]:-has been configured to allow all hosts within this new" 1
@@ -2115,5 +2108,14 @@ LOG_MSG "[INFO]:-new array must be explicitly added to this file" 1
 LOG_MSG "[INFO]:-Refer to the Greenplum Admin support guide which is" 1
 LOG_MSG "[INFO]:-located in the $GPHOME/docs directory" 1
 LOG_MSG "[INFO]:-------------------------------------------------------" 1
+
+# Make sure that the user sees that there's an error with the standby
+if [ $STANDBY_RET_CODE -ne 0 ] && [ $STANDBY_RET_CODE -ne 1 ]; then
+	LOG_MSG "[WARN]:-*******************************************************" 1
+	LOG_MSG "[WARN]:-Cluster setup finished, but Standby Master failed to initialize. Review contents of log files for errors." 1
+	LOG_MSG "[INFO]:-Use gpinitstandby to create a Standby Master" 1
+	LOG_MSG "[WARN]:-*******************************************************" 1
+fi
+
 LOG_MSG "[INFO]:-End Main"
 exit $EXIT_STATUS

@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -80,9 +80,10 @@ class WalReplKillProcessScenarioTestCase(ScenarioTestCase):
             test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.ddl.test_ddl.DDLTestCase")
             self.test_case_scenario.append(test_case_list1)
 
-            test_case_list2 = []
-            test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg")
-            self.test_case_scenario.append(test_case_list2)
+            # WALREP_FIXME: gpcheckmirrorseg.pl doesn't work with walrep, replace with something
+#            test_case_list2 = []
+#            test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg")
+#            self.test_case_scenario.append(test_case_list2)
 
             test_case_list3 = []
             test_case_list3.append("mpp.gpdb.tests.storage.walrepl.crash.verify.verify.DataVerifyTestCase")
@@ -98,10 +99,11 @@ class WalReplKillProcessScenarioTestCase(ScenarioTestCase):
         test_case_list0.append("mpp.gpdb.tests.storage.walrepl.crash.dml.test_dml.DMLTestCase")
         test_case_list0.append("mpp.gpdb.tests.storage.walrepl.crash.ddl.test_ddl.DDLTestCase")
         self.test_case_scenario.append(test_case_list0)  
-    
-        test_case_list1 = []
-        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
-        self.test_case_scenario.append(test_case_list1)
+
+        # WALREP_FIXME: gpcheckmirrorseg.pl doesn't work with walrep, replace with something
+#        test_case_list1 = []
+#        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
+#        self.test_case_scenario.append(test_case_list1)
 
         test_case_list2 = []
         test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.verify.verify.DataVerifyTestCase")
@@ -120,9 +122,10 @@ class WalReplKillProcessScenarioTestCase(ScenarioTestCase):
         test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.gpinitstandby_helper")
         self.test_case_scenario.append(test_case_list1)
 
-        test_case_list2 = []
-        test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
-        self.test_case_scenario.append(test_case_list2)
+        # WALREP_FIXME: gpcheckmirrorseg.pl doesn't work with walrep, replace with something
+#        test_case_list2 = []
+#        test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
+#        self.test_case_scenario.append(test_case_list2)
 
         test_case_list3 = []
         test_case_list3.append("mpp.gpdb.tests.storage.walrepl.crash.verify.verify.DataVerifyTestCase")
@@ -135,10 +138,11 @@ class WalReplKillProcessScenarioTestCase(ScenarioTestCase):
         test_case_list0.append("mpp.gpdb.tests.storage.walrepl.crash.dml.test_dml.DMLTestCase")
         test_case_list0.append("mpp.gpdb.tests.storage.walrepl.crash.ddl.test_ddl.DDLTestCase")
         self.test_case_scenario.append(test_case_list0)  
-    
-        test_case_list1 = []
-        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
-        self.test_case_scenario.append(test_case_list1)
+
+        # WALREP_FIXME: gpcheckmirrorseg.pl doesn't work with walrep, replace with something
+#        test_case_list1 = []
+#        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
+#        self.test_case_scenario.append(test_case_list1)
 
         test_case_list2 = []
         test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.verify.verify.DataVerifyTestCase")
@@ -152,10 +156,11 @@ class WalReplKillProcessScenarioTestCase(ScenarioTestCase):
         test_case_list0.append("mpp.gpdb.tests.storage.walrepl.crash.dml.test_dml.DMLTestCase")
         test_case_list0.append("mpp.gpdb.tests.storage.walrepl.crash.ddl.test_ddl.DDLTestCase")
         self.test_case_scenario.append(test_case_list0)  
-    
-        test_case_list1 = []
-        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
-        self.test_case_scenario.append(test_case_list1)
+
+        # WALREP_FIXME: gpcheckmirrorseg.pl doesn't work with walrep, replace with something
+#        test_case_list1 = []
+#        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
+#        self.test_case_scenario.append(test_case_list1)
 
         test_case_list2 = []
         test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.verify.verify.DataVerifyTestCase")
@@ -171,10 +176,11 @@ class WalReplKillProcessScenarioTestCase(ScenarioTestCase):
         self.test_case_scenario.append(test_case_list0)  
 
         activatestdby.activate()
-    
-        test_case_list1 = []
-        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
-        self.test_case_scenario.append(test_case_list1)
+
+        # WALREP_FIXME: gpcheckmirrorseg.pl doesn't work with walrep, replace with something
+#        test_case_list1 = []
+#        test_case_list1.append("mpp.gpdb.tests.storage.walrepl.crash.WalReplKillProcessTestCase.check_mirror_seg") 
+#        self.test_case_scenario.append(test_case_list1)
      
         test_case_list2 = []
         test_case_list2.append("mpp.gpdb.tests.storage.walrepl.crash.verify.verify.DataVerifyTestCase")

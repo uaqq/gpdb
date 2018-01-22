@@ -4,6 +4,7 @@
  *	  Core support for opening external relations via a URL with curl
  *
  * Portions Copyright (c) 2007-2008, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  *
  * IDENTIFICATION
  *	  src/backend/access/external/url_curl.c
@@ -25,6 +26,7 @@
 #include "cdb/cdbutil.h"
 #include "miscadmin.h"
 #include "utils/guc.h"
+#include "utils/resowner.h"
 #include "utils/uri.h"
 
 /*

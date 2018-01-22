@@ -1,11 +1,14 @@
 /*-------------------------------------------------------------------------
  *
  * alertseverity.c
+ *	  Set the severity level of the alert based on the message
  *
- * Set the severity level of the alert based on the message
+ * Portions Copyright (c) 2010, EMC Corporation
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  *
- * Copyright (c) 2010, EMC Corporation
  *
+ * IDENTIFICATION
+ *	    src/backend/postmaster/alertseverity.c
  *
  *-------------------------------------------------------------------------
  */
@@ -120,6 +123,7 @@ int set_alert_severity(const GpErrorData * errorData,
 		snmp_severity[0] = '7';  //gpdbSevSystemDown
 		email_priority[0] = '1'; // 1 == highest priority
 	}
+	// WALREP_FIXME: these strings ought to be updated with whatever errors we print nowadays.
 	else if (strstr(errorData->error_message, gettext("Master mirroring synchronization lost"))  != NULL ||
 			  strstr(errorData->error_message, gettext("Error from sending to standby master"))  != NULL ||
 			  strstr(errorData->error_message, gettext("error received sending data to standby master"))  != NULL ||

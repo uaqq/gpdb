@@ -4,6 +4,8 @@ include $(top_builddir)/src/Makefile.global
 
 TARGETS=xact distributedlog xlog
 
+TARGETS += xlogutils
+
 include $(top_builddir)/src/backend/mock.mk
 
 distributedlog.t: \

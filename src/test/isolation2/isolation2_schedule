@@ -1,4 +1,3 @@
-test: pt_io_in_progress_deadlock
 test: pg_terminate_backend
 test: deadlock_under_entry_db_singleton
 test: starve_case
@@ -8,6 +7,7 @@ test: resource_queue
 test: alter_blocks_for_update_and_viceversa
 test: reader_waits_for_lock
 test: drop_rename
+test: master_panic_after_phase1_commit
 
 test: setup
 # Tests on Append-Optimized tables (row-oriented).
@@ -22,7 +22,6 @@ test: uao/cursor_before_update_row
 test: uao/cursor_withhold_row
 test: uao/cursor_withhold2_row
 test: uao/delete_while_vacuum_row
-test: uao/drop_while_vacuum_row
 test: uao/insert_policy_row
 test: uao/insert_while_vacuum_row
 test: uao/max_concurrency_row
@@ -69,7 +68,6 @@ test: uao/cursor_before_update_column
 test: uao/cursor_withhold_column
 test: uao/cursor_withhold2_column
 test: uao/delete_while_vacuum_column
-test: uao/drop_while_vacuum_column
 test: uao/insert_policy_column
 test: uao/insert_while_vacuum_column
 test: uao/max_concurrency_column
@@ -105,3 +103,12 @@ test: uao/vacuum_while_vacuum_column
 test: uao/vacuum_cleanup_column
 test: add_column_after_vacuum_skip_drop_column
 test: vacuum_after_vacuum_skip_drop_column
+
+# Tests for FTS
+test: segwalrep/commit_blocking
+test: segwalrep/fts_unblock_primary
+test: segwalrep/mirror_promotion
+
+# Tests for crash recovery
+test: crash_recovery
+test: crash_recovery_redundant_dtx

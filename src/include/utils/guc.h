@@ -5,10 +5,11 @@
  * backend/utils/misc/guc-file.l
  *
  * Portions Copyright (c) 2007-2010, Greenplum inc
- * Copyright (c) 2000-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ * Copyright (c) 2000-2009, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
- * $PostgreSQL: pgsql/src/include/utils/guc.h,v 1.90.2.1 2010/03/25 14:45:06 alvherre Exp $
+ * $PostgreSQL: pgsql/src/include/utils/guc.h,v 1.102 2009/06/11 14:49:13 momjian Exp $
  *--------------------------------------------------------------------
  */
 #ifndef GUC_H
@@ -21,7 +22,11 @@
 #define MAX_MAX_BACKENDS (INT_MAX / BLCKSZ)
 #define MAX_AUTHENTICATION_TIMEOUT (600)
 #define MAX_PRE_AUTH_DELAY (60)
-
+/*
+ * One connection must be reserved for FTS to always able to probe
+ * primary. So, this acts as lower limit on reserved superuser connections.
+*/
+#define RESERVED_FTS_CONNECTIONS (1)
 
 struct StringInfoData;                  /* #include "lib/stringinfo.h" */
 
@@ -104,23 +109,41 @@ typedef enum
 	PGC_S_SESSION				/* SET command */
 } GucSource;
 
-typedef struct name_value_pair
+/*
+ * Parsing the configuation file will return a list of name-value pairs
+ */
+typedef struct ConfigVariable
 {
 	char       *name;
 	char       *value;
-	struct name_value_pair *next;
-} name_value_pair;
+	char	   *filename;
+	int			sourceline;
+	struct ConfigVariable  *next;
+} ConfigVariable;
 
 extern bool ParseConfigFile(const char *config_file, const char *calling_file,
-							int depth, GucContext context, int elevel,
-							struct name_value_pair **head_p,
-							struct name_value_pair **tail_p);
-extern void free_name_value_list(struct name_value_pair * list);
+				int depth, int elevel,
+				ConfigVariable **head_p, ConfigVariable **tail_p);
+extern bool ParseConfigFp(FILE *fp, const char *config_file,
+			  int depth, int elevel,
+			  ConfigVariable **head_p, ConfigVariable **tail_p);
+extern void FreeConfigVariables(ConfigVariable *list);
+
+/*
+ * Enum values are made up of an array of name-value pairs
+ */
+struct config_enum_entry
+{
+	const char *name;
+	int			val;
+	bool		hidden;
+};
 
 typedef const char *(*GucStringAssignHook) (const char *newval, bool doit, GucSource source);
 typedef bool (*GucBoolAssignHook) (bool newval, bool doit, GucSource source);
 typedef bool (*GucIntAssignHook) (int newval, bool doit, GucSource source);
 typedef bool (*GucRealAssignHook) (double newval, bool doit, GucSource source);
+typedef bool (*GucEnumAssignHook) (int newval, bool doit, GucSource source);
 
 typedef const char *(*GucShowHook) (void);
 
@@ -134,6 +157,30 @@ typedef enum
 
 #define GUC_QUALIFIER_SEPARATOR '.'
 
+/*
+ * bit values in "flags" of a GUC variable
+ */
+#define GUC_LIST_INPUT			0x0001	/* input can be list format */
+#define GUC_LIST_QUOTE			0x0002	/* double-quote list elements */
+#define GUC_NO_SHOW_ALL			0x0004	/* exclude from SHOW ALL */
+#define GUC_NO_RESET_ALL		0x0008	/* exclude from RESET ALL */
+#define GUC_REPORT				0x0010	/* auto-report changes to client */
+#define GUC_NOT_IN_SAMPLE		0x0020	/* not in postgresql.conf.sample */
+#define GUC_DISALLOW_IN_FILE	0x0040	/* can't set in postgresql.conf */
+#define GUC_CUSTOM_PLACEHOLDER	0x0080	/* placeholder for custom variable */
+#define GUC_SUPERUSER_ONLY		0x0100	/* show only to superusers */
+#define GUC_IS_NAME				0x0200	/* limit string to NAMEDATALEN-1 */
+
+#define GUC_UNIT_KB				0x0400	/* value is in kilobytes */
+#define GUC_UNIT_BLOCKS			0x0800	/* value is in blocks */
+#define GUC_UNIT_XBLOCKS		0x0C00	/* value is in xlog blocks */
+#define GUC_UNIT_MEMORY			0x0C00	/* mask for KB, BLOCKS, XBLOCKS */
+
+#define GUC_UNIT_MS				0x1000	/* value is in milliseconds */
+#define GUC_UNIT_S				0x2000	/* value is in seconds */
+#define GUC_UNIT_MIN			0x4000	/* value is in minutes */
+#define GUC_UNIT_TIME			0x7000	/* mask for MS, S, MIN */
+
 /* GUC lists for gp_guc_list_show().  (List of struct config_generic) */
 extern List    *gp_guc_list_for_explain;
 extern List    *gp_guc_list_for_no_plan;
@@ -144,11 +191,10 @@ extern bool Debug_print_plan;
 extern bool Debug_print_parse;
 extern bool Debug_print_rewritten;
 extern bool Debug_pretty_print;
-extern bool Explain_pretty_print;
+
 extern bool	Debug_print_full_dtm;
 extern bool	Debug_print_snapshot_dtm;
 extern bool	Debug_print_qd_mirroring;
-extern bool Debug_print_semaphore_detail;
 extern bool Debug_disable_distributed_snapshot;
 extern bool Debug_abort_after_distributed_prepared;
 extern bool Debug_abort_after_segment_prepared;
@@ -169,21 +215,15 @@ extern int  Debug_appendonly_bad_header_print_level;
 extern bool Debug_appendonly_print_datumstream;
 extern bool Debug_appendonly_print_visimap;
 extern bool Debug_appendonly_print_compaction;
-extern bool Debug_gp_relation_node_fetch_wait_for_debugging;
 extern bool gp_crash_recovery_abort_suppress_fatal;
-extern bool gp_persistent_statechange_suppress_error;
 extern bool Debug_bitmap_print_insert;
 extern bool Test_appendonly_override;
-extern bool	gp_permit_persistent_metadata_update;
-extern bool gp_permit_relation_node_change;
 extern bool enable_checksum_on_tables;
 extern int  Test_compresslevel_override;
-extern bool Master_mirroring_administrator_disable;
 extern int  gp_max_local_distributed_cache;
 extern bool gp_local_distributed_cache_stats;
 extern bool gp_appendonly_verify_block_checksums;
 extern bool gp_appendonly_verify_write_block;
-extern bool gp_appendonly_verify_eof;
 extern bool gp_appendonly_compaction;
 
 /*
@@ -195,24 +235,12 @@ extern bool gp_appendonly_compaction;
  * 10% of the tuples are hidden.
  */ 
 extern int  gp_appendonly_compaction_threshold;
-extern bool gp_heap_verify_checksums_on_mirror;
 extern bool gp_heap_require_relhasoids_match;
 extern bool	Debug_appendonly_rezero_quicklz_compress_scratch;
 extern bool	Debug_appendonly_rezero_quicklz_decompress_scratch;
 extern bool	Debug_appendonly_guard_end_quicklz_scratch;
 extern bool	Debug_xlog_insert_print;
 extern bool	debug_xlog_record_read;
-extern bool	Debug_persistent_print;
-extern int	Debug_persistent_print_level;
-extern bool	Debug_persistent_recovery_print;
-extern int	Debug_persistent_recovery_print_level;
-extern bool Disable_persistent_recovery_logging;
-extern bool	Debug_persistent_store_print;
-extern bool Debug_persistent_bootstrap_print;
-extern bool persistent_integrity_checks;
-extern bool debug_persistent_ptcat_verification;
-extern bool debug_print_persistent_checks;
-extern bool Debug_persistent_appendonly_commit_count_print;
 extern bool Debug_cancel_print;
 extern bool Debug_datumstream_write_print_small_varlena_info;
 extern bool Debug_datumstream_write_print_large_varlena_info;
@@ -221,30 +249,9 @@ extern bool Debug_datumstream_block_read_check_integrity;
 extern bool Debug_datumstream_block_write_check_integrity;
 extern bool Debug_datumstream_read_print_varlena_info;
 extern bool Debug_datumstream_write_use_small_initial_buffers;
-extern int	Debug_persistent_store_print_level;
 extern bool	Debug_database_command_print;
-extern int	Debug_database_command_print_level;
-extern int	gp_max_databases;
-extern int	gp_max_tablespaces;
-extern int	gp_max_filespaces;
-extern bool gp_initdb_mirrored;
-extern bool gp_before_persistence_work;
-extern bool gp_before_filespace_setup;
 extern bool gp_startup_integrity_checks;
-extern bool gp_change_tracking;
-extern bool	gp_persistent_repair_global_sequence;
-extern bool gp_validate_pt_info_relcache;
-extern bool Debug_print_xlog_relation_change_info;
-extern bool Debug_print_xlog_relation_change_info_skip_issues_only;
-extern bool Debug_print_xlog_relation_change_info_backtrace_skip_issues;
-extern bool Debug_filerep_crc_on;
-extern bool Debug_filerep_print;
-extern bool Debug_filerep_gcov;
-extern bool Debug_filerep_config_print;
-extern bool Debug_filerep_memory_log_flush;
 extern bool Debug_resource_group;
-extern bool filerep_mirrorvalidation_during_resync;
-extern bool log_filerep_to_syslogger;
 extern bool gp_crash_recovery_suppress_ao_eof;
 extern bool gp_create_table_random_default_distribution;
 extern bool gp_allow_non_uniform_partitioning_ddl;
@@ -267,8 +274,6 @@ extern bool allow_segment_DML;
 extern bool gp_allow_rename_relation_without_lock;
 
 extern bool gp_ignore_window_exclude;
-
-extern int verify_checkpoint_interval;
 
 extern bool rle_type_compression_stats;
 
@@ -296,8 +301,6 @@ extern int	log_temp_files;
 
 extern int	num_temp_buffers;
 
-extern int ddboost_buf_size;
-
 extern bool gp_cancel_query_print_log;
 extern int gp_cancel_query_delay_time;
 extern bool vmem_process_interrupt;
@@ -306,9 +309,7 @@ extern bool execute_pruned_plan;
 extern bool gp_partitioning_dynamic_selection_log;
 extern int gp_max_partition_level;
 
-extern bool gp_temporary_files_filespace_repair;
 extern bool gp_perfmon_print_packet_info;
-extern bool fts_diskio_check;
 
 extern bool gp_enable_relsize_collection;
 
@@ -340,6 +341,7 @@ extern int Debug_dtm_action_protocol;
 extern int Debug_dtm_action_segment;
 extern int Debug_dtm_action_nestinglevel;
 
+extern char *data_directory;
 extern char *ConfigFileName;
 extern char *HbaFileName;
 extern char *IdentFileName;
@@ -350,7 +352,6 @@ extern char *application_name;
 extern char *Debug_dtm_action_sql_command_tag;
 extern char *Debug_dtm_action_str;
 extern char *Debug_dtm_action_target_str;
-extern char *Debug_dtm_action_protocol_str;
 
 /* Enable check for compatibility of encoding and locale in createdb */
 extern bool gp_encoding_check_locale_compatibility;
@@ -360,11 +361,6 @@ extern int	tcp_keepalives_interval;
 extern int	tcp_keepalives_count;
 
 extern int	gp_connection_send_timeout;
-
-extern int	gp_filerep_tcp_keepalives_idle;
-extern int	gp_filerep_tcp_keepalives_interval;
-extern int	gp_filerep_tcp_keepalives_count;
-extern int	gp_filerep_ct_batch_size;
 
 extern int  WalSendClientTimeout;
 
@@ -471,6 +467,7 @@ extern double optimizer_sort_factor;
 /* Optimizer hints */
 extern int optimizer_array_expansion_threshold;
 extern int optimizer_join_order_threshold;
+extern int optimizer_join_order;
 extern int optimizer_join_arity_for_associativity_commutativity;
 extern int optimizer_cte_inlining_bound;
 extern bool optimizer_force_multistage_agg;
@@ -492,25 +489,18 @@ extern bool optimizer_enable_space_pruning;
 extern bool optimizer_analyze_root_partition;
 extern bool optimizer_analyze_midlevel_partition;
 
+extern bool optimizer_use_gpdb_allocators;
 
-/**
- * GUCs related to code generation.
- **/
-#define CODEGEN_OPTIMIZATION_LEVEL_NONE          0
-#define CODEGEN_OPTIMIZATION_LEVEL_LESS          1
-#define CODEGEN_OPTIMIZATION_LEVEL_DEFAULT       2
-#define CODEGEN_OPTIMIZATION_LEVEL_AGGRESSIVE    3
-
-extern bool init_codegen;
-extern bool codegen;
-extern bool codegen_validate_functions;
-extern int codegen_varlen_tolerance;
-extern int codegen_optimization_level;
 
 /**
  * Enable logging of DPE match in optimizer.
  */
 extern bool	optimizer_partition_selection_log;
+
+/* optimizer join heuristic models */
+#define JOIN_ORDER_IN_QUERY                 0
+#define JOIN_ORDER_GREEDY_SEARCH            1
+#define JOIN_ORDER_EXHAUSTIVE_SEARCH        2
 
 extern char  *gp_email_smtp_server;
 extern char  *gp_email_smtp_userid;
@@ -541,15 +531,6 @@ extern char  *gp_default_storage_options;
 
 /* copy GUC */
 extern bool gp_enable_segment_copy_checking;
-
-/*
- * This is the batch size used when we want to display the number of files that
- * have been shipped to the mirror during crash recovery.
- * For e.g if this value is set to 1000, after shipping 1000 files during
- * a message gets printed out which indicates the total number of files shipped to
- * the mirror for a particular directory.
- */
-extern int log_count_recovered_files_batch;
 
 extern int writable_external_table_bufsize;
 
@@ -582,7 +563,9 @@ extern void DefineCustomBoolVariable(
 						 const char *short_desc,
 						 const char *long_desc,
 						 bool *valueAddr,
+						 bool bootValue,
 						 GucContext context,
+						 int flags,
 						 GucBoolAssignHook assign_hook,
 						 GucShowHook show_hook);
 
@@ -591,9 +574,11 @@ extern void DefineCustomIntVariable(
 						const char *short_desc,
 						const char *long_desc,
 						int *valueAddr,
+						int bootValue,
 						int minValue,
 						int maxValue,
 						GucContext context,
+						int flags,
 						GucIntAssignHook assign_hook,
 						GucShowHook show_hook);
 
@@ -602,9 +587,11 @@ extern void DefineCustomRealVariable(
 						 const char *short_desc,
 						 const char *long_desc,
 						 double *valueAddr,
+						 double bootValue,
 						 double minValue,
 						 double maxValue,
 						 GucContext context,
+						 int flags,
 						 GucRealAssignHook assign_hook,
 						 GucShowHook show_hook);
 
@@ -613,9 +600,23 @@ extern void DefineCustomStringVariable(
 						   const char *short_desc,
 						   const char *long_desc,
 						   char **valueAddr,
+						   const char *bootValue,
 						   GucContext context,
+						   int flags,
 						   GucStringAssignHook assign_hook,
 						   GucShowHook show_hook);
+
+extern void DefineCustomEnumVariable(
+						 const char *name,
+						 const char *short_desc,
+						 const char *long_desc,
+						 int *valueAddr,
+						 int bootValue,
+						 const struct config_enum_entry * options,
+						 GucContext context,
+						 int flags,
+						 GucEnumAssignHook assign_hook,
+						 GucShowHook show_hook);
 
 extern void EmitWarningsOnPlaceholders(const char *className);
 
@@ -631,6 +632,9 @@ extern int	NewGUCNestLevel(void);
 extern void AtEOXact_GUC(bool isCommit, int nestLevel);
 extern void BeginReportingGUCOptions(void);
 extern void ParseLongOption(const char *string, char **name, char **value);
+extern bool parse_int(const char *value, int *result, int flags,
+		  const char **hintmsg);
+extern bool parse_real(const char *value, double *result);
 extern bool set_config_option(const char *name, const char *value,
 				  GucContext context, GucSource source,
 				  GucAction action, bool changeVal);
@@ -656,16 +660,18 @@ extern int	GUC_complaint_elevel(GucSource source);
 
 extern void pg_timezone_abbrev_initialize(void);
 
-extern int  gp_guc_list_show(struct StringInfoData    *buf,
-                              const char               *pfx,
-                              const char               *fmt,
-                              GucSource                 excluding,
-                              List                     *guclist)
-                /* This extension allows gcc to check the format string */
-                __attribute__((__format__(__printf__, 3, 0)));
+extern char *gp_guc_list_show(GucSource excluding, List *guclist);
 
 extern struct config_generic *find_option(const char *name,
 				bool create_placeholders, int elevel);
+
+extern char  *gp_replication_config_filename;
+
+extern bool select_gp_replication_config_files(const char *configdir, const char *progname);
+
+extern void set_gp_replication_config(const char *name, const char *value);
+
+extern bool parse_real(const char *value, double *result);
 
 #ifdef EXEC_BACKEND
 extern void write_nondefault_variables(GucContext context);
@@ -684,16 +690,12 @@ extern const char *assign_default_tablespace(const char *newval,
 extern const char *assign_temp_tablespaces(const char *newval,
 						bool doit, GucSource source);
 
-/* in utils/adt/regexp.c */
-extern const char *assign_regex_flavor(const char *value,
-					bool doit, GucSource source);
-
 /* in catalog/namespace.c */
 extern const char *assign_search_path(const char *newval,
 				   bool doit, GucSource source);
 
 /* in access/transam/xlog.c */
-extern const char *assign_xlog_sync_method(const char *method,
+extern bool assign_xlog_sync_method(int newval,
 						bool doit, GucSource source);
 
 extern StdRdOptions *defaultStdRdOptions(char relkind);

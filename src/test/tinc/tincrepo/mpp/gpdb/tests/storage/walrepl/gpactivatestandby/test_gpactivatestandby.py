@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -124,10 +124,10 @@ class GpactivateStandbyTestCase(MPPTestCase):
 
     @unittest.skipIf(not config.is_multinode(), "Test applies only to a multinode cluster")
     def test_gpactivatestandby_new_host_with_filespace(self):
-        from mpp.lib.gpfilespace import Gpfilespace
-        gpfile = Gpfilespace()
-        gpfile.create_filespace('fs_walrepl_a')
-        PSQL.run_sql_file(local_path('filespace.sql'), dbname= self.db_name)
+        #from mpp.lib.gpfilespace import Gpfilespace
+        #gpfile = Gpfilespace()
+        #gpfile.create_filespace('fs_walrepl_a')
+        #PSQL.run_sql_file(local_path('filespace.sql'), dbname= self.db_name)
         gputil.install_standby()
         initstdby = GpinitStandby()
         gpact_stdby = GpactivateStandby()

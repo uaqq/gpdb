@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,6 @@ from mpp.lib.gprecoverseg import GpRecover
 from mpp.lib.gpstart import GpStart
 from mpp.lib.gpstop import GpStop
 from mpp.lib.config import GPDBConfig
-from mpp.lib.gpfilespace import Gpfilespace
 from mpp.lib.gpdbverify import GpdbVerify
 from mpp.models import MPPTestCase
 from mpp.gpdb.tests.storage.lib.dbstate import DbStateClass
@@ -43,7 +42,6 @@ class PgtwoPhaseClass(MPPTestCase):
         self.gprecover = GpRecover(self.config)
         self.gpstop = GpStop()
         self.gpstart = GpStart()
-        self.gpfile = Gpfilespace(self.config)
         self.gpverify = GpdbVerify(config=self.config)
         self.dbstate = DbStateClass('run_validation',self.config)
         self.port = os.getenv('PGPORT')
@@ -317,16 +315,6 @@ class PgtwoPhaseClass(MPPTestCase):
         for i in range(num_primary):
             (host, port) = self.config.get_hostandport_of_segment(psegmentNumber=i)
             PSQL.run_sql_command_utility_mode(sql_cmd, host = host, port = port)
-
-    def switch_checkpoint_loop(self, fault_type):
-        '''     
-        @description: Run switch_xlog and checkpoint based on the fault_type
-        '''     
-        if fault_type == 'dtm_xlog_distributed_commit':
-            self.switch_ckpt_switch_xlog()
-        else:
-            for i in range(5):
-                self.switch_ckpt_switch_xlog()
 
     def switch_ckpt_crash_and_recover(self, crash_type, fault_type, test_dir, cluster_state='sync', checkpoint='noskip'):
         '''

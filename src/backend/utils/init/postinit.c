@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/init/postinit.c,v 1.180.2.1 2008/09/11 14:01:35 alvherre Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/init/postinit.c,v 1.191 2009/06/11 14:49:05 momjian Exp $
  *
  *
  *-------------------------------------------------------------------------
@@ -26,20 +26,25 @@
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_tablespace.h"
+#include "catalog/indexing.h"
 #include "libpq/auth.h"
 #include "libpq/hba.h"
 #include "libpq/libpq-be.h"
+#include "cdb/cdbtm.h"
 #include "cdb/cdbvars.h"
 #include "cdb/cdbutil.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
+#include "postmaster/fts.h"
 #include "postmaster/postmaster.h"
 #include "replication/walsender.h"
 #include "storage/backendid.h"
+#include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
+#include "storage/lmgr.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/procsignal.h"
@@ -56,10 +61,12 @@
 #include "utils/relcache.h"
 #include "utils/resscheduler.h"
 #include "utils/sharedsnapshot.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
-#include "pgstat.h"
+#include "utils/tqual.h"
+
 #include "utils/session_state.h"
-#include "codegen/codegen_wrapper.h"
+
 
 static HeapTuple GetDatabaseTuple(const char *dbname);
 static HeapTuple GetDatabaseTupleByOid(Oid dboid);
@@ -327,6 +334,8 @@ CheckMyDatabase(const char *name, bool am_superuser)
 {
 	HeapTuple	tup;
 	Form_pg_database dbform;
+	char	   *collate;
+	char	   *ctype;
 
 	/* Fetch our pg_database row normally, via syscache */
 	tup = SearchSysCache(DATABASEOID,
@@ -408,6 +417,28 @@ CheckMyDatabase(const char *name, bool am_superuser)
 	/* If we have no other source of client_encoding, use server encoding */
 	SetConfigOption("client_encoding", GetDatabaseEncodingName(),
 					PGC_BACKEND, PGC_S_DEFAULT);
+
+	/* assign locale variables */
+	collate = NameStr(dbform->datcollate);
+	ctype = NameStr(dbform->datctype);
+
+	if (setlocale(LC_COLLATE, collate) == NULL)
+		ereport(FATAL,
+			(errmsg("database locale is incompatible with operating system"),
+			 errdetail("The database was initialized with LC_COLLATE \"%s\", "
+					   " which is not recognized by setlocale().", collate),
+			 errhint("Recreate the database with another locale or install the missing locale.")));
+
+	if (setlocale(LC_CTYPE, ctype) == NULL)
+		ereport(FATAL,
+			(errmsg("database locale is incompatible with operating system"),
+			 errdetail("The database was initialized with LC_CTYPE \"%s\", "
+					   " which is not recognized by setlocale().", ctype),
+			 errhint("Recreate the database with another locale or install the missing locale.")));
+
+	/* Make the locale settings visible as GUC variables, too */
+	SetConfigOption("lc_collate", collate, PGC_INTERNAL, PGC_S_OVERRIDE);
+	SetConfigOption("lc_ctype", ctype, PGC_INTERNAL, PGC_S_OVERRIDE);
 
 	/* Use the right encoding in translated messages */
 #ifdef ENABLE_NLS
@@ -546,11 +577,22 @@ BaseInit(void)
 	InitFileAccess();
 	smgrinit();
 	InitBufferPoolAccess();
-
-	/* Initialize llvm library if USE_CODEGEN is defined */
-	init_codegen();
 }
 
+/*
+ * Make sure we reserve enough connections for FTS handler.
+ */
+static void check_superuser_connection_limit()
+{
+	if (!am_ftshandler &&
+		!HaveNFreeProcs(RESERVED_FTS_CONNECTIONS))
+		ereport(FATAL,
+				(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
+						errmsg("connection limit exceeded for superusers (need "
+									   "at least %d connections reserved for FTS handler)",
+							   RESERVED_FTS_CONNECTIONS),
+						errSendAlert(true)));
+}
 
 /* --------------------------------
  * InitPostgres
@@ -598,7 +640,11 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 
 #ifdef USE_ORCA
 	/* Initialize GPOPT */
-	InitGPOPT();
+	START_MEMORY_ACCOUNT(MemoryAccounting_CreateAccount(0, MEMORY_OWNER_TYPE_Optimizer));
+	{
+		InitGPOPT();
+	}
+	END_MEMORY_ACCOUNT();
 #endif
 
 	/*
@@ -625,8 +671,13 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	/*
 	 * Initialize local process's access to XLOG.  In bootstrap case we may
 	 * skip this since StartupXLOG() was run instead.
+	 *
+	 * Skip this step if we are responding to a FTS message on mirror. Mirror
+	 * operates in standby mode and doesn't need xlog access, as its only
+	 * invoked to check if we are acting as mirror and if yes send promote
+	 * signal.
 	 */
-	if (!bootstrap)
+	if (!bootstrap && !(am_ftshandler && am_mirror))
 		InitXLOGAccess();
 
 	/*
@@ -669,8 +720,13 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * Start a new transaction here before first access to db, and get a
 	 * snapshot.  We don't have a use for the snapshot itself, but we're
 	 * interested in the secondary effect that it sets RecentGlobalXmin.
+	 *
+	 * Skip these steps if we are responding to a FTS message on mirror.
+	 * Mirror operates in standby mode and is not ready to start a
+	 * transaction or create a snapshot.  Neither are they required to
+	 * respond to a FTS message.
 	 */
-	if (!bootstrap)
+	if (!bootstrap && !(am_ftshandler && am_mirror))
 	{
 		StartTransactionCommand();
 		(void) GetTransactionSnapshot();
@@ -698,6 +754,17 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 					 errhint("You should immediately run CREATE USER \"%s\" CREATEUSER;.",
 							 username)));
 	}
+	else if (am_ftshandler && am_mirror)
+	{
+		/*
+		 * A mirror must receive and act upon FTS messages.  Performing proper
+		 * authentication involves reading pg_authid.  Heap access is not
+		 * possible on mirror, which is in standby mode.
+		 */
+		FakeClientAuthentication(MyProcPort);
+		InitializeSessionUserIdStandalone();
+		am_superuser = true;
+	}
 	else
 	{
 		/* normal multiuser case */
@@ -719,6 +786,16 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	}
 
 	/*
+	 * If we're trying to shut down, only superusers can connect.
+	 */
+	if (!am_superuser &&
+		MyProcPort != NULL &&
+		MyProcPort->canAcceptConnections == CAC_WAITBACKUP)
+		ereport(FATAL,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to connect during database shutdown")));
+
+	/*
 	 * Check a normal user hasn't connected to a superuser reserved slot.
 	 */
 	if (!am_superuser &&
@@ -729,19 +806,22 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 				 errmsg("connection limit exceeded for non-superusers"),
 				 errSendAlert(true)));
 
+	if (am_superuser)
+		check_superuser_connection_limit();
+
 	/*
-	 * If walsender, we don't want to connect to any particular database. Just
-	 * finish the backend startup by processing any options from the startup
-	 * packet, and we're done.
+	 * If walsender or fts handler, we don't want to connect to any particular
+	 * database. Just finish the backend startup by processing any options from
+	 * the startup packet, and we're done.
 	 */
-	if (am_walsender)
+	if (am_walsender || am_ftshandler)
 	{
 		Assert(!bootstrap);
 
 		/*
 		 * We don't have replication role, which existed in postgres.
 		 */
-		if (!superuser())
+		if (!am_superuser)
 			ereport(FATAL,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser role to start walsender")));
@@ -761,7 +841,8 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 		pgstat_bestart();
 
 		/* close the transaction we started above */
-		CommitTransactionCommand();
+		if (!(am_ftshandler && am_mirror))
+			CommitTransactionCommand();
 
 		return;
 	}
@@ -928,7 +1009,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * process_startup_options parses the GUC.
 	 */
 	if (gp_maintenance_mode && Gp_role == GP_ROLE_DISPATCH &&
-		!(superuser() && gp_maintenance_conn))
+		!(am_superuser && gp_maintenance_conn))
 		ereport(FATAL,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("maintenance mode: connected by superuser only"),
@@ -1100,7 +1181,11 @@ ShutdownPostgres(int code, Datum arg)
 	ReportOOMConsumption();
 
 #ifdef USE_ORCA
-  TerminateGPOPT();
+	START_MEMORY_ACCOUNT(MemoryAccounting_CreateAccount(0, MEMORY_OWNER_TYPE_Optimizer));
+	{
+		TerminateGPOPT();
+	}
+	END_MEMORY_ACCOUNT();
 #endif
 
 	/* Disable memory protection */

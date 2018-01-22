@@ -3,10 +3,10 @@
  * varsup.c
  *	  postgres OID & XID variables support routines
  *
- * Copyright (c) 2000-2008, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2009, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/transam/varsup.c,v 1.81 2008/01/01 19:45:48 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/transam/varsup.c,v 1.84 2009/04/23 00:23:45 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -23,7 +23,6 @@
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "access/distributedlog.h"
-#include "cdb/cdbpersistentstore.h"
 #include "cdb/cdbvars.h"
 
 /* Number of OIDs to prefetch (preallocate) per XLOG write */
@@ -39,11 +38,9 @@ int xid_warn_limit;
  * Allocate the next XID for my new transaction or subtransaction.
  */
 TransactionId
-GetNewTransactionId(bool isSubXact, bool setProcXid)
+GetNewTransactionId(bool isSubXact)
 {
 	TransactionId xid;
-
-	MIRRORED_LOCK_DECLARE;
 
 	/*
 	 * During bootstrap initialization, we return the special bootstrap
@@ -55,7 +52,6 @@ GetNewTransactionId(bool isSubXact, bool setProcXid)
 		return BootstrapTransactionId;
 	}
 
-	MIRRORED_LOCK;
 	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 
 	xid = ShmemVariableCache->nextXid;
@@ -81,30 +77,35 @@ GetNewTransactionId(bool isSubXact, bool setProcXid)
 		 * To avoid swamping the postmaster with signals, we issue the
 		 * autovac request only once per 64K transaction starts.  This
 		 * still gives plenty of chances before we get into real trouble.
-		 *
-		 * if (IsUnderPostmaster && (xid % 65536) == 0)
-		 * {
-		 * 		elog(LOG, "GetNewTransactionId: requesting autovac (xid %u xidVacLimit %u)", xid, ShmemVariableCache->xidVacLimit);
-		 * 		SendPostmasterSignal(PMSIGNAL_START_AUTOVAC);
-		 * }
-		 *
-		 * MPP-19652: autovacuum disabled
 		 */
+		/* MPP-19652: autovacuum disabled */
+#if 0
+		if (IsUnderPostmaster && (xid % 65536) == 0)
+		{
+			elog(LOG, "GetNewTransactionId: requesting autovac (xid %u xidVacLimit %u)", xid, ShmemVariableCache->xidVacLimit);
+			SendPostmasterSignal(PMSIGNAL_START_AUTOVAC);
+		}
+#endif
 		if (IsUnderPostmaster &&
 		 TransactionIdFollowsOrEquals(xid, ShmemVariableCache->xidStopLimit))
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 					 errmsg("database is not accepting commands to avoid wraparound data loss in database \"%s\"",
 							NameStr(ShmemVariableCache->limit_datname)),
-					 errhint("Shutdown Greenplum Database. Lower the xid_stop_limit GUC. Execute a full-database VACUUM in \"%s\". Reset the xid_stop_limit GUC.",
+					 errhint("Shutdown Greenplum Database. Lower the xid_stop_limit GUC. Execute a database-wide VACUUM in \"%s\". Reset the xid_stop_limit GUC.",
 							 NameStr(ShmemVariableCache->limit_datname))));
 		else if (TransactionIdFollowsOrEquals(xid, ShmemVariableCache->xidWarnLimit))
 			ereport(WARNING,
-					(errmsg("database \"%s\" must be vacuumed within %u transactions",
-							NameStr(ShmemVariableCache->limit_datname),
-							ShmemVariableCache->xidWrapLimit - xid),
-					 errhint("To avoid a database shutdown, execute a full-database VACUUM in \"%s\".",
-							 NameStr(ShmemVariableCache->limit_datname))));
+			(errmsg("database \"%s\" must be vacuumed within %u transactions",
+					NameStr(ShmemVariableCache->limit_datname),
+					ShmemVariableCache->xidWrapLimit - xid),
+			 /*
+			  * In GPDB, don't say anything about old prepared transactions, because the system
+			  * only uses prepared transactions internally. PREPARE TRANSACTION is not available
+			  * to users.
+			  */
+			 errhint("To avoid a database shutdown, execute a database-wide VACUUM in \"%s\".",
+					 NameStr(ShmemVariableCache->limit_datname))));
 	}
 
 	/*
@@ -159,7 +160,6 @@ GetNewTransactionId(bool isSubXact, bool setProcXid)
 	 * window *will* include the parent XID, so they will deliver the correct
 	 * answer later on when someone does have a reason to inquire.)
 	 */
-	if (setProcXid && MyProc != NULL)
 	{
 		/*
 		 * Use volatile pointer to prevent code rearrangement; other backends
@@ -187,7 +187,6 @@ GetNewTransactionId(bool isSubXact, bool setProcXid)
 	}
 
 	LWLockRelease(XidGenLock);
-	MIRRORED_UNLOCK;
 
 	return xid;
 }
@@ -274,14 +273,15 @@ SetTransactionIdLimit(TransactionId oldest_datfrozenxid,
 	 * assign hook (too many processes would try to execute the hook,
 	 * resulting in race conditions as well as crashes of those not connected
 	 * to shared memory).  Perhaps this can be improved someday.
-	 *
-	 * MPP-19652: autovacuum disabled
-	 * 
-	 *	xidVacLimit = oldest_datfrozenxid + autovacuum_freeze_max_age;
-	 *	if (xidVacLimit < FirstNormalTransactionId)
-	 *		xidVacLimit += FirstNormalTransactionId;
 	 */
+	/* MPP-19652: autovacuum disabled */
+#if 0
+	xidVacLimit = oldest_datfrozenxid + autovacuum_freeze_max_age;
+	if (xidVacLimit < FirstNormalTransactionId)
+		xidVacLimit += FirstNormalTransactionId;
+#else
 	xidVacLimit = xidWarnLimit;
+#endif
 
 	/* Grab lock for just long enough to set the new limit values */
 	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
@@ -305,9 +305,13 @@ SetTransactionIdLimit(TransactionId oldest_datfrozenxid,
 	 * database per invocation.  Once it's finished cleaning up the oldest
 	 * database, it'll call here, and we'll signal the postmaster to start
 	 * another iteration immediately if there are still any old databases.
-	 *
-	 * MPP-19652: autovacuum disabled
 	 */
+	/* MPP-19652: autovacuum disabled */
+#if 0
+	if (TransactionIdFollowsOrEquals(curXid, xidVacLimit) &&
+		IsUnderPostmaster)
+		SendPostmasterSignal(PMSIGNAL_START_AUTOVAC_LAUNCHER);
+#endif
 
 	/* Give an immediate warning if past the wrap warn point */
 	if (TransactionIdFollowsOrEquals(curXid, xidWarnLimit))
@@ -315,7 +319,12 @@ SetTransactionIdLimit(TransactionId oldest_datfrozenxid,
 		   (errmsg("database \"%s\" must be vacuumed within %u transactions",
 				   NameStr(*oldest_datname),
 				   xidWrapLimit - curXid),
-			errhint("To avoid a database shutdown, execute a full-database VACUUM in \"%s\".",
+			 /*
+			  * In GPDB, don't say anything about old prepared transactions, because the system
+			  * only uses prepared transactions internally. PREPARE TRANSACTION is not available
+			  * to users.
+			  */
+			errhint("To avoid a database shutdown, execute a database-wide VACUUM in \"%s\".",
 					NameStr(*oldest_datname))));
 }
 

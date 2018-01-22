@@ -3,12 +3,12 @@
  * nbtutils.c
  *	  Utility code for Postgres btree implementation.
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtutils.c,v 1.88.2.1 2008/04/16 23:59:51 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtutils.c,v 1.93 2009/01/05 17:14:28 alvherre Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -20,8 +20,10 @@
 #include "access/genam.h"
 #include "access/nbtree.h"
 #include "access/reloptions.h"
+#include "access/relscan.h"
 #include "executor/execdebug.h"
 #include "miscadmin.h"
+#include "storage/bufmgr.h"
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "utils/lsyscache.h"
@@ -1112,8 +1114,6 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
 void
 _bt_killitems(IndexScanDesc scan, bool haveLock)
 {
-	MIRROREDLOCK_BUFMGR_DECLARE;
-
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	Page		page;
 	BTPageOpaque opaque;
@@ -1126,16 +1126,7 @@ _bt_killitems(IndexScanDesc scan, bool haveLock)
 	Assert(BufferIsValid(so->currPos.buf));
 
 	if (!haveLock)
-	{
-		// -------- MirroredLock ----------
-		MIRROREDLOCK_BUFMGR_LOCK;
-		
 		LockBuffer(so->currPos.buf, BT_READ);
-	}
-	else
-	{
-		MIRROREDLOCK_BUFMGR_MUST_ALREADY_BE_HELD;
-	}
 
 	page = BufferGetPage(so->currPos.buf);
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
@@ -1181,13 +1172,7 @@ _bt_killitems(IndexScanDesc scan, bool haveLock)
 	}
 
 	if (!haveLock)
-	{
 		LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
-		
-		MIRROREDLOCK_BUFMGR_UNLOCK;
-		// -------- MirroredLock ----------
-		
-	}
 
 	/*
 	 * Always reset the scan state, so we don't look for same items on other
@@ -1414,10 +1399,7 @@ btoptions(PG_FUNCTION_ARGS)
 	bool		validate = PG_GETARG_BOOL(1);
 	bytea	   *result;
 
-	result = default_reloptions(reloptions, validate,
-								RELKIND_INDEX,
-								BTREE_MIN_FILLFACTOR,
-								BTREE_DEFAULT_FILLFACTOR);
+	result = default_reloptions(reloptions, validate, RELOPT_KIND_BTREE);
 	if (result)
 		PG_RETURN_BYTEA_P(result);
 	PG_RETURN_NULL();

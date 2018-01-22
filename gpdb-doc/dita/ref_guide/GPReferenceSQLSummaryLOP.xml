@@ -46,17 +46,10 @@
 			information.</p>
 		<section id="ae1903351">
 			<title>ALTER EXTERNAL TABLE</title>
+			<p conref="sql_commands/ALTER_EXTERNAL_TABLE.xml#topic1/sql_command_desc"/>
+			<sectiondiv conref="sql_commands/ALTER_EXTERNAL_TABLE.xml#topic1/sql_cmd_synopsis"/>
 		</section>
-		<p conref="sql_commands/ALTER_EXTERNAL_TABLE.xml#topic1/sql_command_desc"/>
-		<codeblock conref="sql_commands/ALTER_EXTERNAL_TABLE.xml#topic1/sql_command_synopsis"/>
-		<p otherprops="op-html">See <xref href="sql_commands/ALTER_EXTERNAL_TABLE.xml"/> for
-			more information.</p>
-		<section id="ae1903373">
-			<title>ALTER FILESPACE</title>
-		</section>
-		<p conref="sql_commands/ALTER_FILESPACE.xml#topic1/sql_command_desc"/>
-		<codeblock conref="sql_commands/ALTER_FILESPACE.xml#topic1/sql_command_synopsis"/>
-		<p otherprops="op-html">See <xref href="sql_commands/ALTER_FILESPACE.xml"/> for more
+		<p otherprops="op-html">See <xref href="sql_commands/ALTER_EXTERNAL_TABLE.xml"/> for more
 			information.</p>
 		<section id="ae1903381">
 			<title>ALTER FUNCTION</title>
@@ -450,7 +443,8 @@
 		</section>
 		<p conref="sql_commands/DISCARD.xml#topic1/sql_command_desc"/>
 		<codeblock conref="sql_commands/DISCARD.xml#topic1/sql_command_synopsis"/>
-		<p otherprops="op-html">See <xref href="sql_commands/DISCARD.xml"/> for more information.</p>
+		<p otherprops="op-html">See <xref href="sql_commands/DISCARD.xml"/> for more
+			information.</p>
 		<section id="ae1904815">
 			<title>DROP AGGREGATE</title>
 		</section>
@@ -505,13 +499,6 @@
 		<p conref="sql_commands/DROP_EXTERNAL_TABLE.xml#topic1/sql_command_desc"/>
 		<codeblock conref="sql_commands/DROP_EXTERNAL_TABLE.xml#topic1/sql_command_synopsis"/>
 		<p otherprops="op-html">See <xref href="sql_commands/DROP_EXTERNAL_TABLE.xml"/> for more
-			information.</p>
-		<section id="ae1904851">
-			<title>DROP FILESPACE</title>
-		</section>
-		<p conref="sql_commands/DROP_FILESPACE.xml#topic1/sql_command_desc"/>
-		<codeblock conref="sql_commands/DROP_FILESPACE.xml#topic1/sql_command_synopsis"/>
-		<p otherprops="op-html">See <xref href="sql_commands/DROP_FILESPACE.xml"/> for more
 			information.</p>
 		<section id="ae1904857">
 			<title>DROP FUNCTION</title>

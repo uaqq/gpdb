@@ -3,7 +3,12 @@
  * gp_fastsequence.c
  *    routines to maintain a light-weight sequence table.
  *
- * Copyright (c) 2009, Greenplum Inc.
+ * Portions Copyright (c) 2009, Greenplum Inc.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/backend/catalog/gp_fastsequence.c
  *
  *-------------------------------------------------------------------------
  */
@@ -17,6 +22,7 @@
 #include "access/htup.h"
 #include "access/heapam.h"
 #include "utils/syscache.h"
+#include "utils/tqual.h"
 #include "access/appendonlywriter.h"
 
 static void insert_or_update_fastsequence(

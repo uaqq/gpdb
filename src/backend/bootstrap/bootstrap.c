@@ -8,7 +8,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.238 2008/01/01 19:45:48 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.250 2009/02/18 15:58:41 heikki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -27,7 +27,6 @@
 #include "bootstrap/bootstrap.h"
 #include "catalog/index.h"
 #include "catalog/pg_type.h"
-#include "cdb/cdbfilerep.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -35,22 +34,20 @@
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"
 #include "storage/bufpage.h"
-#include "storage/freespace.h"
+#include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
-#include "utils/flatfiles.h"
 #include "utils/fmgroids.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
+#include "utils/tqual.h"
 
 extern int	optind;
 extern char *optarg;
 
 uint32 bootstrap_data_checksum_version = 0;  /* No checksum */
-
-extern void FileRepResetPeer_Main(void);
 
 #define ALLOC(t, c)		((t *) calloc((unsigned)(c), sizeof(t)))
 
@@ -346,15 +343,6 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case StartupProcess:
 				statmsg = "startup process";
 				break;
-			case StartupPass2Process:
-				statmsg = "startup pass 2 process";
-				break;
-			case StartupPass3Process:
-				statmsg = "startup pass 3 process";
-				break;
-			case StartupPass4Process:
-				statmsg = "startup pass 4 process";
-				break;
 			case BgWriterProcess:
 				statmsg = "writer process";
 				break;
@@ -457,27 +445,11 @@ AuxiliaryProcessMain(int argc, char *argv[])
 
 		case StartupProcess:
 			/* don't set signals, startup process has its own agenda */
-			StartupProcessMain(1);
-			proc_exit(1);		/* should never return */
-
-		case StartupPass2Process:
-			/* don't set signals, startup process has its own agenda */
-			StartupProcessMain(2);
-			proc_exit(1);		/* should never return */
-
-		case StartupPass3Process:
-			/* don't set signals, startup process has its own agenda */
-			StartupProcessMain(3);
-			proc_exit(1);		/* should never return */
-
-		case StartupPass4Process:
-			/* don't set signals, startup process has its own agenda */
-			StartupProcessMain(4);
+			StartupProcessMain();
 			proc_exit(1);		/* should never return */
 
 		case BgWriterProcess:
 			/* don't set signals, bgwriter has its own agenda */
-			InitXLOGAccess();
 			BackgroundWriterMain();
 			proc_exit(1);		/* should never return */
 
@@ -497,14 +469,6 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			InitXLOGAccess();
 			WalWriterMain();
 			proc_exit(1);		/* should never return */
-
-		case FilerepProcess:
-			FileRep_Main();
-			proc_exit(1); /* should never return */
-
-		case FilerepResetPeerProcess:
-			FileRepResetPeer_Main();
-			proc_exit(1); /* should never return */
 
 		default:
 			elog(PANIC, "unrecognized process type: %d", MyAuxProcType);

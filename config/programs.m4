@@ -23,6 +23,14 @@ if test "$BISON"; then
 *** Bison version 1.875 or later is required.])
     BISON=""
   fi
+ # Bison >=3.0 issues warnings about %name-prefix="base_yy", instead
+ # of the now preferred %name-prefix "base_yy", but the latter
+ # doesn't work with Bison 2.3 or less.  So for now we silence the
+ # deprecation warnings.
+ if echo "$pgac_bison_version" | $AWK '{ if ([$]4 >= 3) exit 0; else exit 1;}'
+ then
+   BISONFLAGS="$BISONFLAGS -Wno-deprecated"
+ fi
 fi
 
 if test -z "$BISON"; then
@@ -233,28 +241,6 @@ AC_DEFUN([PGAC_CHECK_STRIP],
   AC_SUBST(STRIP_STATIC_LIB)
   AC_SUBST(STRIP_SHARED_LIB)
 ])# PGAC_CHECK_STRIP
-
-
-# GPAC_PATH_CMAKE
-# ---------------
-# Check for the 'cmake' program which is required for compiling
-# Greenplum with Code Generation
-AC_DEFUN([GPAC_PATH_CMAKE],
-[
-if test -z "$CMAKE"; then
-  AC_PATH_PROGS(CMAKE, cmake)
-fi
-
-if test -n "$CMAKE"; then
-  gpac_cmake_version=`$CMAKE --version 2>/dev/null | sed q`
-  if test -z "$gpac_cmake_version"; then
-    AC_MSG_ERROR([cmake is required for codegen, unable to identify version])
-  fi
-  AC_MSG_NOTICE([using $gpac_cmake_version])
-else
-  AC_MSG_ERROR([cmake is required for codegen, unable to find binary])
-fi
-]) # GPAC_PATH_CMAKE
 
 
 # GPAC_PATH_APR_1_CONFIG

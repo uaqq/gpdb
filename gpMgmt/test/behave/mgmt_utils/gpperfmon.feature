@@ -17,7 +17,7 @@ Feature: gpperfmon
         Given the database "gpperfmon" does not exist
         When the user runs "gpperfmon_install --port 15432 --enable --password foo"
         Then gpperfmon_install should return a return code of 0
-        Then verify that the last line of the file "postgresql.conf" in the master data directory contains the string "gpperfmon_log_alert_level='warning'"
+        Then verify that the last line of the file "postgresql.conf" in the master data directory contains the string "gpperfmon_log_alert_level=warning"
         Then verify that the last line of the file "pg_hba.conf" in the master data directory contains the string "host     all         gpmon         ::1/128    md5"
         And verify that there is a "heap" table "database_history" in "gpperfmon"
 
@@ -87,12 +87,12 @@ Feature: gpperfmon
         Then wait until the results from boolean sql "SELECT count(*) > 0 FROM diskspace_history" is "true"
 
     """
-    The gpperfmon_skew_cpu_and_cpu_elapsed does not work on MacOS because of Sigar lib limitations.
+    The gpperfmon_queries_history_metrics does not work on MacOS because of Sigar lib limitations.
     To run all the other scenarios and omit this test on MacOS, use:
-    $ behave test/behave/mgmt_utils/gpperfmon.feature --tags @gpperfmon --tags ~@gpperfmon_skew_cpu_and_cpu_elapsed
+    $ behave test/behave/mgmt_utils/gpperfmon.feature --tags @gpperfmon --tags ~@gpperfmon_queries_history_metrics
     """
-    @gpperfmon_skew_cpu_and_cpu_elapsed
-    Scenario: gpperfmon records skew_cpu and cpu_elapsed
+    @gpperfmon_queries_history_metrics
+    Scenario: gpperfmon records cpu_elapsed, skew_cpu, skew_rows and rows_out
         Given gpperfmon is configured and running in qamode
         Given the user truncates "queries_history" tables in "gpperfmon"
         Given database "gptest" is dropped and recreated
@@ -108,11 +108,12 @@ Feature: gpperfmon
         """
         When below sql is executed in "gptest" db
         """
-        select count(*),sum(pow(amt,2)) from sales;
+        select gp_segment_id, count(*),sum(pow(amt,2)) from sales group by gp_segment_id;
         """
-        Then wait until the results from boolean sql "SELECT count(*) > 0 FROM queries_history where cpu_elapsed > 1 and query_text like 'select count(*)%'" is "true"
+        Then wait until the results from boolean sql "SELECT count(*) > 0 FROM queries_history where cpu_elapsed > 1 and query_text like 'select gp_segment_id, count(*)%'" is "true"
         Then wait until the results from boolean sql "SELECT count(*) > 0 FROM queries_history where skew_cpu > 0.05 and db = 'gptest'" is "true"
         Then wait until the results from boolean sql "SELECT count(*) > 0 FROM queries_history where skew_rows > 0 and db = 'gptest'" is "true"
+        Then wait until the results from boolean sql "SELECT rows_out = count(distinct content) from queries_history, gp_segment_configuration where query_text like 'select gp_segment_id, count(*)%' and db = 'gptest' and content != -1 group by rows_out" is "true"
 
     @gpperfmon_partition
     Scenario: gpperfmon keeps all partitions upon restart if partition_age not set, drops excess partitions otherwise
@@ -121,7 +122,7 @@ Feature: gpperfmon
         # default history table is created with three partitions
         Then wait until the results from boolean sql "SELECT count(*) = 3 FROM pg_partitions WHERE tablename = 'diskspace_history'" is "true"
         Then wait until the results from boolean sql "SELECT count(*) = 1 from pg_partitions where tablename = 'diskspace_history' and partitionrangestart like '%' || date_part('year', CURRENT_DATE) || '-' || to_char(CURRENT_DATE, 'MM') || '%';" is "true"
-        Then wait until the results from boolean sql "SELECT count(*) = 1 from pg_partitions where tablename = 'diskspace_history' and partitionrangestart like '%' || date_part('year', CURRENT_DATE) || '-' || to_char(CURRENT_DATE  + interval '1 month' * 1, 'MM') || '%';" is "true"
+        Then wait until the results from boolean sql "SELECT count(*) = 1 from pg_partitions where tablename = 'diskspace_history' and partitionrangestart like '%' || date_part('year', CURRENT_DATE + interval '1 month') || '-' || to_char(CURRENT_DATE  + interval '1 month' * 1, 'MM') || '%';" is "true"
         When below sql is executed in "gpperfmon" db
             """
             ALTER table diskspace_history add partition

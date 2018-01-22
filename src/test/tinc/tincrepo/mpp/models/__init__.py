@@ -1,5 +1,5 @@
 """
-Copyright (C) 2004-2015 Pivotal Software, Inc. All rights reserved.
+Copyright (c) 2004-Present Pivotal Software, Inc.
 
 This program and the accompanying materials are made available under
 the terms of the under the Apache License, Version 2.0 (the "License");
@@ -23,11 +23,7 @@ from mpp_tc import MPPTestCaseException
 #sql test case related
 from sql_tc import SQLTestCase
 from sql_tc import SQLTestCaseException
-from sql_performance_tc import SQLPerformanceTestCase
 from sql_concurrency_tc import SQLConcurrencyTestCase
-from optimizer_sql_performance_tc import OptimizerSQLPerformanceTestCase
-from optimizer_sql_performance_tc import OptStacktrace
-from optimizer_sql_performance_tc import OptStackFrame
 
 #gpfdist
 from gpfdist_tc import GpfdistSQLTestCase

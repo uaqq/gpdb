@@ -5,10 +5,11 @@
  *
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc.
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/rel.h,v 1.104 2008/01/01 19:45:59 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/utils/rel.h,v 1.114 2009/06/11 14:49:13 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -26,7 +27,6 @@
 #include "storage/block.h"
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
-#include "catalog/gp_persistent.h"
 
 
 /*
@@ -104,7 +104,7 @@ typedef struct RelationAmInfo
 	FmgrInfo	aminsert;
 	FmgrInfo	ambeginscan;
 	FmgrInfo	amgettuple;
-	FmgrInfo	amgetmulti;
+	FmgrInfo	amgetbitmap;
 	FmgrInfo	amrescan;
 	FmgrInfo	amendscan;
 	FmgrInfo	ammarkpos;
@@ -116,16 +116,6 @@ typedef struct RelationAmInfo
 	FmgrInfo	amoptions;
 } RelationAmInfo;
 
-typedef struct RelationNodeInfo
-{
-	bool	isPresent;
-
-	bool	tidAllowedToBeZero;
-				// Persistent TID allowed to be zero for "Before Persistence" or Recovery.
-
-	ItemPointerData		persistentTid;
-	int64				persistentSerialNum;
-} RelationNodeInfo;
 
 /*
  * Here are the contents of a relation cache entry.
@@ -140,6 +130,7 @@ typedef struct RelationData
 								 * InvalidBlockNumber */
 	int			rd_refcnt;		/* reference count */
 	bool		rd_istemp;		/* CDB: true => skip locking, logging, fsync */
+	bool		rd_islocaltemp; /* rel is a temp rel of this session */
 	bool		rd_issyscat;	/* GP: true => system catalog table (has "pg_" prefix) */
 	bool		rd_isnailed;	/* rel is nailed in cache */
 	bool		rd_isvalid;		/* relcache entry is valid */
@@ -148,14 +139,6 @@ typedef struct RelationData
 	SubTransactionId rd_createSubid;	/* rel was created in current xact */
 	SubTransactionId rd_newRelfilenodeSubid;	/* new relfilenode assigned in
 												 * current xact */
-
-	/*
-	 * Debugging information, Values from CREATE TABLE, if present.
-	 */
-	bool				rd_haveCreateDebugInfo;
-	bool				rd_createDebugIsZeroTid;
-	ItemPointerData		rd_createDebugPersistentTid;
-	int64				rd_createDebugPersistentSerialNum;
 
 	/*
 	 * rd_createSubid is the ID of the highest subtransaction the rel has
@@ -221,16 +204,17 @@ typedef struct RelationData
 	void	   *rd_amcache;		/* available for use by index AM */
 
 	/*
+	 * sizes of the free space and visibility map forks, or InvalidBlockNumber
+	 * if not known yet
+	 */
+	BlockNumber rd_fsm_nblocks;
+	BlockNumber rd_vm_nblocks;
+
+	/*
 	 * AO table support info (used only for AO and AOCS relations)
 	 */
 	Form_pg_appendonly rd_appendonly;
 	struct HeapTupleData *rd_aotuple;		/* all of pg_appendonly tuple */
-
-	/*
-	 * Physical file-system information.
-	 */
-	struct RelationNodeInfo rd_segfile0_relationnodeinfo;
-								/* Values from gp_relation_node, if present */
 
 	/* use "struct" here to avoid needing to include pgstat.h: */
 	struct PgStat_TableStatus *pgstat_info;		/* statistics collection area */
@@ -268,9 +252,10 @@ typedef struct StdRdOptions
 	bool		appendonly;		/* is this an appendonly relation? */
 	int			blocksize;		/* max varblock size (AO rels only) */
 	int			compresslevel;  /* compression level (AO rels only) */
-	char*		compresstype;   /* compression type (AO rels only) */
+	char	   *compresstype;	/* compression type (AO rels only) */
 	bool		checksum;		/* checksum (AO rels only) */
-	bool 		columnstore;		/* columnstore (AO only) */
+	bool 		columnstore;	/* columnstore (AO only) */
+	char	   *orientation;	/* orientation (AO only) */
 } StdRdOptions;
 
 #define HEAP_MIN_FILLFACTOR			10
@@ -434,12 +419,20 @@ typedef struct StdRdOptions
  * Beware of multiple eval of argument
  */
 #define RELATION_IS_LOCAL(relation) \
-	((relation)->rd_istemp || \
+	((relation)->rd_islocaltemp || \
 	 (relation)->rd_createSubid != InvalidSubTransactionId)
+
+/*
+ * RELATION_IS_OTHER_TEMP
+ *		Test for a temporary relation that belongs to some other session.
+ *
+ * Beware of multiple eval of argument
+ */
+#define RELATION_IS_OTHER_TEMP(relation) \
+	((relation)->rd_istemp && !(relation)->rd_islocaltemp)
 
 /* routines in utils/cache/relcache.c */
 extern void RelationIncrementReferenceCount(Relation rel);
 extern void RelationDecrementReferenceCount(Relation rel);
-extern void RelationGetPTInfo(Relation rel, ItemPointer persistentTid, int64 *persistentSerialNum);
 
 #endif   /* REL_H */

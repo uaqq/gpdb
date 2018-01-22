@@ -3,10 +3,10 @@
  * slru.h
  *		Simple LRU buffering for transaction status logfiles
  *
- * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/slru.h,v 1.23 2008/01/01 19:45:56 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/access/slru.h,v 1.24 2009/01/01 17:23:56 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -16,21 +16,6 @@
 #include "access/xlogdefs.h"
 #include "storage/lwlock.h"
 
-#define CLOG_DIR				"pg_clog"
-#define DISTRIBUTEDLOG_DIR		"pg_distributedlog"
-#define DISTRIBUTEDXIDMAP_DIR	"pg_distributedxidmap" 
-#define MULTIXACT_MEMBERS_DIR	"pg_multixact/members"
-#define MULTIXACT_OFFSETS_DIR	"pg_multixact/offsets"
-#define SUBTRANS_DIR			"pg_subtrans" 
-
-#define SLRU_FILENAME_LEN		4     /* SLRU filenames are 4 characters each */
-#define SLRU_CHECKSUM_FILENAME 	"slru_checksum_file"
-#define SLRU_MD5_BUFLEN			33     /* MD5 is 32 bytes + 1 null-terminator */
-
-                           /* room for filename + ":" + " " + md5 hash + "\n" */
-#define SLRU_CKSUM_LINE_LEN		(SLRU_FILENAME_LEN + 3 + SLRU_MD5_BUFLEN)
-
-#define SLRU_CKSUM_LINE_DELIM	"\n"
 
 /*
  * Page status codes.  Note that these do not include the "dirty" bit.
@@ -147,9 +132,5 @@ extern void SimpleLruTruncate(SlruCtl ctl, int cutoffPage);
 extern void SimpleLruTruncateWithLock(SlruCtl ctl, int cutoffPage);
 extern bool SlruScanDirectory(SlruCtl ctl, int cutoffPage, bool doDeletions);
 extern bool SimpleLruPageExists(SlruCtl ctl, int pageno);
-extern int SlruRecoverMirror(void);
-extern int SlruCreateChecksumFile(const char *fullDirName);
-extern int SlruMirrorVerifyDirectoryChecksum(char *dirName, char *cksumFile,
-											 char *primaryMd5);
 
 #endif   /* SLRU_H */

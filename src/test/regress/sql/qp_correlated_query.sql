@@ -68,6 +68,27 @@ insert into C values(78,62);
 insert into C values(2,7);
 
 analyze C;
+
+create table D(i integer, j integer) distributed by (j);
+insert into D values(1,1);
+insert into D values(19,5);
+insert into D values(99,62);
+insert into D values(1,1);
+insert into D values(78,-1);
+
+analyze D;
+
+create table E(i integer, j integer) distributed by (i);
+insert into E values(1,889);
+insert into E values(288,1);
+insert into E values(-1,625);
+insert into E values(32,65);
+insert into E values(32,62);
+insert into E values(3,-1);
+insert into E values(99,7);
+insert into E values(78,62);
+
+analyze E;
 -- end_ignore
 
 -- -- -- --
@@ -92,6 +113,7 @@ select A.i, B.i, C.j from A, B, C where A.j in (select C.j from C where C.j = A.
 select a, x from qp_csq_t1, qp_csq_t2 where qp_csq_t1.a not in (select x) order by a,x;
 select A.i from A where A.i not in (select B.i from B where A.i = B.i) order by A.i;
 select * from A where exists (select * from B,C where C.j = A.j and B.i not in (select sum(C.i) from C where C.i = B.i and C.i != 10)) order by 1,2;
+select * from A,B where exists (select * from E where E.j = A.j and B.i not in (select E.i from E where E.i != 10)) order by 1,2,3,4;
 
 select * from B where not exists (select * from A,C where C.j = A.j and B.i in (select max(C.i) from C where C.i = A.i and C.i != 10)) order by 1, 2;
 select * from B where not exists (select * from A,C where C.j = A.j and B.i not in (select max(C.i) from C where C.i = A.i and C.i != 10)) order by 1, 2;
@@ -210,12 +232,27 @@ select * from A where exists (select * from C,B where C.j = A.j and exists (sele
 
 select A.i, B.i, C.j from A, B, C where A.j = (select C.j from C where C.j = A.j and not exists (select B.i from B where C.i = B.i and B.i !=10)) order by A.i, B.i, C.j limit 10;
 select A.i, B.i, C.j from A, B, C where A.j = (select C.j from C where C.j = A.j and not exists (select sum(B.i) from B where C.i = B.i and C.i !=10)) order by A.i, B.i, C.j limit 10;
+select * from A where not exists (select sum(C.i) from C where C.i = A.i);
+explain select * from A where not exists (select sum(C.i) from C where C.i = A.i limit 0);
+select * from A where not exists (select sum(C.i) from C where C.i = A.i limit 0);
+explain select * from A where not exists (select sum(C.i) from C where C.i = A.i limit 5 offset 3);
+select * from A where not exists (select sum(C.i) from C where C.i = A.i limit 5 offset 3);
+explain select * from A where not exists (select sum(C.i) from C where C.i = A.i limit 1 offset 0);
+select * from A where not exists (select sum(C.i) from C where C.i = A.i limit 1 offset 0);
 explain select C.j from C where not exists (select max(B.i) from B  where C.i = B.i having max(B.i) is not null) order by C.j;
 select C.j from C where not exists (select max(B.i) from B  where C.i = B.i having max(B.i) is not null) order by C.j;
 explain select C.j from C where not exists (select max(B.i) from B  where C.i = B.i offset 1000) order by C.j;
 select C.j from C where not exists (select max(B.i) from B  where C.i = B.i offset 1000) order by C.j;
 explain select C.j from C where not exists (select rank() over (order by B.i) from B  where C.i = B.i) order by C.j;
 select C.j from C where not exists (select rank() over (order by B.i) from B  where C.i = B.i) order by C.j;
+explain select * from A where not exists (select sum(C.i) from C where C.i = A.i group by a.i);
+select * from A where not exists (select sum(C.i) from C where C.i = A.i group by a.i);
+explain select A.i from A where not exists (select B.i from B where B.i in (select C.i from C) and B.i = A.i);
+select A.i from A where not exists (select B.i from B where B.i in (select C.i from C) and B.i = A.i);
+explain select * from B where not exists (select * from C,A where C.i in (select C.i from C where C.i = A.i and C.i != 10) AND B.i = C.i);
+select * from B where not exists (select * from C,A where C.i in (select C.i from C where C.i = A.i and C.i != 10) AND B.i = C.i);
+explain select * from A where A.i in (select C.j from C,B where B.i in (select i from C));
+select * from A where A.i in (select C.j from C,B where B.i in (select i from C));
 
 
 -- ----------------------------------------------------------------------
@@ -232,16 +269,6 @@ insert into qp_csq_t4 values (7,8);
 
 analyze qp_csq_t4;
 
-drop table if exists D;
-
-create table D(i integer, j integer) distributed by (j);
-insert into D values(1,1);
-insert into D values(19,5);
-insert into D values(99,62);
-insert into D values(1,1);
-insert into D values(78,-1);
-
-analyze D;
 -- end_ignore
 
 -- -- -- --
@@ -805,6 +832,16 @@ select rnum, c1, c2 from qp_tjoin2 where 20 > all ( select c1 from qp_tjoin1 whe
 select rnum, c1, c2 from qp_tjoin2 where 75 > all ( select c2 from qp_tjoin1) order by rnum;
 
 select rnum, c1, c2 from qp_tjoin2 where 20 > all ( select c1 from qp_tjoin1) order by rnum;
+
+-- start_ignore
+DROP TABLE IF EXISTS foo;
+DROP TABLE IF EXISTS bar;
+
+CREATE TABLE foo(a int, b int);
+CREATE TABLE bar(c int, d int);
+-- end_ignore
+
+EXPLAIN SELECT a FROM foo f1 LEFT JOIN bar on a=c WHERE NOT EXISTS(SELECT 1 FROM foo f2 WHERE f1.a = f2.a);
 
 -- ----------------------------------------------------------------------
 -- Test: teardown.sql

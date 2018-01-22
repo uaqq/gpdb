@@ -122,6 +122,7 @@ valid_tokens = {
     "preload": {'parse_children': True, 'parent': 'gpload'},
     "truncate": {'parse_children': False, 'parent': 'preload'},
     "reuse_tables": {'parse_children': False, 'parent': 'preload'},
+    "staging_table": {'parse_children': False, 'parent': 'preload'},
     "sql": {'parse_children': True, 'parent': 'gpload'},
     "before": {'parse_children': False, 'parent': 'sql'},
     "after": {'parse_children': False, 'parent': 'sql'},
@@ -1135,9 +1136,9 @@ class gpload:
         self.ERROR = 1
         self.options.qv = self.INFO
         self.options.l = None
-        self.lastcmdtime = ''
-        self.cmdtime = ''
         self.formatOpts = ""
+        self.startTimestamp = time.time()
+        self.error_table = False
         seenv = False
         seenq = False
 
@@ -1469,7 +1470,10 @@ class gpload:
             self.options.d = self.options.U
 
         if self.getconfig('gpload:input:error_table', unicode, None):
-            self.control_file_error("ERROR_TABLE is not supported. Please use LOG_ERRORS instead.")
+            self.error_table = True
+            self.log(self.WARN,
+                        "ERROR_TABLE is not supported. " +
+                        "We will set LOG_ERRORS and REUSE_TABLES to True for compatibility.")
 
     def gpfdist_port_options(self, name, availablePorts, popenList):
         """
@@ -2242,24 +2246,49 @@ class gpload:
         # the one that we need to use. It must have identical attributes,
         # external location, format, and encoding specifications.
         if self.reuse_tables == True:
-            # process the single quotes in order to successfully find an existing external table to reuse.
-            self.formatOpts = self.formatOpts.replace("E'\\''","'\''")
-            sql = self.get_reuse_exttable_query(formatType, self.formatOpts,
+            if self.staging_table:
+                if '.' in self.staging_table:
+                    self.log(self.ERROR, "Character '.' is not allowed in staging_table parameter. Please use EXTERNAL->SCHEMA to set the schema of external table")
+                self.extTableName = quote_unident(self.staging_table) 
+                if self.extSchemaName is None:
+                    sql = """SELECT n.nspname as Schema,
+                            c.relname as Name
+                        FROM pg_catalog.pg_class c
+                            LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                        WHERE c.relkind IN ('r','v','S','')
+                            AND c.relstorage IN ('h', 'a', 'c','x','v','')
+                            AND n.nspname <> 'pg_catalog'
+                            AND n.nspname <> 'information_schema'
+                            AND n.nspname !~ '^pg_toast'
+                            AND c.relname = '%s'
+                            AND pg_catalog.pg_table_is_visible(c.oid)
+                        ORDER BY 1,2;""" % self.extTableName
+                else:
+                    sql = "select * from pg_catalog.pg_tables where schemaname = '%s' and tablename = '%s'" % (quote_unident(self.extSchemaName),  self.extTableName)
+                result = self.db.query(sql.encode('utf-8')).getresult()
+                if len(result) > 0:
+                    self.extSchemaTable = self.get_ext_schematable(quote_unident(self.extSchemaName), self.extTableName)
+                    self.log(self.INFO, "reusing external staging table %s" % self.extSchemaTable)
+                    return
+            else:
+                # process the single quotes in order to successfully find an existing external table to reuse.
+                self.formatOpts = self.formatOpts.replace("E'\\''","'\''")
+                sql = self.get_reuse_exttable_query(formatType, self.formatOpts,
                     limitStr, from_cols, self.extSchemaName, self.log_errors)
-            resultList = self.db.query(sql.encode('utf-8')).getresult()
-            if len(resultList) > 0:
-                # found an external table to reuse. no need to create one. we're done here.
-                self.extTableName = (resultList[0])[0]
-                self.extSchemaTable = self.extTableName
-                self.log(self.INFO, "reusing external table %s" % self.extSchemaTable)
-                return
+                resultList = self.db.query(sql.encode('utf-8')).getresult()
+                if len(resultList) > 0:
+                    # found an external table to reuse. no need to create one. we're done here.
+                    self.extTableName = (resultList[0])[0]
+                    self.extSchemaTable = self.extTableName
+                    self.log(self.INFO, "reusing external table %s" % self.extSchemaTable)
+                    return
 
-            # didn't find an existing external table suitable for reuse. Format a reusable
-            # name and issue a CREATE EXTERNAL TABLE on it. Hopefully we can use it next time
-            # around
+                # didn't find an existing external table suitable for reuse. Format a reusable
+                # name and issue a CREATE EXTERNAL TABLE on it. Hopefully we can use it next time
+                # around
 
-            self.extTableName = "ext_gpload_reusable_%s" % self.unique_suffix
-            self.log(self.INFO, "did not find an external table to reuse. creating %s" % self.extTableName)
+                self.extTableName = "ext_gpload_reusable_%s" % self.unique_suffix
+                self.log(self.INFO, "did not find an external table to reuse. creating %s" % self.get_ext_schematable(self.extSchemaName, self.extTableName))
 
         # process the single quotes in order to successfully create an external table.
         self.formatOpts = self.formatOpts.replace("'\''","E'\\''")
@@ -2380,22 +2409,15 @@ class gpload:
         if self.log_errors and not self.options.D:
             # make sure we only get errors for our own instance
             if not self.reuse_tables:
-                queryStr = "select count(*) from gp_read_error_log('%s')" % pg.escape_string(self.extTableName)
+                queryStr = "select count(*) from gp_read_error_log('%s')" % pg.escape_string(self.extSchemaTable)
                 results = self.db.query(queryStr.encode('utf-8')).getresult()
                 return (results[0])[0]
             else: # reuse_tables
-                queryStr = "select cmdtime, count(*) from gp_read_error_log('%s') group by cmdtime order by cmdtime desc limit 1" % pg.escape_string(self.extTableName)
+                queryStr = "select count(*) from gp_read_error_log('%s') where cmdtime > to_timestamp(%s)" % (pg.escape_string(self.extSchemaTable), self.startTimestamp)
                 results = self.db.query(queryStr.encode('utf-8')).getresult()
                 global NUM_WARN_ROWS
-
-                if len(results) == 0:
-			NUM_WARN_ROWS = 0
-			return 0
-
-                if (results[0])[0] != self.cmdtime:
-                    self.lastcmdtime = (results[0])[0]
-                    NUM_WARN_ROWS = (results[0])[1]
-                    return (results[0])[1];
+                NUM_WARN_ROWS = (results[0])[0]
+                return (results[0])[0];
         return 0
 
     def report_errors(self):
@@ -2409,7 +2431,7 @@ class gpload:
         # if reuse_table is set, error message is not deleted.
         if errors and self.log_errors and self.reuse_tables:
             self.log(self.WARN, "Please use following query to access the detailed error")
-            self.log(self.WARN, "select * from gp_read_error_log('{0}') where cmdtime = '{1}'".format(pg.escape_string(self.extTableName), self.lastcmdtime))
+            self.log(self.WARN, "select * from gp_read_error_log('{0}') where cmdtime > to_timestamp('{1}')".format(pg.escape_string(self.extSchemaTable), self.startTimestamp))
         self.exitValue = 1 if errors else 0
 
 
@@ -2417,12 +2439,6 @@ class gpload:
         """
         Handle the INSERT case
         """
-        if self.reuse_tables:
-            queryStr = "select cmdtime from gp_read_error_log('%s') group by cmdtime order by cmdtime desc limit 1" % pg.escape_string(self.extTableName)
-            results = self.db.query(queryStr.encode('utf-8')).getresult()
-            if len(results) > 0:
-                self.cmdtime = (results[0])[0]
-
         self.log(self.DEBUG, "into columns " + str(self.into_columns))
         cols = filter(lambda a:a[2]!=None, self.into_columns)
 
@@ -2656,6 +2672,10 @@ class gpload:
         if preload:
             truncate = self.getconfig('gpload:preload:truncate',bool,False)
             self.reuse_tables = self.getconfig('gpload:preload:reuse_tables',bool,False)
+            self.staging_table = self.getconfig('gpload:preload:staging_table', unicode, default=None)
+        if self.error_table:
+            self.log_errors = True
+            self.reuse_tables = True
         if truncate == True:
             if method=='insert':
                 self.do_truncate(self.schemaTable)

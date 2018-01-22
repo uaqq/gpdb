@@ -5,6 +5,7 @@
  *
  *
  * Portions Copyright (c) 2006-2008, Greenplum
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2005, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -163,9 +164,6 @@ typedef struct HashAggTable
 	SpillSet       *spill_set;
 	/* Representation of all workfile names, used by the workfile manager */
 	workfile_set *work_set;
-	/* Metadata file containing information required to restore the state
-	 * from a cached workfile for reuse */
-	ExecWorkFile *state_file;
 
 	/* The batch file is currently being processed. */
 	SpillFile *curr_spill_file;

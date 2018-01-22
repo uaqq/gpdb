@@ -3,7 +3,12 @@
 * fileam.h
 *	  external file access method definitions.
 *
-* Copyright (c) 2007-2008, Greenplum inc
+* Portions Copyright (c) 2007-2008, Greenplum inc
+ * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
+ *
+ *
+ * IDENTIFICATION
+ *	    src/include/access/fileam.h
 *
 *-------------------------------------------------------------------------
 */
@@ -48,7 +53,7 @@ typedef enum DataLineStatus
 	END_MARKER
 } DataLineStatus;
 
-extern FileScanDesc external_beginscan(Relation relation, Index scanrelid,
+extern FileScanDesc external_beginscan(Relation relation,
 				   uint32 scancounter, List *uriList,
 				   List *fmtOpts, char fmtType, bool isMasterOnly,
 				   int rejLimit, bool rejLimitInRows,
