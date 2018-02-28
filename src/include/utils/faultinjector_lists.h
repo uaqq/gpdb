@@ -174,6 +174,12 @@ FI_IDENT(ProcArray_Add, "procarray_add")
 FI_IDENT(FaultExecHashJoinNewBatch, "exec_hashjoin_new_batch")
 /* pause FTS process before committing changes, until shutdown */
 FI_IDENT(FtsWaitForShutdown, "fts_wait_for_shutdown")
+/* inject fault in FTS loop */
+FI_IDENT(FtsProbe, "fts_probe")
+/* inject fault in FTS where it updates configuration */
+FI_IDENT(FtsUpdateConfig, "fts_update_config")
+/* inject fault in FTS message handler */
+FI_IDENT(FtsHandleMessage, "fts_handle_message")
 /* inject fault before cleaning up a runaway query */
 FI_IDENT(RunawayCleanup, "runaway_cleanup")
 /* inject fault while translating relcache entries */

@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeSort.c,v 1.65 2009/04/02 20:59:10 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/nodeSort.c,v 1.66 2009/09/27 21:10:53 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -152,7 +152,7 @@ ExecSort(SortState *node)
 		}
 
 		/* If EXPLAIN ANALYZE, share our Instrumentation object with sort. */
-		if (node->ss.ps.instrument)
+		if (node->ss.ps.instrument && node->ss.ps.instrument->need_cdb)
 			tuplesort_set_instrument(tuplesortstate,
 									 node->ss.ps.instrument,
 									 node->ss.ps.cdbexplainbuf);
@@ -310,8 +310,6 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	 * ExecQual or ExecProject.
 	 */
 
-#define SORT_NSLOTS 2
-
 	/*
 	 * tuple table initialization
 	 *
@@ -323,7 +321,7 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	/* 
 	 * CDB: Offer extra info for EXPLAIN ANALYZE.
 	 */
-	if (estate->es_instrument)
+	if (estate->es_instrument && (estate->es_instrument & INSTRUMENT_CDB))
 	{
 		/* Allocate string buffer. */
 		sortstate->ss.ps.cdbexplainbuf = makeStringInfo();
@@ -390,14 +388,6 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 			   "sort node initialized");
 
 	return sortstate;
-}
-
-int
-ExecCountSlotsSort(Sort *node)
-{
-	return ExecCountSlotsNode(outerPlan((Plan *) node)) +
-		ExecCountSlotsNode(innerPlan((Plan *) node)) +
-		SORT_NSLOTS;
 }
 
 /* ----------------------------------------------------------------

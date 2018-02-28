@@ -33,7 +33,6 @@
 #include "executor/spi.h"
 
 #include "postmaster/fts.h"
-#include "postmaster/primary_mirror_mode.h"
 #include "utils/faultinjection.h"
 
 #include "utils/fmgroids.h"
@@ -100,8 +99,6 @@ FtsShmemInit(void)
 		shared->ftsAdminRequestedRO = gp_set_read_only;
 
 		shared->fts_probe_info.fts_probePid = 0;
-		shared->fts_probe_info.fts_pauseProbes = false;
-		shared->fts_probe_info.fts_discardResults = false;
 		shared->fts_probe_info.fts_statusVersion = 0;
 		shared->fts_probe_info.fts_status_initialized = false;
 
@@ -147,36 +144,6 @@ FtsNotifyProber(void)
 		CHECK_FOR_INTERRUPTS();
 	}
 }
-
-
-/*
- * Check if master needs to shut down
- */
-bool
-FtsMasterShutdownRequested()
-{
-	return *ftsShutdownMaster;
-}
-
-
-/*
- * Set flag indicating that master needs to shut down
- */
-void
-FtsRequestMasterShutdown()
-{
-#ifdef USE_ASSERT_CHECKING
-	Assert(!*ftsShutdownMaster);
-
-	PrimaryMirrorMode pm_mode;
-
-	getPrimaryMirrorStatusCodes(&pm_mode, NULL, NULL, NULL);
-	Assert(pm_mode == PMModeMaster);
-#endif							/* USE_ASSERT_CHECKING */
-
-	*ftsShutdownMaster = true;
-}
-
 
 /*
  * Test-Connection: This is called from the threaded context inside the

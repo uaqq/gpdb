@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/selfuncs.c,v 1.261 2009/06/11 14:49:04 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/selfuncs.c,v 1.263 2009/10/21 20:38:58 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -165,14 +165,6 @@ static Selectivity regex_selectivity(const char *patt, int pattlen,
 static Datum string_to_datum(const char *str, Oid datatype);
 static Const *string_to_const(const char *str, Oid datatype);
 static Const *string_to_bytea_const(const char *str, size_t str_len);
-
-static Selectivity
-mcv_selectivity_cdb(VariableStatData   *vardata,
-                    FmgrInfo           *opproc,
-				    Datum               constval,
-                    bool                varonleft,
-				    Selectivity        *sumcommonp,     /* OUT */
-                    double             *nvaluesp);      /* OUT */
 
 
 /*
@@ -551,24 +543,14 @@ scalarineqsel(PlannerInfo *root, Oid operator, bool isgt,
  * total population is returned into *sumcommonp.  Zeroes are returned
  * if there is no MCV list.
  *
- * CDB: The number of MCVs is returned into *nvaluesp.
  */
-double
-mcv_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
-				Datum constval, bool varonleft,
-				double *sumcommonp)
-{
-    return mcv_selectivity_cdb(vardata, opproc, constval, varonleft,
-                               sumcommonp, NULL);
-}
 
-static Selectivity
-mcv_selectivity_cdb(VariableStatData   *vardata,
+double
+mcv_selectivity(VariableStatData   *vardata,
                     FmgrInfo           *opproc,
 				    Datum               constval,
                     bool                varonleft,
-				    Selectivity        *sumcommonp,     /* OUT */
-                    double             *nvaluesp)       /* OUT */
+				    double        *sumcommonp)     /* OUT */
 {
 	double		mcv_selec,
 				sumcommon;
@@ -600,8 +582,6 @@ mcv_selectivity_cdb(VariableStatData   *vardata,
 	}
 
 	*sumcommonp = sumcommon;
-	if (nvaluesp)
-		*nvaluesp = sslot.nvalues;
 	return mcv_selec;
 }
 
@@ -2020,7 +2000,7 @@ eqjoinsel_inner(Oid operator,
 	{
 		HeapTuple tp = getStatsTuple(vardata1);
 		stats1 = (Form_pg_statistic) GETSTRUCT(tp);
-		have_mcvs1 = get_attstatsslot(&sslot1, vardata1->statsTuple,
+		have_mcvs1 = get_attstatsslot(&sslot1, tp,
 									  STATISTIC_KIND_MCV, InvalidOid,
 							 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
 
@@ -2030,7 +2010,7 @@ eqjoinsel_inner(Oid operator,
 	{
 		HeapTuple tp = getStatsTuple(vardata2);
 		stats2 = (Form_pg_statistic) GETSTRUCT(tp);
-		have_mcvs2 = get_attstatsslot(&sslot2, vardata2->statsTuple,
+		have_mcvs2 = get_attstatsslot(&sslot2, tp,
 									  STATISTIC_KIND_MCV, InvalidOid,
 							 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
 	}
@@ -4584,6 +4564,17 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata, Oid sortop,
 		FmgrInfo	opproc;
 
 		fmgr_info(get_opcode(sortop), &opproc);
+
+		/*
+		 * GPDB: Some extra paranoia. GPDB allows users to modify
+		 * pg_statistics.stavalues with UPDATEs (PostgreSQL complaints about
+		 * the table row type not matching). So just in case that the type of
+		 * the values in pg_statistics isn't what we'd expect, give an error
+		 * rather than crash. That shouldn't happen, but better safe than sorry.
+		 */
+		if (!IsBinaryCoercible(sslot.valuetype, vardata->atttype))
+			elog(ERROR, "invalid MCV array of type %s, for attribute of type %s",
+				 format_type_be(sslot.valuetype), format_type_be(vardata->atttype));
 
 		for (i = 0; i < sslot.nvalues; i++)
 		{

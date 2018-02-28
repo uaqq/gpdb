@@ -171,16 +171,6 @@ extern void HandleFtsMessage(const char* query_string);
 extern void FtsWalRepMessageSegments(fts_context *context);
 
 /*
- * Interface for requesting master to shut down
- */
-extern void FtsRequestPostmasterShutdown(CdbComponentDatabaseInfo *primary, CdbComponentDatabaseInfo *mirror);
-extern bool FtsMasterShutdownRequested(void);
-extern void FtsRequestMasterShutdown(void);
-
-/* Interface for setting FTS GUCs */
-extern bool gpvars_assign_gp_fts_probe_pause(bool newval, bool doit, GucSource source);
-
-/*
  * If master has requested FTS to shutdown.
  */
 #ifdef FAULT_INJECTOR

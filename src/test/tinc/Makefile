@@ -27,9 +27,9 @@ tincmmgrregress:
 TESTER= \
 	export PGDATABASE=gptest && \
 	export TINCHOME=$(PWD) && \
-	export TINCREPOHOME=$(TINCHOME)/tincrepo && \
-	export PYTHONPATH=$(TINCHOME):$(TINCHOME)/ext:$(PYTHONPATH):$(TINCREPOHOME) && \
-	export PATH=$(TINCHOME):$(TINCHOME)/ext:$(TINCHOME)/ext/unittest2:$(TINCHOME)/sbin/:$(PATH) && \
+	export TINCREPOHOME=$(PWD)/tincrepo && \
+	export PYTHONPATH=$(PWD):$(PWD)/ext:$(PYTHONPATH):$(PWD)/tincrepo && \
+	export PATH=$(PWD):$(PWD)/ext:$(PWD)/ext/unittest2:$(PWD)/sbin/:$(PATH) && \
 	tinc.py
 
 DISCOVER=discover
@@ -45,24 +45,8 @@ storage_vacuum_xidlimits:
 	$(TESTER) $(DISCOVER) \
 	-s tincrepo/mpp/gpdb/tests/storage/vacuum/xidlimits
 
-aocoalter_catalog_loaders:
-	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests \
-	-s storage/aoco_alter \
-	-s catalog/mpp25256 \
-	-s catalog/oid_inconsistency \
-	-s catalog/udf_exception_handling
-
-storage_uao_and_transactionmanagement:
-	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests \
-	-s storage/transaction_management \
-	-s storage/uao
-
-# WALREP_FIXME: there are no "peristent" tests anymore. Rename this
-# target, and fix concourse pipelines accordingly.
-storage_persistent_accessmethods_and_vacuum:
-	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests/storage \
-	-s access_methods \
-	-s vacuum \
+storage:
+	$(TESTER) $(DISCOVER) -s tincrepo/mpp/gpdb/tests/storage/vacuum \
 	-q "class!=XidlimitsTests"
 
 # cs-walrepl-multinode

@@ -87,6 +87,13 @@ InitTestCdb(int segCnt, bool has_mirrors, char default_mode)
 	return cdb;
 }
 
+static void
+InitFtsProbeInfo(void)
+{
+	static FtsProbeInfo fts_info;
+	ftsProbeInfo = &fts_info;
+}
+
 static CdbComponentDatabaseInfo *
 GetSegmentFromCdbComponentDatabases(CdbComponentDatabases *dbs,
 									int16 segindex, char role)
@@ -107,20 +114,8 @@ GetSegmentFromCdbComponentDatabases(CdbComponentDatabases *dbs,
 void
 MockFtsIsActive(bool expected_return_value)
 {
-	static FtsProbeInfo fts_info;
-
-	ftsProbeInfo = &fts_info;
-
-	if (shutdown_requested)
-	{
-		ftsProbeInfo->fts_discardResults = false;
-	}
-	else
-	{
-		ftsProbeInfo->fts_discardResults = !expected_return_value;
-	}
+	skipFtsProbe = !expected_return_value;
 }
-
 
 static int
 CheckConfigVals(const Datum *value, /* from the function under test */
@@ -161,6 +156,11 @@ probeWalRepUpdateConfig_will_be_called_with(
 	expect_any(heap_open, lockmode);
 	will_return(heap_open, &gp_configuration_history_relation);
 
+	expect_value(FaultInjector_InjectFaultIfSet, identifier, FtsUpdateConfig);
+	expect_value(FaultInjector_InjectFaultIfSet, ddlStatement, DDLNotSpecified);
+	expect_value(FaultInjector_InjectFaultIfSet, databaseName, "");
+	expect_value(FaultInjector_InjectFaultIfSet, tableName, "");
+	will_return(FaultInjector_InjectFaultIfSet, FaultInjectorTypeNotSpecified);
 	/* Mock heap_open gp_segment_configuration_relation */
 	static RelationData gp_segment_configuration_relation;
 
@@ -964,6 +964,7 @@ main(int argc, char *argv[])
 	};
 
 	MemoryContextInit();
+	InitFtsProbeInfo();
 
 	return run_tests(tests);
 }

@@ -23,7 +23,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/ipc/procarray.c,v 1.50 2009/06/11 14:49:02 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/ipc/procarray.c,v 1.51 2009/07/29 15:57:11 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1596,6 +1596,9 @@ GetSnapshotData(Snapshot snapshot)
 				ereport((Debug_print_snapshot_dtm ? LOG : DEBUG5),
 						(errmsg("GetSnapshotData(): READER currentcommandid %d curcid %d segmatesync %d",
 								GetCurrentCommandId(false), snapshot->curcid, segmateSync)));
+
+				if (TransactionIdPrecedes(snapshot->xmin, TransactionXmin))
+					TransactionXmin = snapshot->xmin;
 
 				return snapshot;
 			}

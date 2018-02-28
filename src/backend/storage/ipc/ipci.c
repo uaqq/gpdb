@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/ipc/ipci.c,v 1.100 2009/05/05 19:59:00 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/ipc/ipci.c,v 1.101 2009/07/31 20:26:23 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -31,7 +31,6 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
-#include "postmaster/primary_mirror_mode.h"
 #include "postmaster/seqserver.h"
 #include "replication/walsender.h"
 #include "replication/walreceiver.h"
@@ -55,6 +54,7 @@
 #include "utils/tqual.h"
 #include "postmaster/backoff.h"
 #include "cdb/memquota.h"
+#include "executor/instrument.h"
 #include "executor/spi.h"
 #include "utils/workfile_mgr.h"
 #include "utils/session_state.h"
@@ -153,7 +153,6 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, SInvalShmemSize());
 		size = add_size(size, PMSignalShmemSize());
 		size = add_size(size, ProcSignalShmemSize());
-		size = add_size(size, primaryMirrorModeShmemSize());
 		//size = add_size(size, AutoVacuumShmemSize());
 		size = add_size(size, FtsShmemSize());
 		size = add_size(size, tmShmemSize());
@@ -189,6 +188,9 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 
 		/* Consider the size of the SessionState array */
 		size = add_size(size, SessionState_ShmemSize());
+
+		/* size of Instrumentation slots */
+		size = add_size(size, InstrShmemSize());
 
 		/*
 		 * Create the shmem segment
@@ -239,8 +241,6 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	 */
 	InitShmemIndex();
 
-	primaryMirrorModeShmemInit();
-
 	/*
 	 * Set up xlog, clog, and buffers
 	 */
@@ -270,11 +270,11 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	 */
 	ResManagerShmemInit();
 
+	/*
+	 * Set up process table
+	 */
 	if (!IsUnderPostmaster)
-	{
-		/* Set up process table */
-		InitProcGlobal(PostmasterGetMppLocalProcessCounter());
-	}
+		InitProcGlobal();
 
 	/* Initialize SessionState shared memory array */
 	SessionState_ShmemInit();
@@ -321,6 +321,12 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	SyncScanShmemInit();
 	workfile_mgr_cache_init();
 	BackendCancelShmemInit();
+
+	/*
+	 * Set up Instrumentation free list
+	 */
+	if (!IsUnderPostmaster)
+		InstrShmemInit();
 
 #ifdef EXEC_BACKEND
 

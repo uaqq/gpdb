@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeMaterial.c,v 1.69 2009/06/11 14:48:57 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/nodeMaterial.c,v 1.70 2009/09/27 21:10:53 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -112,7 +112,7 @@ ExecMaterial(MaterialState *node)
 		node->ts_pos = (void *) tsa;
 
         /* CDB: Offer extra info for EXPLAIN ANALYZE. */
-        if (node->ss.ps.instrument)
+        if (node->ss.ps.instrument && node->ss.ps.instrument->need_cdb)
         {
             /* Let the tuplestore share our Instrumentation object. */
 			ntuplestore_setinstrument(ts, node->ss.ps.instrument);
@@ -303,8 +303,6 @@ ExecInitMaterial(Material *node, EState *estate, int eflags)
 	 * ExecQual or ExecProject.
 	 */
 
-#define MATERIAL_NSLOTS 2
-
 	/*
 	 * tuple table initialization
 	 *
@@ -380,15 +378,6 @@ ExecInitMaterial(Material *node, EState *estate, int eflags)
 
 	return matstate;
 }
-
-int
-ExecCountSlotsMaterial(Material *node)
-{
-	return ExecCountSlotsNode(outerPlan((Plan *) node)) +
-		ExecCountSlotsNode(innerPlan((Plan *) node)) +
-		MATERIAL_NSLOTS;
-}
-
 
 /*
  * ExecMaterialExplainEnd

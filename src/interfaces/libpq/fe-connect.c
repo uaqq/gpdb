@@ -27,6 +27,8 @@
 #include <poll.h>
 #endif
 
+#include "utils/elog.h"
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -105,15 +107,6 @@ static int ldapServiceLookup(const char *purl, PQconninfoOption *options,
  * rather than that of the current code.
  */
 #define ERRCODE_APPNAME_UNKNOWN "42704"
-
-#undef ERRCODE_INVALID_PASSWORD
-#undef ERRCODE_CANNOT_CONNECT_NOW
-#undef ERRCODE_MIRROR_OR_QUIESCENT
-/* This is part of the protocol so just define it */
-#define ERRCODE_INVALID_PASSWORD "28P01"
-/* This too */
-#define ERRCODE_CANNOT_CONNECT_NOW "57P03"
-#define ERRCODE_MIRROR_OR_QUIESCENT "57M01"
 
 /*
  * fall back options if they are not specified by arguments or defined
@@ -1843,9 +1836,9 @@ keep_going:						/* We will come back to here until there is
 					 * We have three methods of blocking SIGPIPE during
 					 * send() calls to this socket:
 					 *
-					 *	- setsockopt(sock, SO_NOSIGPIPE)
-					 *	- send(sock, ..., MSG_NOSIGNAL)
-					 *	- setting the signal mask to SIG_IGN during send()
+					 *  - setsockopt(sock, SO_NOSIGPIPE)
+					 *  - send(sock, ..., MSG_NOSIGNAL)
+					 *  - setting the signal mask to SIG_IGN during send()
 					 *
 					 * The third method requires three syscalls per send,
 					 * so we prefer either of the first two, but they are
@@ -1867,7 +1860,7 @@ keep_going:						/* We will come back to here until there is
 					conn->sigpipe_flag = true;
 #else
 					conn->sigpipe_flag = false;
-#endif   /* MSG_NOSIGNAL */
+#endif /* MSG_NOSIGNAL */
 
 #ifdef SO_NOSIGPIPE
 					optval = 1;
@@ -1877,7 +1870,7 @@ keep_going:						/* We will come back to here until there is
 						conn->sigpipe_so = true;
 						conn->sigpipe_flag = false;
 					}
-#endif   /* SO_NOSIGPIPE */
+#endif /* SO_NOSIGPIPE */
 
 					/*
 					 * Start/make connection.  This should not block, since we
@@ -1936,7 +1929,7 @@ keep_going:						/* We will come back to here until there is
 
 		case CONNECTION_STARTED:
 			{
-				socklen_t optlen = sizeof(optval);
+				ACCEPT_TYPE_ARG3 optlen = sizeof(optval);
 
 				/*
 				 * Write ready, since we've made it here, so the connection
@@ -2675,7 +2668,7 @@ keep_going:						/* We will come back to here until there is
 		default:
 			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("invalid connection state %d, "
-							   "probably indicative of memory corruption\n"),
+								 "probably indicative of memory corruption\n"),
 							  conn->status);
 			goto error_return;
 	}
@@ -2707,6 +2700,8 @@ error_return:
 static PGPing
 internal_ping(PGconn *conn)
 {
+	int last_sqlstate;
+
 	/* Say "no attempt" if we never got to PQconnectPoll */
 	if (!conn || !conn->options_valid)
 		return PQPING_NO_ATTEMPT;
@@ -2748,18 +2743,18 @@ internal_ping(PGconn *conn)
 	if (strlen(conn->last_sqlstate) != 5)
 		return PQPING_NO_RESPONSE;
 
-	/*
-	 * Report postmaster is ready to accept transition message. (this is
-	 * mainly for pg_ctl to start segment.)
-	 */
-	if (strcmp(conn->last_sqlstate, ERRCODE_MIRROR_OR_QUIESCENT) == 0)
-		return PQPING_MIRROR_OR_QUIESCENT;
+	last_sqlstate = MAKE_SQLSTATE(conn->last_sqlstate[0], conn->last_sqlstate[1],
+								  conn->last_sqlstate[2], conn->last_sqlstate[3],
+								  conn->last_sqlstate[4]);
+
+	if (last_sqlstate == ERRCODE_MIRROR_READY)
+		return PQPING_MIRROR_READY;
 
 	/*
 	 * Report PQPING_REJECT if server says it's not accepting connections. (We
 	 * distinguish this case mainly for the convenience of pg_ctl.)
 	 */
-	if (strcmp(conn->last_sqlstate, ERRCODE_CANNOT_CONNECT_NOW) == 0)
+	if (last_sqlstate == ERRCODE_CANNOT_CONNECT_NOW)
 		return PQPING_REJECT;
 
 	/*
@@ -4130,18 +4125,18 @@ parseServiceFile(const char *serviceFile,
 				}
 #endif
 
-				key = line;
-				val = strchr(line, '=');
-				if (val == NULL)
-				{
-					printfPQExpBuffer(errorMessage,
-									  libpq_gettext("syntax error in service file \"%s\", line %d\n"),
-									  serviceFile,
-									  linenr);
-					fclose(f);
-					return 3;
-				}
-				*val++ = '\0';
+					key = line;
+					val = strchr(line, '=');
+					if (val == NULL)
+					{
+						printfPQExpBuffer(errorMessage,
+										  libpq_gettext("syntax error in service file \"%s\", line %d\n"),
+										  serviceFile,
+										  linenr);
+						fclose(f);
+						return 3;
+					}
+					*val++ = '\0';
 
 				/*
 				 * Set the parameter --- but don't override any previous
@@ -5901,11 +5896,20 @@ dot_pg_pass_warning(PGconn *conn)
 {
 	/* If it was 'invalid authorization', add .pgpass mention */
 	/* only works with >= 9.0 servers */
-	if (conn->dot_pgpass_used && conn->password_needed && conn->result &&
-		strcmp(PQresultErrorField(conn->result, PG_DIAG_SQLSTATE),
-			   ERRCODE_INVALID_PASSWORD) == 0)
+	if (conn->dot_pgpass_used && conn->password_needed && conn->result)
 	{
 		char		pgpassfile[MAXPGPATH];
+		char		*sqlstate;
+		int			sqlstate_errcode;
+
+		sqlstate = PQresultErrorField(conn->result, PG_DIAG_SQLSTATE);
+		if (sqlstate == NULL)
+			return;
+
+		sqlstate_errcode = MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2],
+										 sqlstate[3], sqlstate[4]);
+		if (sqlstate_errcode != ERRCODE_INVALID_PASSWORD)
+			return;
 
 		if (!getPgPassFilename(pgpassfile))
 			return;
