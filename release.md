@@ -1,4 +1,4 @@
-**Arenadata DB 5.3.0 includes these new features.**
+**Arenadata DB 5.4.0 includes these new features.**
 ==================================================
 
 **Greenplum Parameter optimizer_join_order**
@@ -17,16 +17,16 @@ Setting this parameter to query or greedy overrides the optimizer_join_order_thr
 This parameter can be set for an individual database, a session, or a query.
 
 **citext Data Type**
-Arenadata DB 5.3.0 includes the PostgreSQL citext module. The module provides the case-insensitive character string type citext that makes performing case-insensitive comparison easier. Essentially, the function lower() is called internally when comparing citext values. Otherwise, it behaves almost exactly like the text data type.
+Arenadata DB 5.4.0 includes the PostgreSQL citext module. The module provides the case-insensitive character string type citext that makes performing case-insensitive comparison easier. Essentially, the function lower() is called internally when comparing citext values. Otherwise, it behaves almost exactly like the text data type.
 
 For information about the citext data type, see the Greenplum Database Utility Guide.
 
 
 Experimental Features
 =====================
-**Key experimental features in Arenadata DB 5.3.0 include:**
+**Key experimental features in Arenadata DB 5.4.0 include:**
 gpbackup and gprestore are experimental utilities that are designed to improve the performance, functionality, and reliability of backups as compared to gpcrondump and gpdbrestore. gpbackup utilizes ACCESS SHARE locks at the individual table level, instead of EXCLUSIVE locks on the pg_class catalog table. This enables you to execute DDL statements during the backup, such as CREATE, ALTER, DROP, and TRUNCATE operations, as long as those operations do not target the current backup set.
-In Greenplum Database 5.3.0, gpbackup and gprestore include these new features.
+In Greenplum Database 5.4.0, gpbackup and gprestore include these new features.
 gpbackup lets you specify the gzip compression level for data files with the --compression-level option. A valid level is an integer between 1 and 9. gpbackup uses the default compression level of 1.
 gpbackup can optionally create a single backup file per segment instance when you specify the -single-data-file option. By default, gpbackup creates one .csv file per table, per segment, during a backup operation.
 gprestore now supports restoring specific schemas and tables in a backup set using the -include-schema and -include-table-file options.
@@ -37,7 +37,7 @@ Writing text and SequenceFile binary format data to HDFS using the Greenplum Pla
 
 Resolved Issues
 ===============
-**The listed issues that are resolved in Arenadata DB 5.3.0**
+**The listed issues that are resolved in Arenadata DB 5.4.0**
 
  - 29148 - PL/pgSQL, 3674 - Query Execution
 In some cases, INSERT commands acquired a table lock in Greenplum Database 5.x. This was a change from Greenplum Database 4.3.x releases.
