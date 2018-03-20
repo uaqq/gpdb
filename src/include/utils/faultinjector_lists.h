@@ -148,6 +148,8 @@ FI_IDENT(AppendOnlyInsert, "appendonly_insert")
 FI_IDENT(AppendOnlyDelete, "appendonly_delete")
 /* inject fault before an append-only update */
 FI_IDENT(AppendOnlyUpdate, "appendonly_update")
+/* inject fault in append-only compression function */
+FI_IDENT(AppendOnlySkipCompression, "appendonly_skip_compression")
 /* inject fault while reindex db is in progress */
 FI_IDENT(ReindexDB, "reindex_db")
 /* inject fault while reindex relation is in progress */
@@ -214,6 +216,10 @@ FI_IDENT(ResGroupAssignedOnMaster, "resgroup_assigned_on_master")
 FI_IDENT(BeforeReadCommand, "before_read_command")
 /* inject fault before get checkpoint dtx information */
 FI_IDENT(CheckPointDtxInfo, "checkpoint_dtx_info")
+/* inject fault at WalSndLoop() function */
+FI_IDENT(WalSenderLoop, "wal_sender_loop")
+/* inject fault at SyncRepWaitForLSN function for QueryCancelPending */
+FI_IDENT(SyncRepQueryCancel, "sync_rep_query_cancel")
 #endif
 
 /*

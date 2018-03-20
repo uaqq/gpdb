@@ -3,12 +3,12 @@
  * nodeRecursiveunion.c
  *	  routines to handle RecursiveUnion nodes.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeRecursiveunion.c,v 1.5 2009/09/27 21:10:53 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/nodeRecursiveunion.c,v 1.6 2010/01/02 16:57:45 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -91,7 +91,7 @@ ExecRecursiveUnion(RecursiveUnionState *node)
 			if (TupIsNull(slot))
 				break;
 			/*
-			 * GPDB_84_MERGE_FIXME: It suppose plan->numCols should be 0 if we don't
+			 * RECURSIVE_CTE_FIXME: It suppose plan->numCols should be 0 if we don't
 			 * support recursive union. QP should fix this later.
 			 */
 			if (plan->numCols > 0)
@@ -143,7 +143,7 @@ ExecRecursiveUnion(RecursiveUnionState *node)
 		}
 
 		/*
-		 * GPDB_84_MERGE_FIXME: It suppose plan->numCols should be 0 if we don't
+		 * RECURSIVE_CTE_FIXME: It suppose plan->numCols should be 0 if we don't
 		 * support recursive union. QP should fix this later.
 		 */
 		if (plan->numCols > 0)
@@ -207,7 +207,7 @@ ExecInitRecursiveUnion(RecursiveUnion *node, EState *estate, int eflags)
 	 * kept in the per-query context because we want to be able to throw it
 	 * away when rescanning.
 	 *
-	 * GPDB_84_MERGE_FIXME: It suppose plan->numCols should be 0 if we don't
+	 * RECURSIVE_CTE_FIXME: It suppose plan->numCols should be 0 if we don't
 	 * support recursive union. QP should fix this later.
 	 */
 	if (node->numCols > 0)
@@ -267,7 +267,7 @@ ExecInitRecursiveUnion(RecursiveUnion *node, EState *estate, int eflags)
 	 * If hashing, precompute fmgr lookup data for inner loop, and create the
 	 * hash table.
 	 *
-	 * GPDB_84_MERGE_FIXME: It suppose plan->numCols should be 0 if we don't
+	 * RECURSIVE_CTE_FIXME: It suppose plan->numCols should be 0 if we don't
 	 * support recursive union. QP should fix this later.
 	 */
 	if (node->numCols > 0)
@@ -348,7 +348,7 @@ ExecRecursiveUnionReScan(RecursiveUnionState *node, ExprContext *exprCtxt)
 
 	/* And rebuild empty hashtable if needed */
 	/*
-	 * GPDB_84_MERGE_FIXME: It suppose plan->numCols should be 0 if we don't
+	 * RECURSIVE_CTE_FIXME: It suppose plan->numCols should be 0 if we don't
 	 * support recursive union. QP should fix this later.
 	 */
 	if (plan->numCols > 0)

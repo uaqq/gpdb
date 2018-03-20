@@ -6,12 +6,13 @@ SELECT name, setting FROM pg_settings WHERE name LIKE 'enable%';
  enable_hashagg    | on
  enable_hashjoin   | on
  enable_indexscan  | on
+ enable_material   | on
  enable_mergejoin  | off
  enable_nestloop   | off
  enable_seqscan    | on
  enable_sort       | on
  enable_tidscan    | on
-(10 rows)
+(11 rows)
 
 DROP TABLE IF EXISTS foo;
 NOTICE:  table "foo" does not exist, skipping
@@ -170,7 +171,7 @@ $$  LANGUAGE plpgsql;
 --   Fails: plpgsql does not support SFRM_Materialize
 select foor(1);
 ERROR:  set-valued function called in context that cannot accept a set
-CONTEXT:  PL/pgSQL function "foor"
+CONTEXT:  PL/pgSQL function "foor" line 5 at RETURN NEXT
 -- expanding columns in the select list
 --    Fails: record type not registered
 select (foor(1)).*;

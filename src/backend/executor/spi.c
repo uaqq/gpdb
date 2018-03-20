@@ -3,12 +3,12 @@
  * spi.c
  *				Server Programming Interface
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/spi.c,v 1.212 2009/12/15 04:57:47 rhaas Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/spi.c,v 1.215 2010/02/26 02:00:42 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -939,9 +939,7 @@ SPI_gettype(TupleDesc tupdesc, int fnumber)
 	else
 		typoid = (SystemAttributeDefinition(fnumber, true))->atttypid;
 
-	typeTuple = SearchSysCache(TYPEOID,
-							   ObjectIdGetDatum(typoid),
-							   0, 0, 0);
+	typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typoid));
 
 	if (!HeapTupleIsValid(typeTuple))
 	{
@@ -1313,10 +1311,9 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	}
 
 	/*
-	 * If the plan has parameters, copy them into the portal.  Note that
-	 * this must be done after revalidating the plan, because in dynamic
-	 * parameter cases the set of parameters could have changed during
-	 * re-parsing.
+	 * If the plan has parameters, copy them into the portal.  Note that this
+	 * must be done after revalidating the plan, because in dynamic parameter
+	 * cases the set of parameters could have changed during re-parsing.
 	 */
 	if (paramLI)
 	{
@@ -2319,6 +2316,7 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, int64 tcount)
 		_SPI_current->lastoid = queryDesc->es_lastoid;
 		if (checkTuples)
 		{
+#ifdef FAULT_INJECTOR
 			/*
 			 * only check number tuples if the SPI 64 bit test is NOT running
 			 */
@@ -2327,9 +2325,12 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, int64 tcount)
 										   "" /* databaseName */,
 										   "" /* tableName */))
 			{
+#endif /* FAULT_INJECTOR */
 				if (_SPI_checktuples())
 					elog(ERROR, "consistency check on SPI tuple count failed");
+#ifdef FAULT_INJECTOR
 			}
+#endif /* FAULT_INJECTOR */
 		}
 
 		gp_enable_gpperfmon = orig_gp_enable_gpperfmon;

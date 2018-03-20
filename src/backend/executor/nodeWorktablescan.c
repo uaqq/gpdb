@@ -3,12 +3,12 @@
  * nodeWorktablescan.c
  *	  routines to handle WorkTableScan nodes.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeWorktablescan.c,v 1.9 2009/10/26 02:26:31 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/nodeWorktablescan.c,v 1.10 2010/01/02 16:57:45 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -51,7 +51,7 @@ WorkTableScanNext(WorkTableScanState *node)
 	estate = node->ss.ps.state;
 
 	/*
-	 * GPDB_84_MERGE_FIXME: Double check we don't have backward scan required by
+	 * RECURSIVE_CTE_FIXME: Double check we don't have backward scan required by
 	 * plan (both planner and ORCA).
 	 */
 	Assert(ScanDirectionIsForward(estate->es_direction));
@@ -138,7 +138,7 @@ ExecInitWorkTableScan(WorkTableScan *node, EState *estate, int eflags)
 
 	/* check for unsupported flags */
 	/*
-	 * GPDB_84_MERGE_FIXME: Make sure we don't require EXEC_FLAG_BACKWARD
+	 * RECURSIVE_CTE_FIXME: Make sure we don't require EXEC_FLAG_BACKWARD
 	 * in GPDB.
 	 */
 	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));

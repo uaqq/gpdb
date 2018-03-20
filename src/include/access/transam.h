@@ -4,10 +4,10 @@
  *	  postgres transaction access method support code
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/transam.h,v 1.70 2009/09/01 04:46:49 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/access/transam.h,v 1.72 2010/01/02 16:58:00 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -110,6 +110,9 @@ typedef VariableCacheData *VariableCache;
  * ----------------
  */
 
+/* in transam/xact.c */
+extern bool TransactionStartedDuringRecovery(void);
+
 /* in transam/varsup.c */
 extern PGDLLIMPORT VariableCache ShmemVariableCache;
 
@@ -138,6 +141,7 @@ extern XLogRecPtr TransactionIdGetCommitLSN(TransactionId xid);
 /* in transam/varsup.c */
 extern TransactionId GetNewTransactionId(bool isSubXact);
 extern TransactionId ReadNewTransactionId(void);
+extern TransactionId GetTransactionIdLimit(void);
 extern void SetTransactionIdLimit(TransactionId oldest_datfrozenxid,
 					  Oid oldest_datoid);
 extern bool ForceTransactionIdLimitUpdate(void);

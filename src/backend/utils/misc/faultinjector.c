@@ -719,36 +719,6 @@ FaultInjector_NewHashEntry(
 		
 		goto exit;
 	}
-	
-	if (entry->faultInjectorType == FaultInjectorTypeSkip)
-	{
-		switch (entry->faultInjectorIdentifier)
-		{
-			case Checkpoint:
-			case FsyncCounter:
-			case BgBufferSyncDefaultLogic:
-
-			case InterconnectStopAckIsLost:
-			case SendQEDetailsInitBackend:
-			case ExecutorRunHighProcessed:
-			case FtsProbe:
-
-				break;
-			default:
-				
-				FiLockRelease();
-				status = STATUS_ERROR;
-				ereport(WARNING,
-						(errmsg("could not insert fault injection, fault type not supported"
-								"fault name:'%s' fault type:'%s' ",
-								entry->faultName,
-								FaultInjectorTypeEnumToString[entry->faultInjectorType])));
-				snprintf(entry->bufOutput, sizeof(entry->bufOutput), 
-						 "could not insert fault injection, fault type not supported");
-				
-				goto exit;
-		}
-	}
 
 	entryLocal = FaultInjector_InsertHashEntry(entry->faultName, &exists);
 		
@@ -921,11 +891,22 @@ FaultInjector_SetFaultInjection(
 		case FaultInjectorTypeWaitUntilTriggered:
 		{
 			FaultInjectorEntry_s	*entryLocal;
+			int retry_count = 600; /* 10 minutes */
 
 			while ((entryLocal = FaultInjector_LookupHashEntry(entry->faultName)) != NULL &&
 				   entry->occurrence > entryLocal->numTimesTriggered)
 			{
 				pg_usleep(1000000L);  // 1 sec
+				retry_count--;
+				if (!retry_count)
+				{
+					ereport(ERROR,
+							(errcode(ERRCODE_FAULT_INJECT),
+							 errmsg("fault not triggered, fault name:'%s' fault type:'%s' ",
+									entryLocal->faultName,
+									FaultInjectorTypeEnumToString[entry->faultInjectorType]),
+								errdetail("Timed-out as 10 minutes max wait happens until triggered.")));
+				}
 			}
 
 			if (entryLocal != NULL)
@@ -940,14 +921,11 @@ FaultInjector_SetFaultInjection(
 			}
 			else
 			{
-				ereport(LOG,
+				ereport(ERROR,
 						(errcode(ERRCODE_FAULT_INJECT),
-						 errmsg("fault 'NULL', fault name:'%s'  ",
+						 errmsg("fault not set, fault name:'%s'  ",
 								entryLocal->faultName)));
-
-				status = STATUS_ERROR;
 			}
-
 			break;
 		}
 

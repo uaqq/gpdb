@@ -6,12 +6,13 @@ SELECT name, setting FROM pg_settings WHERE name LIKE 'enable%';
  enable_hashagg    | on
  enable_hashjoin   | on
  enable_indexscan  | on
+ enable_material   | on
  enable_mergejoin  | off
  enable_nestloop   | off
  enable_seqscan    | on
  enable_sort       | on
  enable_tidscan    | on
-(10 rows)
+(11 rows)
 
 CREATE TABLE foo2(fooid int, f2 int);
 INSERT INTO foo2 VALUES(1, 11);
@@ -26,15 +27,15 @@ LINE 1: select * from foo2, foot(foo2.fooid) z where foo2.f2 = z.f2;
 -- function in subselect
 select * from foo2 where f2 in (select f2 from foot(foo2.fooid) z where z.fooid = foo2.fooid) ORDER BY 1,2;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foo2"
-DETAIL:  SQL function "foot" during startup
+CONTEXT:  SQL function "foot" during startup
 -- function in subselect
 select * from foo2 where f2 in (select f2 from foot(1) z where z.fooid = foo2.fooid) ORDER BY 1,2;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foo2"
-DETAIL:  SQL function "foot" during startup
+CONTEXT:  SQL function "foot" during startup
 -- function in subselect
 select * from foo2 where f2 in (select f2 from foot(foo2.fooid) z where z.fooid = 1) ORDER BY 1,2;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foo2"
-DETAIL:  SQL function "foot" during startup
+CONTEXT:  SQL function "foot" during startup
 -- nested functions
 select foot.fooid, foot.f2 from foot(sin(pi()/2)::int) ORDER BY 1,2;
  fooid | f2  
@@ -291,18 +292,18 @@ CREATE FUNCTION foorescan(int) RETURNS setof foorescan AS 'SELECT * FROM fooresc
 --invokes ExecFunctionReScan with chgParam != NULL
 SELECT f.* FROM barrescan b, foorescan f WHERE f.fooid = b.fooid AND b.fooid IN (SELECT fooid FROM foorescan(b.fooid)) ORDER BY 1,2;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foorescan"
-DETAIL:  SQL function "foorescan" during startup
+CONTEXT:  SQL function "foorescan" during startup
 SELECT b.fooid, max(f.foosubid) FROM barrescan b, foorescan f WHERE f.fooid = b.fooid AND b.fooid IN (SELECT fooid FROM foorescan(b.fooid)) GROUP BY b.fooid ORDER BY 1,2;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foorescan"
-DETAIL:  SQL function "foorescan" during startup
+CONTEXT:  SQL function "foorescan" during startup
 CREATE VIEW fooview1 AS SELECT f.* FROM barrescan b, foorescan f WHERE f.fooid = b.fooid AND b.fooid IN (SELECT fooid FROM foorescan(b.fooid)) ORDER BY 1,2;
 SELECT * FROM fooview1 AS fv WHERE fv.fooid = 5004;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foorescan"
-DETAIL:  SQL function "foorescan" during startup
+CONTEXT:  SQL function "foorescan" during startup
 CREATE VIEW fooview2 AS SELECT b.fooid, max(f.foosubid) AS maxsubid FROM barrescan b, foorescan f WHERE f.fooid = b.fooid AND b.fooid IN (SELECT fooid FROM foorescan(b.fooid)) GROUP BY b.fooid ORDER BY 1,2;
 SELECT * FROM fooview2 AS fv WHERE fv.maxsubid = 5;
 ERROR:  function cannot execute on a QE slice because it accesses relation "public.foorescan"
-DETAIL:  SQL function "foorescan" during startup
+CONTEXT:  SQL function "foorescan" during startup
 DROP VIEW vw_foorescan;
 DROP VIEW fooview1;
 DROP VIEW fooview2;
@@ -487,12 +488,6 @@ DROP FUNCTION foo(int);
 --
 -- some tests on SQL functions with RETURNING
 --
--- start_ignore
--- GPDB_90_MERGE_FIXME: GPDB doesn't currently support the RETURNING clause.
--- These tests have therefore been disabled. I'm marking this as a FIXME for
--- the 9.0 merge, because I think we'll tackle the RETURNING clause and try
--- to make that work again at that time, once we merge the ModifyTable node
--- from the upstream.
 create temp table tt(f1 serial, data text);
 NOTICE:  CREATE TABLE will create implicit sequence "tt_f1_seq" for serial column "tt.f1"
 create function insert_tt(text) returns int as
@@ -666,8 +661,6 @@ select * from tt_log;
  16 | barlog
 (2 rows)
 
--- end of disabled RETURNING tests.
--- end_ignore
 -- test case for a whole-row-variable bug
 create function foo1(n integer, out a text, out b text)
   returns setof record
@@ -714,8 +707,6 @@ select * from array_to_set(array['one', 'two']); -- fail
 ERROR:  a column definition list is required for functions returning "record"
 LINE 1: select * from array_to_set(array['one', 'two']);
                       ^
--- start_ignore
--- GPDB_90_MERGE_FIXME: disable RETURNING clause tests (see above).
 create temp table foo(f1 int8, f2 int8);
 create function testfoo() returns record as $$
   insert into foo values (1,2) returning *;
@@ -759,8 +750,6 @@ ERROR:  a column definition list is required for functions returning "record"
 LINE 1: select * from testfoo();
                       ^
 drop function testfoo();
--- end of disabled RETURNING tests.
--- end_ignore
 --
 -- Check some cases involving dropped columns in a rowtype result
 --

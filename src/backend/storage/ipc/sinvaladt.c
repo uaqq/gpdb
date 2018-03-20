@@ -3,7 +3,7 @@
  * sinvaladt.c
  *	  POSTGRES shared cache invalidation data manager.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -351,8 +351,6 @@ CleanupInvalidationState(int status, Datum arg)
 	stateP = &segP->procState[MyBackendId - 1];
 
 	/* Update next local transaction ID for next holder of this backendID */
-	/* GPDB_84_MERGE_FIXME: this assignment was reversed in the 8.3 merge; does
-	 * this change need to be backported to 4/5? */
 	stateP->nextLXID = nextLocalTransactionId;
 
 	/* Mark myself inactive */

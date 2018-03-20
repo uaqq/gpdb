@@ -171,25 +171,14 @@ select pg_column_size(('b'=>'gf'))
 select pg_column_size('a=>g, b=>c'::hstore || ('b'=>'gf'))
          = pg_column_size('a=>g, b=>gf'::hstore);
 
--- => arrays
-select ARRAY['a','b','asd'] => ARRAY['g','h','i'];
-select ARRAY['a','b','asd'] => ARRAY['g','h',NULL];
-select ARRAY['z','y','x'] => ARRAY['1','2','3'];
-select ARRAY['aaa','bb','c','d'] => ARRAY[null::text,null,null,null];
-select ARRAY['aaa','bb','c','d'] => null;
-select hstore 'aa=>1, b=>2, c=>3' => ARRAY['g','h','i'];
-select hstore 'aa=>1, b=>2, c=>3' => ARRAY['c','b'];
-select hstore 'aa=>1, b=>2, c=>3' => ARRAY['aa','b'];
-select hstore 'aa=>1, b=>2, c=>3' => ARRAY['c','b','aa'];
-select quote_literal('{}'::text[] => '{}'::text[]);
-select quote_literal('{}'::text[] => null);
-select ARRAY['a'] => '{}'::text[];  -- error
-select '{}'::text[] => ARRAY['a'];  -- error
-select pg_column_size(ARRAY['a','b','asd'] => ARRAY['g','h','i'])
-         = pg_column_size('a=>g, b=>h, asd=>i'::hstore);
-select pg_column_size(hstore 'aa=>1, b=>2, c=>3' => ARRAY['c','b'])
+-- slice()
+select slice(hstore 'aa=>1, b=>2, c=>3', ARRAY['g','h','i']);
+select slice(hstore 'aa=>1, b=>2, c=>3', ARRAY['c','b']);
+select slice(hstore 'aa=>1, b=>2, c=>3', ARRAY['aa','b']);
+select slice(hstore 'aa=>1, b=>2, c=>3', ARRAY['c','b','aa']);
+select pg_column_size(slice(hstore 'aa=>1, b=>2, c=>3', ARRAY['c','b']))
          = pg_column_size('b=>2, c=>3'::hstore);
-select pg_column_size(hstore 'aa=>1, b=>2, c=>3' => ARRAY['c','b','aa'])
+select pg_column_size(slice(hstore 'aa=>1, b=>2, c=>3', ARRAY['c','b','aa']))
          = pg_column_size('aa=>1, b=>2, c=>3'::hstore);
 
 -- array input
@@ -207,6 +196,19 @@ select hstore(ARRAY[['a','g','b'],['h','asd','i']]);
 select hstore(ARRAY[[['a','g'],['b','h'],['asd','i']]]);
 select hstore('[0:5]={a,g,b,h,asd,i}'::text[]);
 select hstore('[0:2][1:2]={{a,g},{b,h},{asd,i}}'::text[]);
+
+-- pairs of arrays
+select hstore(ARRAY['a','b','asd'], ARRAY['g','h','i']);
+select hstore(ARRAY['a','b','asd'], ARRAY['g','h',NULL]);
+select hstore(ARRAY['z','y','x'], ARRAY['1','2','3']);
+select hstore(ARRAY['aaa','bb','c','d'], ARRAY[null::text,null,null,null]);
+select hstore(ARRAY['aaa','bb','c','d'], null);
+select quote_literal(hstore('{}'::text[], '{}'::text[]));
+select quote_literal(hstore('{}'::text[], null));
+select hstore(ARRAY['a'], '{}'::text[]);  -- error
+select hstore('{}'::text[], ARRAY['a']);  -- error
+select pg_column_size(hstore(ARRAY['a','b','asd'], ARRAY['g','h','i']))
+         = pg_column_size('a=>g, b=>h, asd=>i'::hstore);
 
 -- records
 select hstore(v) from (values (1, 'foo', 1.2, 3::float8)) v(a,b,c,d);
@@ -319,16 +321,6 @@ select count(*) from testhstore where h ?& ARRAY['public','disabled'];
 select count(*) from (select (each(h)).key from testhstore) as wow ;
 select key, count(*) from (select (each(h)).key from testhstore) as wow group by key order by count desc, key;
 
--- start_ignore
--- GPDB_90_MERGE_FIXME: These queries don't work with ORCA. ORCA produces a
--- plan with Redistribute Motion on the hstore attribute, but that doesn't
--- work because hstore is not a "GPDB hashable" type. You get an error like:
--- ERROR:  Type 40963 is not hashable.
---
--- That seems like an ORCA bug that we should fix.
-set optimizer=off;
--- end_ignore
-
 -- sort/hash
 select count(distinct h) from testhstore;
 set enable_hashagg = false;
@@ -338,10 +330,6 @@ set enable_sort = false;
 select count(*) from (select h from (select * from testhstore union all select * from testhstore) hs group by h) hs2;
 select distinct * from (values (hstore '' || ''),('')) v(h);
 set enable_sort = true;
-
--- start_ignore
-reset optimizer;
--- end_ignore
 
 -- btree
 drop index hidx;

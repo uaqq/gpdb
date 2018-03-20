@@ -99,7 +99,9 @@
 #include "catalog/pg_partition_rule.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_resqueue.h"
+#include "catalog/pg_resqueuecapability.h"
 #include "catalog/pg_resgroup.h"
+#include "catalog/pg_resgroupcapability.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_trigger.h"
@@ -700,6 +702,9 @@ GetPreassignedOidForRelation(Oid namespaceOid, const char *relname)
 			if (namespaceOid == PG_BITMAPINDEX_NAMESPACE)
 				return InvalidOid;
 
+			if (namespaceOid == PG_TOAST_NAMESPACE)
+				return InvalidOid;
+
 			if (namespaceOid == PG_AOSEGMENT_NAMESPACE)
 				return InvalidOid;
 		}
@@ -711,9 +716,13 @@ GetPreassignedOidForRelation(Oid namespaceOid, const char *relname)
 /*
  * A specialized version of GetPreassignedOidForTuple(). To be used when we don't
  * have a whole pg_type tuple yet.
+ *
+ * The caller should set allowMissing if it can handle a missing preassignment
+ * for the type. This is useful in upgrade scenarios as new types are added.
  */
 Oid
-GetPreassignedOidForType(Oid namespaceOid, const char *typname)
+GetPreassignedOidForType(Oid namespaceOid, const char *typname,
+						 bool allowMissing)
 {
 	OidAssignment searchkey;
 	Oid			oid;
@@ -723,7 +732,7 @@ GetPreassignedOidForType(Oid namespaceOid, const char *typname)
 	searchkey.namespaceOid = namespaceOid;
 	searchkey.objname = (char *) typname;
 
-	if ((oid = GetPreassignedOid(&searchkey)) == InvalidOid)
+	if ((oid = GetPreassignedOid(&searchkey)) == InvalidOid && !allowMissing)
 		elog(ERROR, "no pre-assigned OID for type \"%s\"", typname);
 	return oid;
 }

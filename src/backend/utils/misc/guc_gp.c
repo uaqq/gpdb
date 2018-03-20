@@ -312,6 +312,8 @@ int			password_hash_algorithm = PASSWORD_HASH_MD5;
 /* include file/line information to stack traces */
 bool		gp_log_stack_trace_lines;
 
+/* ignore INTO error-table clauses for backwards compatibility */
+bool		gp_ignore_error_table = false;
 
 /*
  * If set to true, we will silently insert into the correct leaf
@@ -1039,16 +1041,6 @@ struct config_bool ConfigureNamesBool_gp[] =
 	},
 
 	{
-		{"gp_fts_transition_parallel", PGC_POSTMASTER, GP_ARRAY_TUNING,
-			gettext_noop("Activate parallel segment transition."),
-			NULL,
-			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&gp_fts_transition_parallel,
-		true, NULL, NULL
-	},
-
-	{
 		{"gp_debug_pgproc", PGC_POSTMASTER, DEVELOPER_OPTIONS,
 			gettext_noop("Print debug info relevant to PGPROC."),
 			NULL /* long description */ ,
@@ -1125,6 +1117,16 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_NOT_IN_SAMPLE | GUC_NO_SHOW_ALL
 		},
 		&Debug_appendonly_rezero_quicklz_decompress_scratch,
+		false, NULL, NULL
+	},
+
+	{
+		{"debug_burn_xids", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Consume a lot of XIDs, for testing purposes."),
+			NULL,
+			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&Debug_burn_xids,
 		false, NULL, NULL
 	},
 
@@ -2783,6 +2785,7 @@ struct config_bool ConfigureNamesBool_gp[] =
 		&vmem_process_interrupt,
 		false, NULL, NULL
 	},
+
 	{
 		{"execute_pruned_plan", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Prune plan to discard unwanted plan nodes for each slice before execution"),
@@ -2792,6 +2795,7 @@ struct config_bool ConfigureNamesBool_gp[] =
 		&execute_pruned_plan,
 		true, NULL, NULL
 	},
+
 	{
 		{"pljava_classpath_insecure", PGC_POSTMASTER, CUSTOM_OPTIONS,
 			gettext_noop("Allow pljava_classpath to be set by user per session"),
@@ -2801,6 +2805,7 @@ struct config_bool ConfigureNamesBool_gp[] =
 		&pljava_classpath_insecure,
 		false, assign_pljava_classpath_insecure, NULL
 	},
+
 	{
 		{"gp_enable_segment_copy_checking", PGC_USERSET, CUSTOM_OPTIONS,
 			gettext_noop("Enable check the distribution key restriction on segment for command \"COPY FROM ON SEGMENT\"."),
@@ -2810,6 +2815,17 @@ struct config_bool ConfigureNamesBool_gp[] =
 		&gp_enable_segment_copy_checking,
 		true, NULL, NULL
 	},
+
+	{
+		{"gp_ignore_error_table", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
+			gettext_noop("Ignore INTO error-table in external table and COPY."),
+			NULL,
+			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_GPDB_ADDOPT
+		},
+		&gp_ignore_error_table,
+		false, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL
@@ -3034,7 +3050,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_NOT_IN_SAMPLE | GUC_NO_SHOW_ALL
 		},
 		&xid_stop_limit,
-		1000000000, 10000000, INT_MAX, NULL, NULL
+		100000000, 10000000, INT_MAX, NULL, NULL
 	},
 	{
 		{"xid_warn_limit", PGC_POSTMASTER, WAL,
@@ -3457,7 +3473,7 @@ struct config_int ConfigureNamesInt_gp[] =
 	},
 
 	{
-		{"gp_fts_probe_retries", PGC_POSTMASTER, GP_ARRAY_TUNING,
+		{"gp_fts_probe_retries", PGC_SIGHUP, GP_ARRAY_TUNING,
 			gettext_noop("Number of retries for FTS to complete probing a segment."),
 			gettext_noop("Used by the fts-probe process."),
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
@@ -3467,7 +3483,7 @@ struct config_int ConfigureNamesInt_gp[] =
 	},
 
 	{
-		{"gp_fts_probe_timeout", PGC_USERSET, GP_ARRAY_TUNING,
+		{"gp_fts_probe_timeout", PGC_SIGHUP, GP_ARRAY_TUNING,
 			gettext_noop("Maximum time (in seconds) allowed for FTS to complete probing a segment."),
 			gettext_noop("Used by the fts-probe process."),
 			GUC_UNIT_S
@@ -3477,7 +3493,7 @@ struct config_int ConfigureNamesInt_gp[] =
 	},
 
 	{
-		{"gp_fts_probe_interval", PGC_POSTMASTER, GP_ARRAY_TUNING,
+		{"gp_fts_probe_interval", PGC_SIGHUP, GP_ARRAY_TUNING,
 			gettext_noop("A complete probe of all segments starts each time a timer with this period expires."),
 			gettext_noop("Used by the fts-probe process. "),
 			GUC_UNIT_S
@@ -3487,33 +3503,13 @@ struct config_int ConfigureNamesInt_gp[] =
 	},
 
 	{
-		{"gp_fts_probe_threadcount", PGC_POSTMASTER, GP_ARRAY_TUNING,
-			gettext_noop("Use this number of threads for probing the segments."),
-			gettext_noop("The number of threads to create at each probe interval expiration."),
-			GUC_NOT_IN_SAMPLE
+		{"gp_fts_mark_mirror_down_grace_period", PGC_SIGHUP, GP_ARRAY_TUNING,
+			gettext_noop("Time (in seconds) allowed to mirror after disconnection, to reconnect before being marked as down in configuration by FTS."),
+			gettext_noop("Used by the fts-probe process."),
+			GUC_UNIT_S
 		},
-		&gp_fts_probe_threadcount,
-		16, 1, 128, NULL, NULL
-	},
-
-	{
-		{"gp_fts_transition_retries", PGC_POSTMASTER, GP_ARRAY_TUNING,
-			gettext_noop("The number of retries for FTS to request a segment state transition."),
-			NULL,
-			GUC_NOT_IN_SAMPLE | GUC_NO_SHOW_ALL
-		},
-		&gp_fts_transition_retries,
-		5, 1, 100, NULL, NULL
-	},
-
-	{
-		{"gp_fts_transition_timeout", PGC_POSTMASTER, GP_ARRAY_TUNING,
-			gettext_noop("Timeout (in seconds) for FTS to request a segment state transition."),
-			NULL,
-			GUC_NOT_IN_SAMPLE | GUC_NO_SHOW_ALL | GUC_UNIT_S
-		},
-		&gp_fts_transition_timeout,
-		3600, 1, 36000, NULL, NULL
+		&gp_fts_mark_mirror_down_grace_period,
+		30, 0, 3600, NULL, NULL
 	},
 
 	{

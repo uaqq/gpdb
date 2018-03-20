@@ -5,10 +5,10 @@
  *
  * Portions Copyright (c) 2005-2010, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/commands/user.c,v 1.190 2009/11/18 21:57:56 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/commands/user.c,v 1.193 2010/02/26 02:00:40 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -101,9 +101,7 @@ have_createrole_privilege(void)
 	if (superuser())
 		return true;
 
-	utup = SearchSysCache(AUTHOID,
-						  ObjectIdGetDatum(GetUserId()),
-						  0, 0, 0);
+	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(GetUserId()));
 	if (HeapTupleIsValid(utup))
 	{
 		result = ((Form_pg_authid) GETSTRUCT(utup))->rolcreaterole;
@@ -394,9 +392,7 @@ CreateRole(CreateRoleStmt *stmt)
 	pg_authid_rel = heap_open(AuthIdRelationId, RowExclusiveLock);
 	pg_authid_dsc = RelationGetDescr(pg_authid_rel);
 
-	tuple = SearchSysCache(AUTHNAME,
-						   PointerGetDatum(stmt->role),
-						   0, 0, 0);
+	tuple = SearchSysCache1(AUTHNAME, PointerGetDatum(stmt->role));
 	if (HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
@@ -424,7 +420,7 @@ CreateRole(CreateRoleStmt *stmt)
 	if (check_password_hook && password)
 		(*check_password_hook) (stmt->role,
 								password,
-								isMD5(password) ? PASSWORD_TYPE_MD5 : PASSWORD_TYPE_PLAINTEXT,
+			   isMD5(password) ? PASSWORD_TYPE_MD5 : PASSWORD_TYPE_PLAINTEXT,
 								validUntil_datum,
 								validUntil_null);
 
@@ -539,6 +535,8 @@ CreateRole(CreateRoleStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("only superuser can be assigned to admin resgroup")));
+
+		ResGroupCheckForRole(rsgid);
 
 		new_record[Anum_pg_authid_rolresgroup - 1] = ObjectIdGetDatum(rsgid);
 		if (!IsResGroupActivated() && Gp_role == GP_ROLE_DISPATCH)
@@ -913,9 +911,7 @@ AlterRole(AlterRoleStmt *stmt)
 	pg_authid_rel = heap_open(AuthIdRelationId, RowExclusiveLock);
 	pg_authid_dsc = RelationGetDescr(pg_authid_rel);
 
-	tuple = SearchSysCache(AUTHNAME,
-						   PointerGetDatum(stmt->role),
-						   0, 0, 0);
+	tuple = SearchSysCache1(AUTHNAME, PointerGetDatum(stmt->role));
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -978,7 +974,7 @@ AlterRole(AlterRoleStmt *stmt)
 	if (check_password_hook && password)
 		(*check_password_hook) (stmt->role,
 								password,
-								isMD5(password) ? PASSWORD_TYPE_MD5 : PASSWORD_TYPE_PLAINTEXT,
+			   isMD5(password) ? PASSWORD_TYPE_MD5 : PASSWORD_TYPE_PLAINTEXT,
 								validUntil_datum,
 								validUntil_null);
 
@@ -1183,6 +1179,7 @@ AlterRole(AlterRoleStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("only superuser can be assigned to admin resgroup")));
+		ResGroupCheckForRole(rsgid);
 		new_record[Anum_pg_authid_rolresgroup - 1] =
 			ObjectIdGetDatum(rsgid);
 		new_record_repl[Anum_pg_authid_rolresgroup - 1] = true;
@@ -1303,9 +1300,7 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 	HeapTuple	roletuple;
 	Oid			databaseid = InvalidOid;
 
-	roletuple = SearchSysCache(AUTHNAME,
-							   PointerGetDatum(stmt->role),
-							   0, 0, 0);
+	roletuple = SearchSysCache1(AUTHNAME, PointerGetDatum(stmt->role));
 
 	if (!HeapTupleIsValid(roletuple))
 		ereport(ERROR,
@@ -1383,9 +1378,7 @@ DropRole(DropRoleStmt *stmt)
 		SysScanDesc sscan;
 		Oid			roleid;
 
-		tuple = SearchSysCache(AUTHNAME,
-							   PointerGetDatum(role),
-							   0, 0, 0);
+		tuple = SearchSysCache1(AUTHNAME, PointerGetDatum(role));
 		if (!HeapTupleIsValid(tuple))
 		{
 			if (!stmt->missing_ok)
@@ -1559,9 +1552,7 @@ RenameRole(const char *oldname, const char *newname)
 	rel = heap_open(AuthIdRelationId, RowExclusiveLock);
 	dsc = RelationGetDescr(rel);
 
-	oldtuple = SearchSysCache(AUTHNAME,
-							  CStringGetDatum(oldname),
-							  0, 0, 0);
+	oldtuple = SearchSysCache1(AUTHNAME, CStringGetDatum(oldname));
 	if (!HeapTupleIsValid(oldtuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -1587,9 +1578,7 @@ RenameRole(const char *oldname, const char *newname)
 				 errmsg("current user cannot be renamed")));
 
 	/* make sure the new name doesn't exist */
-	if (SearchSysCacheExists(AUTHNAME,
-							 CStringGetDatum(newname),
-							 0, 0, 0))
+	if (SearchSysCacheExists1(AUTHNAME, CStringGetDatum(newname)))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
 				 errmsg("role \"%s\" already exists", newname)));
@@ -1936,10 +1925,9 @@ AddRoleMems(const char *rolename, Oid roleid,
 		 * Check if entry for this role/member already exists; if so, give
 		 * warning unless we are adding admin option.
 		 */
-		authmem_tuple = SearchSysCache(AUTHMEMROLEMEM,
-									   ObjectIdGetDatum(roleid),
-									   ObjectIdGetDatum(memberid),
-									   0, 0);
+		authmem_tuple = SearchSysCache2(AUTHMEMROLEMEM,
+										ObjectIdGetDatum(roleid),
+										ObjectIdGetDatum(memberid));
 		if (HeapTupleIsValid(authmem_tuple) &&
 			(!admin_opt ||
 			 ((Form_pg_auth_members) GETSTRUCT(authmem_tuple))->admin_option))
@@ -2382,10 +2370,9 @@ DelRoleMems(const char *rolename, Oid roleid,
 		/*
 		 * Find entry for this role/member
 		 */
-		authmem_tuple = SearchSysCache(AUTHMEMROLEMEM,
-									   ObjectIdGetDatum(roleid),
-									   ObjectIdGetDatum(memberid),
-									   0, 0);
+		authmem_tuple = SearchSysCache2(AUTHMEMROLEMEM,
+										ObjectIdGetDatum(roleid),
+										ObjectIdGetDatum(memberid));
 		if (!HeapTupleIsValid(authmem_tuple))
 		{
 			ereport(WARNING,

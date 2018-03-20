@@ -372,7 +372,7 @@ getComponentDatabases(void)
 	Assert(Gp_role == GP_ROLE_DISPATCH || Gp_role == GP_ROLE_UTILITY);
 	Assert(GangContext != NULL);
 
-	uint64		ftsVersion = getFtsVersion();
+	uint8		ftsVersion = getFtsVersion();
 	MemoryContext oldContext = MemoryContextSwitchTo(GangContext);
 
 	if (cdb_component_dbs == NULL)
@@ -664,13 +664,17 @@ makeOptions(void)
 	 */
 	if (DefaultXactIsoLevel != XACT_READ_COMMITTED)
 	{
-		if (DefaultXactIsoLevel == XACT_SERIALIZABLE)
+		if (DefaultXactIsoLevel == XACT_REPEATABLE_READ)
+			appendStringInfo(&string, " -c default_transaction_isolation=repeatable\\ read");
+		else if (DefaultXactIsoLevel == XACT_SERIALIZABLE)
 			appendStringInfo(&string, " -c default_transaction_isolation=serializable");
 	}
 
 	if (XactIsoLevel != XACT_READ_COMMITTED)
 	{
-		if (XactIsoLevel == XACT_SERIALIZABLE)
+		if (XactIsoLevel == XACT_REPEATABLE_READ)
+			appendStringInfo(&string, " -c transaction_isolation=repeatable\\ read");
+		else if (XactIsoLevel == XACT_SERIALIZABLE)
 			appendStringInfo(&string, " -c transaction_isolation=serializable");
 	}
 

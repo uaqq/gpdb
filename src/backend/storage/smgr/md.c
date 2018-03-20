@@ -3,12 +3,12 @@
  * md.c
  *	  This code manages relations that reside on magnetic disk.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/smgr/md.c,v 1.149 2009/08/05 18:01:54 heikki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/storage/smgr/md.c,v 1.151 2010/02/26 02:01:01 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -172,7 +172,7 @@ static void register_dirty_segment(SMgrRelation reln, ForkNumber forknum,
 static void register_unlink(RelFileNode rnode);
 static MdfdVec *_fdvec_alloc(void);
 static char *_mdfd_segpath(SMgrRelation reln, ForkNumber forknum,
-						   BlockNumber segno);
+			  BlockNumber segno);
 static MdfdVec *_mdfd_openseg(SMgrRelation reln, ForkNumber forkno,
 			  BlockNumber segno, int oflags);
 static MdfdVec *_mdfd_getseg(SMgrRelation reln, ForkNumber forkno,
@@ -458,7 +458,7 @@ mdunlink(RelFileNode rnode, ForkNumber forkNum, bool isRedo)
 				if (errno != ENOENT)
 					ereport(WARNING,
 							(errcode_for_file_access(),
-					 errmsg("could not remove file \"%s\": %m", segpath)));
+					   errmsg("could not remove file \"%s\": %m", segpath)));
 				break;
 			}
 		}
@@ -943,17 +943,11 @@ mdnblocks(SMgrRelation reln, ForkNumber forknum)
  */
 void
 mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks,
-		   bool isTemp, bool allowNotFound)
+		   bool isTemp)
 {
 	MdfdVec    *v;
 	BlockNumber curnblk;
 	BlockNumber priorblocks;
-
-	if (allowNotFound)
-	{
-		if (mdopen(reln, forknum, EXTENSION_RETURN_NULL) == NULL)
-			return;
-	}
 
 	/*
 	 * NOTE: mdnblocks makes sure we have opened all active segments, so that
@@ -963,7 +957,7 @@ mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks,
 	if (nblocks > curnblk)
 	{
 		/* Bogus request ... but no complaint if InRecovery */
-		if (InRecovery || allowNotFound)
+		if (InRecovery)
 			return;
 		ereport(ERROR,
 				(errmsg("could not truncate file \"%s\" to %u blocks: it's only %u blocks now",
@@ -1251,12 +1245,12 @@ mdsync(void)
 					failures > 0)
 					ereport(ERROR,
 							(errcode_for_file_access(),
-							 errmsg("could not fsync file \"%s\": %m", path)));
+						   errmsg("could not fsync file \"%s\": %m", path)));
 				else
 					ereport(DEBUG1,
 							(errcode_for_file_access(),
-							 errmsg("could not fsync file \"%s\" but retrying: %m",
-									path)));
+					   errmsg("could not fsync file \"%s\" but retrying: %m",
+							  path)));
 				pfree(path);
 
 				/*
@@ -1637,8 +1631,8 @@ _fdvec_alloc(void)
 static char *
 _mdfd_segpath(SMgrRelation reln, ForkNumber forknum, BlockNumber segno)
 {
-	char   *path,
-		   *fullpath;
+	char	   *path,
+			   *fullpath;
 
 	path = relpath(reln->smgr_rnode, forknum);
 
@@ -1755,9 +1749,9 @@ _mdfd_getseg(SMgrRelation reln, ForkNumber forknum, BlockNumber blkno,
 					return NULL;
 				ereport(ERROR,
 						(errcode_for_file_access(),
-						 errmsg("could not open file \"%s\" (target block %u): %m",
-								_mdfd_segpath(reln, forknum, nextsegno),
-								blkno)));
+				   errmsg("could not open file \"%s\" (target block %u): %m",
+						  _mdfd_segpath(reln, forknum, nextsegno),
+						  blkno)));
 			}
 		}
 		v = v->mdfd_chain;

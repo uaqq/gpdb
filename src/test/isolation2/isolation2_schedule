@@ -4,7 +4,7 @@ test: reindex
 test: commit_transaction_block_checkpoint
 test: instr_in_shmem_setup
 test: instr_in_shmem_terminate
-test: vacuum_full_recently_dead_tuple_due_to_distributed_snapshot
+test: vacuum_recently_dead_tuple_due_to_distributed_snapshot
 
 test: setup
 # Tests on Append-Optimized tables (row-oriented).
@@ -103,6 +103,7 @@ test: vacuum_after_vacuum_skip_drop_column
 test: segwalrep/commit_blocking
 test: segwalrep/fts_unblock_primary
 test: segwalrep/mirror_promotion
+test: segwalrep/cancel_commit_pending_replication
 
 # Tests for crash recovery
 test: crash_recovery
@@ -110,6 +111,7 @@ test: crash_recovery_redundant_dtx
 test: crash_recovery_dtm
 test: uao_crash_compaction_row
 test: uao_crash_compaction_column
+test: udf_exception_blocks_panic_scenarios
 
 # Reindex tests
 test: reindex/abort_reindex
