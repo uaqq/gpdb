@@ -314,7 +314,7 @@ _outPlannedStmt(StringInfo str, PlannedStmt *node)
 	WRITE_INT_FIELD(nMotionNodes);
 	WRITE_INT_FIELD(nInitPlans);
 
-	/* Don't serialize policy */
+	WRITE_NODE_FIELD(intoPolicy);
 
 	WRITE_UINT64_FIELD(query_mem);
 }
@@ -578,7 +578,7 @@ _outExternalScan(StringInfo str, ExternalScan *node)
 	WRITE_BOOL_FIELD(isMasterOnly);
 	WRITE_INT_FIELD(rejLimit);
 	WRITE_BOOL_FIELD(rejLimitInRows);
-	WRITE_OID_FIELD(fmterrtbl);
+	WRITE_BOOL_FIELD(logErrors);
 	WRITE_INT_FIELD(encoding);
 	WRITE_INT_FIELD(scancounter);
 }
@@ -2189,21 +2189,6 @@ _outIndexOptInfo(StringInfo str, IndexOptInfo *node)
 
 #ifndef COMPILING_BINARY_FUNCS
 static void
-_outCdbRelColumnInfo(StringInfo str, CdbRelColumnInfo *node)
-{
-	WRITE_NODE_TYPE("CdbRelColumnInfo");
-
-    WRITE_INT_FIELD(pseudoattno);
-    WRITE_INT_FIELD(targetresno);
-	WRITE_INT_FIELD(attr_width);
-	WRITE_BITMAPSET_FIELD(where_needed);
-    WRITE_STRING_FIELD(colname);
-	WRITE_NODE_FIELD(defexpr);
-}
-#endif /* COMPILING_BINARY_FUNCS */
-
-#ifndef COMPILING_BINARY_FUNCS
-static void
 _outEquivalenceClass(StringInfo str, EquivalenceClass *node)
 {
 	/*
@@ -2430,6 +2415,16 @@ _outCreateExternalStmt(StringInfo str, CreateExternalStmt *node)
 	WRITE_NODE_FIELD(encoding);
 	WRITE_NODE_FIELD(distributedBy);
 }
+
+static void
+_outDistributedBy(StringInfo str, DistributedBy *node)
+{
+	WRITE_NODE_TYPE("DISTRIBUTEDBY");
+
+	WRITE_ENUM_FIELD(ptype, GpPolicyType);
+	WRITE_NODE_FIELD(keys);
+}
+
 
 static void
 _outIndexStmt(StringInfo str, IndexStmt *node)
@@ -3155,14 +3150,7 @@ _outCopyStmt(StringInfo str, CopyStmt *node)
 	WRITE_NODE_FIELD(sreh);
 	WRITE_NODE_FIELD(partitions);
 	WRITE_NODE_FIELD(ao_segnos);
-	WRITE_INT_FIELD(nattrs);
-	WRITE_ENUM_FIELD(ptype, GpPolicyType);
-	appendStringInfoLiteral(str, " :distribution_attrs");
-	for (int i = 0; i < node->nattrs; i++)
-	{
-		appendStringInfo(str, " %d", node->distribution_attrs[i]);
-	}
-
+	WRITE_NODE_FIELD(policy);
 }
 #endif/* COMPILING_BINARY_FUNCS */
 
@@ -3781,9 +3769,6 @@ _outRangeTblEntry(StringInfo str, RangeTblEntry *node)
 	 * pseudocols is intentionally not serialized. It's only used in the planning
 	 * stage, so no need to transfer it to the QEs.
 	 */
-	/* GPDB_84_MERGE_FIXME: um, pick either "serialized" or "not serialized".
-	   Then update the fast serialization functions to match. */
-    WRITE_NODE_FIELD(pseudocols);                                       /*CDB*/
 }
 #endif /* COMPILING_BINARY_FUNCS */
 
@@ -4243,6 +4228,7 @@ _outCreateTableSpaceStmt(StringInfo str, CreateTableSpaceStmt *node)
 	WRITE_STRING_FIELD(tablespacename);
 	WRITE_STRING_FIELD(owner);
 	WRITE_STRING_FIELD(location);
+	WRITE_NODE_FIELD(options);
 }
 
 static void
@@ -4799,9 +4785,6 @@ _outNode(StringInfo str, void *obj)
 			case T_IndexOptInfo:
 				_outIndexOptInfo(str, obj);
 				break;
-			case T_CdbRelColumnInfo:
-				_outCdbRelColumnInfo(str, obj);
-				break;
 			case T_EquivalenceClass:
 				_outEquivalenceClass(str, obj);
 				break;
@@ -4894,6 +4877,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_PartitionBy:
 				_outPartitionBy(str, obj);
+				break;
+			case T_DistributedBy:
+				_outDistributedBy(str, obj);
 				break;
 			case T_IndexStmt:
 				_outIndexStmt(str, obj);

@@ -28,6 +28,7 @@
 #include "cdb/cdbtm.h"
 #include "cdb/cdbvars.h"
 #include "commands/copy.h"
+#include "storage/pmsignal.h"
 #include "tcop/tcopprot.h"
 #include "utils/faultinjector.h"
 #include "utils/memutils.h"
@@ -56,6 +57,7 @@ makeCdbCopy(bool is_copy_in)
 	c->outseglist = NIL;
 	c->partitions = NULL;
 	c->ao_segnos = NIL;
+	c->hasReplicatedTable = false;
 	initStringInfo(&(c->err_msg));
 	initStringInfo(&(c->err_context));
 	initStringInfo(&(c->copy_out_buf));
@@ -175,15 +177,11 @@ cdbCopyStart(CdbCopy *c, char *copyCmd, struct GpPolicy *policy)
 
 	if (policy)
 	{
-		((CopyStmt *) q->utilityStmt)->nattrs = policy->nattrs;
-		((CopyStmt *) q->utilityStmt)->ptype = policy->ptype;
-		((CopyStmt *) q->utilityStmt)->distribution_attrs = policy->attrs;
+		((CopyStmt *) q->utilityStmt)->policy = GpPolicyCopy(CurrentMemoryContext, policy);
 	}
 	else
 	{
-		((CopyStmt *) q->utilityStmt)->nattrs = 0;
-		((CopyStmt *) q->utilityStmt)->ptype = 0;
-		((CopyStmt *) q->utilityStmt)->distribution_attrs = NULL;
+		((CopyStmt *) q->utilityStmt)->policy = createRandomPartitionedPolicy(NULL);
 	}
 
 	MemoryContextSwitchTo(oldcontext);
@@ -492,7 +490,7 @@ processCopyEndResults(CdbCopy *c,
 		pollRead->events = POLLIN;
 		pollRead->revents = 0;
 
-		while (PQisBusy(q->conn))
+		while (PQisBusy(q->conn) && PQstatus(q->conn) == CONNECTION_OK)
 		{
 			if ((Gp_role == GP_ROLE_DISPATCH) && InterruptPending)
 			{
@@ -755,8 +753,12 @@ cdbCopyEndAndFetchRejectNum(CdbCopy *c, int *total_rows_completed)
 	if (failed_count > 0)
 	{
 		elog(LOG, "%s", c->err_msg.data);
-		elog(LOG, "COPY passes failed segment(s) information to FTS");
-		FtsHandleNetFailure(failedSegDBs, failed_count);
+		elog(LOG, "COPY signals FTS to probe segments");
+		SendPostmasterSignal(PMSIGNAL_WAKEN_FTS);
+		DisconnectAndDestroyAllGangs(true);
+		ereport(ERROR,
+				(errmsg_internal("MPP detected %d segment failures, system is reconnected", failed_count),
+				 errSendAlert(true)));
 	}
 
 	pfree(results);

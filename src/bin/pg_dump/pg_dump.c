@@ -55,6 +55,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
+#include "catalog/gp_policy.h"
 #include "libpq/libpq-fs.h"
 
 #include "pg_backup_archiver.h"
@@ -3815,7 +3816,8 @@ getTables(int *numTables)
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
 						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions "
-						  ", p.parrelid as parrelid "
+						  ", p.parrelid as parrelid, "
+						  " pl.parlevel as parlevel "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
 						  "(c.relkind = '%c' AND "
@@ -3825,6 +3827,7 @@ getTables(int *numTables)
 					   "LEFT JOIN pg_class tc ON (c.reltoastrelid = tc.oid) "
 						  "LEFT JOIN pg_partition_rule pr ON c.oid = pr.parchildrelid "
 						  "LEFT JOIN pg_partition p ON pr.paroid = p.oid "
+						  "LEFT JOIN pg_partition pl ON (c.oid = pl.parrelid AND pl.parlevel = 0)"
 						  "WHERE c.relkind in ('%c', '%c', '%c', '%c') "
 						  "AND c.oid NOT IN (SELECT p.parchildrelid FROM pg_partition_rule p LEFT "
 						  "JOIN pg_exttable e ON p.parchildrelid=e.reloid WHERE e.reloid IS NULL)"
@@ -3893,7 +3896,7 @@ getTables(int *numTables)
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
 						  "p.parrelid as parrelid, "
-						  "p.parlevel as parlevel "
+						  "pl.parlevel as parlevel, "
 						  "NULL AS toast_reloptions "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
@@ -11204,8 +11207,8 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 		char	   *command = NULL;
 		char	   *rejlim;
 		char	   *rejlimtype;
-		char	   *errnspname;
-		char	   *errtblname;
+		char	   *errnspname = NULL;
+		char	   *errtblname = NULL;
 		char	   *extencoding;
 		char	   *writable = NULL;
 		char	   *tmpstring = NULL;
@@ -11215,6 +11218,8 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 		bool		iswritable = false;
 		char	   *options;
 		bool		gpdb5OrLater = isGPDB5000OrLater();
+		bool		gpdb6OrLater = isGPDB6000OrLater();
+		char	   *logerrors = NULL;
 		char	   *on_clause;
 
 		/*
@@ -11227,66 +11232,95 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 						  fmtId(tbinfo->dobj.name));
 
 		/* Now get required information from pg_exttable */
-		if (gpdb5OrLater)
+		if (gpdb6OrLater)
 		{
 			appendPQExpBuffer(query,
-						  "SELECT x.urilocation, x.execlocation, x.fmttype, x.fmtopts, x.command, "
-								  "x.rejectlimit, x.rejectlimittype, "
-						      "(SELECT relname "
-						          "FROM pg_catalog.pg_class "
-								  "WHERE Oid=x.fmterrtbl) AS errtblname, "
-								  "x.fmterrtbl = x.reloid AS errortofile , "
-								  "pg_catalog.pg_encoding_to_char(x.encoding), "
-								  "x.writable, "
-								  "array_to_string(ARRAY( "
-								  "SELECT pg_catalog.quote_ident(option_name) || ' ' || "
-								  "pg_catalog.quote_literal(option_value) "
-								  "FROM pg_options_to_table(x.options) "
-								  "ORDER BY option_name"
-								  "), E',\n    ') AS options "
-						  "FROM pg_catalog.pg_exttable x, pg_catalog.pg_class c "
-						  "WHERE x.reloid = c.oid AND c.oid = '%u'::oid ", tbinfo->dobj.catId.oid);
+					"SELECT x.urilocation, x.execlocation, x.fmttype, x.fmtopts, x.command, "
+						   "x.rejectlimit, x.rejectlimittype, "
+						   "CASE WHEN x.logerrors THEN true ELSE null END AS logerrors, "
+						   "pg_catalog.pg_encoding_to_char(x.encoding), "
+						   "x.writable, "
+						   "array_to_string(ARRAY( "
+						   "SELECT pg_catalog.quote_ident(option_name) || ' ' || "
+						   "pg_catalog.quote_literal(option_value) "
+						   "FROM pg_options_to_table(x.options) "
+						   "ORDER BY option_name"
+						   "), E',\n    ') AS options "
+					"FROM pg_catalog.pg_exttable x, pg_catalog.pg_class c "
+					"WHERE x.reloid = c.oid AND c.oid = '%u'::oid ", tbinfo->dobj.catId.oid);
+		}
+		else if (gpdb5OrLater)
+		{
+			appendPQExpBuffer(query,
+					"SELECT x.urilocation, x.execlocation, x.fmttype, x.fmtopts, x.command, "
+						   "x.rejectlimit, x.rejectlimittype, "
+						   "x.fmterrtbl AS logerrors, "
+						   "pg_catalog.pg_encoding_to_char(x.encoding), "
+						   "x.writable, "
+						   "array_to_string(ARRAY( "
+						   "SELECT pg_catalog.quote_ident(option_name) || ' ' || "
+						   "pg_catalog.quote_literal(option_value) "
+						   "FROM pg_options_to_table(x.options) "
+						   "ORDER BY option_name"
+						   "), E',\n    ') AS options "
+					"FROM pg_catalog.pg_exttable x, pg_catalog.pg_class c "
+					"WHERE x.reloid = c.oid AND c.oid = '%u'::oid ", tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 80214)
 		{
 			appendPQExpBuffer(query,
-					   "SELECT x.location, x.fmttype, x.fmtopts, x.command, "
-							  "x.rejectlimit, x.rejectlimittype, "
-						 "n.nspname AS errnspname, d.relname AS errtblname, "
-					"pg_catalog.pg_encoding_to_char(x.encoding), x.writable "
-							  "FROM pg_catalog.pg_class c "
-					 "JOIN pg_catalog.pg_exttable x ON ( c.oid = x.reloid ) "
-				"LEFT JOIN pg_catalog.pg_class d ON ( d.oid = x.fmterrtbl ) "
-							  "LEFT JOIN pg_catalog.pg_namespace n ON ( n.oid = d.relnamespace ) "
-							  "WHERE c.oid = '%u'::oid ",
-							  tbinfo->dobj.catId.oid);
+					"SELECT x.location, "
+						   "CASE WHEN x.command <> '' THEN x.location "
+								"ELSE '{ALL_SEGMENTS}' "
+						   "END AS execlocation, "
+						   "x.fmttype, x.fmtopts, x.command, "
+						   "x.rejectlimit, x.rejectlimittype, "
+						   "d.relname AS logerrors, "
+						   "pg_catalog.pg_encoding_to_char(x.encoding), "
+						   "x.writable, null AS options "
+					"FROM pg_catalog.pg_class c "
+					"JOIN pg_catalog.pg_exttable x ON ( c.oid = x.reloid ) "
+					"LEFT JOIN pg_catalog.pg_class d ON ( d.oid = x.fmterrtbl ) "
+					"LEFT JOIN pg_catalog.pg_namespace n ON ( n.oid = d.relnamespace ) "
+					"WHERE c.oid = '%u'::oid ",
+					tbinfo->dobj.catId.oid);
 		}
 		else if (g_fout->remoteVersion >= 80205)
 		{
 
 			appendPQExpBuffer(query,
-					   "SELECT x.location, x.fmttype, x.fmtopts, x.command, "
-							  "x.rejectlimit, x.rejectlimittype, "
-						 "n.nspname AS errnspname, d.relname AS errtblname, "
-			  "pg_catalog.pg_encoding_to_char(x.encoding), null as writable "
-							  "FROM pg_catalog.pg_class c "
-					 "JOIN pg_catalog.pg_exttable x ON ( c.oid = x.reloid ) "
-				"LEFT JOIN pg_catalog.pg_class d ON ( d.oid = x.fmterrtbl ) "
-							  "LEFT JOIN pg_catalog.pg_namespace n ON ( n.oid = d.relnamespace ) "
-							  "WHERE c.oid = '%u'::oid ",
-							  tbinfo->dobj.catId.oid);
+					"SELECT x.location, "
+						   "CASE WHEN x.command <> '' THEN x.location "
+								"ELSE '{ALL_SEGMENTS}' "
+						   "END AS execlocation, "
+						   "x.fmttype, x.fmtopts, x.command, "
+						   "x.rejectlimit, x.rejectlimittype, "
+						   "d.relname AS logerrors, "
+						   "pg_catalog.pg_encoding_to_char(x.encoding), "
+						   "null as writable, null as options "
+					"FROM pg_catalog.pg_class c "
+					"JOIN pg_catalog.pg_exttable x ON ( c.oid = x.reloid ) "
+					"LEFT JOIN pg_catalog.pg_class d ON ( d.oid = x.fmterrtbl ) "
+					"LEFT JOIN pg_catalog.pg_namespace n ON ( n.oid = d.relnamespace ) "
+					"WHERE c.oid = '%u'::oid ",
+					tbinfo->dobj.catId.oid);
 		}
 		else
 		{
 			/* not SREH and encoding colums yet */
 			appendPQExpBuffer(query,
-					   "SELECT x.location, x.fmttype, x.fmtopts, x.command, "
-							  "-1 as rejectlimit, null as rejectlimittype,"
-							  "null as errnspname, null as errtblname, "
-							  "null as encoding, null as writable "
-					  "FROM pg_catalog.pg_exttable x, pg_catalog.pg_class c "
-							  "WHERE x.reloid = c.oid AND c.oid = '%u'::oid",
-							  tbinfo->dobj.catId.oid);
+					"SELECT x.location, "
+						   "CASE WHEN x.command <> '' THEN x.location "
+								"ELSE '{ALL_SEGMENTS}' "
+						   "END AS execlocation, "
+						   "x.fmttype, x.fmtopts, x.command, "
+						   "-1 as rejectlimit, null as rejectlimittype,"
+						   "null as logerrors, "
+						   "null as encoding, null as writable, "
+						   "null as options "
+					"FROM pg_catalog.pg_exttable x, pg_catalog.pg_class c "
+					"WHERE x.reloid = c.oid AND c.oid = '%u'::oid",
+					tbinfo->dobj.catId.oid);
 		}
 
 		res = PQexec(g_conn, query->data);
@@ -11307,43 +11341,19 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 		}
 
 
-		if (gpdb5OrLater)
-		{
-			urilocations = PQgetvalue(res, 0, 0);
-			execlocations = PQgetvalue(res, 0, 1);
-			fmttype = PQgetvalue(res, 0, 2);
-			fmtopts = PQgetvalue(res, 0, 3);
-			command = PQgetvalue(res, 0, 4);
-			rejlim = PQgetvalue(res, 0, 5);
-			rejlimtype = PQgetvalue(res, 0, 6);
-			errnspname = PQgetvalue(res, 0, 7);
-			errtblname = PQgetvalue(res, 0, 8);
-			extencoding = PQgetvalue(res, 0, 9);
-			writable = PQgetvalue(res, 0, 10);
-			options = PQgetvalue(res, 0, 11);
+		urilocations = PQgetvalue(res, 0, 0);
+		execlocations = PQgetvalue(res, 0, 1);
+		fmttype = PQgetvalue(res, 0, 2);
+		fmtopts = PQgetvalue(res, 0, 3);
+		command = PQgetvalue(res, 0, 4);
+		rejlim = PQgetvalue(res, 0, 5);
+		rejlimtype = PQgetvalue(res, 0, 6);
+		logerrors = PQgetvalue(res, 0, 7);
+		extencoding = PQgetvalue(res, 0, 8);
+		writable = PQgetvalue(res, 0, 9);
+		options = PQgetvalue(res, 0, 10);
 
-			on_clause = execlocations;
-		}
-		else
-		{
-			urilocations = PQgetvalue(res, 0, 0);
-			fmttype = PQgetvalue(res, 0, 1);
-			fmtopts = PQgetvalue(res, 0, 2);
-			command = PQgetvalue(res, 0, 3);
-			rejlim = PQgetvalue(res, 0, 4);
-			rejlimtype = PQgetvalue(res, 0, 5);
-			errnspname = PQgetvalue(res, 0, 6);
-			errtblname = PQgetvalue(res, 0, 7);
-			extencoding = PQgetvalue(res, 0, 8);
-			writable = PQgetvalue(res, 0, 9);
-			execlocations = "";
-			options = "";
-
-			if (command && strlen(command) > 0)
-				on_clause = urilocations;
-			else
-				on_clause = NULL;
-		}
+		on_clause = execlocations;
 
 		if ((command && strlen(command) > 0) ||
 			(strncmp(urilocations + 1, "http", strlen("http")) == 0))
@@ -11422,7 +11432,7 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 		 * ON clauses were up until 5.0 supported only on EXECUTE, in 5.0
 		 * and thereafter they are allowed on all external tables.
 		 */
-		if (!iswritable && on_clause)
+		if (!iswritable)
 		{
 			/* remove curly braces */
 			on_clause[strlen(on_clause) - 1] = '\0';
@@ -11490,7 +11500,7 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 			customfmt = NULL;
 		}
 
-		if (gpdb5OrLater)
+		if (options && options[0] != '\0')
 		{
 			appendPQExpBuffer(q, "OPTIONS (\n %s\n )\n", options);
 		}
@@ -11506,12 +11516,10 @@ dumpExternal(TableInfo *tbinfo, PQExpBuffer query, PQExpBuffer q, PQExpBuffer de
 				appendPQExpBufferChar(q, '\n');
 
 				/*
-				 * Error tables were removed in 5.0 and replaced with file
-				 * error logging. The catalog syntax for identifying error
-				 * logging is however still using the pg_exttable.fmterrtbl
-				 * attribute so we use the errtblname for emitting LOG ERRORS.
+				 * Error tables were removed and replaced with file error
+				 * logging.
 				 */
-				if (errtblname && strlen(errtblname) > 0)
+				if (logerrors && strlen(logerrors) > 0)
 					appendPQExpBufferStr(q, "LOG ERRORS ");
 
 				/* reject limit */
@@ -13754,11 +13762,12 @@ addDistributedBy(PQExpBuffer q, TableInfo *tbinfo, int actual_atts)
 {
 	PQExpBuffer query = createPQExpBuffer();
 	PGresult   *res;
+	char	   policytype;
 	char	   *policydef;
 	char	   *policycol;
 
 	appendPQExpBuffer(query,
-					  "SELECT attrnums FROM gp_distribution_policy as p "
+					  "SELECT attrnums, policytype FROM gp_distribution_policy as p "
 					  "WHERE p.localoid = %u",
 					  tbinfo->dobj.catId.oid);
 
@@ -13803,8 +13812,14 @@ addDistributedBy(PQExpBuffer q, TableInfo *tbinfo, int actual_atts)
 		 * one or NULL).
 		 */
 		policydef = PQgetvalue(res, 0, 0);
+		policytype = *(char *)PQgetvalue(res, 0, 1);
 
-		if (strlen(policydef) > 0)
+		if (policytype == SYM_POLICYTYPE_REPLICATED)
+		{
+			/* policy type is 'r' - distribute replicated */
+			appendPQExpBufferStr(q, " DISTRIBUTED REPLICATED");
+		}
+		else if (strlen(policydef) > 0)
 		{
 			/* policy indicates one or more columns to distribute on */
 			policydef[strlen(policydef) - 1] = '\0';

@@ -2,7 +2,7 @@
 
 set -eox pipefail
 
-./ccp_src/aws/setup_ssh_to_cluster.sh
+./ccp_src/scripts/setup_ssh_to_cluster.sh
 
 CLUSTER_NAME=$(cat ./cluster_env_files/terraform/name)
 
@@ -83,7 +83,7 @@ DIFF FILE: \$diff
 ----------------------------------------------------------------------
 
 EOF1
-                head -1000 \$diff
+                cat \$diff
               done
             exit \$errcode
         )

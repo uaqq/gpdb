@@ -39,6 +39,7 @@
 #include "replication/walsender.h"
 #include "storage/bfz.h"
 #include "storage/proc.h"
+#include "tcop/idle_resource_cleaner.h"
 #include "utils/builtins.h"
 #include "utils/guc_tables.h"
 #include "utils/inval.h"
@@ -445,10 +446,14 @@ bool 		optimizer_parallel_union;
 bool		optimizer_array_constraints;
 bool		optimizer_cte_inlining;
 bool		optimizer_enable_space_pruning;
+bool		optimizer_enable_associativity;
 
 /* Analyze related GUCs for Optimizer */
 bool		optimizer_analyze_root_partition;
 bool		optimizer_analyze_midlevel_partition;
+
+/* GUCs for replicated table */
+bool		optimizer_replicated_table_insert;
 
 /* System Information */
 static int	gp_server_version_num;
@@ -1137,16 +1142,6 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
 		},
 		&gp_cost_hashjoin_chainwalk,
-		false, NULL, NULL
-	},
-
-	{
-		{"gp_set_read_only", PGC_SUSET, GP_ARRAY_CONFIGURATION,
-			gettext_noop("Sets the system read only"),
-			NULL,
-			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&gp_set_read_only,
 		false, NULL, NULL
 	},
 
@@ -2826,6 +2821,26 @@ struct config_bool ConfigureNamesBool_gp[] =
 		false, NULL, NULL
 	},
 
+	{
+		{"optimizer_enable_associativity", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables Join Associativity in optimizer"),
+			NULL
+		},
+		&optimizer_enable_associativity,
+		false, NULL, NULL
+	},
+
+	{
+		{"optimizer_replicated_table_insert", PGC_USERSET, STATS_ANALYZE,
+			gettext_noop("Omit broadcast motion when inserting into replicated table"),
+			gettext_noop("Only when source is SegmentGeneral or General locus"),
+			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&optimizer_replicated_table_insert,
+		true, NULL, NULL
+	},
+
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL
@@ -3476,7 +3491,7 @@ struct config_int ConfigureNamesInt_gp[] =
 		{"gp_fts_probe_retries", PGC_SIGHUP, GP_ARRAY_TUNING,
 			gettext_noop("Number of retries for FTS to complete probing a segment."),
 			gettext_noop("Used by the fts-probe process."),
-			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+			GUC_UNIT_S
 		},
 		&gp_fts_probe_retries,
 		5, 0, 100, NULL, NULL

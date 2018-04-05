@@ -537,7 +537,7 @@ buildGangDefinition(GangType type, int gang_id, int size, int content)
 
 			if (size != segCount)
 			{
-				FtsReConfigureMPP(false);
+				DisconnectAndDestroyAllGangs(true);
 				elog(ERROR, "Not all primary segment instances are active and connected");
 			}
 			break;
@@ -1043,16 +1043,12 @@ getCdbProcessList(Gang *gang, int sliceIndex, DirectDispatchInfo *directDispatch
 		/* Currently, direct dispatch is to one segment db. */
 		Assert(list_length(directDispatch->contentIds) == 1);
 
-		/* initialize a list of NULL */
-		for (i = 0; i < gang->size; i++)
-			list = lappend(list, NULL);
-
 		int			directDispatchContentId = linitial_int(directDispatch->contentIds);
 		SegmentDatabaseDescriptor *segdbDesc = &gang->db_descriptors[directDispatchContentId];
 		CdbProcess *process = makeCdbProcess(segdbDesc);
 
 		setQEIdentifier(segdbDesc, sliceIndex, gang->perGangContext);
-		list_nth_replace(list, directDispatchContentId, process);
+		list = lappend(list, (void*)process);
 	}
 	else
 	{
@@ -1223,6 +1219,13 @@ DisconnectAndDestroyAllGangs(bool resetSession)
 
 	ELOG_DISPATCHER_DEBUG("DisconnectAndDestroyAllGangs");
 
+	/* Destroy CurrentGangCreating before GangContext is reset */
+	if (CurrentGangCreating != NULL)
+	{
+		DisconnectAndDestroyGang(CurrentGangCreating);
+		CurrentGangCreating = NULL;
+	}
+
 	/* for now, destroy all readers, regardless of the portal that owns them */
 	disconnectAndDestroyAllReaderGangs(true);
 
@@ -1261,6 +1264,52 @@ disconnectAndDestroyIdleReaderGangs(void)
 	ELOG_DISPATCHER_DEBUG("disconnectAndDestroyIdleReaderGangs done");
 
 	return;
+}
+
+/*
+ * Destroy all idle (i.e available) reader gangs.
+ * It is always safe to get rid of the reader gangs.
+ *
+ * If we are not in a transaction and we do not have a TempNamespace, destroy
+ * writer gangs as well.
+ *
+ * call only from an idle session.
+ */
+void DisconnectAndDestroyUnusedGangs(void)
+{
+	/*
+	 * Free gangs to free up resources on the segDBs.
+	 */
+	if (GangsExist())
+	{
+		if (IsTransactionOrTransactionBlock() || TempNamespaceOidIsValid())
+		{
+			/*
+			 * If we are in a transaction, we can't release the writer gang,
+			 * as this will abort the transaction.
+			 *
+			 * If we have a TempNameSpace, we can't release the writer gang, as this
+			 * would drop any temp tables we own.
+			 *
+			 * Since we are idle, any reader gangs will be available but not allocated.
+			 */
+			disconnectAndDestroyIdleReaderGangs();
+		}
+		else
+		{
+			/*
+			 * Get rid of ALL gangs... Readers and primary writer.
+			 * After this, we have no resources being consumed on the segDBs at all.
+			 *
+			 * Our session wasn't destroyed due to an fatal error or FTS action, so
+			 * we don't need to do anything special.  Specifically, we DON'T want
+			 * to act like we are now in a new session, since that would be confusing
+			 * in the log.
+			 *
+			 */
+			DisconnectAndDestroyAllGangs(false);
+		}
+	}
 }
 
 /*
@@ -1310,7 +1359,7 @@ cleanupGang(Gang *gp)
 			return false;
 
 		/* if segment is down, the gang can not be reused */
-		if (!FtsTestConnection(segdbDesc->segment_database_info, false))
+		if (!FtsIsSegmentUp(segdbDesc->segment_database_info))
 			return false;
 
 		/* Note, we cancel all "still running" queries */
@@ -1820,7 +1869,7 @@ GangOK(Gang *gp)
 
 		if (cdbconn_isBadConnection(segdbDesc))
 			return false;
-		if (!FtsTestConnection(segdbDesc->segment_database_info, false))
+		if (!FtsIsSegmentUp(segdbDesc->segment_database_info))
 			return false;
 	}
 

@@ -660,13 +660,6 @@ CTranslatorRelcacheToDXL::Pmdrel
 	{
 		ExtTableEntry *extentry = gpdb::Pexttable(oid);
 
-		// get format error table id
-		IMDId *pmdidFmtErrTbl = NULL;
-		if (InvalidOid != extentry->fmterrtbl)
-		{
-			pmdidFmtErrTbl = GPOS_NEW(pmp) CMDIdGPDB(extentry->fmterrtbl);
-		}
-
 		pmdrel = GPOS_NEW(pmp) CMDRelationExternalGPDB
 							(
 							pmp,
@@ -682,7 +675,11 @@ CTranslatorRelcacheToDXL::Pmdrel
 							pdrgpmdidCheckConstraints,
 							extentry->rejectlimit,
 							('r' == extentry->rejectlimittype),
-							pmdidFmtErrTbl
+							NULL /* it's sufficient to pass NULL here since ORCA
+								doesn't really make use of the logerrors value.
+								In case of converting the DXL returned from to
+								PlanStmt, currently the code looks up the information
+								from catalog and fill in the required values into the ExternalScan */
 							);
 	}
 	else
@@ -922,7 +919,7 @@ CTranslatorRelcacheToDXL::Ereldistribution
 		return IMDRelation::EreldistrMasterOnly;
 	}
 
-	GPOS_ASSERT(!"Unrecognized distribution policy");
+	GPOS_RAISE(gpdxl::ExmaMD, ExmiDXLUnrecognizedType, GPOS_WSZ_LIT("unrecognized distribution policy"));
 	return IMDRelation::EreldistrSentinel;
 }
 
