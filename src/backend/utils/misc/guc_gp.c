@@ -600,6 +600,8 @@ char	   *gp_default_storage_options = NULL;
 
 int			writable_external_table_bufsize = 64;
 
+bool		enable_filter_pushdown = true;
+
 IndexCheckType gp_indexcheck_insert = INDEX_CHECK_NONE;
 IndexCheckType gp_indexcheck_vacuum = INDEX_CHECK_NONE;
 
@@ -2001,7 +2003,7 @@ struct config_bool ConfigureNamesBool_gp[] =
 	{
 		{"gp_enable_query_metrics", PGC_POSTMASTER, UNGROUPED,
 			gettext_noop("Enable all query metrics collection."),
-			NULL	
+			NULL
 		},
 		&gp_enable_query_metrics,
 		false, NULL, NULL
@@ -3293,6 +3295,16 @@ struct config_bool ConfigureNamesBool_gp[] =
 		},
 		&verify_gpfdists_cert,
 		true, assign_verify_gpfdists_cert, NULL
+	},
+
+	{
+		{"enable_filter_pushdown", PGC_USERSET, EXTERNAL_TABLES,
+			gettext_noop("Enable passing of query constraints to external table providers"),
+			NULL,
+			GUC_GPDB_ADDOPT
+		},
+		&enable_filter_pushdown,
+		true, NULL, NULL
 	},
 
 	/* End-of-list marker */
@@ -5346,7 +5358,7 @@ struct config_string ConfigureNamesString_gp[] =
 		{"pljava_classpath", PGC_SUSET, CUSTOM_OPTIONS,
 			gettext_noop("classpath used by the the JVM"),
 			NULL,
-			GUC_GPDB_ADDOPT | GUC_NOT_IN_SAMPLE 
+			GUC_GPDB_ADDOPT | GUC_NOT_IN_SAMPLE
 		},
 		&pljava_classpath,
 		"", NULL, NULL
