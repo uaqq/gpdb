@@ -78,7 +78,7 @@ static void FunctionCallPrepareFormatter(FunctionCallInfoData *fcinfo,
 							 FmgrInfo *convFuncs,
 							 Oid *typioparams);
 
-static void open_external_readable_source(FileScanDesc scan);
+static void open_external_readable_source(FileScanDesc scan, List* filter_quals);
 static void open_external_writable_source(ExternalInsertDesc extInsertDesc);
 static int	external_getdata(URL_FILE *extfile, CopyState pstate, int maxread);
 static void external_senddata(URL_FILE *extfile, CopyState pstate);
@@ -440,7 +440,7 @@ external_stopscan(FileScanDesc scan)
 * ----------------------------------------------------------------
 */
 HeapTuple
-external_getnext(FileScanDesc scan, ScanDirection direction)
+external_getnext(FileScanDesc scan, ScanDirection direction, List* filter_quals)
 {
 	HeapTuple	tuple;
 
@@ -460,7 +460,7 @@ external_getnext(FileScanDesc scan, ScanDirection direction)
 	 * only.
 	 */
 	if (!scan->fs_file)
-		open_external_readable_source(scan);
+		open_external_readable_source(scan, filter_quals);
 
 	/* Note: no locking manipulations needed */
 	FILEDEBUG_1;
@@ -1536,7 +1536,7 @@ FunctionCallPrepareFormatter(FunctionCallInfoData *fcinfo,
  * 4) a command to execute
  */
 static void
-open_external_readable_source(FileScanDesc scan)
+open_external_readable_source(FileScanDesc scan, List* filter_quals)
 {
 	extvar_t	extvar;
 
@@ -1556,7 +1556,8 @@ open_external_readable_source(FileScanDesc scan)
 	scan->fs_file = url_fopen(scan->fs_uri,
 							  false /* for read */ ,
 							  &extvar,
-							  scan->fs_pstate);
+							  scan->fs_pstate,
+							  filter_quals);
 }
 
 /*
@@ -1587,7 +1588,8 @@ open_external_writable_source(ExternalInsertDesc extInsertDesc)
 	extInsertDesc->ext_file = url_fopen(extInsertDesc->ext_uri,
 										true /* forwrite */ ,
 										&extvar,
-										extInsertDesc->ext_pstate);
+										extInsertDesc->ext_pstate,
+										NULL);
 }
 
 /*
