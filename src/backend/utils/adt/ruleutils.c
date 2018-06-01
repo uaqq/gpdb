@@ -3232,6 +3232,7 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 		Plan	   *save_outer;
 		Plan	   *save_inner;
 
+		elog(DEBUG1, "Calling get_tle_by_resno() from 'get_variable()'");
 		tle = get_tle_by_resno(dpns->outer_plan->targetlist, var->varattno);
 		if (!tle)
 			elog(ERROR, "bogus varattno for OUTER var: %d", var->varattno);
@@ -3479,6 +3480,7 @@ get_name_for_var_field(Var *var, int fieldno,
 		Plan	   *save_inner;
 		const char *result;
 
+		elog(DEBUG1, "Calling get_tle_by_resno() from 'get_name_for_var_field()'");
 		tle = get_tle_by_resno(dpns->outer_plan->targetlist, var->varattno);
 		if (!tle)
 			elog(ERROR, "bogus varattno for OUTER var: %d", var->varattno);

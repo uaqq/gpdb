@@ -2414,10 +2414,12 @@ get_tle_by_resno(List *tlist, AttrNumber resno)
 {
 	ListCell   *l;
 
+	elog(DEBUG1, "det_tle_by_resno for resno '%d'", resno);
 	foreach(l, tlist)
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(l);
 
+		elog(DEBUG1, "tle->resno is '%d'", (int)tle->resno);
 		if (tle->resno == resno)
 			return tle;
 	}
