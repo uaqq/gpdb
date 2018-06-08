@@ -60,6 +60,16 @@ extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t le
 extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
 extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 
+#elif defined(USE_POWER8_CRC32C)
+/*
+ * Use IBM POWER8 vector instrinsics to optimize CRC32 calculation
+ */
+#define COMP_CRC32C(crc, data, len) \
+	((crc) = crc32_vpmsum((crc), (data), (len)))
+#define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
+
+extern pg_crc32c crc32_vpmsum(pg_crc32c crc, const void *data, size_t len);
+
 #else
 /*
  * Use slicing-by-8 algorithm.
