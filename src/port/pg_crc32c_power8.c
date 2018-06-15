@@ -52,18 +52,16 @@ static unsigned int crc32_align(unsigned int crc, const unsigned char *p,
 	return crc;
 }
 
-static unsigned int __attribute__ ((aligned (32)))
-__crc32_vpmsum(unsigned int crc, const void* p, unsigned long len);
+static unsigned int __attribute__ ((aligned (32))) __crc32_vpmsum(unsigned int crc, const void* p, unsigned long len);
 
-#ifndef CRC32_FUNCTION
-#define CRC32_FUNCTION  crc32_vpmsum
-#endif
 
-pg_crc32c CRC32_FUNCTION(pg_crc32c crc, const void *p, size_t len)
+pg_crc32c crc32_vpmsum(pg_crc32c crc, const void *data, size_t len)
 {
 	/* Note that we do not XOR the input or the output value; this is done by macro definitions that are always called before and after the CRC32 calculation; they are `CRC32_INIT` and `CRC32_FIN` */
 	unsigned int prealign;
 	unsigned int tail;
+
+	const unsigned char* p = (unsigned char*)data;
 
 	if (len < VMX_ALIGN + VMX_ALIGN_MASK) {
 		crc = crc32_align(crc, p, len);
