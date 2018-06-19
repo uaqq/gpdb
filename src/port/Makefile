@@ -73,7 +73,15 @@ libpgport_srv.a: $(OBJS_SRV)
 
 $(OBJS_SRV): | submake-errcodes
 
-.PHONY: submake-errcodes
+# Unit tests
+
+unittest-check:
+	$(MAKE) -C test check
+
+unittest-clean:
+	$(MAKE) -C test clean
+
+.PHONY: submake-errcodes unittest-check unittest-clean
 
 submake-errcodes:
 	$(MAKE) -C ../backend submake-errcodes
@@ -101,5 +109,5 @@ pg_config_paths.h: $(top_builddir)/src/Makefile.global
 	echo "#define HTMLDIR \"$(htmldir)\"" >>$@
 	echo "#define MANDIR \"$(mandir)\"" >>$@
 
-clean distclean maintainer-clean:
+clean distclean maintainer-clean: unittest-clean
 	rm -f libpgport.a libpgport_srv.a $(OBJS) $(OBJS_SRV) pg_config_paths.h
