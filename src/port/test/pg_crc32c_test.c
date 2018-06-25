@@ -1,3 +1,6 @@
+#include <stdarg.h>
+#include <stddef.h>
+#include <setjmp.h>
 #include "cmockery.h"
 #include "port/pg_crc32c.h"
 
@@ -5,9 +8,9 @@
 void
 test__crc32_correctness(void **state)
 {
+    const char data[] = {(char)0x6, (char)0x7, (char)0x9, (char)0x3, (char)0x2};
     const unsigned data_length = 5;
-    const char data[data_length] = {(char)0x6, (char)0x7, (char)0x9, (char)0x3, (char)0x2};
-    const unsigned long correct_result = 0xbbef7758;
+    const unsigned long correct_result = 0x84d9dbc2;
 
     pg_crc32c result = 0;
 

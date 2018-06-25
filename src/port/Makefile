@@ -73,7 +73,13 @@ libpgport_srv.a: $(OBJS_SRV)
 
 $(OBJS_SRV): | submake-errcodes
 
-.PHONY: submake-errcodes
+unittest-check:
+	$(MAKE) -C test check
+
+unittest-clean:
+	$(MAKE) -C test clean
+
+.PHONY: submake-errcodes unittest-check unittest-clean
 
 submake-errcodes:
 	$(MAKE) -C ../backend submake-errcodes

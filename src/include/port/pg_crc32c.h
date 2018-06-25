@@ -33,6 +33,8 @@
 #ifndef PG_CRC32C_H
 #define PG_CRC32C_H
 
+#include "c.h"
+
 typedef uint32 pg_crc32c;
 
 /* The INIT and EQ macros are the same for all implementations. */
