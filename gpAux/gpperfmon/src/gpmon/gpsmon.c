@@ -1018,6 +1018,7 @@ static apr_uint32_t create_qexec_packet(const gpmon_qexec_t* qexec, gp_smon_to_m
 	pkt->u.qexec_packet.data.measures_rows_in = qexec->rowsout;
 	pkt->u.qexec_packet.data._cpu_elapsed = qexec->_cpu_elapsed;
 	pkt->u.qexec_packet.data.rowsout = qexec->rowsout;
+	pkt->u.qexec_packet.data.node_tag = qexec->nodeTag;
 
 	gp_smon_to_mmon_set_header(pkt,GPMON_PKTTYPE_QEXEC);
 	return 1;

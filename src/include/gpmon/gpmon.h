@@ -203,6 +203,7 @@ struct gpmon_qexec_t {
 	uint64		_cpu_elapsed; /* CPU elapsed for iter */
 	gpmon_proc_metrics_t 	_p_metrics;
 	uint64 		rowsout;
+	uint16		nodeTag;
 };
 
 /*

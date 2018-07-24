@@ -40,6 +40,7 @@ typedef struct mmon_qexec_t
 	apr_uint64_t 		rowsout;
 	apr_uint64_t		_cpu_elapsed; /* CPU elapsed for iter */
 	apr_uint64_t 		measures_rows_in;
+	apr_uint16_t		node_tag;
 } mmon_qexec_t;  //The qexec structure used in mmon
 
 typedef struct mmon_query_seginfo_t
@@ -398,9 +399,11 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 		return 0;
 	}
 
+	// We do not check for existence here as we are going to insert the new query anyway
+	/*
 	mmon_qexec_existing = apr_hash_get(dp->qexec_hash, &qexec_packet->data.key.hash_key, sizeof(qexec_packet->data.key.hash_key));
 
-	/* if found, replace it */
+	// if found, replace it
 	if (mmon_qexec_existing) {
 		mmon_qexec_existing->key.ccnt = qexec_packet->data.key.ccnt;
 		mmon_qexec_existing->key.ssid = qexec_packet->data.key.ssid;
@@ -410,6 +413,7 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 		mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
 	}
 	else {
+	*/
 		/* not found, make new hash entry */
 		if (! (mmon_qexec_existing = apr_palloc(agg->pool, sizeof(mmon_qexec_t))))
 			return APR_ENOMEM;		
@@ -418,8 +422,11 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 		mmon_qexec_existing->_cpu_elapsed = qexec_packet->data._cpu_elapsed;
 		mmon_qexec_existing->measures_rows_in = qexec_packet->data.measures_rows_in;
 		mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
+		mmon_qexec_existing->node_tag = qexec_packet->data.node_tag;
 		apr_hash_set(dp->qexec_hash, &mmon_qexec_existing->key.hash_key, sizeof(mmon_qexec_existing->key.hash_key), mmon_qexec_existing);
+	/*
 	}
+	*/
 
 	dp->last_updated_generation = generation;
 	return 0;

@@ -57,7 +57,7 @@ void EndPlanStateGpmonPkt(PlanState *ps)
  */
 void InitPlanNodeGpmonPkt(Plan *plan, gpmon_packet_t *gpmon_pkt, EState *estate)
 {
-	if(!plan)
+	if (!plan)
 		return;
 
 	memset(gpmon_pkt, 0, sizeof(gpmon_packet_t));
@@ -77,7 +77,9 @@ void InitPlanNodeGpmonPkt(Plan *plan, gpmon_packet_t *gpmon_pkt, EState *estate)
 
 	gpmon_pkt->u.qexec.status = (uint8)PMNS_Initialize;
 
-	if(gp_enable_gpperfmon && estate)
+	gpmon_pkt->u.qexec.nodeTag = plan->type;
+
+	if (gp_enable_gpperfmon && estate)
 	{
 		gpmon_send(gpmon_pkt);
 	}
