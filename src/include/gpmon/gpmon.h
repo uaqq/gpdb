@@ -140,6 +140,7 @@ struct gpmon_query_seginfo_t
 	int64				final_rowsout;
 	uint64				sum_cpu_elapsed;
 	uint64				sum_measures_rows_out;
+	int16 				node;
 };
 
 /* process metrics ... filled in by gpsmon */

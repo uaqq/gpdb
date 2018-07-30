@@ -1052,6 +1052,7 @@ static void extract_segments_exec(gpmon_packet_t* pkt)
 		{
 			rec->u.queryseg.final_rowsout = p->rowsout;
 		}
+		rec->u.queryseg.node = p->nodeTag;
 	}
 	else
 	{
@@ -1070,6 +1071,7 @@ static void extract_segments_exec(gpmon_packet_t* pkt)
 		}
 		rec->u.queryseg.sum_cpu_elapsed = pidrec->cpu_elapsed;
 		rec->u.queryseg.sum_measures_rows_out = p->rowsout;
+		rec->u.queryseg.node = p->nodeTag;
 		apr_hash_set(gx.querysegtab, &rec->u.queryseg.key, sizeof(rec->u.queryseg.key), rec);
 	}
 }
