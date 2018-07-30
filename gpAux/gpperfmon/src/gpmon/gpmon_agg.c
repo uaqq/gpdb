@@ -271,12 +271,7 @@ static apr_status_t agg_put_queryseg(agg_t* agg, const gpmon_query_seginfo_t* me
 		apr_hash_set(dp->query_seginfo_hash, &rec->key.segid, sizeof(rec->key.segid), rec);
 	}
 
-	if (met->node != 0) {
-		dp->qlog.current_node_tag = 2;
-	}
-	else {
-		dp->qlog.current_node_tag = 1;
-	}
+	dp->qlog.current_node_tag = met->node;
 	dp->last_updated_generation = generation;
 	return 0;
 }
@@ -421,7 +416,8 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 	mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
 	mmon_qexec_existing->node_tag = qexec_packet->data.node_tag;
 
-	dp->qlog.current_node_tag = qexec_packet->data.node_tag;
+	// This does not work: QEXEC packets do not come to gpmmon
+	// dp->qlog.current_node_tag = qexec_packet->data.node_tag;
 	dp->last_updated_generation = generation;
 
 	return 0;

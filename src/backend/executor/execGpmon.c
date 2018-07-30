@@ -25,12 +25,13 @@ void CheckSendPlanStateGpmonPkt(PlanState *ps)
 	{
 		if(!ps->fHadSentGpmon || ps->gpmon_plan_tick != gpmon_tick)
 		{
-			if(ps->state && LocallyExecutingSliceIndex(ps->state) == currentSliceId)
+			if(ps->state) //&& LocallyExecutingSliceIndex(ps->state) == currentSliceId)
 			{
-				gpmon_send(&ps->gpmon_pkt);
+				InitPlanNodeGpmonPkt(ps->plan, &(ps->gpmon_pkt), ps->state);
+				// gpmon_send(&ps->gpmon_pkt);
 			}
 			
-			ps->fHadSentGpmon = true;
+			// ps->fHadSentGpmon = true;
 		}
 
 		ps->gpmon_plan_tick = gpmon_tick;
