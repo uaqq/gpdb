@@ -389,46 +389,36 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 	gpmon_qlogkey_t key;
 	mmon_qexec_t* mmon_qexec_existing = 0;
 
-	/* find qdnode of this qexec */
+	/* find qdnode for the query that generated this qexec */
 	key.tmid = qexec_packet->data.key.tmid;
 	key.ssid = qexec_packet->data.key.ssid;
 	key.ccnt = qexec_packet->data.key.ccnt;
 	dp = apr_hash_get(agg->qtab, &key, sizeof(key));
 
-	if (!dp) { /* not found, internal SPI query.  Ignore. */
+	if (!dp) { /* not found, internal SPI query. Ignore */
 		return 0;
 	}
 
-	// We do not check for existence here as we are going to insert the new query anyway
-	/*
+	// Check existence of a qexec hashtable entry and create one if it does not exist
 	mmon_qexec_existing = apr_hash_get(dp->qexec_hash, &qexec_packet->data.key.hash_key, sizeof(qexec_packet->data.key.hash_key));
-
-	// if found, replace it
-	if (mmon_qexec_existing) {
-		mmon_qexec_existing->key.ccnt = qexec_packet->data.key.ccnt;
-		mmon_qexec_existing->key.ssid = qexec_packet->data.key.ssid;
-		mmon_qexec_existing->key.tmid = qexec_packet->data.key.tmid;
-		mmon_qexec_existing->_cpu_elapsed = qexec_packet->data._cpu_elapsed;
-		mmon_qexec_existing->measures_rows_in = qexec_packet->data.measures_rows_in;
-		mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
-	}
-	else {
-	*/
-		/* not found, make new hash entry */
-		if (! (mmon_qexec_existing = apr_palloc(agg->pool, sizeof(mmon_qexec_t))))
-			return APR_ENOMEM;		
-
+	if (!mmon_qexec_existing) {
+		if (! (mmon_qexec_existing = apr_palloc(agg->pool, sizeof(mmon_qexec_t)))) {
+			return APR_ENOMEM;
+		}
 		memcpy(&mmon_qexec_existing->key, &qexec_packet->data.key, sizeof(gpmon_qexeckey_t));
-		mmon_qexec_existing->_cpu_elapsed = qexec_packet->data._cpu_elapsed;
-		mmon_qexec_existing->measures_rows_in = qexec_packet->data.measures_rows_in;
-		mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
-		mmon_qexec_existing->node_tag = qexec_packet->data.node_tag;
 		apr_hash_set(dp->qexec_hash, &mmon_qexec_existing->key.hash_key, sizeof(mmon_qexec_existing->key.hash_key), mmon_qexec_existing);
-	/*
 	}
-	*/
 
+	// Update qexec hashtable entry
+	mmon_qexec_existing->_cpu_elapsed = qexec_packet->data._cpu_elapsed;
+	mmon_qexec_existing->measures_rows_in = qexec_packet->data.measures_rows_in;
+	mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
+	mmon_qexec_existing->node_tag = qexec_packet->data.node_tag;
+
+	// Update qlog hashtable entry
+	dp->qlog.current_node_tag = qexec_packet->data.node_tag;
 	dp->last_updated_generation = generation;
+
 	return 0;
 }
 
@@ -658,7 +648,6 @@ apr_status_t agg_dump(agg_t* agg)
 	gpmon_datetime_rounded(time(NULL), nowstr);
 
 	bloom_init(&bloom);
-
 	/* we never delete system_tail/ system_now/
 		queries_tail/ queries_now/ files */
 	bloom_set(&bloom, GPMON_DIR "system_now.dat");
@@ -682,8 +671,7 @@ apr_status_t agg_dump(agg_t* agg)
 	bloom_set(&bloom, GPMON_DIR "diskspace_stage.dat");
 	bloom_set(&bloom, GPMON_DIR "_diskspace_tail.dat");
 
-
-	/* dump metrics */
+	/* write system metrics */
 	temp_bytes_written = write_system(agg, nowstr);
 	incremement_tail_bytes(temp_bytes_written);
 
@@ -695,10 +683,10 @@ apr_status_t agg_dump(agg_t* agg)
 	temp_bytes_written = write_fsinfo(agg, nowstr);
 	incremement_tail_bytes(temp_bytes_written);
 
-	if (! (fp_queries_tail = fopen(GPMON_DIR "queries_tail.dat", "a")))
+	/* write qlog metrics for queries with statuses _DONE and _ERROR, count queries with other statuses and update dbmetrics */
+	if (! (fp_queries_tail = fopen(GPMON_DIR "queries_tail.dat", "a"))) {
 		return APR_FROM_OS_ERROR(errno);
-
-	/* loop through queries */
+	}
 	for (hi = apr_hash_first(0, agg->qtab); hi; hi = apr_hash_next(hi))
 	{
 		void* vptr;
@@ -736,18 +724,18 @@ apr_status_t agg_dump(agg_t* agg)
 			}
 		}
 	}
-	dbmetrics.queries_total = dbmetrics.queries_running + dbmetrics.queries_queued;
-
 	fclose(fp_queries_tail);
 	fp_queries_tail = 0;
+	dbmetrics.queries_total = dbmetrics.queries_running + dbmetrics.queries_queued;
 
-	/* dump dbmetrics */
+	/* write dbmetrics */
 	temp_bytes_written += write_dbmetrics(&dbmetrics, nowstr);
 	incremement_tail_bytes(temp_bytes_written);
 
-	if (! (fp_queries_now = fopen(GPMON_DIR "_queries_now.dat", "w")))
+	/* write qlog metrics for queries with statuses _START and _CANCELING */
+	if (! (fp_queries_now = fopen(GPMON_DIR "_queries_now.dat", "w"))) {
 		return APR_FROM_OS_ERROR(errno);
-
+	}
 	for (hi = apr_hash_first(0, agg->qtab); hi; hi = apr_hash_next(hi))
 	{
 		void* vptr;
@@ -760,27 +748,32 @@ apr_status_t agg_dump(agg_t* agg)
 		{
 			const int fname_size = sizeof(GPMON_DIR) + 100;
 			char fname[fname_size];
-			snprintf(fname, fname_size, GPMON_DIR "q%d-%d-%d.txt",
-			qdnode->qlog.key.tmid, qdnode->qlog.key.ssid,
-			qdnode->qlog.key.ccnt);
+			snprintf(fname, fname_size, GPMON_DIR "q%d-%d-%d.txt", qdnode->qlog.key.tmid, qdnode->qlog.key.ssid, qdnode->qlog.key.ccnt);
 
 			bloom_set(&bloom, fname);
 		}
 
 		/* write to _query_now.dat */
-		if (qdnode->qlog.status != GPMON_QLOG_STATUS_DONE && qdnode->qlog.status != GPMON_QLOG_STATUS_ERROR)
-		{
+		switch (qdnode->qlog.status) {
+		case GPMON_QLOG_STATUS_SUBMIT:
+		case GPMON_QLOG_STATUS_START:
+		case GPMON_QLOG_STATUS_CANCELING:
+		case GPMON_QLOG_STATUS_SILENT:
 			write_qlog(fp_queries_now, qdnode, nowstr, 0);
+			break;
+		case GPMON_QLOG_STATUS_DONE:
+		case GPMON_QLOG_STATUS_ERROR:
+			if (qdnode->qlog.tfin - qdnode->qlog.tstart >= min_query_time) {
+				write_qlog(fp_queries_now, qdnode, nowstr, 1);
+			}
+			break;
+		default:
+			break;
 		}
-		else if (qdnode->qlog.tfin - qdnode->qlog.tstart >= min_query_time)
-		{
-			write_qlog(fp_queries_now, qdnode, nowstr, 1);
-		}
-
 	}
+	fclose(fp_queries_now);
 
-	if (fp_queries_now) fclose(fp_queries_now);
-	if (fp_queries_tail) fclose(fp_queries_tail);
+	/* Update files */
 	rename(GPMON_DIR "_system_now.dat", GPMON_DIR "system_now.dat");
 	rename(GPMON_DIR "_segment_now.dat", GPMON_DIR "segment_now.dat");
 	rename(GPMON_DIR "_queries_now.dat", GPMON_DIR "queries_now.dat");
@@ -1347,7 +1340,7 @@ static void fmt_qlog(char* line, const int line_size, qdnode_t* qdnode, const ch
 		snprintf(timfinished, GPMON_DATE_BUF_SIZE,  "null");
 	}
 
-	snprintf(line, line_size, "%s|%d|%d|%d|%s|%s|%d|%s|%s|%s|%s|%" FMT64 "|%" FMT64 "|%.4f|%.2f|%.2f|%d",
+	snprintf(line, line_size, "%s|%d|%d|%d|%s|%s|%d|%s|%s|%s|%s|%d|%" FMT64 "|%" FMT64 "|%.4f|%.2f|%.2f|%d",
 		nowstr,
 		qdnode->qlog.key.tmid,
 		qdnode->qlog.key.ssid,
@@ -1359,6 +1352,7 @@ static void fmt_qlog(char* line, const int line_size, qdnode_t* qdnode, const ch
 		timstarted,
 		timfinished,
 		gpmon_qlog_status_string(qdnode->qlog.status),
+		qdnode->qlog.current_node_tag,
 		rowsout,
 		qdnode->qlog.cpu_elapsed,
 		cpu_current,

@@ -67,6 +67,7 @@ create table public.queries_history (
        tstart timestamp(0),  -- query start time
        tfinish timestamp(0) not null,    -- query end time
        status varchar(64) not null,   -- query status (start, end, abort)
+       node int,  -- last executed node
        rows_out bigint not null, -- rows out for query
        cpu_elapsed bigint not null, -- cpu usage for query across all segments
        cpu_currpct float not null, -- current cpu percent avg for all processes executing query
@@ -100,6 +101,7 @@ create external web table public.queries_now_fast (
        tstart timestamp(0), 
        tfinish timestamp(0),
        status varchar(64),
+       node int,
        rows_out bigint,
        cpu_elapsed bigint,
        cpu_currpct float,
