@@ -416,7 +416,13 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 	mmon_qexec_existing->node_tag = qexec_packet->data.node_tag;
 
 	// Update qlog hashtable entry
-	dp->qlog.current_node_tag = qexec_packet->data.node_tag;
+	// FIXME: Debug
+	if (qexec_packet->data.node_tag != 0) {
+		dp->qlog.current_node_tag = 1;
+	}
+	else if (dp->qlog.current_node_tag != 1) {
+		dp->qlog.current_node_tag = 2;
+	}
 	dp->last_updated_generation = generation;
 
 	return 0;
