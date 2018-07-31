@@ -183,7 +183,6 @@ void gpmon_send(gpmon_packet_t* p)
 				 p->u.qexec.key.hash_key.segid, p->u.qexec.key.hash_key.pid, p->u.qexec.key.hash_key.nid,
 				 p->u.qexec.status);
 		}
-		p->u.qexec.nodeTag = 888;
 	}
 	
 	if (gpmon.gxsock > 0) {
