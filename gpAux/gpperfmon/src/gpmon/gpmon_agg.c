@@ -271,7 +271,7 @@ static apr_status_t agg_put_queryseg(agg_t* agg, const gpmon_query_seginfo_t* me
 		apr_hash_set(dp->query_seginfo_hash, &rec->key.segid, sizeof(rec->key.segid), rec);
 	}
 
-	dp->qlog.current_node_tag = met->node;
+	dp->qlog.current_node_tag = 77;
 	dp->last_updated_generation = generation;
 	return 0;
 }
