@@ -1089,8 +1089,6 @@ static void gx_recvqexec(gpmon_packet_t* pkt)
 					p->key.tmid,
 					p->key.ssid,
 					p->key.ccnt);
-
-	pkt->u.qexec.nodeTag = 888;
 	// Store some aggregated information somewhere for metrics in
 	// queries_* tables, like cpu_elapsed, rows_out, and etc.
 	extract_segments_exec(pkt);

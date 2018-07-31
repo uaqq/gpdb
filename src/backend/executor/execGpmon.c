@@ -78,7 +78,7 @@ void InitPlanNodeGpmonPkt(Plan *plan, gpmon_packet_t *gpmon_pkt, EState *estate)
 
 	gpmon_pkt->u.qexec.status = (uint8)PMNS_Initialize;
 
-	gpmon_pkt->u.qexec.nodeTag = 7;
+	gpmon_pkt->u.qexec.nodeTag = 0;
 
 	if (gp_enable_gpperfmon && estate)
 	{
