@@ -137,10 +137,10 @@ struct gpmon_query_seginfo_t
 	 * final rowsout for segid = -1 and sliceid = 1, otherwise -1
 	 * if not exist for this segment.
 	 */
-	int16 				node;
 	int64				final_rowsout;
 	uint64				sum_cpu_elapsed;
 	uint64				sum_measures_rows_out;
+	int16 				node;
 };
 
 /* process metrics ... filled in by gpsmon */

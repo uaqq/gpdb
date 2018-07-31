@@ -1800,6 +1800,9 @@ static apr_status_t recvpkt(int sock, gp_smon_to_mmon_packet_t* pkt, bool loop_u
 		if (0 != (e = recv_data(sock, (char *)&pkt->u, get_size_by_pkttype_smon_to_mmon(pkt->header.pkttype)))) {
 			return e;
 		}
+		if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG) {
+			pkt->u.queryseg.node = 88;
+		}
 	}
 	return 0;
 }

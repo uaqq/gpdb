@@ -239,7 +239,7 @@ static void send_fully(SOCKET sock, const void* p_, int len)
 static void send_smon_to_mon_pkt(SOCKET sock, gp_smon_to_mmon_packet_t* pkt)
 {
 	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG) {
-		pkt->u.queryseg.node = 88;
+		pkt->u.queryseg.node = 99;
 	}
 	send_fully(sock, &pkt->header, sizeof(gp_smon_to_mmon_header_t));
 	if (pkt->header.pkttype == GPMON_PKTTYPE_QEXEC) {
