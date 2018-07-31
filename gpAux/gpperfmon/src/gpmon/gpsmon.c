@@ -1018,7 +1018,6 @@ static apr_uint32_t create_qexec_packet(const gpmon_qexec_t* qexec, gp_smon_to_m
 	pkt->u.qexec_packet.data.measures_rows_in = qexec->rowsout;
 	pkt->u.qexec_packet.data._cpu_elapsed = qexec->_cpu_elapsed;
 	pkt->u.qexec_packet.data.rowsout = qexec->rowsout;
-	pkt->u.qexec_packet.data.node_tag = qexec->nodeTag;
 
 	gp_smon_to_mmon_set_header(pkt,GPMON_PKTTYPE_QEXEC);
 	return 1;
@@ -1052,7 +1051,6 @@ static void extract_segments_exec(gpmon_packet_t* pkt)
 		{
 			rec->u.queryseg.final_rowsout = p->rowsout;
 		}
-		rec->u.queryseg.node = p->nodeTag;
 	}
 	else
 	{
@@ -1071,7 +1069,6 @@ static void extract_segments_exec(gpmon_packet_t* pkt)
 		}
 		rec->u.queryseg.sum_cpu_elapsed = pidrec->cpu_elapsed;
 		rec->u.queryseg.sum_measures_rows_out = p->rowsout;
-		rec->u.queryseg.node = p->nodeTag;
 		apr_hash_set(gx.querysegtab, &rec->u.queryseg.key, sizeof(rec->u.queryseg.key), rec);
 	}
 }

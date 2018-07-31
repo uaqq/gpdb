@@ -140,7 +140,6 @@ struct gpmon_query_seginfo_t
 	int64				final_rowsout;
 	uint64				sum_cpu_elapsed;
 	uint64				sum_measures_rows_out;
-	uint64 				node;
 };
 
 /* process metrics ... filled in by gpsmon */
@@ -173,7 +172,6 @@ struct gpmon_qlog_t
 	int32 status;		/* GPMON_QLOG_STATUS_XXXXXX */
 	int32 cost;
 	int64 cpu_elapsed; /* CPU elapsed for query */
-	uint64 current_node_tag;
 	gpmon_proc_metrics_t p_metrics;
 };
 
@@ -205,7 +203,6 @@ struct gpmon_qexec_t {
 	uint64		_cpu_elapsed; /* CPU elapsed for iter */
 	gpmon_proc_metrics_t 	_p_metrics;
 	uint64 		rowsout;
-	uint16		nodeTag;
 };
 
 /*

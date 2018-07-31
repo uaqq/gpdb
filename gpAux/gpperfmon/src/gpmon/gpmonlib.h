@@ -203,7 +203,6 @@ typedef struct qexec_packet_data_t
 	apr_uint64_t 		rowsout;
 	apr_uint64_t		_cpu_elapsed; /* CPU elapsed for iter */
 	apr_uint64_t 		measures_rows_in;
-	apr_uint16_t		node_tag;
 } qexec_packet_data_t;
 
 typedef struct qexec_packet_t

@@ -40,7 +40,6 @@ typedef struct mmon_qexec_t
 	apr_uint64_t 		rowsout;
 	apr_uint64_t		_cpu_elapsed; /* CPU elapsed for iter */
 	apr_uint64_t 		measures_rows_in;
-	apr_uint16_t		node_tag;
 } mmon_qexec_t;  //The qexec structure used in mmon
 
 typedef struct mmon_query_seginfo_t
@@ -271,7 +270,6 @@ static apr_status_t agg_put_queryseg(agg_t* agg, const gpmon_query_seginfo_t* me
 		apr_hash_set(dp->query_seginfo_hash, &rec->key.segid, sizeof(rec->key.segid), rec);
 	}
 
-	dp->qlog.current_node_tag = met->node;
 	dp->last_updated_generation = generation;
 	return 0;
 }
@@ -414,10 +412,7 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 	mmon_qexec_existing->_cpu_elapsed = qexec_packet->data._cpu_elapsed;
 	mmon_qexec_existing->measures_rows_in = qexec_packet->data.measures_rows_in;
 	mmon_qexec_existing->rowsout = qexec_packet->data.rowsout;
-	mmon_qexec_existing->node_tag = qexec_packet->data.node_tag;
 
-	// This does not work: QEXEC packets do not come to gpmmon
-	// dp->qlog.current_node_tag = qexec_packet->data.node_tag;
 	dp->last_updated_generation = generation;
 
 	return 0;
@@ -1341,7 +1336,7 @@ static void fmt_qlog(char* line, const int line_size, qdnode_t* qdnode, const ch
 		snprintf(timfinished, GPMON_DATE_BUF_SIZE,  "null");
 	}
 
-	snprintf(line, line_size, "%s|%d|%d|%d|%s|%s|%d|%s|%s|%s|%s|%d|%" FMT64 "|%" FMT64 "|%.4f|%.2f|%.2f|%d",
+	snprintf(line, line_size, "%s|%d|%d|%d|%s|%s|%d|%s|%s|%s|%s|%" FMT64 "|%" FMT64 "|%.4f|%.2f|%.2f|%d",
 		nowstr,
 		qdnode->qlog.key.tmid,
 		qdnode->qlog.key.ssid,
@@ -1353,7 +1348,6 @@ static void fmt_qlog(char* line, const int line_size, qdnode_t* qdnode, const ch
 		timstarted,
 		timfinished,
 		gpmon_qlog_status_string(qdnode->qlog.status),
-		qdnode->qlog.current_node_tag,
 		rowsout,
 		qdnode->qlog.cpu_elapsed,
 		cpu_current,

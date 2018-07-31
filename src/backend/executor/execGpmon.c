@@ -25,15 +25,12 @@ void CheckSendPlanStateGpmonPkt(PlanState *ps)
 	{
 		if(!ps->fHadSentGpmon || ps->gpmon_plan_tick != gpmon_tick)
 		{
-			if(ps->state) //&& LocallyExecutingSliceIndex(ps->state) == currentSliceId)
+			if (ps->state && LocallyExecutingSliceIndex(ps->state) == currentSliceId)
 			{
-				InitPlanNodeGpmonPkt(ps->plan, &(ps->gpmon_pkt), ps->state);
-				// gpmon_send(&ps->gpmon_pkt);
+				gpmon_send(&ps->gpmon_pkt);
 			}
-			
-			// ps->fHadSentGpmon = true;
+			ps->fHadSentGpmon = true;
 		}
-
 		ps->gpmon_plan_tick = gpmon_tick;
 	}
 }
@@ -44,7 +41,6 @@ void EndPlanStateGpmonPkt(PlanState *ps)
 		return;
 
 	ps->gpmon_pkt.u.qexec.status = (uint8)PMNS_Finished;
-	ps->gpmon_pkt.u.qexec.nodeTag = 1234;
 
 	if(gp_enable_gpperfmon &&
 	   ps->state &&
@@ -78,8 +74,6 @@ void InitPlanNodeGpmonPkt(Plan *plan, gpmon_packet_t *gpmon_pkt, EState *estate)
 	gpmon_pkt->u.qexec.rowsout = 0;
 
 	gpmon_pkt->u.qexec.status = (uint8)PMNS_Initialize;
-
-	gpmon_pkt->u.qexec.nodeTag = 888;
 
 	if (gp_enable_gpperfmon && estate)
 	{
