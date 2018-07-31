@@ -752,8 +752,6 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 			if (ppkt->header.pkttype != GPMON_PKTTYPE_QUERYSEG)
 				continue;
 
-			ppkt->u.queryseg.node = 888;
-
 			TR2(("sending magic %x, pkttype %d\n", ppkt->header.magic, ppkt->header.pkttype));
 			send_smon_to_mon_pkt(sock, ppkt);
 			count++;
@@ -1091,6 +1089,8 @@ static void gx_recvqexec(gpmon_packet_t* pkt)
 					p->key.tmid,
 					p->key.ssid,
 					p->key.ccnt);
+
+	pkt->u.qexec.nodeTag = 888;
 	// Store some aggregated information somewhere for metrics in
 	// queries_* tables, like cpu_elapsed, rows_out, and etc.
 	extract_segments_exec(pkt);
