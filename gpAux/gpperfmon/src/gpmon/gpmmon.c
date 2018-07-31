@@ -288,9 +288,6 @@ static void recv_from_gx(SOCKET sock, short event, void* arg)
 	if (pkt)
 	{
 		apr_thread_mutex_lock(ax.agg_mutex);
-		if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG) {
-			pkt->u.queryseg.node = 77;
-		}
 		e = agg_put(ax.agg, pkt);
 		apr_thread_mutex_unlock(ax.agg_mutex);
 		if (e)
