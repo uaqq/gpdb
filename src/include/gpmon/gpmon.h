@@ -173,7 +173,7 @@ struct gpmon_qlog_t
 	int32 status;		/* GPMON_QLOG_STATUS_XXXXXX */
 	int32 cost;
 	int64 cpu_elapsed; /* CPU elapsed for query */
-	int16 current_node_tag;
+	uint64 current_node_tag;
 	gpmon_proc_metrics_t p_metrics;
 };
 
