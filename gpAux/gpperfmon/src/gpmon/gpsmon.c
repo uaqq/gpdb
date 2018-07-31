@@ -238,9 +238,6 @@ static void send_fully(SOCKET sock, const void* p_, int len)
 /* Helper function to send the header and then send the union packet */
 static void send_smon_to_mon_pkt(SOCKET sock, gp_smon_to_mmon_packet_t* pkt)
 {
-	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG) {
-		pkt->u.queryseg.node = 888;
-	}
 	send_fully(sock, &pkt->header, sizeof(gp_smon_to_mmon_header_t));
 	if (pkt->header.pkttype == GPMON_PKTTYPE_QEXEC) {
 		send_fully(sock, &pkt->u.qexec_packet.data, sizeof(qexec_packet_data_t) );
@@ -754,6 +751,8 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 			ppkt = vptr;
 			if (ppkt->header.pkttype != GPMON_PKTTYPE_QUERYSEG)
 				continue;
+
+			ppkt->u.queryseg.node = 888;
 
 			TR2(("sending magic %x, pkttype %d\n", ppkt->header.magic, ppkt->header.pkttype));
 			send_smon_to_mon_pkt(sock, ppkt);

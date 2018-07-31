@@ -1802,10 +1802,6 @@ static apr_status_t recvpkt(int sock, gp_smon_to_mmon_packet_t* pkt, bool loop_u
 		}
 	}
 
-	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG) {
-		pkt->u.queryseg.node = 777;
-	}
-
 	return 0;
 }
 
