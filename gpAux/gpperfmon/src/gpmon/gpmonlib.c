@@ -56,6 +56,8 @@ inline size_t get_size_by_pkttype_smon_to_mmon(apr_int16_t pkttype)
 			return(sizeof(gpmon_fsinfo_t));
 		case GPMON_PKTTYPE_QUERYSEG:
 			return(sizeof(gpmon_query_seginfo_t));
+		case GPMON_PKTTYPE_QUERY_NODE:
+			return(sizeof(gpmon_query_node_t));
 	}
 
 	return 0;

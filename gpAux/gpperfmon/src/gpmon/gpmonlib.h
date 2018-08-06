@@ -227,6 +227,7 @@ typedef struct gp_smon_to_mmon_packet_t {
 		gpmon_seginfo_t seginfo;
 		gpmon_fsinfo_t fsinfo;
 		gpmon_query_seginfo_t queryseg;
+		gpmon_query_node_t querynode;
 	} u;
 } gp_smon_to_mmon_packet_t;
 

@@ -68,6 +68,7 @@ struct agg_t
 	apr_hash_t* htab;		/* key = hostname, value = gpmon_metrics_t ptr */
 	apr_hash_t* stab;		/* key = databaseid, value = gpmon_seginfo_t ptr */
 	apr_hash_t* fsinfotab;	/* This is the persistent fsinfo hash table: key = gpmon_fsinfokey_t, value = mmon_fsinfo_t ptr */
+	apr_hash_t* qnodetab;
 };
 
 typedef struct dbmetrics_t {
@@ -418,6 +419,25 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 	return 0;
 }
 
+static apr_status_t agg_put_qnode(agg_t* agg, const gpmon_query_node_t* qnode_info)
+{
+	gpmon_query_node_t* qnode_info_existing = apr_hash_get(agg->qnodetab, &(qnode_info->key), sizeof(gpmon_query_node_key_t));
+	if (!qnode_info_existing) {
+		if (! (qnode_info_existing = apr_palloc(agg->pool, sizeof(gpmon_query_node_t))) ) {
+			return APR_ENOMEM;
+		}
+		memcpy(&qnode_info_existing->key, &qnode_info->key, sizeof(gpmon_query_node_key_t));
+		apr_hash_set(agg->qnodetab, &(qnode_info_existing->key), sizeof(gpmon_query_node_key_t), qnode_info_existing);
+	}
+
+	qnode_info_existing->node = qnode_info->node;
+	qnode_info_existing->t_start = qnode_info->t_start;
+	qnode_info_existing->t_finish = qnode_info->t_finish;
+
+	return 0;
+}
+
+
 
 apr_status_t agg_create(agg_t** retagg, apr_int64_t generation, apr_pool_t* parent_pool, apr_hash_t* fsinfotab)
 {
@@ -608,6 +628,9 @@ apr_status_t agg_put(agg_t* agg, const gp_smon_to_mmon_packet_t* pkt)
 		return agg_put_fsinfo(agg, &pkt->u.fsinfo);
 	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG)
 		return agg_put_queryseg(agg, &pkt->u.queryseg, agg->generation);
+	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERY_NODE) {
+		return agg_put_qnode(agg, &pkt->u.querynode);
+	}
 
 	gpmon_warning(FLINE, "unknown packet type %d", pkt->header.pkttype);
 	return 0;
@@ -625,6 +648,7 @@ static void delete_old_files(bloom_t* bloom);
 static apr_uint32_t write_fsinfo(agg_t* agg, const char* nowstr);
 static apr_uint32_t write_system(agg_t* agg, const char* nowstr);
 static apr_uint32_t write_segmentinfo(agg_t* agg, char* nowstr);
+static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr);
 static apr_uint32_t write_dbmetrics(dbmetrics_t* dbmetrics, char* nowstr);
 static apr_uint32_t write_qlog(FILE* fp, qdnode_t *qdnode, const char* nowstr, apr_uint32_t done);
 static apr_uint32_t write_qlog_full(FILE* fp, qdnode_t *qdnode, const char* nowstr);
@@ -666,6 +690,10 @@ apr_status_t agg_dump(agg_t* agg)
 	bloom_set(&bloom, GPMON_DIR "diskspace_tail.dat");
 	bloom_set(&bloom, GPMON_DIR "diskspace_stage.dat");
 	bloom_set(&bloom, GPMON_DIR "_diskspace_tail.dat");
+	bloom_set(&bloom, GPMON_DIR "pernode_now.dat");
+	bloom_set(&bloom, GPMON_DIR "pernode_tail.dat");
+	bloom_set(&bloom, GPMON_DIR "pernode_stage.dat");
+	bloom_set(&bloom, GPMON_DIR "_pernode_tail.dat");
 
 	/* write system metrics */
 	temp_bytes_written = write_system(agg, nowstr);
@@ -673,6 +701,10 @@ apr_status_t agg_dump(agg_t* agg)
 
 	/* write segment metrics */
 	temp_bytes_written = write_segmentinfo(agg, nowstr);
+	incremement_tail_bytes(temp_bytes_written);
+
+	/* write per-node metrics */
+	temp_bytes_written = write_nodeinfo(agg, nowstr);
 	incremement_tail_bytes(temp_bytes_written);
 
 	/* write fsinfo metrics */
@@ -775,6 +807,7 @@ apr_status_t agg_dump(agg_t* agg)
 	rename(GPMON_DIR "_queries_now.dat", GPMON_DIR "queries_now.dat");
 	rename(GPMON_DIR "_database_now.dat", GPMON_DIR "database_now.dat");
 	rename(GPMON_DIR "_diskspace_now.dat", GPMON_DIR "diskspace_now.dat");
+	rename(GPMON_DIR "_pernode_now.dat", GPMON_DIR "pernode_now.dat");
 
 	/* clean up ... delete all old files by checking our bloom filter */
 	delete_old_files(&bloom);
@@ -886,6 +919,53 @@ static apr_uint32_t write_segmentinfo(agg_t* agg, char* nowstr)
 		sp = (gpmon_seginfo_t*) valptr;
 
 		snprintf(line, line_size, "%s|%d|%s|%" FMTU64 "|%" FMTU64, nowstr, sp->dbid, sp->hostname, sp->dynamic_memory_used, sp->dynamic_memory_available);
+
+		bytes_this_record = strlen(line) + 1;
+		if (bytes_this_record == line_size)
+		{
+			gpmon_warning(FLINE, "segmentinfo line to too long ... ignored: %s", line);
+			continue;
+		}
+		fprintf(fp, "%s\n", line);
+		fprintf(fp2, "%s\n", line);
+		bytes_written += bytes_this_record;
+    }
+
+	fclose(fp);
+	fclose(fp2);
+	return bytes_written;
+}
+
+static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr)
+{
+	FILE* fp = fopen(GPMON_DIR "pernode_tail.dat", "a");
+	FILE* fp2 = fopen(GPMON_DIR "_pernode_now.dat", "w");
+	apr_hash_index_t* hi;
+	const int line_size = 256;
+	char line[line_size];
+	apr_uint32_t bytes_written = 0;
+
+	if (!fp || !fp2)
+	{
+		if (fp) fclose(fp);
+		if (fp2) fclose(fp2);
+		return 0;
+	}
+
+	for (hi = apr_hash_first(0, agg->qnodetab); hi; hi = apr_hash_next(hi))
+	{
+		gpmon_query_node_t* qn;
+		int bytes_this_record;
+		void* valptr = 0;
+		apr_hash_this(hi, 0, 0, (void**) &valptr);
+		qn = (gpmon_query_node_t*) valptr;
+
+		snprintf(
+			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d",
+			nowstr,
+			qn->key.tmid, qn->key.ssid, qn->key.ccnt, qn->key.nid,
+			qn->node, qn->t_start, qn->t_finish
+		);
 
 		bytes_this_record = strlen(line) + 1;
 		if (bytes_this_record == line_size)

@@ -119,6 +119,33 @@ create external web table public._queries_tail (
 ) execute 'cat gpperfmon/data/_queries_tail.dat 2> /dev/null || true' on master format 'csv' (delimiter '|' NULL as 'null');
 
 --  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+--  per-node metrics
+--
+
+create table public.pernode_history (
+       ctime timestamp(0),      -- record creation time
+       tmid int not null,       -- time id
+       ssid int not null,       -- session id
+       ccnt int not null,       -- command count in session
+       nid int not null,        -- unique node identifier
+       ntag int not null,       -- node tag (type)
+       nstart bigint,           -- UNIX time of node start
+       nfinish bigint           -- UNIX time of node finish
+);
+
+create external web table public.pernode_now (
+        like public.pernode_history
+) execute 'cat gpperfmon/data/pernode_now.dat 2> /dev/null || true' on master format 'text' (delimiter '|' NULL as 'null');
+
+create external web table public.pernode_tail (
+        like public.pernode_history
+) execute 'cat gpperfmon/data/pernode_tail.dat 2> /dev/null || true' on master format 'text' (delimiter '|' NULL as 'null');
+
+create external web table public._pernode_tail (
+        like public.pernode_history
+) execute 'cat gpperfmon/data/_pernode_tail.dat 2> /dev/null || true' on master format 'text' (delimiter '|' NULL as 'null');
+
+--  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 --  database
 --
 

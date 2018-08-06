@@ -100,6 +100,7 @@ struct gx_t
 	apr_hash_t* segmenttab; /* stores segment packets */
 	apr_hash_t* pidtab; /* key=pid, value=pidrec_t */
 	apr_hash_t* querysegtab; /* stores gpmon_query_seginfo_t */
+	apr_hash_t* qnodetab; /* stores per-Node info packets */
 };
 
 typedef struct qexec_agg_hash_key_t {
@@ -186,6 +187,9 @@ static inline void copy_union_packet_gp_smon_to_mmon(gp_smon_to_mmon_packet_t* p
 			break;
 		case GPMON_PKTTYPE_FSINFO:
 			memcpy(&pkt->u.fsinfo, &pkt_src->u.fsinfo, sizeof(gpmon_fsinfo_t));
+			break;
+		case GPMON_PKTTYPE_QUERY_NODE:
+			memcpy(&pkt->u.querynode, &pkt_src->u.qnode, sizeof(gpmon_query_node_t));
 			break;
 		case GPMON_PKTTYPE_QUERYSEG:
 		case GPMON_PKTTYPE_QEXEC:
@@ -640,6 +644,9 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 	apr_hash_t* qdtab;
 	apr_hash_t* pidtab;
 	apr_hash_t* segtab;
+	apr_hash_t* querysegtab;
+	apr_hash_t* qnodetab;
+
 	if (event & EV_TIMEOUT) // didn't get command from gpmmon, quit
 	{
 		if(gx.tcp_sock)
@@ -649,7 +656,7 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 		}
 		return;
 	}
-	apr_hash_t* querysegtab;
+
 	n = recv(sock, &dump, 1, 0);
 	if (n == 0)
 		gx_exit("peer closed");
@@ -667,6 +674,7 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 	pidtab = gx.pidtab;
 	segtab = gx.segmenttab;
 	querysegtab = gx.querysegtab;
+	qnodetab = gx.qnodetab;
 
 	oldpool = apr_hash_pool_get(qetab);
 
@@ -696,6 +704,10 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 		/* pidtab hash table */
 		gx.pidtab = apr_hash_make(newpool);
 		CHECKMEM(gx.pidtab);
+
+		/* per-node info table */
+		gx.qnodetab = apr_hash_make(newpool);
+		CHECKMEM(gx.qnodetab);
 	}
 
 	/* push out a metric of the machine */
@@ -740,6 +752,19 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 			count++;
 		}
 
+		for (hi = apr_hash_first(0, qnodetab); hi; hi = apr_hash_next(hi))
+		{
+ 			void* vptr;
+			apr_hash_this(hi, 0, 0, &vptr);
+			ppkt = vptr;
+			if (ppkt->header.pkttype != GPMON_PKTTYPE_QUERY_NODE) {
+				continue;
+			}
+			TR2(("sending magic %x, pkttype %d\n", ppkt->header.magic, ppkt->header.pkttype));
+			send_smon_to_mon_pkt(sock, ppkt);
+			count++;
+		}
+
 		/*
 		 * QUERYSEG packets must be sent after QLOG packets so that gpmmon can
 		 * correctly populate its query_seginfo_hash.
@@ -749,9 +774,9 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
  			void* vptr;
 			apr_hash_this(hi, 0, 0, &vptr);
 			ppkt = vptr;
-			if (ppkt->header.pkttype != GPMON_PKTTYPE_QUERYSEG)
+			if (ppkt->header.pkttype != GPMON_PKTTYPE_QUERYSEG) {
 				continue;
-
+			}
 			TR2(("sending magic %x, pkttype %d\n", ppkt->header.magic, ppkt->header.pkttype));
 			send_smon_to_mon_pkt(sock, ppkt);
 			count++;
@@ -1094,6 +1119,30 @@ static void gx_recvqexec(gpmon_packet_t* pkt)
 	return;
 }
 
+static void gx_recvqnode(gpmon_packet_t* pkt)
+{
+	gp_smon_to_mmon_packet_t *rec;
+	gpmon_query_node_t *p;
+
+	if (pkt->pkttype != GPMON_PKTTYPE_QUERY_NODE) {
+		gpsmon_fatal(FLINE, "assert failed; expected pkttype qnode");
+	}
+    TR2(("received qnode packet\n"));
+
+	p = &(pkt->u.qnode);
+	
+	rec = apr_hash_get(gx.qnodetab, &p->key, sizeof(p->key));
+	if (rec)
+	{
+		memcpy(&rec->u.querynode, p, sizeof(*p));
+	}
+	else
+	{
+		rec = gx_pkt_to_smon_to_mmon(apr_hash_pool_get(gx.qnodetab), pkt);
+		apr_hash_set(gx.qnodetab, &rec->u.querynode.key, sizeof(rec->u.querynode.key), rec);
+	}
+}
+
 /* callback from libevent when a udp socket is ready to be read.
  This function determines the packet type, then calls
  gx_recvqlog() or gx_recvqexec().
@@ -1140,6 +1189,8 @@ static void gx_recvfrom(SOCKET sock, short event, void* arg)
 	case GPMON_PKTTYPE_QEXEC:
 		gx_recvqexec(&pkt);
 		break;
+	case GPMON_PKTTYPE_QUERY_NODE:
+		gx_recvqnode(&pkt);
 	default:
 		gpmon_warning(FLINE, "unexpected packet type %d", pkt.pkttype);
 		return;
@@ -1427,6 +1478,10 @@ static void setup_gx(int port, apr_int64_t signature)
 	/* pidtab */
 	gx.pidtab = apr_hash_make(subpool);
 	CHECKMEM(gx.pidtab);
+
+	/* qnodetab */
+	gx.qnodetab = apr_hash_make(subpool);
+	CHECKMEM(gx.qnodetab);
 
 	/* device metrics hashes */
 	net_devices = apr_hash_make(gx.pool);

@@ -21,6 +21,22 @@ void CheckSendPlanStateGpmonPkt(PlanState *ps)
 	if(!ps)
 		return;
 
+	// FIXME: This is a temporary solution (experiment)
+	gpmon_packet_t *qn_packet = palloc0(sizeof(gpmon_packet_t));
+
+	qn_packet->magic = GPMON_MAGIC;
+	qn_packet->version = GPMON_PACKET_VERSION;
+	qn_packet->pkttype = GPMON_PKTTYPE_QUERY_NODE;
+	qn_packet->u.qnode.t_start = time(NULL);
+	qn_packet->u.qnode.node = ps->type;
+	gpmon_gettmid(&qn_packet->u.qnode.key.tmid);
+	qn_packet->u.qnode.key.ssid = gp_session_id;
+	qn_packet->u.qnode.key.ccnt = gp_command_count;
+	qn_packet->u.qnode.key.nid = ps->plan->plan_node_id;
+
+	gpmon_send(qn_packet);
+	pfree(qn_packet);
+
 	if(gp_enable_gpperfmon)
 	{
 		if(!ps->fHadSentGpmon || ps->gpmon_plan_tick != gpmon_tick)
