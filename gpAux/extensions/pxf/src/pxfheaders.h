@@ -34,7 +34,6 @@ typedef struct sPxfInputData
 	CHURL_HEADERS headers;
 	GPHDUri    *gphduri;
 	Relation	rel;
-	char *filterstr;
 } PxfInputData;
 
 /*

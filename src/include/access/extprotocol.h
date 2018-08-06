@@ -35,9 +35,8 @@ typedef struct ExtProtocolData
 	char*			prot_databuf;
 	int				prot_maxbytes;
 	void*			prot_user_ctx;
-	List*			filter_quals;
 	bool			prot_last_call;
-
+		
 } ExtProtocolData;
 
 typedef ExtProtocolData *ExtProtocol;
@@ -50,7 +49,6 @@ typedef ExtProtocolData *ExtProtocol;
 #define EXTPROTOCOL_GET_DATABUF(fcinfo)    (((ExtProtocolData*) fcinfo->context)->prot_databuf)
 #define EXTPROTOCOL_GET_DATALEN(fcinfo)    (((ExtProtocolData*) fcinfo->context)->prot_maxbytes)
 #define EXTPROTOCOL_GET_USER_CTX(fcinfo)   (((ExtProtocolData*) fcinfo->context)->prot_user_ctx)
-#define EXTPROTOCOL_GET_FILTER_QUALS(fcinfo) (((ExtProtocolData*) fcinfo->context)->filter_quals)
 #define EXTPROTOCOL_IS_LAST_CALL(fcinfo)   (((ExtProtocolData*) fcinfo->context)->prot_last_call)
 
 #define EXTPROTOCOL_SET_LAST_CALL(fcinfo)  (((ExtProtocolData*) fcinfo->context)->prot_last_call = true)
@@ -76,7 +74,7 @@ typedef struct ExtProtocolValidatorData
 	List 		  		*url_list;
 	ValidatorDirection 	 direction;  /* validating read or write? */
 	char				*errmsg;		  /* the validation error upon return, if any */
-
+	
 } ExtProtocolValidatorData;
 
 typedef ExtProtocolValidatorData *ExtProtocolValidator;

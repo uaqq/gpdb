@@ -65,7 +65,7 @@ typedef struct FragmentData
 /*
  * Gets the fragments for the given uri location
  */
-extern void get_fragments(GPHDUri *uri, Relation relation, char* filterquals);
+extern void get_fragments(GPHDUri *uri, Relation relation);
 
 /*
  * Frees the given fragment
