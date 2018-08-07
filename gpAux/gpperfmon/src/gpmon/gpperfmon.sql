@@ -123,14 +123,14 @@ create external web table public._queries_tail (
 --
 
 create table public.pernode_history (
-       ctime timestamp(0),      -- record creation time
-       tmid int not null,       -- time id
-       ssid int not null,       -- session id
-       ccnt int not null,       -- command count in session
-       nid int not null,        -- unique node identifier
-       ntag int not null,       -- node tag (type)
-       nstart bigint,           -- UNIX time of node start
-       nfinish bigint           -- UNIX time of node finish
+       ctime timestamp(0),              -- record creation time
+       tmid int not null,               -- time id
+       ssid int not null,               -- session id
+       ccnt int not null,               -- command count in session
+       node_id int not null,            -- unique node identifier
+       node_tag int not null,           -- node tag (type)
+       node_start_time int not null,    -- UNIX timestamp of node start
+       node_finish_time int not null    -- UNIX timestamp of node finish
 );
 
 create external web table public.pernode_now (

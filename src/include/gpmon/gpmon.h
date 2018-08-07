@@ -238,8 +238,8 @@ typedef struct gpmon_planmetric_key_t {
 typedef struct gpmon_planmetric_t {
 	gpmon_planmetric_key_t key;
 	int32 node;			/* GPDB node code */
-	uint64 t_start;		/* start processing of the node */
-	uint64 t_finish;	/* end processing of the node */
+	int32 t_start;		/* start processing of the node */
+	int32 t_finish;	/* end processing of the node */
 } gpmon_planmetric_t;
 
 
