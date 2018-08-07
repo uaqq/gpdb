@@ -30,9 +30,9 @@ extern int verbose;
 /* TODO: REMOVE */
 //extern int very_verbose;
 #define TR0(x) gpmon_print x
-#define TR1(x) if (verbose == 1) gpmon_print x
-#define TR2(x) if (verbose == 2) gpmon_print x
-#define TR1_FILE(x) if (verbose == 1) gpmon_print_file x
+#define TR1(x) if (verbose >= 1) gpmon_print x
+#define TR2(x) if (verbose >= 2) gpmon_print x
+#define TR1_FILE(x) if (verbose >= 1) gpmon_print_file x
 
 /* Architecture specific limits for metrics */
 #if defined(osx104_x86) || defined(osx105_x86) || defined(rhel5_x86_32)
@@ -227,7 +227,7 @@ typedef struct gp_smon_to_mmon_packet_t {
 		gpmon_seginfo_t seginfo;
 		gpmon_fsinfo_t fsinfo;
 		gpmon_query_seginfo_t queryseg;
-		gpmon_query_node_t querynode;
+		gpmon_planmetric_t planmetric;
 	} u;
 } gp_smon_to_mmon_packet_t;
 

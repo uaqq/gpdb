@@ -68,7 +68,7 @@ struct agg_t
 	apr_hash_t* htab;		/* key = hostname, value = gpmon_metrics_t ptr */
 	apr_hash_t* stab;		/* key = databaseid, value = gpmon_seginfo_t ptr */
 	apr_hash_t* fsinfotab;	/* This is the persistent fsinfo hash table: key = gpmon_fsinfokey_t, value = mmon_fsinfo_t ptr */
-	apr_hash_t* qnodetab;
+	apr_hash_t* planmetrictab;
 };
 
 typedef struct dbmetrics_t {
@@ -419,20 +419,20 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 	return 0;
 }
 
-static apr_status_t agg_put_qnode(agg_t* agg, const gpmon_query_node_t* qnode_info)
+static apr_status_t agg_put_planmetric(agg_t* agg, const gpmon_planmetric_t* metric)
 {
-	gpmon_query_node_t* qnode_info_existing = apr_hash_get(agg->qnodetab, &(qnode_info->key), sizeof(gpmon_query_node_key_t));
-	if (!qnode_info_existing) {
-		if (! (qnode_info_existing = apr_palloc(agg->pool, sizeof(gpmon_query_node_t))) ) {
+	gpmon_planmetric_t* metric_existing = apr_hash_get(agg->planmetrictab, &(metric->key), sizeof(gpmon_planmetric_key_t));
+	if (!metric_existing) {
+		if (! (metric_existing = apr_palloc(agg->pool, sizeof(gpmon_planmetric_t))) ) {
 			return APR_ENOMEM;
 		}
-		memcpy(&qnode_info_existing->key, &qnode_info->key, sizeof(gpmon_query_node_key_t));
-		apr_hash_set(agg->qnodetab, &(qnode_info_existing->key), sizeof(gpmon_query_node_key_t), qnode_info_existing);
+		memcpy(&metric_existing->key, &metric->key, sizeof(gpmon_planmetric_key_t));
+		apr_hash_set(agg->planmetrictab, &(metric_existing->key), sizeof(gpmon_planmetric_key_t), metric_existing);
 	}
 
-	qnode_info_existing->node = qnode_info->node;
-	qnode_info_existing->t_start = qnode_info->t_start;
-	qnode_info_existing->t_finish = qnode_info->t_finish;
+	metric_existing->node = metric->node;
+	metric_existing->t_start = metric->t_start;
+	metric_existing->t_finish = metric->t_finish;
 
 	return 0;
 }
@@ -461,6 +461,12 @@ apr_status_t agg_create(agg_t** retagg, apr_int64_t generation, apr_pool_t* pare
 
 	agg->qtab = apr_hash_make(pool);
 	if (!agg->qtab) {
+		apr_pool_destroy(pool);
+		return APR_ENOMEM;
+	}
+
+	agg->planmetrictab = apr_hash_make(pool);
+	if (!agg->planmetrictab) {
 		apr_pool_destroy(pool);
 		return APR_ENOMEM;
 	}
@@ -628,8 +634,8 @@ apr_status_t agg_put(agg_t* agg, const gp_smon_to_mmon_packet_t* pkt)
 		return agg_put_fsinfo(agg, &pkt->u.fsinfo);
 	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERYSEG)
 		return agg_put_queryseg(agg, &pkt->u.queryseg, agg->generation);
-	if (pkt->header.pkttype == GPMON_PKTTYPE_QUERY_NODE) {
-		return agg_put_qnode(agg, &pkt->u.querynode);
+	if (pkt->header.pkttype == GPMON_PKTTYPE_PLANMETRIC) {
+		return agg_put_planmetric(agg, &pkt->u.planmetric);
 	}
 
 	gpmon_warning(FLINE, "unknown packet type %d", pkt->header.pkttype);
@@ -952,19 +958,19 @@ static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr)
 		return 0;
 	}
 
-	for (hi = apr_hash_first(0, agg->qnodetab); hi; hi = apr_hash_next(hi))
+	for (hi = apr_hash_first(0, agg->planmetrictab); hi; hi = apr_hash_next(hi))
 	{
-		gpmon_query_node_t* qn;
+		gpmon_planmetric_t* metric;
 		int bytes_this_record;
 		void* valptr = 0;
 		apr_hash_this(hi, 0, 0, (void**) &valptr);
-		qn = (gpmon_query_node_t*) valptr;
+		metric = (gpmon_planmetric_t*) valptr;
 
 		snprintf(
 			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d",
 			nowstr,
-			qn->key.tmid, qn->key.ssid, qn->key.ccnt, qn->key.nid,
-			qn->node, qn->t_start, qn->t_finish
+			metric->key.tmid, metric->key.ssid, metric->key.ccnt, metric->key.nid,
+			metric->node, metric->t_start, metric->t_finish
 		);
 
 		bytes_this_record = strlen(line) + 1;

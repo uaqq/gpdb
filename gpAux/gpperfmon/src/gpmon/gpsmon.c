@@ -100,7 +100,7 @@ struct gx_t
 	apr_hash_t* segmenttab; /* stores segment packets */
 	apr_hash_t* pidtab; /* key=pid, value=pidrec_t */
 	apr_hash_t* querysegtab; /* stores gpmon_query_seginfo_t */
-	apr_hash_t* qnodetab; /* stores per-Node info packets */
+	apr_hash_t* planmetrictab; /* stores per-Node info packets */
 };
 
 typedef struct qexec_agg_hash_key_t {
@@ -188,8 +188,8 @@ static inline void copy_union_packet_gp_smon_to_mmon(gp_smon_to_mmon_packet_t* p
 		case GPMON_PKTTYPE_FSINFO:
 			memcpy(&pkt->u.fsinfo, &pkt_src->u.fsinfo, sizeof(gpmon_fsinfo_t));
 			break;
-		case GPMON_PKTTYPE_QUERY_NODE:
-			memcpy(&pkt->u.querynode, &pkt_src->u.qnode, sizeof(gpmon_query_node_t));
+		case GPMON_PKTTYPE_PLANMETRIC:
+			memcpy(&pkt->u.planmetric, &pkt_src->u.planmetric, sizeof(gpmon_planmetric_t));
 			break;
 		case GPMON_PKTTYPE_QUERYSEG:
 		case GPMON_PKTTYPE_QEXEC:
@@ -645,7 +645,7 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 	apr_hash_t* pidtab;
 	apr_hash_t* segtab;
 	apr_hash_t* querysegtab;
-	apr_hash_t* qnodetab;
+	apr_hash_t* planmetrictab;
 
 	if (event & EV_TIMEOUT) // didn't get command from gpmmon, quit
 	{
@@ -674,11 +674,11 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 	pidtab = gx.pidtab;
 	segtab = gx.segmenttab;
 	querysegtab = gx.querysegtab;
-	qnodetab = gx.qnodetab;
+	planmetrictab = gx.planmetrictab;
 
 	oldpool = apr_hash_pool_get(qetab);
 
-	/* make new  hashtabs for next cycle */
+	/* make new hashtables for the next cycle */
 	{
 		apr_pool_t* newpool;
 		if (0 != (e = apr_pool_create_alloc(&newpool, gx.pool)))
@@ -706,8 +706,8 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 		CHECKMEM(gx.pidtab);
 
 		/* per-node info table */
-		gx.qnodetab = apr_hash_make(newpool);
-		CHECKMEM(gx.qnodetab);
+		gx.planmetrictab = apr_hash_make(newpool);
+		CHECKMEM(gx.planmetrictab);
 	}
 
 	/* push out a metric of the machine */
@@ -752,12 +752,12 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 			count++;
 		}
 
-		for (hi = apr_hash_first(0, qnodetab); hi; hi = apr_hash_next(hi))
+		for (hi = apr_hash_first(0, planmetrictab); hi; hi = apr_hash_next(hi))
 		{
  			void* vptr;
 			apr_hash_this(hi, 0, 0, &vptr);
 			ppkt = vptr;
-			if (ppkt->header.pkttype != GPMON_PKTTYPE_QUERY_NODE) {
+			if (ppkt->header.pkttype != GPMON_PKTTYPE_PLANMETRIC) {
 				continue;
 			}
 			TR2(("sending magic %x, pkttype %d\n", ppkt->header.magic, ppkt->header.pkttype));
@@ -1119,27 +1119,31 @@ static void gx_recvqexec(gpmon_packet_t* pkt)
 	return;
 }
 
-static void gx_recvqnode(gpmon_packet_t* pkt)
+static void gx_recvplanmetric(gpmon_packet_t* pkt)
 {
-	gp_smon_to_mmon_packet_t *rec;
-	gpmon_query_node_t *p;
+	gp_smon_to_mmon_packet_t* rec;
+	gpmon_planmetric_t* p = &(pkt->u.planmetric);
 
-	if (pkt->pkttype != GPMON_PKTTYPE_QUERY_NODE) {
-		gpsmon_fatal(FLINE, "assert failed; expected pkttype qnode");
+	if (pkt->pkttype != GPMON_PKTTYPE_PLANMETRIC) {
+		gpsmon_fatal(FLINE, "assert failed; expected pkttype planmetric");
+		return;
 	}
-    TR2(("received qnode packet\n"));
-
-	p = &(pkt->u.qnode);
+    TR2(("received planmetric packet\n"));
 	
-	rec = apr_hash_get(gx.qnodetab, &p->key, sizeof(p->key));
+	rec = apr_hash_get(gx.planmetrictab, &p->key, sizeof(gpmon_planmetric_key_t));
 	if (rec)
 	{
-		memcpy(&rec->u.querynode, p, sizeof(*p));
+		if (p->t_start != 0) {
+			rec->u.planmetric.t_start = p->t_start;
+		}
+		else if (p->t_finish != 0) {
+			rec->u.planmetric.t_finish = p->t_finish;
+		}
 	}
 	else
 	{
-		rec = gx_pkt_to_smon_to_mmon(apr_hash_pool_get(gx.qnodetab), pkt);
-		apr_hash_set(gx.qnodetab, &rec->u.querynode.key, sizeof(rec->u.querynode.key), rec);
+		rec = gx_pkt_to_smon_to_mmon(apr_hash_pool_get(gx.planmetrictab), pkt);
+		apr_hash_set(gx.planmetrictab, &rec->u.planmetric.key, sizeof(gpmon_planmetric_key_t), rec);
 	}
 }
 
@@ -1189,8 +1193,9 @@ static void gx_recvfrom(SOCKET sock, short event, void* arg)
 	case GPMON_PKTTYPE_QEXEC:
 		gx_recvqexec(&pkt);
 		break;
-	case GPMON_PKTTYPE_QUERY_NODE:
-		gx_recvqnode(&pkt);
+	case GPMON_PKTTYPE_PLANMETRIC:
+		gx_recvplanmetric(&pkt);
+		break;
 	default:
 		gpmon_warning(FLINE, "unexpected packet type %d", pkt.pkttype);
 		return;
@@ -1199,6 +1204,7 @@ static void gx_recvfrom(SOCKET sock, short event, void* arg)
 
 static void setup_tcp(void)
 {
+	TR2(("Trying to setup TCP connection (to gpmmon)"));
 	SOCKET sock = 0;
 
 	struct addrinfo hints;
@@ -1479,9 +1485,9 @@ static void setup_gx(int port, apr_int64_t signature)
 	gx.pidtab = apr_hash_make(subpool);
 	CHECKMEM(gx.pidtab);
 
-	/* qnodetab */
-	gx.qnodetab = apr_hash_make(subpool);
-	CHECKMEM(gx.qnodetab);
+	/* planmetrictab */
+	gx.planmetrictab = apr_hash_make(subpool);
+	CHECKMEM(gx.planmetrictab);
 
 	/* device metrics hashes */
 	net_devices = apr_hash_make(gx.pool);

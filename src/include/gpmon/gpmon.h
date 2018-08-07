@@ -225,22 +225,22 @@ struct gpmon_hello_t {
 };
 
 /* ------------------------------------------------------------------
-         QUERY NODE
+         PLANMETRIC
    ------------------------------------------------------------------ */
 
-typedef struct gpmon_query_node_key_t {
-	int32 tmid;  /* transaction time */
+typedef struct gpmon_planmetric_key_t {
+	int32 tmid;	/* transaction time */
     int32 ssid; /* session id */
     int32 ccnt; /* command count */
-	int32 nid; /* node identifier (unqiue across all nodes) */
-} gpmon_query_node_key_t;
+	int32 nid;	/* node identifier (unqiue across all nodes) */
+} gpmon_planmetric_key_t;
 
-typedef struct gpmon_query_node_t {
-	gpmon_query_node_key_t key;
-	int32 node;
-	int32 t_start;
-	int32 t_finish;
-} gpmon_query_node_t;
+typedef struct gpmon_planmetric_t {
+	gpmon_planmetric_key_t key;
+	int32 node;			/* GPDB node code */
+	uint64 t_start;		/* start processing of the node */
+	uint64 t_finish;	/* end processing of the node */
+} gpmon_planmetric_t;
 
 
 /*
@@ -264,7 +264,7 @@ enum gpmon_pkttype_t {
     GPMON_PKTTYPE_QUERY_HOST_METRICS = 7, // query metrics update from a segment such as CPU per query
     GPMON_PKTTYPE_FSINFO = 8,
     GPMON_PKTTYPE_QUERYSEG = 9,
-	GPMON_PKTTYPE_QUERY_NODE = 10,
+	GPMON_PKTTYPE_PLANMETRIC = 10,
 
     GPMON_PKTTYPE_MAX
 };
@@ -283,7 +283,7 @@ struct gpmon_packet_t {
 		gpmon_qexec_t   qexec;
 		gpmon_seginfo_t seginfo;
 		gpmon_fsinfo_t fsinfo;
-		gpmon_query_node_t qnode;
+		gpmon_planmetric_t planmetric;
     } u;
 };
 

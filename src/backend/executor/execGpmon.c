@@ -21,24 +21,27 @@ void CheckSendPlanStateGpmonPkt(PlanState *ps)
 	if(!ps)
 		return;
 
-	// FIXME: This is a temporary solution (experiment)
-	gpmon_packet_t *qn_packet = palloc0(sizeof(gpmon_packet_t));
-
-	qn_packet->magic = GPMON_MAGIC;
-	qn_packet->version = GPMON_PACKET_VERSION;
-	qn_packet->pkttype = GPMON_PKTTYPE_QUERY_NODE;
-	qn_packet->u.qnode.t_start = time(NULL);
-	qn_packet->u.qnode.node = ps->type;
-	gpmon_gettmid(&qn_packet->u.qnode.key.tmid);
-	qn_packet->u.qnode.key.ssid = gp_session_id;
-	qn_packet->u.qnode.key.ccnt = gp_command_count;
-	qn_packet->u.qnode.key.nid = ps->plan->plan_node_id;
-
-	gpmon_send(qn_packet);
-	pfree(qn_packet);
-
 	if(gp_enable_gpperfmon)
 	{
+		// FIXME: This is a temporary solution (experiment)
+		gpmon_packet_t *planmetric_packet = palloc0(sizeof(gpmon_packet_t));
+
+		planmetric_packet->magic = GPMON_MAGIC;
+		planmetric_packet->version = GPMON_PACKET_VERSION;
+		planmetric_packet->pkttype = GPMON_PKTTYPE_PLANMETRIC;
+
+		gpmon_gettmid(&planmetric_packet->u.planmetric.key.tmid);
+		planmetric_packet->u.planmetric.key.ssid = gp_session_id;
+		planmetric_packet->u.planmetric.key.ccnt = gp_command_count;
+		planmetric_packet->u.planmetric.key.nid = ps->plan->plan_node_id;
+
+		planmetric_packet->u.planmetric.node = ps->type;
+		planmetric_packet->u.planmetric.t_start = time(NULL);
+
+		gpmon_send(planmetric_packet);
+		pfree(planmetric_packet);
+		// END
+
 		if(!ps->fHadSentGpmon || ps->gpmon_plan_tick != gpmon_tick)
 		{
 			if (ps->state && LocallyExecutingSliceIndex(ps->state) == currentSliceId)
