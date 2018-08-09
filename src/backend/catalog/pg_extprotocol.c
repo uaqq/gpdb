@@ -223,8 +223,8 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
 {
 	Oid			fnOid;
 	bool		retset;
-	bool		retstrict;
-	bool		retordered;
+	bool        retstrict;
+	bool        retordered;
 	Oid		   *true_oid_array;
 	Oid			actual_rettype;
 	Oid			desired_rettype;
@@ -233,6 +233,7 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
 	Oid			inputTypes[1] = {InvalidOid}; /* dummy */
 	int			nargs = 0; /* true for all 3 function types at the moment */
 	int			nvargs;
+	Oid			vatype;
 
 	if (fntype == EXTPTC_FUNC_VALIDATOR)
 		desired_rettype = VOIDOID;
