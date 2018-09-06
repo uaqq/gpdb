@@ -31,7 +31,7 @@ create table public.system_history (
        net_wp_rate bigint not null,  -- system net write packets per second
        net_rb_rate bigint not null,  -- system net read bytes per second
        net_wb_rate bigint not null   -- system net write bytes per second
-) 
+)
 with (fillfactor=100)
 distributed by (ctime)
 partition by range (ctime)(start (date '2010-01-01') end (date '2010-02-01') EVERY (interval '1 month'));
@@ -96,8 +96,8 @@ create external web table public.queries_now_fast (
        username varchar(64),
        db varchar(64),
        cost int,
-       tsubmit timestamp(0), 
-       tstart timestamp(0), 
+       tsubmit timestamp(0),
+       tstart timestamp(0),
        tfinish timestamp(0),
        status varchar(64),
        rows_out bigint,
@@ -128,6 +128,7 @@ create table public.pernode_history (
        ssid int not null,               -- session id
        ccnt int not null,               -- command count in session
        node_id int not null,            -- unique node identifier
+       seg_index int not null,          -- segment index
        node_tag int not null,           -- node tag (type)
        node_start_time int not null,    -- UNIX timestamp of node start
        node_finish_time int not null    -- UNIX timestamp of node finish
@@ -154,7 +155,7 @@ create table public.database_history (
        queries_total int not null, -- total number of queries
        queries_running int not null, -- number of running queries
        queries_queued int not null -- number of queued queries
-) 
+)
 with (fillfactor=100)
 distributed by (ctime)
 partition by range (ctime)(start (date '2010-01-01') end (date '2010-02-01') EVERY (interval '1 month'));
@@ -237,10 +238,10 @@ create external web table public._diskspace_tail (like public.diskspace_history)
 
 
 -- TABLE: network_interface_history -------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- ctime timestamp(0) not null, 
--- hostname varchar(64) not null, 
+-- ctime timestamp(0) not null,
+-- hostname varchar(64) not null,
 -- interface_name varchar(64) not null,
--- bytes_received bigint, 
+-- bytes_received bigint,
 -- packets_received bigint,
 -- receive_errors bigint,
 -- receive_drops bigint,
@@ -272,8 +273,8 @@ create external web table public._network_interface_tail (like public.network_in
 
 
 -- TABLE: sockethistory --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- ctime timestamp(0) not null, 
--- hostname varchar(64) not null, 
+-- ctime timestamp(0) not null,
+-- hostname varchar(64) not null,
 -- total_sockets_used int,
 -- tcp_sockets_inuse int,
 -- tcp_sockets_orphan int,
@@ -286,7 +287,7 @@ create external web table public._network_interface_tail (like public.network_in
 -- frag_sockets_inuse int,
 -- frag_sockets_memusage_inbytes int
 
-create table public.socket_history ( ctime timestamp(0) not null, hostname varchar(64) not null, total_sockets_used int, tcp_sockets_inuse int, tcp_sockets_orphan int, tcp_sockets_timewait int, tcp_sockets_alloc int, tcp_sockets_memusage_inbytes int, udp_sockets_inuse int, udp_sockets_memusage_inbytes int, raw_sockets_inuse int, frag_sockets_inuse int, frag_sockets_memusage_inbytes int) with (fillfactor=100) distributed by (ctime) partition by range (ctime)(start (date '2010-01-01') end (date '2010-02-01') EVERY (interval '1 month')); 
+create table public.socket_history ( ctime timestamp(0) not null, hostname varchar(64) not null, total_sockets_used int, tcp_sockets_inuse int, tcp_sockets_orphan int, tcp_sockets_timewait int, tcp_sockets_alloc int, tcp_sockets_memusage_inbytes int, udp_sockets_inuse int, udp_sockets_memusage_inbytes int, raw_sockets_inuse int, frag_sockets_inuse int, frag_sockets_memusage_inbytes int) with (fillfactor=100) distributed by (ctime) partition by range (ctime)(start (date '2010-01-01') end (date '2010-02-01') EVERY (interval '1 month'));
 
 --- TABLE: socket_now
 --   (like socket_history)
@@ -300,21 +301,21 @@ create external web table public.socket_tail (like public.socket_history) execut
 --   (like socket_history)
 create external web table public._socket_tail (like public.socket_history) execute 'cat gpperfmon/data/_socket_tail.dat 2> /dev/null || true' on master format 'text' (delimiter '|' NULL as 'null');
 
--- TABLE: gp_log_master_ext 
+-- TABLE: gp_log_master_ext
 --   (like gp_toolkit.__gp_log_master_ext)
 CREATE EXTERNAL WEB TABLE public.gp_log_master_ext (LIKE gp_toolkit.__gp_log_master_ext) EXECUTE E'find $GP_SEG_DATADIR/pg_log/ -name "gpdb*.csv" | sort -r | head -n 2 | xargs cat' ON MASTER FORMAT 'csv' (delimiter E',' null E'' escape E'"' quote E'"') ENCODING 'UTF8';
 
--- TABLE: log_alert_history 
+-- TABLE: log_alert_history
 --   (like gp_toolkit.__gp_log_master_ext)
 CREATE TABLE public.log_alert_history (LIKE gp_toolkit.__gp_log_master_ext) distributed by (logtime) partition by range (logtime)(start (date '2010-01-01') end (date '2010-02-01') EVERY (interval '1 month'));
 
--- TABLE: log_alert_tail 
+-- TABLE: log_alert_tail
 --   (like gp_toolkit.__gp_log_master_ext)
-CREATE EXTERNAL WEB TABLE public.log_alert_tail (LIKE public.log_alert_history) EXECUTE 'cat gpperfmon/logs/alert_log_stage 2> /dev/null || true' ON MASTER FORMAT 'csv' (delimiter E',' null E'' escape E'"' quote E'"') ENCODING 'UTF8'; 
+CREATE EXTERNAL WEB TABLE public.log_alert_tail (LIKE public.log_alert_history) EXECUTE 'cat gpperfmon/logs/alert_log_stage 2> /dev/null || true' ON MASTER FORMAT 'csv' (delimiter E',' null E'' escape E'"' quote E'"') ENCODING 'UTF8';
 
--- TABLE: log_alert_all 
+-- TABLE: log_alert_all
 --   (like gp_toolkit.__gp_log_master_ext)
-CREATE EXTERNAL WEB TABLE public.log_alert_now (LIKE public.log_alert_history) EXECUTE 'cat gpperfmon/logs/*.csv 2> /dev/null || true' ON MASTER FORMAT 'csv' (delimiter E',' null E'' escape E'"' quote E'"') ENCODING 'UTF8'; 
+CREATE EXTERNAL WEB TABLE public.log_alert_now (LIKE public.log_alert_history) EXECUTE 'cat gpperfmon/logs/*.csv 2> /dev/null || true' ON MASTER FORMAT 'csv' (delimiter E',' null E'' escape E'"' quote E'"') ENCODING 'UTF8';
 
 -- schema changes for gpperfmon needed to complete the creation of the schema
 

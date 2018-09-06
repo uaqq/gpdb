@@ -426,14 +426,13 @@ static apr_status_t agg_put_planmetric(agg_t* agg, const gpmon_planmetric_t* met
 		if (! (metric_existing = apr_palloc(agg->pool, sizeof(gpmon_planmetric_t))) ) {
 			return APR_ENOMEM;
 		}
-		memcpy(&metric_existing->key, &metric->key, sizeof(gpmon_planmetric_key_t));
-		apr_hash_set(agg->planmetrictab, &(metric_existing->key), sizeof(gpmon_planmetric_key_t), metric_existing);
+		memcpy(&metric_existing->key, &metric->key, sizeof(metric->key));
+		apr_hash_set(agg->planmetrictab, &(metric_existing->key), sizeof(metric_existing->key), metric_existing);
 	}
-
 	metric_existing->node = metric->node;
 	metric_existing->t_start = metric->t_start;
 	metric_existing->t_finish = metric->t_finish;
-
+	metric_existing->seg_index = metric->seg_index;
 	return 0;
 }
 
@@ -967,10 +966,10 @@ static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr)
 		metric = (gpmon_planmetric_t*) valptr;
 
 		snprintf(
-			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d",
+			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d|%d",
 			nowstr,
 			metric->key.tmid, metric->key.ssid, metric->key.ccnt, metric->key.nid,
-			metric->node, metric->t_start, metric->t_finish
+			metric->seg_index, metric->node, metric->t_start, metric->t_finish
 		);
 
 		bytes_this_record = strlen(line) + 1;

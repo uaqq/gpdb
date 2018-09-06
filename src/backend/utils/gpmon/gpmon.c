@@ -43,7 +43,7 @@ int64 gpmon_tick = 0;
 
 void gpmon_sig_handler(int sig);
 
-void gpmon_sig_handler(int sig) 
+void gpmon_sig_handler(int sig)
 {
 	gpmon_tick++;
 }
@@ -66,7 +66,7 @@ void gpmon_init(void)
 		elog(WARNING, "gpmon: unable to set signal handler for SIGVTALRM (%m)");
 	}
 	else if (sfunc == gpmon_sig_handler) {
-		close(gpmon.gxsock); 
+		close(gpmon.gxsock);
 		gpmon.gxsock = -1;
 	}
 	else {
@@ -81,7 +81,7 @@ void gpmon_init(void)
 	if (-1 == setitimer(ITIMER_VIRTUAL, &tv, 0)) {
 		elog(WARNING, "gpmon: unable to start timer (%m)");
 	}
-#endif 
+#endif
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sock == -1) {
@@ -94,7 +94,7 @@ void gpmon_init(void)
     if (fcntl(sock, F_SETFD, 1) == -1) {
         elog(WARNING, "fcntl(F_SETFD) failed");
     }
-#endif 
+#endif
 	gpmon.gxsock = sock;
 	memset(&gpmon.gxaddr, 0, sizeof(gpmon.gxaddr));
 	gpmon.gxaddr.sin_family = AF_INET;
@@ -163,7 +163,7 @@ void gpmon_gettmid(int32* tmid)
     int32 xid;
     getDistributedTransactionIdentifier(buff);
     sscanf(buff, "%d-%d", tmid, &xid);
-} 
+}
 
 
 void gpmon_send(gpmon_packet_t* p)
@@ -184,11 +184,11 @@ void gpmon_send(gpmon_packet_t* p)
 				 p->u.qexec.status);
 		}
 	}
-	
+
 	if (gpmon.gxsock > 0) {
-		int n = sizeof(*p);
-		if (n != sendto(gpmon.gxsock, (const char *)p, n, 0, 
-						(struct sockaddr*) &gpmon.gxaddr, 
+		int n = sizeof(gpmon_packet_t);
+		if (n != sendto(gpmon.gxsock, (const char *)p, n, 0,
+						(struct sockaddr*) &gpmon.gxaddr,
 						sizeof(gpmon.gxaddr))) {
 			elog(LOG, "gpmon: cannot send (%m socket %d)", gpmon.gxsock);
 		}
@@ -213,7 +213,7 @@ void gpmon_qlog_packet_init(gpmon_packet_t *gpmonPacket)
 	Assert(gp_enable_gpperfmon && Gp_role == GP_ROLE_DISPATCH);
 	Assert(gpmonPacket);
 	Assert(gpmonPacket->magic != GPMON_MAGIC);
-	
+
 	gpmonPacket->magic = GPMON_MAGIC;
 	gpmonPacket->version = GPMON_PACKET_VERSION;
 	gpmonPacket->pkttype = GPMON_PKTTYPE_QLOG;
@@ -228,7 +228,7 @@ void gpmon_qlog_packet_init(gpmon_packet_t *gpmonPacket)
 
 	/* DB Id */
 	dbname = get_database_name(MyDatabaseId); /* needs to be freed */
-	snprintf(gpmonPacket->u.qlog.db, sizeof(gpmonPacket->u.qlog.db), "%s", dbname ? dbname : ""); 
+	snprintf(gpmonPacket->u.qlog.db, sizeof(gpmonPacket->u.qlog.db), "%s", dbname ? dbname : "");
 	if(dbname)
 	{
 		pfree(dbname);
@@ -249,15 +249,15 @@ void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket)
 	GPMON_QLOG_PACKET_ASSERTS(gpmonPacket);
 
 	gettimeofday(&tv, 0);
-	
+
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_SUBMIT;
 	gpmonPacket->u.qlog.tsubmit = tv.tv_sec;
-	
+
 	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
 			gpmonPacket->u.qlog.status);
-	
+
 	gpmon_send(gpmonPacket);
 }
 
@@ -331,15 +331,15 @@ void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket)
 	GPMON_QLOG_PACKET_ASSERTS(gpmonPacket);
 
 	gettimeofday(&tv, 0);
-	
+
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_START;
 	gpmonPacket->u.qlog.tstart = tv.tv_sec;
-	
+
 	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
 			gpmonPacket->u.qlog.status);
-	
+
 	gpmon_send(gpmonPacket);
 }
 
@@ -353,15 +353,15 @@ void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket)
 	GPMON_QLOG_PACKET_ASSERTS(gpmonPacket);
 	Assert(gpmonPacket->u.qlog.status == GPMON_QLOG_STATUS_START);
 	gettimeofday(&tv, 0);
-	
+
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_DONE;
 	gpmonPacket->u.qlog.tfin = tv.tv_sec;
-	
+
 	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
 			gpmonPacket->u.qlog.status);
-	
+
 	gpmon_send(gpmonPacket);
 }
 
@@ -378,15 +378,15 @@ void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket)
 		   gpmonPacket->u.qlog.status == GPMON_QLOG_STATUS_CANCELING);
 
 	gettimeofday(&tv, 0);
-	
+
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_ERROR;
 	gpmonPacket->u.qlog.tfin = tv.tv_sec;
-	
+
 	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
 			gpmonPacket->u.qlog.status);
-	
+
 	gpmon_send(gpmonPacket);
 }
 
@@ -402,12 +402,12 @@ gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket)
 		   gpmonPacket->u.qlog.status == GPMON_QLOG_STATUS_SUBMIT);
 
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_CANCELING;
-	
+
 	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
 			gpmonPacket->u.qlog.status);
-	
+
 	gpmon_send(gpmonPacket);
 }
 

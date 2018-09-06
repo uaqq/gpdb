@@ -47,8 +47,10 @@ void ReportPlanMetricGpmonPkt(NodeTag plan_node_type, int plan_node_id) {
 	planmetric_packet.u.planmetric.key.ccnt = gp_command_count;
 	planmetric_packet.u.planmetric.key.nid = plan_node_id;
 
-	planmetric_packet.u.planmetric.node = (int32)plan_node_type;
+	planmetric_packet.u.planmetric.node = (int16)plan_node_type;
 	planmetric_packet.u.planmetric.t_start = (int32)time(NULL);
+	planmetric_packet.u.planmetric.t_finish = -1;
+	planmetric_packet.u.planmetric.seg_index = (int4)GpIdentity.segindex;
 
 	gpmon_send(&planmetric_packet);
 }

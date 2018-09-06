@@ -230,7 +230,7 @@ static void recv_from_gx(SOCKET sock, short event, void* arg)
 	host_t* h = arg;
 	int e;
 	gp_smon_to_mmon_packet_t pktbuf;
-	gp_smon_to_mmon_packet_t* pkt = 0;
+	gp_smon_to_mmon_packet_t* pkt = NULL;
 	TR2(("recv_from_gx sock %d host %s port %d\n", sock, h->hostname, ax.port));
 
 	if (event & EV_TIMEOUT)
@@ -239,8 +239,8 @@ static void recv_from_gx(SOCKET sock, short event, void* arg)
 		// retry connecting
 		TR1(("Connection to %s timeout\n",h->hostname));
 		h->eflag = 1;
-	} 
-	else if (event & EV_READ) 
+	}
+	else if (event & EV_READ)
 	{
 		// reset timer of timeout event
 		struct timeval tv;

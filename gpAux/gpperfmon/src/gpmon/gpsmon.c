@@ -1129,22 +1129,18 @@ static void gx_recvplanmetric(gpmon_packet_t* pkt)
 		return;
 	}
     TR2(("received planmetric packet\n"));
-	
-	rec = apr_hash_get(gx.planmetrictab, &p->key, sizeof(gpmon_planmetric_key_t));
-	if (rec)
-	{
-		if (p->t_start != 0) {
-			rec->u.planmetric.t_start = p->t_start;
-		}
-		else if (p->t_finish != 0) {
-			rec->u.planmetric.t_finish = p->t_finish;
-		}
-	}
-	else
+
+	rec = apr_hash_get(gx.planmetrictab, &(p->key), sizeof(p->key));
+	if (!rec)
 	{
 		rec = gx_pkt_to_smon_to_mmon(apr_hash_pool_get(gx.planmetrictab), pkt);
-		apr_hash_set(gx.planmetrictab, &rec->u.planmetric.key, sizeof(gpmon_planmetric_key_t), rec);
+		apr_hash_set(gx.planmetrictab, &(rec->u.planmetric.key), sizeof(rec->u.planmetric.key), rec);
 	}
+
+	rec->u.planmetric.t_start = p->t_start;
+	rec->u.planmetric.t_finish = p->t_finish;
+	rec->u.planmetric.seg_index = p->seg_index;
+	rec->u.planmetric.node = p->node;
 }
 
 /* callback from libevent when a udp socket is ready to be read.

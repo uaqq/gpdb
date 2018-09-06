@@ -237,11 +237,11 @@ typedef struct gpmon_planmetric_key_t {
 
 typedef struct gpmon_planmetric_t {
 	gpmon_planmetric_key_t key;
-	int32 node;			/* GPDB node code */
-	int32 t_start;		/* start processing of the node */
-	int32 t_finish;	/* end processing of the node */
+	int32 node;  /* Node type code */
+	int32 t_start;  /* start processing of the node */
+	int32 t_finish;  /* end processing of the node */
+	int32 seg_index;  /* GPDB segment index */
 } gpmon_planmetric_t;
-
 
 /*
  * This value is a constant that identifies gpperfmon packets in general.
