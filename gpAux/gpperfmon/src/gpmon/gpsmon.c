@@ -1137,10 +1137,9 @@ static void gx_recvplanmetric(gpmon_packet_t* pkt)
 		apr_hash_set(gx.planmetrictab, &(rec->u.planmetric.key), sizeof(rec->u.planmetric.key), rec);
 	}
 
+	rec->u.planmetric.node_tag = p->node_tag;
 	rec->u.planmetric.t_start = p->t_start;
 	rec->u.planmetric.t_finish = p->t_finish;
-	rec->u.planmetric.seg_index = p->seg_index;
-	rec->u.planmetric.node = p->node;
 }
 
 /* callback from libevent when a udp socket is ready to be read.

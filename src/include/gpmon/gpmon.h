@@ -229,18 +229,19 @@ struct gpmon_hello_t {
    ------------------------------------------------------------------ */
 
 typedef struct gpmon_planmetric_key_t {
-	int32 tmid;	/* transaction time */
-    int32 ssid; /* session id */
-    int32 ccnt; /* command count */
-	int32 nid;	/* node identifier (unqiue across all nodes) */
+	int32 tmid;	 /* epoch timestamp */
+    int32 ssid;  /* session id */
+    int16 ccnt;  /* command count */
+	int16 segid;  /* segment id */
+	int32 pid;  /* process id */
+	int16 nid;	/* plan node id */
 } gpmon_planmetric_key_t;
 
 typedef struct gpmon_planmetric_t {
 	gpmon_planmetric_key_t key;
-	int32 node;  /* Node type code */
-	int32 t_start;  /* start processing of the node */
-	int32 t_finish;  /* end processing of the node */
-	int32 seg_index;  /* GPDB segment index */
+	int32 node_tag;  /* Node tag code */
+	int32 t_start;  /* timestamp of start processing of the node */
+	int32 t_finish;  /* timestamp of end processing of the node */
 } gpmon_planmetric_t;
 
 /*

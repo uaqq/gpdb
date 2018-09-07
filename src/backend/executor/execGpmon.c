@@ -43,14 +43,16 @@ void ReportPlanMetricGpmonPkt(NodeTag plan_node_type, int plan_node_id) {
 	gp_to_gpmmon_set_header(&planmetric_packet, GPMON_PKTTYPE_PLANMETRIC);
 
 	gpmon_gettmid(&planmetric_packet.u.planmetric.key.tmid);
-	planmetric_packet.u.planmetric.key.ssid = gp_session_id;
-	planmetric_packet.u.planmetric.key.ccnt = gp_command_count;
-	planmetric_packet.u.planmetric.key.nid = plan_node_id;
+	planmetric_packet.u.planmetric.key.ssid = (int32)gp_session_id;
+	planmetric_packet.u.planmetric.key.ccnt = (int16)gp_command_count;
 
-	planmetric_packet.u.planmetric.node = (int16)plan_node_type;
+	planmetric_packet.u.planmetric.key.segid = (int16)GpIdentity.segindex;
+	planmetric_packet.u.planmetric.key.pid = (int32)MyProcPid;
+	planmetric_packet.u.planmetric.key.nid = (int16)plan_node_id;
+
+	planmetric_packet.u.planmetric.node_tag = (int32)plan_node_type;
 	planmetric_packet.u.planmetric.t_start = (int32)time(NULL);
-	planmetric_packet.u.planmetric.t_finish = -1;
-	planmetric_packet.u.planmetric.seg_index = (int4)GpIdentity.segindex;
+	planmetric_packet.u.planmetric.t_finish = (int32)-1;  // TODO
 
 	gpmon_send(&planmetric_packet);
 }
