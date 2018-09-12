@@ -34,6 +34,7 @@ inline void gp_to_gpmmon_set_header(gpmon_packet_t* pkt, enum gpmon_pkttype_t pk
  */
 void ReportPlanMetricGpmonPkt(NodeTag plan_node_type, int plan_node_id) {
 	gpmon_packet_t planmetric_packet;
+	GpMonotonicTime gptime;
 
 	if (!gp_enable_gpperfmon) {
 		return;
@@ -41,11 +42,12 @@ void ReportPlanMetricGpmonPkt(NodeTag plan_node_type, int plan_node_id) {
 
 	memset(&planmetric_packet, 0, sizeof(gpmon_packet_t));
 	gp_to_gpmmon_set_header(&planmetric_packet, GPMON_PKTTYPE_PLANMETRIC);
+	gp_get_monotonic_time(&gptime);
 
 	gpmon_gettmid(&planmetric_packet.u.planmetric.key.tmid);
 	planmetric_packet.u.planmetric.key.ssid = (int32)gp_session_id;
 	planmetric_packet.u.planmetric.key.ccnt = (int16)gp_command_count;
-
+	planmetric_packet.u.planmetric.key.twms = (int64)gptime.endTime.tv_sec * (int64)USECS_PER_SECOND + (int64)gptime.endTime.tv_usec;
 	planmetric_packet.u.planmetric.key.segid = (int16)GpIdentity.segindex;
 	planmetric_packet.u.planmetric.key.pid = (int32)MyProcPid;
 	planmetric_packet.u.planmetric.key.nid = (int16)plan_node_id;
