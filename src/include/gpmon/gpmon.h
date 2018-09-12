@@ -235,7 +235,7 @@ typedef struct gpmon_planmetric_key_t {
 	int16 segid;  /* segment id */
 	int32 pid;  /* process id */
 	int16 nid;	/* plan node id */
-	int64 twms;  /* time with microseconds */
+	float twms;  /* time with microseconds */
 } gpmon_planmetric_key_t;
 
 typedef struct gpmon_planmetric_t {

@@ -130,7 +130,7 @@ create table public.pernode_history (
        segid int not null,              -- segment identifier
        pid int not null,                -- process identifier
        nid int not null,                -- node identifier
-       twms int not null,               -- time with milliseconds
+       twms float not null,             -- time with milliseconds
        node_tag int not null,           -- node tag (type)
        start_ts int not null,           -- UNIX timestamp of node start
        finish_ts int not null           -- UNIX timestamp of node finish

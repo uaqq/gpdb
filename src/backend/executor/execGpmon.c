@@ -47,7 +47,8 @@ void ReportPlanMetricGpmonPkt(NodeTag plan_node_type, int plan_node_id) {
 	gpmon_gettmid(&planmetric_packet.u.planmetric.key.tmid);
 	planmetric_packet.u.planmetric.key.ssid = (int32)gp_session_id;
 	planmetric_packet.u.planmetric.key.ccnt = (int16)gp_command_count;
-	planmetric_packet.u.planmetric.key.twms = (int64)gptime.endTime.tv_sec * (int64)USECS_PER_SECOND + (int64)gptime.endTime.tv_usec;
+	planmetric_packet.u.planmetric.key.twms = (float)gptime.endTime.tv_sec +
+	(float)(gptime.endTime.tv_usec / (USECS_PER_SECOND / MSECS_PER_SECOND)) / (float)MSECS_PER_SECOND;
 	planmetric_packet.u.planmetric.key.segid = (int16)GpIdentity.segindex;
 	planmetric_packet.u.planmetric.key.pid = (int32)MyProcPid;
 	planmetric_packet.u.planmetric.key.nid = (int16)plan_node_id;
