@@ -44,6 +44,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_namespace.h"
 #include "commands/dbcommands.h"
+#include "commands/analyzeutils.h"
 #include "commands/tablecmds.h"
 #include "commands/vacuum.h"
 #include "cdb/cdbdisp_query.h"
@@ -58,6 +59,7 @@
 #include "lib/stringinfo.h"
 #include "libpq/pqformat.h"             /* pq_beginmessage() etc. */
 #include "miscadmin.h"
+#include "parser/parse_relation.h"
 #include "postmaster/autovacuum.h"
 #include "storage/freespace.h"
 #include "storage/proc.h"
@@ -1519,6 +1521,45 @@ get_rel_oids(List *relids, VacuumStmt *vacstmt, bool isVacuum)
 					}
 				}
 				oid_list = lappend_oid(oid_list, relationOid); /* root partition */
+			}
+			else if (ps == PART_STATUS_LEAF)
+			{
+				Oid root_rel_oid = rel_partition_get_master(relationOid);
+				oid_list = list_make1_oid(relationOid);
+
+				List *va_root_attnums = NIL;
+				if (vacstmt->va_cols != NIL)
+				{
+					ListCell *lc;
+					int i;
+					foreach(lc, vacstmt->va_cols)
+					{
+						char	   *col = strVal(lfirst(lc));
+
+						i = get_attnum(root_rel_oid, col);
+						if (i == InvalidAttrNumber)
+							ereport(ERROR,
+									(errcode(ERRCODE_UNDEFINED_COLUMN),
+									 errmsg("column \"%s\" of relation \"%s\" does not exist",
+											col, get_rel_name(root_rel_oid))));
+						va_root_attnums = lappend_int(va_root_attnums, i);
+					}
+				}
+				else
+				{
+					Relation onerel = RelationIdGetRelation(root_rel_oid);
+					int attr_cnt = onerel->rd_att->natts;
+					for (int i = 1; i <= attr_cnt; i++)
+					{
+						Form_pg_attribute attr = onerel->rd_att->attrs[i-1];
+						if (attr->attisdropped)
+							continue;
+						va_root_attnums = lappend_int(va_root_attnums, i);
+					}
+					RelationClose(onerel);
+				}
+				if(leaf_parts_analyzed(root_rel_oid, relationOid, va_root_attnums))
+					oid_list = lappend_oid(oid_list, root_rel_oid);
 			}
 			else if (ps == PART_STATUS_INTERIOR) /* analyze an interior partition directly */
 			{

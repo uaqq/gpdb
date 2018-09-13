@@ -3561,11 +3561,15 @@
   <topic id="gp_enable_relsize_collection">
     <title>gp_enable_relsize_collection</title>
     <body>
-      <p>Enables the legacy query optimizer (planner) to use the estimated size of a table
-          (<codeph>pg_relation_size</codeph> function) if there are no statistics for the table. By
-        default, the planner uses a default value to estimate the number of rows if statistics are
-        not available. The default behavior improves query optimization time and reduces resource
-        queue usage in heavy workloads, but can lead to suboptimal plans.</p>
+      <p>Enables GPORCA and the legacy query optimizer (planner) to use the estimated size of a
+        table (<codeph>pg_relation_size</codeph> function) if there are no statistics for the table.
+        By default, GPORCA and the planner use a default value to estimate the number of rows if
+        statistics are not available. The default behavior improves query optimization time and
+        reduces resource queue usage in heavy workloads, but can lead to suboptimal plans.</p>
+      <p>This parameter is ignored for a root partition of a partitioned table. When GPORCA is
+        enabled and the root partition does not have statistics, GPORCA always uses the default
+        value. You can use <codeph>ANALZYE ROOTPARTITION</codeph> to collect statistics on the root
+        partition. See <codeph><xref href="../../ref_guide/sql_commands/ANALYZE.xml"/></codeph>.</p>
       <table id="table_b2v_b5t_3x">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
@@ -3802,7 +3806,7 @@
           <tbody>
             <row>
               <entry colname="col1">Boolean</entry>
-              <entry colname="col2">false</entry>
+              <entry colname="col2">on</entry>
               <entry colname="col3">master<p>session</p><p>reload</p></entry>
             </row>
           </tbody>
@@ -4614,9 +4618,10 @@
     <title>gp_max_csv_line_length</title>
     <body>
       <p>The maximum length of a line in a CSV formatted file that will be imported into the system.
-        The default is 1MB (1048576 bytes). Maximum allowed is 4MB (4194184 bytes). The default may
-        need to be increased if using the <i>gp_toolkit</i> administrative schema to read Greenplum
-        Database log files.</p>
+        The default is 1MB (1048576 bytes). Maximum allowed is 1GB (1073741824 bytes). The default
+        may need to be increased if using the <i>gp_toolkit</i> administrative schema to read
+        Greenplum Database log files.</p>
+      <note>This parameter is deprecated and will be removed in a future release.</note>
       <table id="gp_max_csv_line_length_table">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
@@ -7640,13 +7645,22 @@
   <topic id="optimizer_analyze_root_partition">
     <title>optimizer_analyze_root_partition</title>
     <body>
-      <p>For a partitioned table, collects statistics for the root partition when the
-          <cmdname>ANALYZE</cmdname> command is run on the table. GPORCA uses the root partition
-        statistics when generating a query plan. The legacy query optimizer does not use these
-        statistics. When the value of the server configuration parameter <codeph><xref
-            href="#optimizer" format="dita"/></codeph> is on (the default), the value of this
-        parameter should also be on (the default). For information about collecting table statistics
-        on partitioned tables, see <codeph><xref href="../sql_commands/ANALYZE.xml"/></codeph>.</p>
+      <p>For a partitioned table, controls whether the <codeph>ROOTPARTITION</codeph> keyword is
+        required to collect root partition statistics when the <cmdname>ANALYZE</cmdname> command is
+        run on the table. GPORCA uses the root partition statistics when generating a query plan.
+        The legacy query optimizer does not use these statistics. </p>
+      <p>The default setting for the parameter is <codeph>on</codeph>, the <codeph>ANALYZE</codeph>
+        command can collect root partition statistics without the <codeph>ROOTPARTITION</codeph>
+        keyword. Root partition statistics are collected when you run <codeph>ANALYZE</codeph> on
+        the root partition, or when you run <codeph>ANALYZE</codeph> on a child leaf partition of
+        the partitioned table and the other child leaf partitions have statistics. When the value is
+          <codeph>off</codeph>, you must run <codeph>ANALZYE ROOTPARTITION</codeph> to collect root
+        partition statistics. </p>
+      <p>When the value of the server configuration parameter <codeph><xref href="#optimizer"
+            format="dita"/></codeph> is <codeph>on</codeph> (the default), the value of this
+        parameter should also be <codeph>on</codeph>. For information about collecting table
+        statistics on partitioned tables, see <codeph><xref href="../sql_commands/ANALYZE.xml"
+          /></codeph>.</p>
       <p>For information about the legacy query optimizer and GPORCA, see <xref
           href="../../admin_guide/query/topics/query.xml">Querying Data</xref><ph
           otherprops="op-print"> in the <cite>Greenplum Database Administrator

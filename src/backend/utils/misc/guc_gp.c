@@ -519,6 +519,7 @@ bool		optimizer_enable_multiple_distinct_aggs;
 bool		optimizer_enable_direct_dispatch;
 bool		optimizer_enable_hashjoin_redistribute_broadcast_children;
 bool		optimizer_enable_broadcast_nestloop_outer_child;
+bool		optimizer_enable_streaming_material;
 bool		optimizer_enable_assert_maxonerow;
 bool		optimizer_enable_constant_expression_evaluation;
 bool		optimizer_enable_bitmapscan;
@@ -606,7 +607,7 @@ char	   *gp_default_storage_options = NULL;
 
 int			writable_external_table_bufsize = 64;
 
-bool		gp_external_enable_filter_pushdown = false;
+bool		gp_external_enable_filter_pushdown = true;
 
 IndexCheckType gp_indexcheck_insert = INDEX_CHECK_NONE;
 IndexCheckType gp_indexcheck_vacuum = INDEX_CHECK_NONE;
@@ -2986,6 +2987,16 @@ struct config_bool ConfigureNamesBool_gp[] =
 		true, NULL, NULL
 	},
 	{
+		{"optimizer_enable_streaming_material", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Enable plans with a streaming material node in the optimizer."),
+			NULL,
+			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&optimizer_enable_streaming_material,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"optimizer_enforce_subplans", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Enforce correlated execution in the optimizer"),
 			NULL,
@@ -3310,7 +3321,7 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_GPDB_ADDOPT
 		},
 		&gp_external_enable_filter_pushdown,
-		false, NULL, NULL
+		true, NULL, NULL
 	},
 
 	{
@@ -4735,7 +4746,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_SUPERUSER_ONLY |  GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_GPDB_ADDOPT
 		},
 		&dtx_phase2_retry_count,
-		2, 0, 10, NULL, NULL
+		2, 0, 15, NULL, NULL
 	},
 
 	{

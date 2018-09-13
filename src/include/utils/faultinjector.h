@@ -15,6 +15,8 @@
 
 #define FAULT_NAME_MAX_LENGTH	256
 
+#define INFINITE_END_OCCURRENCE -1
+
 /*
  *
  */
@@ -134,8 +136,12 @@ typedef enum FaultInjectorIdentifier_e {
 	FinishPreparedTransactionAbortPass2AbortingCreateNeeded,	
 		/* abort: create pending => aborting create */
 
+	FinishPreparedStartOfFunction,
+
 	FileRepVerification,
 		/* trigger filerep verification for testing */
+
+	ChangeTrackingAddBuffer,
 	
 	TwoPhaseTransactionCommitPrepared,
 	
@@ -237,6 +243,9 @@ typedef enum FaultInjectorIdentifier_e {
 	AutoVacWorkerBeforeDoAutovacuum,
 
 	CreateResourceGroupFail,
+	CreateGangInProgress,
+
+	DecreaseToastMaxChunkSize,
 
 	/* INSERT has to be done before that line */
 	FaultInjectorIdMax,
@@ -354,7 +363,7 @@ typedef struct FaultInjectorEntry_s {
 	
 	FaultInjectorType_e		faultInjectorType;
 	
-	int						sleepTime;
+	int						extraArg;
 		/* in seconds, in use if fault injection type is sleep */
 		
 	DDLStatement_e			ddlStatement;
@@ -363,7 +372,8 @@ typedef struct FaultInjectorEntry_s {
 	
 	char					tableName[NAMEDATALEN];
 	
-	volatile	int			occurrence;
+	volatile	int			startOccurrence;
+	volatile	int			endOccurrence;
 	volatile	 int	numTimesTriggered;
 	volatile	FaultInjectorState_e	faultInjectorState;
 

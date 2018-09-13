@@ -1180,6 +1180,13 @@ void DisconnectAndDestroyAllGangs(bool resetSession)
 
 	ELOG_DISPATCHER_DEBUG("DisconnectAndDestroyAllGangs");
 
+	/* Destroy CurrentGangCreating before GangContext is reset */
+	if (CurrentGangCreating != NULL)
+	{
+		DisconnectAndDestroyGang(CurrentGangCreating);
+		CurrentGangCreating = NULL;
+	}
+
 	/* for now, destroy all readers, regardless of the portal that owns them */
 	disconnectAndDestroyAllReaderGangs(true);
 
@@ -1484,6 +1491,8 @@ void freeGangsForPortal(char *portal_name)
 	if (CurrentGangCreating != NULL)
 	{
 		GangType type = CurrentGangCreating->type;
+		Assert(type >= GANGTYPE_UNALLOCATED &&
+			   type <= GANGTYPE_PRIMARY_WRITER);
 		DisconnectAndDestroyGang(CurrentGangCreating);
 		CurrentGangCreating = NULL;
 

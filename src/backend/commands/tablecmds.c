@@ -426,6 +426,9 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	 */
 	namespaceId = RangeVarGetCreationNamespace(stmt->relation);
 
+	/* Lock the creation namespace to protect against concurrent namespace drop */
+	LockDatabaseObject(NamespaceRelationId, namespaceId, 0, AccessShareLock);
+
 	if (!IsBootstrapProcessingMode())
 	{
 		AclResult	aclresult;
@@ -12020,6 +12023,13 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 						&tmprv,
 						useExistingColumnAttributes);
 
+		/*
+		 * bypass gpmon info collecting in following ExecutorStart
+		 * to be consistent with other alter table commands,
+		 * ALTER TABLE SET DISTRIBUTED BY should not be logged in gpperfmon.
+		 */
+		queryDesc->gpmon_pkt = NULL;
+
 		PG_TRY();
 		{
 			/* 
@@ -12489,8 +12499,7 @@ ATPExecPartAdd(AlteredTableInfo *tab,
 	PartitionElem *pelem;
 	List	   *colencs = NIL;
 
-	/* This whole function is QD only. */
-	if (Gp_role != GP_ROLE_DISPATCH)
+	if (!(Gp_role == GP_ROLE_DISPATCH || IsBinaryUpgrade))
 		return;
 
 	if (att == AT_PartAddForSplit)
@@ -12697,7 +12706,8 @@ ATPExecPartAlter(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	if (!(atc->subtype == AT_PartExchange ||
 		  atc->subtype == AT_PartSplit ||
 		  atc->subtype == AT_SetDistributedBy) &&
-		Gp_role != GP_ROLE_DISPATCH)
+		  Gp_role != GP_ROLE_DISPATCH &&
+		  !IsBinaryUpgrade)
 		return;
 
 	switch (atc->subtype)
@@ -12743,7 +12753,7 @@ ATPExecPartAlter(List **wqueue, AlteredTableInfo *tab, Relation rel,
 							RelationGetRelationName(rel))));
 	}
 
-	if (Gp_role == GP_ROLE_DISPATCH)
+	if (Gp_role == GP_ROLE_DISPATCH || IsBinaryUpgrade)
 	{
 		pid2->idtype = AT_AP_IDList;
 		pid2->partiddef = (Node *)pidlst;
@@ -13872,7 +13882,7 @@ ATPExecPartSetTemplate(AlteredTableInfo *tab,
 	PgPartRule			*prule = NULL;
 	int					 lvl   = 1;
 
-	if (Gp_role != GP_ROLE_DISPATCH)
+	if (!(Gp_role == GP_ROLE_DISPATCH || IsBinaryUpgrade))
 		return;
 
 	/* set template for top level table */
@@ -15546,6 +15556,9 @@ AlterTableNamespace(RangeVar *relation, const char *newschema)
 
 	/* get schema OID and check its permissions */
 	nspOid = LookupCreationNamespace(newschema);
+
+	/* Lock the creation namespace to protect against concurrent namespace drop */
+	LockDatabaseObject(NamespaceRelationId, nspOid, 0, AccessShareLock);
 
 	/* common checks on switching namespaces */
 	CheckSetNamespace(oldNspOid, nspOid, RelationRelationId, relid);

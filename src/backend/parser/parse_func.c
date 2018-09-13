@@ -452,6 +452,11 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
                      errmsg("aggregate ORDER BY is not implemented for window functions"),
                      parser_errposition(pstate, location)));
 
+		/* DISTINCT is only support for single-argument aggregates */
+		if (agg_distinct && list_length(fargs) != 1)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("DISTINCT is supported only for single-argument aggregates")));
 
         /*
          * If this is a "true" window function, rather than an aggregate
@@ -475,6 +480,20 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 			 */
 
 			ReleaseSysCache(tuple);
+		}
+
+		/* See explanation below, in the normal aggregate case */
+		if (agg_filter && !retstrict &&
+			(funcid < SUM_OID_MIN || funcid > SUM_OID_MAX))
+		{
+		    ereport(ERROR,
+					(errcode(ERRCODE_GP_FEATURE_NOT_SUPPORTED),
+					 errmsg("function %s is not defined as STRICT",
+							func_signature_string(funcname, nargs,
+												  actual_arg_types)),
+					 errhint("The filter clause is only supported over functions "
+							 "defined as STRICT."),
+					 parser_errposition(pstate, location)));
 		}
 
 		winref->winfnoid = funcid;
@@ -586,7 +605,13 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 					 errmsg("ORDER BY and DISTINCT are mutually exclusive"),
 					 parser_errposition(pstate, location)));
 		}
-        
+
+		/* DISTINCT is only support for single-argument aggregates */
+		if (agg_distinct && list_length(fargs) != 1 )
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("DISTINCT is supported only for single-argument aggregates")));
+
         /* 
          * Build the aggregate node and transform it
          *

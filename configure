@@ -582,8 +582,8 @@ MAKEFLAGS=
 # Identity of this package.
 PACKAGE_NAME='Greenplum Database'
 PACKAGE_TARNAME='greenplum-database'
-PACKAGE_VERSION='5.10.0'
-PACKAGE_STRING='Greenplum Database 5.10.0'
+PACKAGE_VERSION='5.11.0'
+PACKAGE_STRING='Greenplum Database 5.11.0'
 PACKAGE_BUGREPORT='support@arenadata.io'
 PACKAGE_URL=''
 
@@ -12485,7 +12485,7 @@ int
 main ()
 {
 
-return strncmp("2.65.", GPORCA_VERSION_STRING, 5);
+return strncmp("2.73.", GPORCA_VERSION_STRING, 5);
 
   ;
   return 0;
@@ -12495,7 +12495,7 @@ if ac_fn_cxx_try_run "$LINENO"; then :
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: ok" >&5
 $as_echo "ok" >&6; }
 else
-  as_fn_error $? "Your ORCA version is expected to be 2.64.XXX" "$LINENO" 5
+  as_fn_error $? "Your ORCA version is expected to be 2.73.XXX" "$LINENO" 5
 
 fi
 rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
