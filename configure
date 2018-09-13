@@ -582,8 +582,8 @@ MAKEFLAGS=
 # Identity of this package.
 PACKAGE_NAME='Greenplum Database'
 PACKAGE_TARNAME='greenplum-database'
-PACKAGE_VERSION='5.10.0'
-PACKAGE_STRING='Greenplum Database 5.10.0'
+PACKAGE_VERSION='5.11.0'
+PACKAGE_STRING='Greenplum Database 5.11.0'
 PACKAGE_BUGREPORT='support@arenadata.io'
 PACKAGE_URL=''
 
