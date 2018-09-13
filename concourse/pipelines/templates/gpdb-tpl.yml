@@ -523,7 +523,7 @@ resources:
     bucket: {{gpdb-stable-builds-bucket-name}}
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
-    versioned_file: release_candidates/bin_gpdb_centos6/gpdb5/bin_gpdb.tar.gz
+    versioned_file: release_candidates/bin_gpdb_centos6/gpdb510X/bin_gpdb.tar.gz
 
 - name: bin_gpdb_centos7_rc
   type: s3
@@ -532,7 +532,7 @@ resources:
     bucket: {{gpdb-stable-builds-bucket-name}}
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
-    versioned_file: release_candidates/bin_gpdb_centos7/gpdb5/bin_gpdb.tar.gz
+    versioned_file: release_candidates/bin_gpdb_centos7/gpdb510X/bin_gpdb.tar.gz
 
 - name: bin_gpdb_sles11_rc
   type: s3
@@ -541,7 +541,7 @@ resources:
     bucket: {{gpdb-stable-builds-bucket-name}}
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
-    versioned_file: release_candidates/bin_gpdb_sles11/gpdb5/bin_gpdb.tar.gz
+    versioned_file: release_candidates/bin_gpdb_sles11/gpdb510X/bin_gpdb.tar.gz
 
 {% endif %}
 {% if "UD" in test_sections %}
@@ -700,24 +700,6 @@ resources:
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
     versioned_file: {{deb_package_ubuntu16_versioned_file}}
-
-{% if "DPM" in test_sections %}
-- name: nightly-trigger
-  type: time
-  source:
-    location: America/Los_Angeles
-    days: [Sunday, Monday, Tuesday, Wednesday, Thursday, Friday]
-    start: 6:00 AM
-    stop: 7:00 AM
-
-{% endif %}
-- name: nightly-trigger-aix
-  type: time
-  source:
-    location: America/Los_Angeles
-    days: [Sunday, Monday, Tuesday, Wednesday, Thursday, Friday]
-    start: 8:00 AM
-    stop: 9:00 AM
 
 {% if "AA" in test_sections %}
 - name: madlib_ci
@@ -1313,9 +1295,8 @@ jobs:
   # We need to serialize this job to avoid overwhelming workload
   # on remote machine.
   - aggregate:
-    - get: nightly-trigger-aix
-      trigger: true
     - get: gpdb_src
+      trigger: true
       passed: [gate_compile_start]
     - get: gpaddon_src
       passed: [gate_compile_start]
@@ -2559,8 +2540,6 @@ jobs:
 
 - name: DPM_backup-restore_ddboost_part1
   plan:
-  - get: nightly-trigger
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: ccp_src
@@ -2569,6 +2548,7 @@ jobs:
       tags: ["ddboost"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["ddboost"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2637,8 +2617,6 @@ jobs:
 
 - name: DPM_backup-restore_ddboost_part2
   plan:
-  - get: nightly-trigger
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: ccp_src
@@ -2647,6 +2625,7 @@ jobs:
       tags: ["ddboost"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["ddboost"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2715,8 +2694,6 @@ jobs:
 
 - name: DPM_backup-restore_ddboost_part3
   plan:
-  - get: nightly-trigger
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: ccp_src
@@ -2725,6 +2702,7 @@ jobs:
       tags: ["ddboost"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["ddboost"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2793,9 +2771,6 @@ jobs:
 
 - name: DPM_backup-restore_netbackup_part1
   plan:
-  - get: nightly-trigger
-    tags: ["netbackup"]
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: ccp_src
@@ -2804,6 +2779,7 @@ jobs:
       tags: ["netbackup"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["netbackup"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2851,9 +2827,6 @@ jobs:
 
 - name: DPM_backup-restore_netbackup_part2
   plan:
-  - get: nightly-trigger
-    tags: ["netbackup"]
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: ccp_src
@@ -2862,6 +2835,7 @@ jobs:
       tags: ["netbackup"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["netbackup"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2909,9 +2883,6 @@ jobs:
 
 - name: DPM_backup-restore_netbackup_part3
   plan:
-  - get: nightly-trigger
-    tags: ["netbackup"]
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: ccp_src
@@ -2920,6 +2891,7 @@ jobs:
       tags: ["netbackup"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["netbackup"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2967,8 +2939,6 @@ jobs:
 
 - name: DPM_backup_43_restore_5
   plan:
-  - get: nightly-trigger
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: gpdb_src
@@ -2977,6 +2947,7 @@ jobs:
         - gpMgmt/bin/pythonSrc/ext
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
     - get: gpdb4_binary
@@ -3017,13 +2988,12 @@ jobs:
 
 - name: gptransfer-43x-to-5x
   plan:
-  - get: nightly-trigger
-    trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: gpdb_src
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
     - get: gpdb4_binary
@@ -3298,6 +3268,7 @@ jobs:
       trigger: [[ test_trigger ]]
     - get: pxf_tarball
       trigger: [[ test_trigger ]]
+      version: {version_id: Iex4xYPSamHvDCiKiaYtQ6zrRw6Faja6}
     - get: pxf_infra_src
     - get: centos6-gpdb-dev-pxf-hdp
   - task: test_pxf
