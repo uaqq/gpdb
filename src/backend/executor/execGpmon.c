@@ -127,7 +127,7 @@ void EndPlanStateGpmonPkt(PlanState *ps)
 		return;
 	}
 
-	ReportPlanMetricGpmonPkt(ps->estate->type, ps->plan->plan_node_id);
+	ReportPlanMetricGpmonPkt(ps->state->type, ps->plan->plan_node_id);
 
 	ps->gpmon_pkt.u.qexec.status = (uint8)PMNS_Finished;
 
