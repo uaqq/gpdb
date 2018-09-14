@@ -965,11 +965,11 @@ static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr)
 		metric = (gpmon_planmetric_t*) valptr;
 
 		snprintf(
-			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%.4f|%d|%d|%d",
+			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%.6f|%d|%d|%d",
 			nowstr,
 			metric->key.tmid, metric->key.ssid, metric->key.ccnt,
 			metric->key.segid, metric->key.pid, metric->key.nid,
-			metric->key.twms,
+			(float)metric->key.key_sec + ((float)metric->key.key_usec / (float)1000000),
 			metric->node_tag, metric->t_start, metric->t_finish
 		);
 

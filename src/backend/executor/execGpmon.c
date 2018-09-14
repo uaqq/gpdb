@@ -33,28 +33,30 @@ inline void gp_to_gpmmon_set_header(gpmon_packet_t* pkt, enum gpmon_pkttype_t pk
  * This procedure should be called after every PlanState change
  */
 void ReportPlanMetricGpmonPkt(NodeTag plan_node_type, int plan_node_id) {
-	gpmon_packet_t planmetric_packet;
-	GpMonotonicTime gptime;
-
 	if (!gp_enable_gpperfmon) {
 		return;
 	}
 
+	gpmon_packet_t planmetric_packet;
 	memset(&planmetric_packet, 0, sizeof(gpmon_packet_t));
 	gp_to_gpmmon_set_header(&planmetric_packet, GPMON_PKTTYPE_PLANMETRIC);
-	gp_get_monotonic_time(&gptime);
 
 	gpmon_gettmid(&planmetric_packet.u.planmetric.key.tmid);
 	planmetric_packet.u.planmetric.key.ssid = (int32)gp_session_id;
 	planmetric_packet.u.planmetric.key.ccnt = (int16)gp_command_count;
-	planmetric_packet.u.planmetric.key.twms = (float)gptime.endTime.tv_sec +
-	(float)(gptime.endTime.tv_usec / (USECS_PER_SECOND / MSECS_PER_SECOND)) / (float)MSECS_PER_SECOND;
 	planmetric_packet.u.planmetric.key.segid = (int16)GpIdentity.segindex;
 	planmetric_packet.u.planmetric.key.pid = (int32)MyProcPid;
 	planmetric_packet.u.planmetric.key.nid = (int16)plan_node_id;
 
+	/* Get current time and sign the packet with it */
+	GpMonotonicTime gptime;
+	gptime.endTime.tv_sec = 0;
+	gp_get_monotonic_time(&gptime);
+	planmetric_packet.u.planmetric.key.key_sec = (int32)gptime.endTime.tv_sec;
+	planmetric_packet.u.planmetric.key.key_usec = (int32)gptime.endTime.tv_usec;
+
 	planmetric_packet.u.planmetric.node_tag = (int32)plan_node_type;
-	planmetric_packet.u.planmetric.t_start = (int32)time(NULL);
+	planmetric_packet.u.planmetric.t_start = (int32)gptime.endTime.tv_sec;
 	planmetric_packet.u.planmetric.t_finish = (int32)-1;  // TODO
 
 	gpmon_send(&planmetric_packet);
@@ -69,7 +71,7 @@ void InitPlanNodeGpmonPkt(Plan *plan, gpmon_packet_t *gpmon_pkt, EState *estate)
 		return;
 	}
 
-	ReportPlanMetricGpmonPkt(plan->type, plan->plan_node_id);
+	ReportPlanMetricGpmonPkt(plan->type, plan->plan_node_id);  // TODO: Try other options
 
 	memset(gpmon_pkt, 0, sizeof(gpmon_packet_t));
 	gp_to_gpmmon_set_header(gpmon_pkt, GPMON_PKTTYPE_QEXEC);
@@ -103,7 +105,7 @@ void CheckSendPlanStateGpmonPkt(PlanState *ps)
 		return;
 	}
 
-	ReportPlanMetricGpmonPkt(ps->type, ps->plan->plan_node_id); // TODO: Try other options
+	// ReportPlanMetricGpmonPkt(ps->type, ps->plan->plan_node_id); // TODO: Try other options
 
 	if (!ps->fHadSentGpmon || ps->gpmon_plan_tick != gpmon_tick)
 	{
@@ -125,7 +127,7 @@ void EndPlanStateGpmonPkt(PlanState *ps)
 		return;
 	}
 
-	ReportPlanMetricGpmonPkt(ps->type, ps->plan->plan_node_id);
+	ReportPlanMetricGpmonPkt(ps->estate->type, ps->plan->plan_node_id);
 
 	ps->gpmon_pkt.u.qexec.status = (uint8)PMNS_Finished;
 
