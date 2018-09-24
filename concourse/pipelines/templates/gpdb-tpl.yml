@@ -3046,6 +3046,8 @@ jobs:
         output_mapping:
           cluster_env_files: cluster_env_files2
       - task: gpinitsystem
+        input_mapping:
+          terraform: terraform2
         config:
           platform: linux
           image_resource:
@@ -3147,6 +3149,8 @@ jobs:
         output_mapping:
           cluster_env_files: cluster_env_files2
       - task: gpinitsystem
+        input_mapping:
+          terraform: terraform2
         config:
           platform: linux
           image_resource:
