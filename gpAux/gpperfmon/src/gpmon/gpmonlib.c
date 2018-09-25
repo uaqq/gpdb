@@ -576,7 +576,7 @@ char *get_node_tag_name(apr_int32_t node_tag, apr_pool_t* pool) {
 			ntname = "Result";
 			break;
 		case T_ModifyTableState:
-			ntname = "Modify table";
+			ntname = "ModifyTable";
 			break;
 		case T_AppendState:
 			ntname = "Append";
