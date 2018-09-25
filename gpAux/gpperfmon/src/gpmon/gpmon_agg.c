@@ -421,21 +421,16 @@ static apr_status_t agg_put_qexec(agg_t* agg, const qexec_packet_t* qexec_packet
 
 static apr_status_t agg_put_planmetric(agg_t* agg, const gpmon_planmetric_t* metric)
 {
-	gpmon_planmetric_t* metric_existing = apr_hash_get(agg->planmetrictab, &(metric->key), sizeof(gpmon_planmetric_key_t));
-	if (!metric_existing) {
-		if (! (metric_existing = apr_palloc(agg->pool, sizeof(gpmon_planmetric_t))) ) {
-			return APR_ENOMEM;
-		}
-		memcpy(&metric_existing->key, &metric->key, sizeof(metric->key));
-		apr_hash_set(agg->planmetrictab, &(metric_existing->key), sizeof(metric_existing->key), metric_existing);
-	}
-	metric_existing->node_tag = metric->node_tag;
-	metric_existing->t_start = metric->t_start;
-	metric_existing->t_finish = metric->t_finish;
+	// Just replace the hash table entry with a new one
+	gpmon_planmetric_t* rec_new = apr_palloc(agg->pool, sizeof(gpmon_planmetric_t));
+	if (!rec_new)
+		return APR_ENOMEM;
+
+	memcpy(rec_new, metric, sizeof(*metric));
+
+	apr_hash_set(agg->planmetrictab, &(rec_new->key), sizeof(rec_new->key), rec_new);
 	return 0;
 }
-
-
 
 apr_status_t agg_create(agg_t** retagg, apr_int64_t generation, apr_pool_t* parent_pool, apr_hash_t* fsinfotab)
 {
@@ -965,12 +960,12 @@ static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr)
 		metric = (gpmon_planmetric_t*) valptr;
 
 		snprintf(
-			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%.6f|%d|%d|%d",
+			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d|%d|%d",
 			nowstr,
 			metric->key.tmid, metric->key.ssid, metric->key.ccnt,
 			metric->key.segid, metric->key.pid, metric->key.nid,
-			(float)metric->key.key_sec + ((float)metric->key.key_usec / (float)1000000),
-			metric->node_tag, metric->t_start, metric->t_finish
+			metric->key.planmetric_status,
+			metric->node_tag, metric->ts
 		);
 
 		bytes_this_record = strlen(line) + 1;

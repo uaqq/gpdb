@@ -130,10 +130,9 @@ create table public.pernode_history (
        segid int not null,              -- segment identifier
        pid int not null,                -- process identifier
        nid int not null,                -- node identifier
-       twms float not null,             -- time with milliseconds
+       stage int not null,              -- PlanNode status
        node_tag int not null,           -- node tag (type)
-       start_ts int not null,           -- UNIX timestamp of node start
-       finish_ts int not null           -- UNIX timestamp of node finish
+       ts int not null                  -- UNIX timestamp of last update
 );
 
 create external web table public.pernode_now (

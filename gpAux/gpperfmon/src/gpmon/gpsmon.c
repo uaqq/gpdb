@@ -705,7 +705,7 @@ static void gx_gettcpcmd(SOCKET sock, short event, void* arg)
 		gx.pidtab = apr_hash_make(newpool);
 		CHECKMEM(gx.pidtab);
 
-		/* per-node info table */
+		/* planmetric hash table */
 		gx.planmetrictab = apr_hash_make(newpool);
 		CHECKMEM(gx.planmetrictab);
 	}
@@ -1121,25 +1121,19 @@ static void gx_recvqexec(gpmon_packet_t* pkt)
 
 static void gx_recvplanmetric(gpmon_packet_t* pkt)
 {
-	gp_smon_to_mmon_packet_t* rec;
-	gpmon_planmetric_t* p = &(pkt->u.planmetric);
-
 	if (pkt->pkttype != GPMON_PKTTYPE_PLANMETRIC) {
 		gpsmon_fatal(FLINE, "assert failed; expected pkttype planmetric");
 		return;
 	}
     TR2(("received planmetric packet\n"));
 
-	rec = apr_hash_get(gx.planmetrictab, &(p->key), sizeof(p->key));
-	if (!rec)
-	{
-		rec = gx_pkt_to_smon_to_mmon(apr_hash_pool_get(gx.planmetrictab), pkt);
-		apr_hash_set(gx.planmetrictab, &(rec->u.planmetric.key), sizeof(rec->u.planmetric.key), rec);
-	}
+	gp_smon_to_mmon_packet_t* rec_new = apr_palloc(apr_hash_pool_get(gx.planmetrictab), sizeof(gp_smon_to_mmon_packet_t));
+	CHECKMEM(rec_new);
 
-	rec->u.planmetric.node_tag = p->node_tag;
-	rec->u.planmetric.t_start = p->t_start;
-	rec->u.planmetric.t_finish = p->t_finish;
+	gp_smon_to_mmon_set_header(rec_new, GPMON_PKTTYPE_PLANMETRIC);
+	memcpy(&rec_new->u.planmetric, &pkt->u.planmetric, sizeof(pkt->u.planmetric));
+
+	apr_hash_set(gx.planmetrictab, &rec_new->u.planmetric.key, sizeof(rec_new->u.planmetric.key), rec_new);
 }
 
 /* callback from libevent when a udp socket is ready to be read.

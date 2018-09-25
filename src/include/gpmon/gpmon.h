@@ -228,6 +228,10 @@ struct gpmon_hello_t {
          PLANMETRIC
    ------------------------------------------------------------------ */
 
+#define PLANMETRIC_STATUS_START -1
+#define PLANMETRIC_STATUS_UPDATE 0
+#define PLANMETRIC_STATUS_FINISH 1
+
 typedef struct gpmon_planmetric_key_t {
 	int32 tmid;	 /* epoch timestamp */
     int32 ssid;  /* session id */
@@ -235,15 +239,13 @@ typedef struct gpmon_planmetric_key_t {
 	int16 segid;  /* segment id */
 	int32 pid;  /* process id */
 	int16 nid;	/* plan node id */
-	int32 key_sec;  /* metric creation timestamp (UNIX second) */
-	int32 key_usec;  /* metric creation timestamp (microsecond) */
+	int16 planmetric_status;  /* PlanNode status */
 } gpmon_planmetric_key_t;
 
 typedef struct gpmon_planmetric_t {
 	gpmon_planmetric_key_t key;
-	int32 node_tag;  /* Node tag code */
-	int32 t_start;  /* timestamp of start processing of the node */
-	int32 t_finish;  /* timestamp of end processing of the node */
+	int32 node_tag;  /* NodeTag code */
+	int32 ts;  /* metric update timestamp */
 } gpmon_planmetric_t;
 
 /*
