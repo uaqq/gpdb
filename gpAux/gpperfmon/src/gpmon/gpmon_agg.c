@@ -959,13 +959,15 @@ static apr_uint32_t write_nodeinfo(agg_t* agg, char* nowstr)
 		apr_hash_this(hi, 0, 0, (void**) &valptr);
 		metric = (gpmon_planmetric_t*) valptr;
 
+		char* node_tag_name = get_node_tag_name(metric->node_tag, agg->pool);
+
 		snprintf(
-			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d|%d|%d",
+			line, line_size, "%s|%d|%d|%d|%d|%d|%d|%d|%d|%s|%d",
 			nowstr,
 			metric->key.tmid, metric->key.ssid, metric->key.ccnt,
 			metric->key.segid, metric->key.pid, metric->key.nid,
 			metric->key.planmetric_status,
-			metric->node_tag, metric->ts
+			metric->node_tag, node_tag_name, metric->ts
 		);
 
 		bytes_this_record = strlen(line) + 1;

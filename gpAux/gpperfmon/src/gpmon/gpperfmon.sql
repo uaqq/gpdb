@@ -131,7 +131,8 @@ create table public.pernode_history (
        pid int not null,                -- process identifier
        nid int not null,                -- node identifier
        stage int not null,              -- PlanNode status
-       node_tag int not null,           -- node tag (type)
+       node_tag int not null,           -- node tag code
+       node_tag_name varchar,           -- node tag name
        ts int not null                  -- UNIX timestamp of last update
 );
 

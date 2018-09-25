@@ -99,7 +99,7 @@ void CheckSendPlanStateGpmonPkt(PlanState *ps)
 		return;
 	}
 
-	ReportPlanMetricGpmonPkt(ps->type, ps->plan->plan_node_id, PLANMETRIC_STATUS_UPDATE); // TODO: Try other options
+	ReportPlanMetricGpmonPkt(ps->type, ps->plan->plan_node_id, PLANMETRIC_STATUS_UPDATE);
 
 	if (!ps->fHadSentGpmon || ps->gpmon_plan_tick != gpmon_tick)
 	{
@@ -121,7 +121,7 @@ void EndPlanStateGpmonPkt(PlanState *ps)
 		return;
 	}
 
-	ReportPlanMetricGpmonPkt(ps->type * 10, ps->plan->plan_node_id, PLANMETRIC_STATUS_FINISH);
+	ReportPlanMetricGpmonPkt(ps->type, ps->plan->plan_node_id, PLANMETRIC_STATUS_FINISH);
 
 	ps->gpmon_pkt.u.qexec.status = (uint8)PMNS_Finished;
 

@@ -12,6 +12,7 @@
 #include "apr_lib.h"
 #include "assert.h"
 #include "time.h"
+#include "nodes/nodes.h"
 
 #if APR_IS_BIGENDIAN
 #define local_htonll(n)  (n)
@@ -416,6 +417,313 @@ char *get_query_text(apr_int32_t tmid, apr_int32_t ssid, apr_int32_t ccnt, apr_p
 	fclose(fp);
 
 	return query;
+}
+
+char *get_node_tag_name(apr_int32_t node_tag, apr_pool_t* pool) {
+	char* ntname = apr_palloc(pool, MAX_NODE_TAG_NAME_LENGTH);
+	switch ((NodeTag)node_tag)
+	{
+		/* Plan nodes (1XX) */
+		case T_Result:
+			ntname = "Result";
+			break;
+		case T_ModifyTable:
+			ntname = "ModifyTable";
+			break;
+		case T_Append:
+			ntname = "Append";
+			break;
+		case T_MergeAppend:
+			ntname = "Merge Append";
+			break;
+		case T_RecursiveUnion:
+			ntname = "Recursive Union";
+			break;
+		case T_Sequence:
+			ntname = "Sequence";
+			break;
+		case T_BitmapAnd:
+			ntname = "BitmapAnd";
+			break;
+		case T_BitmapOr:
+			ntname = "BitmapOr";
+			break;
+		case T_SeqScan:
+			ntname = "Seq Scan";
+			break;
+		case T_ExternalScan:
+			ntname = "External Scan";
+			break;
+		case T_AppendOnlyScan:
+			ntname = "Append-only Scan";
+			break;
+		case T_AOCSScan:
+			ntname = "Append-only Columnar Scan";
+			break;
+		case T_TableScan:
+			ntname = "Table Scan";
+			break;
+		case T_DynamicTableScan:
+			ntname = "Dynamic Table Scan";
+			break;
+		case T_IndexScan:
+			ntname = "Index Scan";
+			break;
+		case T_DynamicIndexScan:
+			ntname = "Dynamic Index Scan";
+			break;
+		case T_BitmapIndexScan:
+			ntname = "Bitmap Index Scan";
+			break;
+		case T_DynamicBitmapIndexScan:
+			ntname = "Dynamic Bitmap Index Scan";
+			break;
+		case T_BitmapHeapScan:
+			ntname = "Bitmap Heap Scan";
+			break;
+		case T_BitmapAppendOnlyScan:
+			ntname = "Bitmap Append-Only Scan";
+			break;
+		case T_BitmapTableScan:
+			ntname = "Bitmap Table Scan";
+			break;
+		case T_TidScan:
+			ntname = "Tid Scan";
+			break;
+		case T_SubqueryScan:
+			ntname = "Subquery Scan";
+			break;
+		case T_FunctionScan:
+			ntname = "Function Scan";
+			break;
+		case T_TableFunctionScan:
+			ntname = "Table Function Scan";
+			break;
+		case T_ValuesScan:
+			ntname = "Values Scan";
+			break;
+		case T_CteScan:
+			ntname = "CTE Scan";
+			break;
+		case T_WorkTableScan:
+			ntname = "WorkTable Scan";
+			break;
+		case T_ForeignScan:
+			ntname = "Foreign Scan";
+			break;
+		case T_NestLoop:
+			ntname = "Nested Loop";
+			break;
+		case T_MergeJoin:
+			ntname = "Merge Join";
+			break;
+		case T_HashJoin:
+			ntname = "Hash Join";
+			break;
+		case T_Material:
+			ntname = "Materialize";
+			break;
+		case T_Sort:
+			ntname = "Sort";
+			break;
+		case T_Agg:
+			ntname = "Aggregate";
+			break;
+		case T_WindowAgg:
+			ntname = "WindowAgg";
+			break;
+		case T_Unique:
+			ntname = "Unique";
+			break;
+		case T_Hash:
+			ntname = "Hash";
+			break;
+		case T_SetOp:
+			ntname = "SetOp";
+			break;
+		case T_LockRows:
+			ntname = "LockRows";
+			break;
+		case T_Limit:
+			ntname = "Limit";
+			break;
+		case T_Motion:
+			ntname = "Motion";
+			break;
+		case T_ShareInputScan:
+			ntname = "Shared Scan";
+			break;
+		case T_Repeat:
+			ntname = "Repeat";
+			break;
+		case T_DML:
+			ntname = "DML";
+			break;
+		case T_SplitUpdate:
+			ntname = "Split";
+			break;
+		case T_RowTrigger:
+			ntname = "RowTrigger";
+			break;
+		case T_AssertOp:
+			ntname = "Assert";
+			break;
+		case T_PartitionSelector:
+			ntname = "Partition Selector";
+			break;
+		/* Plan State Nodes (2XX) */
+		case T_ResultState:
+			ntname = "Result";
+			break;
+		case T_ModifyTableState:
+			ntname = "Modify table";
+			break;
+		case T_AppendState:
+			ntname = "Append";
+			break;
+		case T_MergeAppendState:
+			ntname = "Merge Append";
+			break;
+		case T_RecursiveUnionState:
+			ntname = "Recursive Union";
+			break;
+		case T_SequenceState:
+			ntname = "Sequence";
+			break;
+		case T_BitmapAndState:
+			ntname = "BitmapAnd";
+			break;
+		case T_BitmapOrState:
+			ntname = "BitmapOrState";
+			break;
+		case T_SeqScanState:
+			ntname = "SeqScan";
+			break;
+		case T_AppendOnlyScanState:
+			ntname = "Append-only Scan";
+			break;
+		case T_AOCSScanState:
+			ntname = "Append-only Columnar Scan";
+			break;
+		case T_TableScanState:
+			ntname = "Table Scan";
+			break;
+		case T_DynamicTableScanState:
+			ntname = "Dynamic Table Scan";
+			break;
+		case T_ExternalScanState:
+			ntname = "External Scan";
+			break;
+		case T_IndexScanState:
+			ntname = "Index Scan";
+			break;
+		case T_DynamicIndexScanState:
+			ntname = "Dynamic Index Scan";
+			break;
+		case T_BitmapIndexScanState:
+			ntname = "Bitmap Index Scan";
+			break;
+		case T_DynamicBitmapIndexScanState:
+			ntname = "Dynamic Bitmap Index Scan";
+			break;
+		case T_BitmapHeapScanState:
+			ntname = "Bitmap Heap Scan";
+			break;
+		case T_BitmapAppendOnlyScanState:
+			ntname = "Bitmap AppendOnly Scan";
+			break;
+		case T_BitmapTableScanState:
+			ntname = "Bitmap Table Scan";
+			break;
+		case T_TidScanState:
+			ntname = "Tid Scan";
+			break;
+		case T_SubqueryScanState:
+			ntname = "Subquery Scan";
+			break;
+		case T_FunctionScanState:
+			ntname = "Function Scan";
+			break;
+		case T_TableFunctionState:
+			ntname = "Table Function";
+			break;
+		case T_ValuesScanState:
+			ntname = "Values Scan";
+			break;
+		case T_CteScanState:
+			ntname = "Cte Scan";
+			break;
+		case T_WorkTableScanState:
+			ntname = "Worktable Scan";
+			break;
+		case T_ForeignScanState:
+			ntname = "Foreign table Scan";
+			break;
+		case T_NestLoopState:
+			ntname = "Nested Loop";
+			break;
+		case T_MergeJoinState:
+			ntname = "Merge Join";
+			break;
+		case T_HashJoinState:
+			ntname = "Hash Join";
+			break;
+		case T_MaterialState:
+			ntname = "Materialize";
+			break;
+		case T_SortState:
+			ntname = "Sort";
+			break;
+		case T_AggState:
+			ntname = "Aggregate";
+			break;
+		case T_WindowAggState:
+			ntname = "Window Aggregate";
+			break;
+		case T_UniqueState:
+			ntname = "Unique";
+			break;
+		case T_HashState:
+			ntname = "Hash";
+			break;
+		case T_SetOpState:
+			ntname = "SetOp";
+			break;
+		case T_LockRowsState:
+			ntname = "Lock Rows";
+			break;
+		case T_LimitState:
+			ntname = "Limit";
+			break;
+		case T_MotionState:
+			ntname = "Motion";
+			break;
+		case T_ShareInputScanState:
+			ntname = "Share Input Scan";
+			break;
+		case T_RepeatState:
+			ntname = "Repeat";
+			break;
+		case T_DMLState:
+			ntname = "DML";
+			break;
+		case T_SplitUpdateState:
+			ntname = "Split";
+			break;
+		case T_RowTriggerState:
+			ntname = "RowTrigger";
+			break;
+		case T_AssertOpState:
+			ntname = "AssertOp";
+			break;
+		case T_PartitionSelectorState:
+			ntname = "Partition selector";
+			break;
+		default:
+			ntname = "???";
+			break;
+	}
+	return ntname;
 }
 
 int gpmon_recursive_mkdir(char* work_dir)

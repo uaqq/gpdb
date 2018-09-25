@@ -79,6 +79,7 @@ extern char* gpmon_datetime_rounded(time_t t, char str[GPMON_DATE_BUF_SIZE]);
 /* utility */
 extern apr_int32_t get_query_status(apr_int32_t tmid, apr_int32_t ssid, apr_int32_t ccnt);
 extern char *get_query_text(apr_int32_t tmid, apr_int32_t ssid, apr_int32_t ccnt, apr_pool_t *pool);
+extern char *get_node_tag_name(apr_int32_t node_tag, apr_pool_t *pool);
 
 #define DEFAULT_PATH_TO_HADOOP_HOST_FILE "/etc/gphd/gphdmgr/conf/clusterinfo.txt"
 #define PATH_TO_HADOOP_SMON_LOGS "/var/log/gphd/smon"
@@ -89,6 +90,8 @@ extern char *get_query_text(apr_int32_t tmid, apr_int32_t ssid, apr_int32_t ccnt
 #define MAXIMUM_MESSAGE_INTERVAL  (10080) //one week
 
 #define MAX_QUERY_COMPARE_LENGTH  (1024 * 1024 * 10)
+#define MAX_NODE_TAG_NAME_LENGTH (128)
+
 /*
 * The below is a simple divide macro that does division rounding up if you get .5 or greater or down if you get below .5 without
 * doing any floating point math.  It can be used instead of the round math.h functions to avoid floating point math and crazy casting.
@@ -140,9 +143,9 @@ typedef struct mmon_options_t
 } mmon_options_t;
 
 typedef struct addressinfo_holder_t addressinfo_holder_t;
-struct addressinfo_holder_t                                                                        
+struct addressinfo_holder_t
 {
-	char* address;  // an alternate host name to access this host                                                                           
+	char* address;  // an alternate host name to access this host
 	char* ipstr; // the ipstring assoicated with this address
 	bool ipv6;
 	struct addressinfo_holder_t* next;
@@ -151,7 +154,7 @@ struct addressinfo_holder_t
 typedef struct multi_interface_holder_t multi_interface_holder_t;
 struct multi_interface_holder_t
 {
-	addressinfo_holder_t* current; 
+	addressinfo_holder_t* current;
 	unsigned int counter;
 };
 
@@ -164,32 +167,32 @@ struct multi_interface_holder_t
 #define GPSMON_TIMEOUT_RESTART  (1)
 #define GPSMON_TIMEOUT_DETECTED (2)
 
-/* segment host */ 
+/* segment host */
 typedef struct host_t
 {
-	apr_thread_mutex_t *mutex; 
-	int sock; /* socket connected to gpsmon on this host */ 
+	apr_thread_mutex_t *mutex;
+	int sock; /* socket connected to gpsmon on this host */
 	int eflag; /* flag: socket has error */
 	struct event* event; /* points to _event if set */
-	struct event _event; 
+	struct event _event;
 
-	char* hostname; 
+	char* hostname;
 
-	addressinfo_holder_t* addressinfo_head; 
-	addressinfo_holder_t* addressinfo_tail; 
+	addressinfo_holder_t* addressinfo_head;
+	addressinfo_holder_t* addressinfo_tail;
 
 	// there are 2 of these so we don't need to mutex
-	multi_interface_holder_t connection_hostname;	
+	multi_interface_holder_t connection_hostname;
 
-	apr_uint32_t address_count; 
+	apr_uint32_t address_count;
 	char* smon_bin_location;
 	char* data_dir;
-	unsigned char is_master; /* 1 if host is the same host where the master runs */ 
-	unsigned char is_hdm; 
-	unsigned char is_hdw; 
-	unsigned char is_hbw; 
+	unsigned char is_master; /* 1 if host is the same host where the master runs */
+	unsigned char is_hdm;
+	unsigned char is_hdw;
+	unsigned char is_hbw;
 	unsigned char is_hdc;
-	unsigned char is_etl; 
+	unsigned char is_etl;
 	char ever_connected; /* set to non-zero after first connection attempt */
 	char connect_timeout;
 	apr_int32_t pid;
