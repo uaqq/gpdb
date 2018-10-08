@@ -1316,6 +1316,7 @@ jobs:
     # - get: nightly-trigger-aix
       # trigger: true
     - get: gpdb_src
+      trigger: true
       passed: [gate_compile_start]
     - get: gpaddon_src
       passed: [gate_compile_start]
@@ -2569,6 +2570,7 @@ jobs:
       tags: ["ddboost"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["ddboost"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2647,6 +2649,7 @@ jobs:
       tags: ["ddboost"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["ddboost"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2725,6 +2728,7 @@ jobs:
       tags: ["ddboost"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["ddboost"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2804,6 +2808,7 @@ jobs:
       tags: ["netbackup"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["netbackup"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2862,6 +2867,7 @@ jobs:
       tags: ["netbackup"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["netbackup"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2920,6 +2926,7 @@ jobs:
       tags: ["netbackup"]
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       tags: ["netbackup"]
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
@@ -2977,6 +2984,7 @@ jobs:
         - gpMgmt/bin/pythonSrc/ext
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
     - get: gpdb4_binary
@@ -3024,6 +3032,7 @@ jobs:
     - get: gpdb_src
       passed: [gate_dpm_start]
     - get: gpdb_binary
+      trigger: true
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
     - get: gpdb4_binary
