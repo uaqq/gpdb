@@ -378,15 +378,15 @@ resources:
   type: terraform
   source:
     env:
-      AWS_ACCESS_KEY_ID: {{gpdb4-tf-machine-access-key-id}}
-      AWS_SECRET_ACCESS_KEY: {{gpdb4-tf-machine-secret-access-key}}
+      AWS_ACCESS_KEY_ID: {{tf-machine-access-key-id}}
+      AWS_SECRET_ACCESS_KEY: {{tf-machine-secret-access-key}}
     storage:
-      access_key_id: {{gpdb4-tf-machine-access-key-id}}
-      secret_access_key: {{gpdb4-tf-machine-secret-access-key}}
+      access_key_id: {{tf-machine-access-key-id}}
+      secret_access_key: {{tf-machine-secret-access-key}}
       region_name: {{aws-region}}
       # This is not parameterized, on purpose. All tfstates will go to this spot,
       # and different teams will place there clusters' tfstate files under different paths
-      bucket: pivotal-pa-toolsmiths-pipeline-dynamic-terraform
+      bucket: gpdb5-pipeline-dynamic-terraform
       bucket_path: clusters-aws/
 
 {% endif %}
@@ -424,12 +424,11 @@ resources:
     uri: {{gpaddon-git-remote}}
 
 {% if "UD" in test_sections %}
-- name: pxf_infra_src
+- name: pxf_src
   type: git
   source:
-    branch: {{pxf_infra-git-branch}}
-    private_key: {{pxf_infra-git-key}}
-    uri: {{pxf_infra-git-remote}}
+    branch: {{pxf-git-branch}}
+    uri: {{pxf-git-remote}}
 
 - name: centos6-gpdb-dev-pxf-hdp
   type: docker-image
@@ -882,7 +881,7 @@ dpm_ccp_destroy_anchor: &dpm_ccp_destroy
   params:
     action: destroy
     env_name_file: terraform_for_dpm/name
-    terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+    terraform_source: ccp_src/aws/
     vars:
       aws_instance-node-instance_type: t2.micro #t2.micro is ignored in destroy, but aws_instance-node-instance_type is required.
   get_params:
@@ -896,12 +895,12 @@ ccp_gen_cluster_default_params_anchor: &ccp_gen_cluster_default_params
   BUCKET_NAME: {{tf-bucket-name}}
   CLOUD_PROVIDER: google
 
-ccp_gpdb4_gen_cluster_default_params_anchor: &ccp_gpdb4_gen_cluster_default_params
-  AWS_ACCESS_KEY_ID: {{gpdb4-tf-machine-access-key-id}}
-  AWS_SECRET_ACCESS_KEY: {{gpdb4-tf-machine-secret-access-key}}
+ccp_aws_gen_cluster_default_params_anchor: &ccp_aws_gen_cluster_default_params
+  AWS_ACCESS_KEY_ID: {{tf-machine-access-key-id}}
+  AWS_SECRET_ACCESS_KEY: {{tf-machine-secret-access-key}}
   AWS_DEFAULT_REGION: {{aws-region}}
   BUCKET_PATH: clusters-aws/
-  BUCKET_NAME: pivotal-pa-toolsmiths-pipeline-dynamic-terraform
+  BUCKET_NAME: {{tf-bucket-name}}
   CLOUD_PROVIDER: aws
 
 set_failed_anchor: &set_failed
@@ -2581,7 +2580,7 @@ jobs:
   - put: terraform_for_dpm
     params:
       <<: *ccp_default_params
-      terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+      terraform_source: ccp_src/aws/
       vars:
         <<: *ccp_aws_default_vars
     tags: ["ddboost"]
@@ -2591,7 +2590,7 @@ jobs:
     tags: ["ddboost"]
     file: ccp_src/ci/tasks/gen_cluster.yml
     params:
-      <<: *ccp_gpdb4_gen_cluster_default_params
+      <<: *ccp_aws_gen_cluster_default_params
     on_failure:
       <<: *dpm_ccp_destroy
   - task: gpinitsystem
@@ -2660,7 +2659,7 @@ jobs:
   - put: terraform_for_dpm
     params:
       <<: *ccp_default_params
-      terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+      terraform_source: ccp_src/aws/
       vars:
         <<: *ccp_aws_default_vars
     tags: ["ddboost"]
@@ -2670,7 +2669,7 @@ jobs:
     tags: ["ddboost"]
     file: ccp_src/ci/tasks/gen_cluster.yml
     params:
-      <<: *ccp_gpdb4_gen_cluster_default_params
+      <<: *ccp_aws_gen_cluster_default_params
     on_failure:
       <<: *dpm_ccp_destroy
   - task: gpinitsystem
@@ -2739,7 +2738,7 @@ jobs:
   - put: terraform_for_dpm
     params:
       <<: *ccp_default_params
-      terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+      terraform_source: ccp_src/aws/
       vars:
         <<: *ccp_aws_default_vars
     tags: ["ddboost"]
@@ -2749,7 +2748,7 @@ jobs:
     tags: ["ddboost"]
     file: ccp_src/ci/tasks/gen_cluster.yml
     params:
-      <<: *ccp_gpdb4_gen_cluster_default_params
+      <<: *ccp_aws_gen_cluster_default_params
     on_failure:
       <<: *dpm_ccp_destroy
   - task: gpinitsystem
@@ -2820,7 +2819,7 @@ jobs:
   - put: terraform_for_dpm
     params:
       <<: *ccp_default_params
-      terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+      terraform_source: ccp_src/aws/
       vars:
         <<: *ccp_aws_default_vars
     tags: ["netbackup"]
@@ -2830,7 +2829,7 @@ jobs:
     tags: ["netbackup"]
     file: ccp_src/ci/tasks/gen_cluster.yml
     params:
-      <<: *ccp_gpdb4_gen_cluster_default_params
+      <<: *ccp_aws_gen_cluster_default_params
     on_failure:
       <<: *dpm_ccp_destroy
   - task: gpinitsystem
@@ -2879,7 +2878,7 @@ jobs:
   - put: terraform_for_dpm
     params:
       <<: *ccp_default_params
-      terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+      terraform_source: ccp_src/aws/
       vars:
         <<: *ccp_aws_default_vars
     tags: ["netbackup"]
@@ -2889,7 +2888,7 @@ jobs:
     tags: ["netbackup"]
     file: ccp_src/ci/tasks/gen_cluster.yml
     params:
-      <<: *ccp_gpdb4_gen_cluster_default_params
+      <<: *ccp_aws_gen_cluster_default_params
     on_failure:
       <<: *dpm_ccp_destroy
   - task: gpinitsystem
@@ -2938,7 +2937,7 @@ jobs:
   - put: terraform_for_dpm
     params:
       <<: *ccp_default_params
-      terraform_source: ccp_src/aws-pivotal-pa-toolsmiths/
+      terraform_source: ccp_src/aws/
       vars:
         <<: *ccp_aws_default_vars
     tags: ["netbackup"]
@@ -2948,7 +2947,7 @@ jobs:
     tags: ["netbackup"]
     file: ccp_src/ci/tasks/gen_cluster.yml
     params:
-      <<: *ccp_gpdb4_gen_cluster_default_params
+      <<: *ccp_aws_gen_cluster_default_params
     on_failure:
       <<: *dpm_ccp_destroy
   - task: gpinitsystem
@@ -2974,8 +2973,6 @@ jobs:
 
 - name: DPM_backup_43_restore_5
   plan:
-  # - get: nightly-trigger
-    # trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: gpdb_src
@@ -2987,6 +2984,7 @@ jobs:
       trigger: true
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
+      trigger: [[ test_trigger ]]
     - get: gpdb4_binary
       resource: bin_gpdb4_centos6
     - get: ccp_src
@@ -3025,8 +3023,6 @@ jobs:
 
 - name: gptransfer-43x-to-5x
   plan:
-  # - get: nightly-trigger
-    # trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
   - aggregate:
     - get: gpdb_src
@@ -3035,6 +3031,7 @@ jobs:
       trigger: true
       resource: bin_gpdb_centos6
       passed: [gate_dpm_start]
+      trigger: [[ test_trigger ]]
     - get: gpdb4_binary
       resource: bin_gpdb4_centos6
     - get: ccp_src
@@ -3311,11 +3308,10 @@ jobs:
       trigger: [[ test_trigger ]]
     - get: pxf_tarball
       trigger: [[ test_trigger ]]
-      version: {version_id: qChkvAhPXzfAkn9ff2k1MwP2n0q8wSSa}
-    - get: pxf_infra_src
+    - get: pxf_src
     - get: centos6-gpdb-dev-pxf-hdp
   - task: test_pxf
-    file: pxf_infra_src/concourse/test_pxf.yml
+    file: pxf_src/concourse/tasks/test_pxf.yml
     image: centos6-gpdb-dev-pxf-hdp
     params:
       GROUP: smoke
