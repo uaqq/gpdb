@@ -1,29 +1,25 @@
 -- Try to verify that rows end up in the right place.
 
-drop table if exists T;
-drop table if exists U;
-drop table if exists W;
+drop table if exists gpdist_T, gpdist_U, gpdist_W;
 
-create table T (a int, b int) distributed by (a);
-insert into T select i, 1 from generate_series(1, 5000) i;
+create table gpdist_T (a int, b int) distributed by (a);
+insert into gpdist_T select i, 1 from generate_series(1, 5000) i;
 
-create table U(segid int, a int, b int) distributed by (a);
-insert into U(segid, a, b) select gp_segment_id, * from T;
+create table gpdist_U(segid int, a int, b int) distributed by (a);
+insert into gpdist_U(segid, a, b) select gp_segment_id, * from gpdist_T;
 
-select * from U where segid <> gp_segment_id; -- should return 0 rows
+select * from gpdist_U where segid <> gp_segment_id; -- should return 0 rows
 
 -- Hash doesn't work quite like this.
 -- (numsegments can come from something like in jetpack.sql's __gp_number_of_segments view).
---select * from T where gp_segment_id <> a % numsegments; -- should return 0 rows
+--select * from gpdist_T where gp_segment_id <> a % numsegments; -- should return 0 rows
 
-create table W(segid int, a int) distributed by (a);
-insert into W(segid, a) select gp_segment_id, a*91 from T;
+create table gpdist_W(segid int, a int) distributed by (a);
+insert into gpdist_W(segid, a) select gp_segment_id, a*91 from gpdist_T;
 
-select * from T full join W on T.a = W.a/91 where T.gp_segment_id <> W.segid; -- should return 0 rows 
+select * from gpdist_T as T full join gpdist_W as W on T.a = W.a/91 where T.gp_segment_id <> W.segid; -- should return 0 rows 
 
-drop table T;
-drop table U;
-drop table W;
+drop table gpdist_T, gpdist_U, gpdist_W;
 
 drop table if exists customer_off;
 drop table if exists customer_on;
@@ -390,3 +386,75 @@ create table mpp5746_2 as select * from mpp5746 distributed by (c);
 select gp_segment_id, * from mpp5746 except
 select gp_segment_id, * from mpp5746_2;
 drop table mpp5746, mpp5746_2;
+
+--
+-- Test for disallowed combinations of DISTRIBUTED BY and PRIMARY KEY/UNIQUE
+-- constraints
+--
+create table distby_with_constraint (col1 int4 PRIMARY KEY, col2 int4) DISTRIBUTED RANDOMLY;
+create table distby_with_constraint (col1 int4 UNIQUE,      col2 int4) DISTRIBUTED RANDOMLY;
+create table distby_with_constraint (col1 int4 PRIMARY KEY, col2 int4) DISTRIBUTED BY (col2);
+create table distby_with_constraint (col1 int4 UNIQUE,      col2 int4) DISTRIBUTED BY (col2);
+
+create table distby_with_constraint (col1 int4, col2 int4, col3 int4, UNIQUE      (col1, col2)) distributed by (col3);
+create table distby_with_constraint (col1 int4, col2 int4, col3 int4, UNIQUE      (col1), UNIQUE (col2));
+create table distby_with_constraint (col1 int4, col2 int4, col3 int4, UNIQUE      (col1), PRIMARY KEY (col2));
+
+-- these are allowed
+create table distby_with_constraint01 (col1 int4 PRIMARY KEY, col2 int4) DISTRIBUTED BY (col1);
+create table distby_with_constraint02 (col1 int4 UNIQUE,      col2 int4) DISTRIBUTED BY (col1);
+create table distby_with_constraint03 (col1 int4 PRIMARY KEY, col2 int4) DISTRIBUTED REPLICATED;
+create table distby_with_constraint04 (col1 int4 UNIQUE,      col2 int4) DISTRIBUTED REPLICATED;
+
+-- More complicated cases. Allowed.
+create table distby_with_constraint11 (col1 int4, col2 int4, UNIQUE      (col1, col2)) distributed by (col1);
+create table distby_with_constraint12 (col1 int4, col2 int4, PRIMARY KEY (col1, col2)) distributed by (col1);
+create table distby_with_constraint13 (col1 int4, col2 int4, UNIQUE      (col1, col2)) distributed by (col2);
+create table distby_with_constraint14 (col1 int4, col2 int4, PRIMARY KEY (col1, col2)) distributed by (col2);
+
+create table distby_with_constraint15 (col1 int4, col2 int4, UNIQUE      (col1, col2)) distributed by (col2, col1);
+create table distby_with_constraint16 (col1 int4, col2 int4, PRIMARY KEY (col1, col2)) distributed by (col2, col1);
+create table distby_with_constraint17 (col1 int4, col2 int4, UNIQUE      (col1, col2)) distributed by (col1, col2);
+create table distby_with_constraint18 (col1 int4, col2 int4, PRIMARY KEY (col1, col2)) distributed by (col1, col2);
+
+-- Test deriving the distribution key from constraint columns.
+create table distby_with_constraint21 (col1 int4, col2 int4, col3 int4, UNIQUE      (col1, col2), UNIQUE (col3, col1));
+create table distby_with_constraint22 (col1 int4, col2 int4, col3 int4, UNIQUE      (col1, col2), PRIMARY KEY (col3, col1));
+
+-- Check what distribution key was chosen for all the cases above.
+select c.relname, policytype, attrnums from pg_class c, gp_distribution_policy p where c.oid = p.localoid and relname LIKE 'distby_with_%' order by relname;
+
+
+--
+-- Test that DISTRIBUTED BY is interpreted correctly with inheritance.
+--
+CREATE TABLE inhdisttest_a (
+ssn integer,
+lastname character varying,
+junk integer
+) DISTRIBUTED BY (ssn);
+
+CREATE TABLE inhdisttest_b (
+id integer,
+lastname character varying,
+morejunk integer
+) DISTRIBUTED BY (id);
+
+CREATE TABLE inhdisttest_c (
+ssn integer,
+lastname character varying,
+junk integer,
+id integer,
+morejunk integer,
+uid1 integer,
+uid2 integer,
+uid3 integer
+) INHERITS (inhdisttest_a, inhdisttest_b) DISTRIBUTED BY (uid1, uid2, uid3);
+
+INSERT INTO inhdisttest_a VALUES (1, 'lastname a', 42);
+INSERT INTO inhdisttest_b VALUES (1, 'lastname b', 42);
+INSERT INTO inhdisttest_c (ssn, lastname, junk, id, morejunk, uid1, uid2, uid3) VALUES
+  (1, 'lastname c', 42, 1, 422, 1, 1, 1);
+
+select * from inhdisttest_a;
+select * from inhdisttest_b;

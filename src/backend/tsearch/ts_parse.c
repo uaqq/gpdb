@@ -3,11 +3,11 @@
  * ts_parse.c
  *		main parse functions for tsearch
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tsearch/ts_parse.c,v 1.17 2010/02/26 02:01:05 momjian Exp $
+ *	  src/backend/tsearch/ts_parse.c
  *
  *-------------------------------------------------------------------------
  */
@@ -15,7 +15,6 @@
 #include "postgres.h"
 
 #include "tsearch/ts_cache.h"
-#include "tsearch/ts_public.h"
 #include "tsearch/ts_utils.h"
 
 #define IGNORE_LONGLEXEME	1
@@ -593,7 +592,7 @@ generateHeadline(HeadlineParsedText *prs)
 	char	   *ptr;
 	int			len = 128;
 	int			numfragments = 0;
-	int2		infrag = 0;
+	int16		infrag = 0;
 
 	HeadlineWordEntry *wrd = prs->words;
 

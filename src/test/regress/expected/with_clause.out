@@ -1002,9 +1002,14 @@ with my_sum(total) as (select sum(value) from with_test1)
 select *
 from my_sum;
 SELECT pg_get_viewdef('my_view'::regclass);
-                                                pg_get_viewdef                                                
---------------------------------------------------------------------------------------------------------------
- WITH my_sum(total) AS (SELECT sum(with_test1.value) AS sum FROM with_test1) SELECT my_sum.total FROM my_sum;
+                pg_get_viewdef                
+----------------------------------------------
+  WITH my_sum(total) AS (                    +
+          SELECT sum(with_test1.value) AS sum+
+            FROM with_test1                  +
+         )                                   +
+  SELECT my_sum.total                        +
+    FROM my_sum;
 (1 row)
 
 SELECT pg_get_viewdef('my_view'::regclass, true);
@@ -1026,9 +1031,19 @@ with my_sum(total) as (
 select *
 from my_sum;
 SELECT pg_get_viewdef('my_view'::regclass);
-                                                                                                      pg_get_viewdef                                                                                                      
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- WITH my_sum(total) AS (WITH my_group_sum(total) AS (SELECT sum(with_test1.value) AS sum FROM with_test1 GROUP BY with_test1.i) SELECT sum(my_group_sum.total) AS sum FROM my_group_sum) SELECT my_sum.total FROM my_sum;
+                    pg_get_viewdef                    
+------------------------------------------------------
+  WITH my_sum(total) AS (                            +
+          WITH my_group_sum(total) AS (              +
+                  SELECT sum(with_test1.value) AS sum+
+                    FROM with_test1                  +
+                   GROUP BY with_test1.i             +
+                 )                                   +
+          SELECT sum(my_group_sum.total) AS sum      +
+            FROM my_group_sum                        +
+         )                                           +
+  SELECT my_sum.total                                +
+    FROM my_sum;
 (1 row)
 
 SELECT pg_get_viewdef('my_view'::regclass, true);
@@ -1419,36 +1434,36 @@ select ( with cte(foo) as ( values(i) )
          select (select foo from cte) )
 from with_test1
 order by 1 limit 10;
- ?column? 
-----------
-        0
-        0
-        0
-        0
-        0
-        0
-        0
-        0
-        0
-        0
+ foo 
+-----
+   0
+   0
+   0
+   0
+   0
+   0
+   0
+   0
+   0
+   0
 (10 rows)
 
 select ( with cte(foo) as ( values(i) )
          values((select foo from cte)) )
 from with_test1
 order by 1 limit 10;
- ?column? 
-----------
-        0
-        0
-        0
-        0
-        0
-        0
-        0
-        0
-        0
-        0
+ column1 
+---------
+       0
+       0
+       0
+       0
+       0
+       0
+       0
+       0
+       0
+       0
 (10 rows)
 
 -- WITH query using Window functions
@@ -2097,13 +2112,11 @@ limit 60; --order 1,2,3
 (60 rows)
 
 --end_equivalent
+drop table if exists d;
 drop table if exists b;
 NOTICE:  table "b" does not exist, skipping
-create table with_b (i integer);
-NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as the Greenplum Database data distribution key for this table.
-HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
-insert into with_b values(1);
-insert into with_b values(2);
+create table with_b (i integer) distributed by (i);
+insert into with_b values (1), (2);
 --begin_equivalent
 with b1 as (select * from with_b) select * from (select * from b1 where b1.i =1) AS FOO, b1 FOO2;
  i | i 
@@ -2121,19 +2134,21 @@ select * from (select * from (select * from with_b) as b1 where b1.i = 1) AS FOO
 
 --end_equivalent
 -- qual push down test
-with t as (select * from with_test1) select * from t where i = 10;
- i | t | value 
----+---+-------
-(0 rows)
+explain (costs off) with t as (select * from with_test1) select * from t where i = 10;
+                QUERY PLAN                
+------------------------------------------
+ Gather Motion 1:1  (slice1; segments: 1)
+   ->  Seq Scan on with_test1
+         Filter: (i = 10)
+ Optimizer: legacy query optimizer
+(4 rows)
 
--- MPP-17848
-drop table x;
-ERROR:  table "x" does not exist
-CREATE TABLE x(a int);
+-- Test to validate an old bug which caused incorrect results when a subquery
+-- in the WITH clause appears under a nested-loop join in the query plan when
+-- gp_cte_sharing was set to off. (MPP-17848)
+CREATE TABLE x (a integer) DISTRIBUTED BY (a);
 insert into x values(1), (2);
-drop TABLE y;
-ERROR:  table "y" does not exist
-CREATE TABLE y (m integer NOT NULL, n smallint);
+CREATE TABLE y (m integer NOT NULL, n smallint) DISTRIBUTED BY (m);
 insert into y values(10, 1);
 insert into y values(20, 1);
 with yy as (
@@ -2151,4 +2166,3 @@ select * from x, yy;
  2 | 20
 (4 rows)
 
--- End of MPP-17848

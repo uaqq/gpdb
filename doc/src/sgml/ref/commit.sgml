@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/commit.sgml,v 1.22 2010/04/03 07:22:58 petere Exp $
+doc/src/sgml/ref/commit.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-COMMIT">
+ <indexterm zone="sql-commit">
+  <primary>COMMIT</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>COMMIT</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,16 +19,12 @@ PostgreSQL documentation
   <refpurpose>commit the current transaction</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-commit">
-  <primary>COMMIT</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 COMMIT [ WORK | TRANSACTION ]
 </synopsis>
  </refsynopsisdiv>
-  
+
  <refsect1>
   <title>Description</title>
 
@@ -34,7 +34,7 @@ COMMIT [ WORK | TRANSACTION ]
    and are guaranteed to be durable if a crash occurs.
   </para>
  </refsect1>
-  
+
  <refsect1>
   <title>Parameters</title>
 
@@ -72,13 +72,12 @@ COMMIT [ WORK | TRANSACTION ]
    To commit the current transaction and make all changes permanent:
 <programlisting>
 COMMIT;
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>
   <title>Compatibility</title>
-  
+
   <para>
    The SQL standard only specifies the two forms
    <literal>COMMIT</literal> and <literal>COMMIT

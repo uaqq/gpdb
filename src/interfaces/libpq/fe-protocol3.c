@@ -4,7 +4,7 @@
  *	  functions that are specific to frontend/backend protocol version 3
  *
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -85,7 +85,7 @@ pqParseInput3(PGconn *conn)
 	int			avail;
 #ifndef FRONTEND
 	int			numRejected  = 0;
-	int			numCompleted = 0;
+	int64		numCompleted = 0;
 #endif
 
 
@@ -193,7 +193,7 @@ pqParseInput3(PGconn *conn)
 			 * ERROR messages are displayed using the notice processor;
 			 * ParameterStatus is handled normally; anything else is just
 			 * dropped on the floor after displaying a suitable warning
-			 * notice.	(An ERROR is very possibly the backend telling us why
+			 * notice.  (An ERROR is very possibly the backend telling us why
 			 * it is about to close the connection, so we don't want to just
 			 * discard it...)
 			 */
@@ -424,7 +424,7 @@ pqParseInput3(PGconn *conn)
 				case 'd':		/* Copy Data */
 
 					/*
-					 * If we see Copy Data, just silently drop it.	This would
+					 * If we see Copy Data, just silently drop it.  This would
 					 * only occur if application exits COPY OUT mode too
 					 * early.
 					 */
@@ -433,7 +433,7 @@ pqParseInput3(PGconn *conn)
 				case 'c':		/* Copy Done */
 
 					/*
-					 * If we see Copy Done, just silently drop it.	This is
+					 * If we see Copy Done, just silently drop it.  This is
 					 * the normal case during PQendcopy.  We will keep
 					 * swallowing data, expecting to see command-complete for
 					 * the COPY command.
@@ -458,7 +458,7 @@ pqParseInput3(PGconn *conn)
 					conn->result->numRejected += numRejected;
 
 					/* Optionally receive completed number when COPY FROM ON SEGMENT */
-					if (msgLength >= 8 && !pqGetInt(&numCompleted, 4, conn))
+					if (msgLength >= 8 && !pqGetInt64(&numCompleted, conn))
 					{
 						conn->result->numCompleted += numCompleted;
 					}
@@ -554,9 +554,7 @@ handleSyncLoss(PGconn *conn, char id, int msgLength)
 	pqSaveErrorResult(conn);
 	conn->asyncStatus = PGASYNC_READY;	/* drop out of GetResult wait loop */
 
-	pqsecure_close(conn);
-	closesocket(conn->sock);
-	conn->sock = -1;
+	pqDropConnection(conn);
 	conn->status = CONNECTION_BAD;		/* No more connection to backend */
 }
 
@@ -729,7 +727,7 @@ advance_and_error:
 	pqSaveErrorResult(conn);
 
 	/*
-	 * Return zero to allow input parsing to continue.	Subsequent "D"
+	 * Return zero to allow input parsing to continue.  Subsequent "D"
 	 * messages will be ignored until we get to end of data, since an error
 	 * result is already set up.
 	 */
@@ -911,7 +909,7 @@ set_error_result:
 	pqSaveErrorResult(conn);
 
 	/*
-	 * Return zero to allow input parsing to continue.	Subsequent "D"
+	 * Return zero to allow input parsing to continue.  Subsequent "D"
 	 * messages will be ignored until we get to end of data, since an error
 	 * result is already set up.
 	 */
@@ -938,14 +936,14 @@ pqGetErrorNotice3(PGconn *conn, bool isError)
 
 	/*
 	 * Since the fields might be pretty long, we create a temporary
-	 * PQExpBuffer rather than using conn->workBuffer.	workBuffer is intended
-	 * for stuff that is expected to be short.	We shouldn't use
+	 * PQExpBuffer rather than using conn->workBuffer.  workBuffer is intended
+	 * for stuff that is expected to be short.  We shouldn't use
 	 * conn->errorMessage either, since this might be only a notice.
 	 */
 	initPQExpBuffer(&workBuf);
 
 	/*
-	 * Make a PGresult to hold the accumulated fields.	We temporarily lie
+	 * Make a PGresult to hold the accumulated fields.  We temporarily lie
 	 * about the result status, so that PQmakeEmptyPGresult doesn't uselessly
 	 * copy conn->errorMessage.
 	 */
@@ -1043,6 +1041,29 @@ pqGetErrorNotice3(PGconn *conn, bool isError)
 		val = PQresultErrorField(res, PG_DIAG_CONTEXT);
 		if (val)
 			appendPQExpBuffer(&workBuf, libpq_gettext("CONTEXT:  %s\n"), val);
+	}
+	if (conn->verbosity == PQERRORS_VERBOSE)
+	{
+		val = PQresultErrorField(res, PG_DIAG_SCHEMA_NAME);
+		if (val)
+			appendPQExpBuffer(&workBuf,
+							  libpq_gettext("SCHEMA NAME:  %s\n"), val);
+		val = PQresultErrorField(res, PG_DIAG_TABLE_NAME);
+		if (val)
+			appendPQExpBuffer(&workBuf,
+							  libpq_gettext("TABLE NAME:  %s\n"), val);
+		val = PQresultErrorField(res, PG_DIAG_COLUMN_NAME);
+		if (val)
+			appendPQExpBuffer(&workBuf,
+							  libpq_gettext("COLUMN NAME:  %s\n"), val);
+		val = PQresultErrorField(res, PG_DIAG_DATATYPE_NAME);
+		if (val)
+			appendPQExpBuffer(&workBuf,
+							  libpq_gettext("DATATYPE NAME:  %s\n"), val);
+		val = PQresultErrorField(res, PG_DIAG_CONSTRAINT_NAME);
+		if (val)
+			appendPQExpBuffer(&workBuf,
+							  libpq_gettext("CONSTRAINT NAME:  %s\n"), val);
 	}
 	if (conn->verbosity == PQERRORS_VERBOSE)
 	{
@@ -1157,7 +1178,7 @@ reportErrorPosition(PQExpBuffer msg, const char *query, int loc, int encoding)
 	/*
 	 * Each character might occupy multiple physical bytes in the string, and
 	 * in some Far Eastern character sets it might take more than one screen
-	 * column as well.	We compute the starting byte offset and starting
+	 * column as well.  We compute the starting byte offset and starting
 	 * screen column of each logical character, and store these in qidx[] and
 	 * scridx[] respectively.
 	 */
@@ -1185,8 +1206,8 @@ reportErrorPosition(PQExpBuffer msg, const char *query, int loc, int encoding)
 	/*
 	 * Within the scanning loop, cno is the current character's logical
 	 * number, qoffset is its offset in wquery, and scroffset is its starting
-	 * logical screen column (all indexed from 0).	"loc" is the logical
-	 * character number of the error location.	We scan to determine loc_line
+	 * logical screen column (all indexed from 0).  "loc" is the logical
+	 * character number of the error location.  We scan to determine loc_line
 	 * (the 1-based line number containing loc) and ibeg/iend (first character
 	 * number and last+1 character number of the line containing loc). Note
 	 * that qidx[] and scridx[] are filled only as far as iend.
@@ -1621,7 +1642,25 @@ getCopyDataMessage(PGconn *conn)
 				break;
 			case 'd':			/* Copy Data, pass it back to caller */
 				return msgLength;
+			case 'c':
+
+				/*
+				 * If this is a CopyDone message, exit COPY_OUT mode and let
+				 * caller read status with PQgetResult().  If we're in
+				 * COPY_BOTH mode, return to COPY_IN mode.
+				 */
+				if (conn->asyncStatus == PGASYNC_COPY_BOTH)
+					conn->asyncStatus = PGASYNC_COPY_IN;
+				else
+					conn->asyncStatus = PGASYNC_BUSY;
+				return -1;
 			default:			/* treat as end of copy */
+
+				/*
+				 * Any other message terminates either COPY_IN or COPY_BOTH
+				 * mode.
+				 */
+				conn->asyncStatus = PGASYNC_BUSY;
 				return -1;
 		}
 
@@ -1648,23 +1687,13 @@ pqGetCopyData3(PGconn *conn, char **buffer, int async)
 	for (;;)
 	{
 		/*
-		 * Collect the next input message.	To make life simpler for async
+		 * Collect the next input message.  To make life simpler for async
 		 * callers, we keep returning 0 until the next message is fully
 		 * available, even if it is not Copy Data.
 		 */
 		msgLength = getCopyDataMessage(conn);
 		if (msgLength < 0)
-		{
-			/*
-			 * On end-of-copy, exit COPY_OUT or COPY_BOTH mode and let caller
-			 * read status with PQgetResult().	The normal case is that it's
-			 * Copy Done, but we let parseInput read that.	If error, we
-			 * expect the state was already changed.
-			 */
-			if (msgLength == -1)
-				conn->asyncStatus = PGASYNC_BUSY;
 			return msgLength;	/* end-of-copy or error */
-		}
 		if (msgLength == 0)
 		{
 			/* Don't block if async read requested */
@@ -1715,8 +1744,9 @@ pqGetline3(PGconn *conn, char *s, int maxlen)
 {
 	int			status;
 
-	if (conn->sock < 0 ||
-		conn->asyncStatus != PGASYNC_COPY_OUT ||
+	if (conn->sock == PGINVALID_SOCKET ||
+		(conn->asyncStatus != PGASYNC_COPY_OUT &&
+		 conn->asyncStatus != PGASYNC_COPY_BOTH) ||
 		conn->copy_is_binary)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
@@ -1767,7 +1797,8 @@ pqGetlineAsync3(PGconn *conn, char *buffer, int bufsize)
 	int			msgLength;
 	int			avail;
 
-	if (conn->asyncStatus != PGASYNC_COPY_OUT)
+	if (conn->asyncStatus != PGASYNC_COPY_OUT
+		&& conn->asyncStatus != PGASYNC_COPY_BOTH)
 		return -1;				/* we are not doing a copy... */
 
 	/*
@@ -1821,7 +1852,8 @@ pqEndcopy3(PGconn *conn)
 	PGresult   *result;
 
 	if (conn->asyncStatus != PGASYNC_COPY_IN &&
-		conn->asyncStatus != PGASYNC_COPY_OUT)
+		conn->asyncStatus != PGASYNC_COPY_OUT &&
+		conn->asyncStatus != PGASYNC_COPY_BOTH)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("no COPY in progress\n"));
@@ -1829,7 +1861,8 @@ pqEndcopy3(PGconn *conn)
 	}
 
 	/* Send the CopyDone message if needed */
-	if (conn->asyncStatus == PGASYNC_COPY_IN)
+	if (conn->asyncStatus == PGASYNC_COPY_IN ||
+		conn->asyncStatus == PGASYNC_COPY_BOTH)
 	{
 		if (pqPutMsgStart('c', false, conn) < 0 ||
 			pqPutMsgEnd(conn) < 0)
@@ -1861,7 +1894,7 @@ pqEndcopy3(PGconn *conn)
 	/*
 	 * Non blocking connections may have to abort at this point.  If everyone
 	 * played the game there should be no problem, but in error scenarios the
-	 * expected messages may not have arrived yet.	(We are assuming that the
+	 * expected messages may not have arrived yet.  (We are assuming that the
 	 * backend's packetizing will ensure that CommandComplete arrives along
 	 * with the CopyDone; are there corner cases where that doesn't happen?)
 	 */

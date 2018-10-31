@@ -4,10 +4,10 @@
  *
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/rewrite/rewriteDefine.h,v 1.34 2010/01/02 16:58:08 momjian Exp $
+ * src/include/rewrite/rewriteDefine.h
  *
  *-------------------------------------------------------------------------
  */
@@ -22,9 +22,9 @@
 #define RULE_FIRES_ON_REPLICA	'R'
 #define RULE_DISABLED			'D'
 
-extern void DefineRule(RuleStmt *stmt, const char *queryString);
+extern Oid	DefineRule(RuleStmt *stmt, const char *queryString);
 
-extern void DefineQueryRewrite(char *rulename,
+extern Oid DefineQueryRewrite(char *rulename,
 				   Oid event_relid,
 				   Node *event_qual,
 				   CmdType event_type,
@@ -32,7 +32,7 @@ extern void DefineQueryRewrite(char *rulename,
 				   bool replace,
 				   List *action);
 
-extern void RenameRewriteRule(Oid owningRel, const char *oldName,
+extern Oid RenameRewriteRule(RangeVar *relation, const char *oldName,
 				  const char *newName);
 
 extern void setRuleCheckAsUser(Node *node, Oid userid);

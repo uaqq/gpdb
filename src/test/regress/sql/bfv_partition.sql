@@ -705,6 +705,7 @@ drop table mpp4582;
 
 -- Use a particular username in the tests below, so that the output of \di
 -- commands don't vary depending on current user.
+DROP USER IF EXISTS mpp3641_user;
 CREATE USER mpp3641_user;
 GRANT ALL ON SCHEMA bfv_partition TO mpp3641_user;
 SET ROLE mpp3641_user;
@@ -870,7 +871,7 @@ CREATE TABLE LINEITEM (
                 )
 partition by range (l_discount) 
 subpartition by range (l_quantity) 
-,subpartition by range (l_tax) subpartition template (start('0') end('1.08') every 6 (1))
+subpartition by range (l_tax) subpartition template (start('0') end('1.08') every 6 (1))
 ,subpartition by range (l_receiptdate) subpartition template (subpartition sp1 start('1992-01-03') end('1999-01-01'), subpartition sp2 start('1993-01-03') end ('1997-01-01'))
 (
 partition p1 start('0') end('1.1') 
@@ -1693,7 +1694,9 @@ select 'pg_partition_templates', count(*) from pg_partition_templates where tabl
 --
 -- Check that dependencies to users are recorded correctly when operating on partitions.
 --
+DROP ROLE IF EXISTS part_acl_owner;
 CREATE ROLE part_acl_owner;
+DROP ROLE IF EXISTS part_acl_u1;
 CREATE ROLE part_acl_u1;
 GRANT ALL ON SCHEMA bfv_partition to part_acl_owner;
 

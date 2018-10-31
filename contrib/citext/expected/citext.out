@@ -1,12 +1,7 @@
 --
 --  Test citext datatype
 --
---
--- first, define the datatype.  Turn off echoing so that expected file
--- does not depend on contents of citext.sql.
---
-SET client_min_messages = warning;
-\set ECHO none
+CREATE EXTENSION citext;
 -- Test the operators and indexing functions
 -- Test = and <>.
 SELECT 'a'::citext = 'a'::citext AS t;
@@ -225,7 +220,6 @@ CREATE TEMP TABLE try (
    name citext,
    UNIQUE (a, name)
 ) DISTRIBUTED BY (a);
-NOTICE:  CREATE TABLE / UNIQUE will create implicit index "try_a_key" for table "try"
 INSERT INTO try (a, name)
 VALUES ('a', 'a'), ('a','ab'), ('â','â'), ('aba','aba'), ('b','b'), ('ba','ba'), ('bab','bab'), ('AZ','AZ');
 SELECT name, 'a' = name AS eq_a   FROM try WHERE name <> 'â';
@@ -334,6 +328,7 @@ VALUES ('aardvark'),
        ('aba'),
        ('ABC'),
        ('abd');
+CREATE INDEX srt_name ON srt (name);
 -- Check the min() and max() aggregates, with and without index.
 set enable_seqscan = off;
 SELECT MIN(name) AS "AAA" FROM srt;
@@ -1049,7 +1044,7 @@ CREATE TABLE caster (
     bpchar      bpchar,
     char        char,
     chr         "char",
-    name        name,    
+    name        name,
     bytea       bytea,
     boolean     boolean,
     float4      float4,
@@ -1058,7 +1053,7 @@ CREATE TABLE caster (
     int8        int8,
     int4        int4,
     int2        int2,
-    cidr        cidr,   
+    cidr        cidr,
     inet        inet,
     macaddr     macaddr,
     money       money,
@@ -1699,7 +1694,7 @@ SELECT btrim('xyxtrimyyx'::citext,    'xy'::text  ) = 'trim' AS t;
 
 -- chr() takes an int and returns text.
 -- convert() and convert_from take bytea and return text.
-SELECT convert_to( name, 'ISO-8859-1' ) = convert_to( name::text, 'ISO-8859-1' ) AS t FROM srt;
+SELECT convert_from( name::bytea, 'SQL_ASCII' ) = convert_from( name::text::bytea, 'SQL_ASCII' ) AS t FROM srt;
  t 
 ---
  t
@@ -2282,5 +2277,46 @@ SELECT like_escape( name::text, ''::citext ) = like_escape( name::text, '' ) AS 
  t
  t
  t
+(5 rows)
+
+-- Ensure correct behavior for citext with materialized views.
+CREATE TABLE citext_table (
+  id serial primary key,
+  name citext
+);
+INSERT INTO citext_table (name)
+  VALUES ('one'), ('two'), ('three'), (NULL), (NULL);
+CREATE MATERIALIZED VIEW citext_matview AS
+  SELECT * FROM citext_table;
+CREATE UNIQUE INDEX citext_matview_id
+  ON citext_matview (id);
+SELECT *
+  FROM citext_matview m
+  FULL JOIN citext_table t ON (t.id = m.id AND t *= m)
+  WHERE t.id IS NULL OR m.id IS NULL;
+ id | name | id | name 
+----+------+----+------
+(0 rows)
+
+UPDATE citext_table SET name = 'Two' WHERE name = 'TWO';
+SELECT *
+  FROM citext_matview m
+  FULL JOIN citext_table t ON (t.id = m.id AND t *= m)
+  WHERE t.id IS NULL OR m.id IS NULL;
+ id | name | id | name 
+----+------+----+------
+    |      |  2 | Two
+  2 | two  |    | 
+(2 rows)
+
+REFRESH MATERIALIZED VIEW CONCURRENTLY citext_matview;
+SELECT * FROM citext_matview ORDER BY id;
+ id | name  
+----+-------
+  1 | one
+  2 | Two
+  3 | three
+  4 | 
+  5 | 
 (5 rows)
 

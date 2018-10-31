@@ -5,14 +5,13 @@
   <title id="ak20941">ALTER EXTERNAL TABLE</title>
   <body>
     <p id="sql_command_desc">Changes the definition of an external table.</p>
-    <section id="section2"
-      ><title>Synopsis</title>
-      <sectiondiv id="sql_cmd_synopsis" >
+    <section id="section2"><title>Synopsis</title>
+      <sectiondiv id="sql_cmd_synopsis">
         <codeblock id="sql_command_synopsis">ALTER EXTERNAL TABLE <varname>name</varname> <varname>action</varname> [, ... ]</codeblock>
         <p>where <varname>action</varname> is one of:</p>
         <codeblock>  ADD [COLUMN] <varname>new_column</varname> <varname>type</varname>
   DROP [COLUMN] <varname>column</varname> [RESTRICT|CASCADE]
-  ALTER [COLUMN] <varname>column</varname> TYPE <varname>type</varname> [USING <varname>expression</varname>]
+  ALTER [COLUMN] <varname>column</varname> TYPE <varname>type</varname>
   OWNER TO <varname>new_owner</varname></codeblock>
       </sectiondiv></section>
     <section id="section3">
@@ -29,17 +28,18 @@
         <li id="ak137262"><b>OWNER</b> — Changes the owner of the external table to the specified
           user. </li>
       </ul>
-      <p>Use the <codeph>ALTER TABLE</codeph> command to perform these actions on an external
-          table.<ul id="ul_gtv_mcm_kbb">
+      <p>Use the <codeph><xref href="./ALTER_TABLE.xml#topic1" type="topic" format="dita"/></codeph>
+        command to perform these actions on an external table.<ul id="ul_gtv_mcm_kbb">
           <li>Set (change) the table schema.</li>
           <li>Rename the table.</li>
           <li>Rename a table column.</li>
         </ul></p>
-      <p>You must own the external table to use <codeph>ALTER EXTERNAL TABLE</codeph>. To change the
-        schema of an external table, you must also have <codeph>CREATE</codeph> privilege on the new
-        schema. To alter the owner, you must also be a direct or indirect member of the new owning
-        role, and that role must have <codeph>CREATE</codeph> privilege on the external table's
-        schema. A superuser has these privileges automatically.</p>
+      <p>You must own the external table to use <codeph>ALTER EXTERNAL TABLE</codeph> or
+          <codeph>ALTER TABLE</codeph>. To change the schema of an external table, you must also
+        have <codeph>CREATE</codeph> privilege on the new schema. To alter the owner, you must also
+        be a direct or indirect member of the new owning role, and that role must have
+          <codeph>CREATE</codeph> privilege on the external table's schema. A superuser has these
+        privileges automatically.</p>
       <p>Changes to the external table definition with either <codeph>ALTER EXTERNAL TABLE</codeph>
         or <codeph>ALTER TABLE</codeph> do not affect the external data. </p>
       <p>The <codeph>ALTER EXTERNAL TABLE</codeph> and <codeph>ALTER TABLE</codeph> commands cannot
@@ -60,12 +60,6 @@
         <plentry>
           <pt><varname>new_column</varname></pt>
           <pd>Name of a new column.</pd>
-        </plentry>
-        <plentry>
-          <pt>USING <varname>expression</varname></pt>
-          <pd>Optional if an implicit or assignment cast exists from the old column data type to new
-            data type. The clause is required if there is no implicit or assignment cast. </pd>
-          <pd>The <codeph>USING</codeph> clause does not affect the external data.</pd>
         </plentry>
         <plentry>
           <pt><varname>type</varname></pt>
@@ -90,17 +84,14 @@
         definition:</p><codeblock>ALTER EXTERNAL TABLE ext_expenses ADD COLUMN manager text;</codeblock><p>Change
         the owner of an external
         table:</p><codeblock>ALTER EXTERNAL TABLE ext_data OWNER TO jojo;</codeblock><p>Change the
-        data type of an external table:</p><codeblock>ALTER EXTERNAL TABLE ext_leads ALTER COLUMN acct_code TYPE integer USING acct_code::integer</codeblock>
-      <p>When altering the column data type from <codeph>text</codeph> to <codeph>integer</codeph>,
-        the <codeph>USING</codeph> clause is required but does not affect the external data.
-      </p></section>
+        data type of an external table:</p><codeblock>ALTER EXTERNAL TABLE ext_leads ALTER COLUMN acct_code TYPE integer</codeblock>
+      </section>
     <section id="section6"><title>Compatibility</title><p><codeph>ALTER EXTERNAL TABLE</codeph> is a
         Greenplum Database extension. There is no <codeph>ALTER EXTERNAL TABLE</codeph> statement in
         the SQL standard or regular PostgreSQL. </p></section>
-    <section id="section7"><title>See Also</title><p><codeph><xref
-            href="./CREATE_EXTERNAL_TABLE.xml#topic1" type="topic" format="dita"/></codeph>,
+    <section id="section7"><title>See Also</title><p><codeph><xref href="./CREATE_EXTERNAL_TABLE.xml#topic1" type="topic" format="dita"/></codeph>,
             <codeph><xref href="./DROP_EXTERNAL_TABLE.xml#topic1" type="topic" format="dita"
-          /></codeph>, <codeph><xref href="./ALTER_TABLE.xml#topic1" type="topic" format="dita"
+          /></codeph>,  <codeph><xref href="./ALTER_TABLE.xml#topic1" type="topic" format="dita"
           /></codeph></p></section>
   </body>
 </topic>

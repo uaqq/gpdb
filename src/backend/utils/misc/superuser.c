@@ -9,17 +9,18 @@
  * the single-user case works.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/superuser.c,v 1.41 2010/02/14 18:42:18 rhaas Exp $
+ *	  src/backend/utils/misc/superuser.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "catalog/pg_authid.h"
 #include "utils/inval.h"
 #include "utils/syscache.h"
@@ -37,7 +38,7 @@ static Oid	last_roleid = InvalidOid;	/* InvalidOid == cache not valid */
 static bool last_roleid_is_super = false;
 static bool roleid_callback_registered = false;
 
-static void RoleidCallback(Datum arg, int cacheid, ItemPointer tuplePtr);
+static void RoleidCallback(Datum arg, int cacheid, uint32 hashvalue);
 
 
 /*
@@ -105,11 +106,11 @@ superuser_arg(Oid roleid)
 }
 
 /*
- * UseridCallback
+ * RoleidCallback
  *		Syscache inval callback function
  */
 static void
-RoleidCallback(Datum arg, int cacheid, ItemPointer tuplePtr)
+RoleidCallback(Datum arg, int cacheid, uint32 hashvalue)
 {
 	/* Invalidate our local cache in case role's superuserness changed */
 	last_roleid = InvalidOid;

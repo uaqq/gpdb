@@ -8,28 +8,27 @@
  *	  This file contains only the public interface routines.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/nbtree/nbtree.c,v 1.177 2010/03/28 09:27:01 sriggs Exp $
+ *	  src/backend/access/nbtree/nbtree.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
-#include "access/genam.h"
+#include "access/heapam_xlog.h"
 #include "access/nbtree.h"
 #include "access/relscan.h"
 #include "catalog/index.h"
 #include "catalog/pg_namespace.h"
-#include "catalog/storage.h"
 #include "commands/vacuum.h"
-#include "storage/bufmgr.h"
-#include "storage/freespace.h"
 #include "storage/indexfsm.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
+#include "storage/smgr.h"
+#include "tcop/tcopprot.h"
 #include "utils/memutils.h"
 #include "utils/guc.h"
 
@@ -61,8 +60,8 @@ typedef struct
 	IndexBulkDeleteCallback callback;
 	void	   *callback_state;
 	BTCycleId	cycleid;
-	BlockNumber lastBlockVacuumed;		/* last blkno reached by Vacuum scan */
-	BlockNumber lastUsedPage;	/* blkno of last non-recyclable page */
+	BlockNumber lastBlockVacuumed;		/* highest blkno actually vacuumed */
+	BlockNumber lastBlockLocked;	/* highest blkno we've cleanup-locked */
 	BlockNumber totFreePages;	/* true total # of free pages */
 	MemoryContext pagedelcontext;
 } BTVacState;
@@ -114,14 +113,14 @@ btbuild(PG_FUNCTION_ARGS)
 		elog(ERROR, "index \"%s\" already contains data",
 			 RelationGetRelationName(index));
 
-	buildstate.spool = _bt_spoolinit(index, indexInfo->ii_Unique, false);
+	buildstate.spool = _bt_spoolinit(heap, index, indexInfo->ii_Unique, false);
 
 	/*
 	 * If building a unique index, put dead tuples in a second spool to keep
 	 * them out of the uniqueness check.
 	 */
 	if (indexInfo->ii_Unique)
-		buildstate.spool2 = _bt_spoolinit(index, false, true);
+		buildstate.spool2 = _bt_spoolinit(heap, index, false, true);
 
 	/* do the heap scan */
 	reltuples = IndexBuildScan(heap, index, indexInfo, true,
@@ -152,14 +151,6 @@ btbuild(PG_FUNCTION_ARGS)
 		ResetUsage();
 	}
 #endif   /* BTREE_BUILD_STATS */
-
-	/*
-	 * If we are reindexing a pre-existing index, it is critical to send out a
-	 * relcache invalidation SI message to ensure all backends re-read the
-	 * index metapage.	We expect that the caller will ensure that happens
-	 * (typically as a side effect of updating index stats, but it must happen
-	 * even if the stats don't change!)
-	 */
 
 	/*
 	 * Return statistics
@@ -206,6 +197,37 @@ btbuildCallback(Relation index,
 	buildstate->indtuples += 1;
 
 	pfree(itup);
+}
+
+/*
+ *	btbuildempty() -- build an empty btree index in the initialization fork
+ */
+Datum
+btbuildempty(PG_FUNCTION_ARGS)
+{
+	Relation	index = (Relation) PG_GETARG_POINTER(0);
+	Page		metapage;
+
+	/* Construct metapage. */
+	metapage = (Page) palloc(BLCKSZ);
+	_bt_initmetapage(metapage, P_NONE, 0);
+
+	/* Write the page.  If archiving/streaming, XLOG it. */
+	PageSetChecksumInplace(metapage, BTREE_METAPAGE);
+	smgrwrite(index->rd_smgr, INIT_FORKNUM, BTREE_METAPAGE,
+			  (char *) metapage, true);
+	if (XLogIsNeeded())
+		log_newpage(&index->rd_smgr->smgr_rnode.node, INIT_FORKNUM,
+					BTREE_METAPAGE, metapage, false);
+
+	/*
+	 * An immediate sync is required even if we xlog'd the page, because the
+	 * write did not go through shared_buffers and therefore a concurrent
+	 * checkpoint may have moved the redo pointer past our xlog record.
+	 */
+	smgrimmedsync(index->rd_smgr, INIT_FORKNUM);
+
+	PG_RETURN_VOID();
 }
 
 /*
@@ -291,7 +313,7 @@ _bt_validate_vacuum(Relation irel, Relation hrel, TransactionId oldest_xmin)
 						 RelationGetRelationName(irel),
 						 RelationGetRelationName(hrel));
 				}
-				switch (HeapTupleSatisfiesVacuum(hrel, htup.t_data, oldest_xmin, hbuf))
+				switch (HeapTupleSatisfiesVacuum(hrel, &htup, oldest_xmin, hbuf))
 				{
 					case HEAPTUPLE_RECENTLY_DEAD:
 					case HEAPTUPLE_LIVE:
@@ -334,8 +356,8 @@ _bt_validate_vacuum(Relation irel, Relation hrel, TransactionId oldest_xmin)
 				}
 				if (RelationGetNamespace(irel) == PG_AOSEGMENT_NAMESPACE)
 				{
-					int4 isegno = index_getattr(itup, 1, RelationGetDescr(irel), &isnull);
-					int4 hsegno = heap_getattr(&htup, 1, RelationGetDescr(hrel), &isnull);
+					int32 isegno = index_getattr(itup, 1, RelationGetDescr(irel), &isnull);
+					int32 hsegno = heap_getattr(&htup, 1, RelationGetDescr(hrel), &isnull);
 					if (isegno != hsegno)
 					{
 						elog(ERROR,
@@ -475,39 +497,63 @@ btgettuple(PG_FUNCTION_ARGS)
 	scan->xs_recheck = false;
 
 	/*
-	 * If we've already initialized this scan, we can just advance it in the
-	 * appropriate direction.  If we haven't done so yet, we call a routine to
-	 * get the first item in the scan.
+	 * If we have any array keys, initialize them during first call for a
+	 * scan.  We can't do this in btrescan because we don't know the scan
+	 * direction at that time.
 	 */
-	if (BTScanPosIsValid(so->currPos))
+	if (so->numArrayKeys && !BTScanPosIsValid(so->currPos))
+	{
+		/* punt if we have any unsatisfiable array keys */
+		if (so->numArrayKeys < 0)
+			PG_RETURN_BOOL(false);
+
+		_bt_start_array_keys(scan, dir);
+	}
+
+	/* This loop handles advancing to the next array elements, if any */
+	do
 	{
 		/*
-		 * Check to see if we should kill the previously-fetched tuple.
+		 * If we've already initialized this scan, we can just advance it in
+		 * the appropriate direction.  If we haven't done so yet, we call
+		 * _bt_first() to get the first item in the scan.
 		 */
-		if (scan->kill_prior_tuple)
+		if (!BTScanPosIsValid(so->currPos))
+			res = _bt_first(scan, dir);
+		else
 		{
 			/*
-			 * Yes, remember it for later.	(We'll deal with all such tuples
-			 * at once right before leaving the index page.)  The test for
-			 * numKilled overrun is not just paranoia: if the caller reverses
-			 * direction in the indexscan then the same item might get entered
-			 * multiple times.	It's not worth trying to optimize that, so we
-			 * don't detect it, but instead just forget any excess entries.
+			 * Check to see if we should kill the previously-fetched tuple.
 			 */
-			if (so->killedItems == NULL)
-				so->killedItems = (int *)
-					palloc(MaxIndexTuplesPerPage * sizeof(int));
-			if (so->numKilled < MaxIndexTuplesPerPage)
-				so->killedItems[so->numKilled++] = so->currPos.itemIndex;
+			if (scan->kill_prior_tuple)
+			{
+				/*
+				 * Yes, remember it for later. (We'll deal with all such
+				 * tuples at once right before leaving the index page.)  The
+				 * test for numKilled overrun is not just paranoia: if the
+				 * caller reverses direction in the indexscan then the same
+				 * item might get entered multiple times. It's not worth
+				 * trying to optimize that, so we don't detect it, but instead
+				 * just forget any excess entries.
+				 */
+				if (so->killedItems == NULL)
+					so->killedItems = (int *)
+						palloc(MaxIndexTuplesPerPage * sizeof(int));
+				if (so->numKilled < MaxIndexTuplesPerPage)
+					so->killedItems[so->numKilled++] = so->currPos.itemIndex;
+			}
+
+			/*
+			 * Now continue the scan.
+			 */
+			res = _bt_next(scan, dir);
 		}
 
-		/*
-		 * Now continue the scan.
-		 */
-		res = _bt_next(scan, dir);
-	}
-	else
-		res = _bt_first(scan, dir);
+		/* If we have a tuple, return it ... */
+		if (res)
+			break;
+		/* ... otherwise see if we have more array keys to deal with */
+	} while (so->numArrayKeys && _bt_advance_array_keys(scan, dir));
 
 	PG_RETURN_BOOL(res);
 }
@@ -539,39 +585,50 @@ btgetbitmap(PG_FUNCTION_ARGS)
 		tbm = (TIDBitmap *)n;
 	}
 
-	/* If we haven't started the scan yet, fetch the first page & tuple. */
-	if (!BTScanPosIsValid(so->currPos))
+	/*
+	 * If we have any array keys, initialize them.
+	 */
+	if (so->numArrayKeys)
 	{
-		/* Fetch the first page & tuple. */
+		/* punt if we have any unsatisfiable array keys */
+		if (so->numArrayKeys < 0)
+			PG_RETURN_POINTER(tbm);
+
+		_bt_start_array_keys(scan, ForwardScanDirection);
+	}
+
+	/* This loop handles advancing to the next array elements, if any */
+	do
+	{
+		/* Fetch the first page & tuple */
 		if (_bt_first(scan, ForwardScanDirection))
 		{
 			/* Save tuple ID, and continue scanning */
 			heapTid = &scan->xs_ctup.t_self;
 			tbm_add_tuples(tbm, heapTid, 1, false);
 			ntids++;
-		}
-		else
-			PG_RETURN_POINTER(tbm);
-	}
 
-	for (;;)
-	{
-		/*
-		 * Advance to next tuple within page.  This is the same as the easy
-		 * case in _bt_next().
-		 */
-		if (++so->currPos.itemIndex > so->currPos.lastItem)
-		{
-			/* let _bt_next do the heavy lifting */
-			if (!_bt_next(scan, ForwardScanDirection))
-				break;
-		}
+			for (;;)
+			{
+				/*
+				 * Advance to next tuple within page.  This is the same as the
+				 * easy case in _bt_next().
+				 */
+				if (++so->currPos.itemIndex > so->currPos.lastItem)
+				{
+					/* let _bt_next do the heavy lifting */
+					if (!_bt_next(scan, ForwardScanDirection))
+						break;
+				}
 
-		/* Save tuple ID, and continue scanning */
-		heapTid = &so->currPos.items[so->currPos.itemIndex].heapTid;
-		tbm_add_tuples(tbm, heapTid, 1, false);
-		ntids++;
-	}
+				/* Save tuple ID, and continue scanning */
+				heapTid = &so->currPos.items[so->currPos.itemIndex].heapTid;
+				tbm_add_tuples(tbm, heapTid, 1, false);
+				ntids++;
+			}
+		}
+		/* Now see if we have more array keys to deal with */
+	} while (so->numArrayKeys && _bt_advance_array_keys(scan, ForwardScanDirection));
 
 	PG_RETURN_POINTER(tbm);
 }
@@ -583,12 +640,45 @@ Datum
 btbeginscan(PG_FUNCTION_ARGS)
 {
 	Relation	rel = (Relation) PG_GETARG_POINTER(0);
-	int			keysz = PG_GETARG_INT32(1);
-	ScanKey		scankey = (ScanKey) PG_GETARG_POINTER(2);
+	int			nkeys = PG_GETARG_INT32(1);
+	int			norderbys = PG_GETARG_INT32(2);
 	IndexScanDesc scan;
+	BTScanOpaque so;
+
+	/* no order by operators allowed */
+	Assert(norderbys == 0);
 
 	/* get the scan */
-	scan = RelationGetIndexScan(rel, keysz, scankey);
+	scan = RelationGetIndexScan(rel, nkeys, norderbys);
+
+	/* allocate private workspace */
+	so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));
+	so->currPos.buf = so->markPos.buf = InvalidBuffer;
+	if (scan->numberOfKeys > 0)
+		so->keyData = (ScanKey) palloc(scan->numberOfKeys * sizeof(ScanKeyData));
+	else
+		so->keyData = NULL;
+
+	so->arrayKeyData = NULL;	/* assume no array keys for now */
+	so->numArrayKeys = 0;
+	so->arrayKeys = NULL;
+	so->arrayContext = NULL;
+
+	so->killedItems = NULL;		/* until needed */
+	so->numKilled = 0;
+
+	/*
+	 * We don't know yet whether the scan will be index-only, so we do not
+	 * allocate the tuple workspace arrays until btrescan.  However, we set up
+	 * scan->xs_itupdesc whether we'll need it or not, since that's so cheap.
+	 */
+	so->currTuples = so->markTuples = NULL;
+	so->currPos.nextTupleOffset = 0;
+	so->markPos.nextTupleOffset = 0;
+
+	scan->xs_itupdesc = RelationGetDescr(rel);
+
+	scan->opaque = so;
 
 	PG_RETURN_POINTER(scan);
 }
@@ -601,22 +691,9 @@ btrescan(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	ScanKey		scankey = (ScanKey) PG_GETARG_POINTER(1);
-	BTScanOpaque so;
 
-	so = (BTScanOpaque) scan->opaque;
-
-	if (so == NULL)				/* if called from btbeginscan */
-	{
-		so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));
-		so->currPos.buf = so->markPos.buf = InvalidBuffer;
-		if (scan->numberOfKeys > 0)
-			so->keyData = (ScanKey) palloc(scan->numberOfKeys * sizeof(ScanKeyData));
-		else
-			so->keyData = NULL;
-		so->killedItems = NULL; /* until needed */
-		so->numKilled = 0;
-		scan->opaque = so;
-	}
+	/* remaining arguments are ignored */
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 
 	/* we aren't holding any read locks, but gotta drop the pins */
 	if (BTScanPosIsValid(so->currPos))
@@ -636,6 +713,28 @@ btrescan(PG_FUNCTION_ARGS)
 	so->markItemIndex = -1;
 
 	/*
+	 * Allocate tuple workspace arrays, if needed for an index-only scan and
+	 * not already done in a previous rescan call.  To save on palloc
+	 * overhead, both workspaces are allocated as one palloc block; only this
+	 * function and btendscan know that.
+	 *
+	 * NOTE: this data structure also makes it safe to return data from a
+	 * "name" column, even though btree name_ops uses an underlying storage
+	 * datatype of cstring.  The risk there is that "name" is supposed to be
+	 * padded to NAMEDATALEN, but the actual index tuple is probably shorter.
+	 * However, since we only return data out of tuples sitting in the
+	 * currTuples array, a fetch of NAMEDATALEN bytes can at worst pull some
+	 * data out of the markTuples array --- running off the end of memory for
+	 * a SIGSEGV is not possible.  Yeah, this is ugly as sin, but it beats
+	 * adding special-case treatment for name_ops elsewhere.
+	 */
+	if (scan->xs_want_itup && so->currTuples == NULL)
+	{
+		so->currTuples = (char *) palloc(BLCKSZ * 2);
+		so->markTuples = so->currTuples + BLCKSZ;
+	}
+
+	/*
 	 * Reset the scan keys. Note that keys ordering stuff moved to _bt_first.
 	 * - vadim 05/05/97
 	 */
@@ -644,6 +743,9 @@ btrescan(PG_FUNCTION_ARGS)
 				scankey,
 				scan->numberOfKeys * sizeof(ScanKeyData));
 	so->numberOfKeys = 0;		/* until _bt_preprocess_keys sets it */
+
+	/* If any keys are SK_SEARCHARRAY type, set up array-key info */
+	_bt_preprocess_array_keys(scan);
 
 	PG_RETURN_VOID();
 }
@@ -674,10 +776,17 @@ btendscan(PG_FUNCTION_ARGS)
 	}
 	so->markItemIndex = -1;
 
-	if (so->killedItems != NULL)
-		pfree(so->killedItems);
+	/* Release storage */
 	if (so->keyData != NULL)
 		pfree(so->keyData);
+	/* so->arrayKeyData and so->arrayKeys are in arrayContext */
+	if (so->arrayContext != NULL)
+		MemoryContextDelete(so->arrayContext);
+	if (so->killedItems != NULL)
+		pfree(so->killedItems);
+	if (so->currTuples != NULL)
+		pfree(so->currTuples);
+	/* so->markTuples should not be pfree'd, see btrescan */
 	pfree(so);
 
 	PG_RETURN_VOID();
@@ -710,6 +819,10 @@ btmarkpos(PG_FUNCTION_ARGS)
 	else
 		so->markItemIndex = -1;
 
+	/* Also record the current positions of any array keys */
+	if (so->numArrayKeys)
+		_bt_mark_array_keys(scan);
+
 	PG_RETURN_VOID();
 }
 
@@ -721,6 +834,10 @@ btrestrpos(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+
+	/* Restore the marked positions of any array keys */
+	if (so->numArrayKeys)
+		_bt_restore_array_keys(scan);
 
 	if (so->markItemIndex >= 0)
 	{
@@ -750,6 +867,9 @@ btrestrpos(PG_FUNCTION_ARGS)
 			memcpy(&so->currPos, &so->markPos,
 				   offsetof(BTScanPosData, items[1]) +
 				   so->markPos.lastItem * sizeof(BTScanPosItem));
+			if (so->currTuples)
+				memcpy(so->currTuples, so->markTuples,
+					   so->markPos.nextTupleOffset);
 		}
 	}
 
@@ -877,7 +997,7 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	vstate.callback_state = callback_state;
 	vstate.cycleid = cycleid;
 	vstate.lastBlockVacuumed = BTREE_METAPAGE;	/* Initialise at first block */
-	vstate.lastUsedPage = BTREE_METAPAGE;
+	vstate.lastBlockLocked = BTREE_METAPAGE;
 	vstate.totFreePages = 0;
 
 	/* Create a temporary memory context to run _bt_pagedel in */
@@ -933,27 +1053,30 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	}
 
 	/*
-	 * InHotStandby we need to scan right up to the end of the index for
-	 * correct locking, so we may need to write a WAL record for the final
-	 * block in the index if it was not vacuumed. It's possible that VACUUMing
-	 * has actually removed zeroed pages at the end of the index so we need to
-	 * take care to issue the record for last actual block and not for the
-	 * last block that was scanned. Ignore empty indexes.
+	 * If the WAL is replayed in hot standby, the replay process needs to get
+	 * cleanup locks on all index leaf pages, just as we've been doing here.
+	 * However, we won't issue any WAL records about pages that have no items
+	 * to be deleted.  For pages between pages we've vacuumed, the replay code
+	 * will take locks under the direction of the lastBlockVacuumed fields in
+	 * the XLOG_BTREE_VACUUM WAL records.  To cover pages after the last one
+	 * we vacuum, we need to issue a dummy XLOG_BTREE_VACUUM WAL record
+	 * against the last leaf page in the index, if that one wasn't vacuumed.
 	 */
 	if (XLogStandbyInfoActive() &&
-		num_pages > 1 && vstate.lastBlockVacuumed < (num_pages - 1))
+		vstate.lastBlockVacuumed < vstate.lastBlockLocked)
 	{
 		Buffer		buf;
 
 		/*
-		 * We can't use _bt_getbuf() here because it always applies
-		 * _bt_checkpage(), which will barf on an all-zero page. We want to
-		 * recycle all-zero pages, not fail.  Also, we want to use a
-		 * nondefault buffer access strategy.
+		 * The page should be valid, but we can't use _bt_getbuf() because we
+		 * want to use a nondefault buffer access strategy.  Since we aren't
+		 * going to delete any items, getting cleanup lock again is probably
+		 * overkill, but for consistency do that anyway.
 		 */
-		buf = ReadBufferExtended(rel, MAIN_FORKNUM, num_pages - 1, RBM_NORMAL,
-								 info->strategy);
+		buf = ReadBufferExtended(rel, MAIN_FORKNUM, vstate.lastBlockLocked,
+								 RBM_NORMAL, info->strategy);
 		LockBufferForCleanup(buf);
+		_bt_checkpage(rel, buf);
 		_bt_delitems_vacuum(rel, buf, NULL, 0, vstate.lastBlockVacuumed);
 		_bt_relbuf(rel, buf);
 	}
@@ -1028,10 +1151,6 @@ restart:
 		}
 	}
 
-	/* If the page is in use, update lastUsedPage */
-	if (!_bt_page_recyclable(page) && vstate->lastUsedPage < blkno)
-		vstate->lastUsedPage = blkno;
-
 	/* Page is valid, see what to do with it */
 	if (_bt_page_recyclable(page))
 	{
@@ -1068,7 +1187,14 @@ restart:
 		LockBufferForCleanup(buf);
 
 		/*
-		 * Check whether we need to recurse back to earlier pages.	What we
+		 * Remember highest leaf page number we've taken cleanup lock on; see
+		 * notes in btvacuumscan
+		 */
+		if (blkno > vstate->lastBlockLocked)
+			vstate->lastBlockLocked = blkno;
+
+		/*
+		 * Check whether we need to recurse back to earlier pages.  What we
 		 * are concerned about is a page split that happened since we started
 		 * the vacuum scan.  If the split moved some tuples to a lower page
 		 * then we might have missed 'em.  If so, set up for tail recursion.
@@ -1128,23 +1254,31 @@ restart:
 		}
 
 		/*
-		 * Apply any needed deletes.  We issue just one _bt_delitems() call
-		 * per page, so as to minimize WAL traffic.
+		 * Apply any needed deletes.  We issue just one _bt_delitems_vacuum()
+		 * call per page, so as to minimize WAL traffic.
 		 */
 		if (ndeletable > 0)
 		{
-			BlockNumber lastBlockVacuumed = BufferGetBlockNumber(buf);
-
-			_bt_delitems_vacuum(rel, buf, deletable, ndeletable, vstate->lastBlockVacuumed);
+			/*
+			 * Notice that the issued XLOG_BTREE_VACUUM WAL record includes an
+			 * instruction to the replay code to get cleanup lock on all pages
+			 * between the previous lastBlockVacuumed and this page.  This
+			 * ensures that WAL replay locks all leaf pages at some point.
+			 *
+			 * Since we can visit leaf pages out-of-order when recursing,
+			 * replay might end up locking such pages an extra time, but it
+			 * doesn't seem worth the amount of bookkeeping it'd take to avoid
+			 * that.
+			 */
+			_bt_delitems_vacuum(rel, buf, deletable, ndeletable,
+								vstate->lastBlockVacuumed);
 
 			/*
-			 * Keep track of the block number of the lastBlockVacuumed, so we
-			 * can scan those blocks as well during WAL replay. This then
-			 * provides concurrency protection and allows btrees to be used
-			 * while in recovery.
+			 * Remember highest leaf page number we've issued a
+			 * XLOG_BTREE_VACUUM WAL record for.
 			 */
-			if (lastBlockVacuumed > vstate->lastBlockVacuumed)
-				vstate->lastBlockVacuumed = lastBlockVacuumed;
+			if (blkno > vstate->lastBlockVacuumed)
+				vstate->lastBlockVacuumed = blkno;
 
 			stats->tuples_removed += ndeletable;
 			/* must recompute maxoff */
@@ -1155,8 +1289,8 @@ restart:
 			/*
 			 * If the page has been split during this vacuum cycle, it seems
 			 * worth expending a write to clear btpo_cycleid even if we don't
-			 * have any deletions to do.  (If we do, _bt_delitems takes care
-			 * of this.)  This ensures we won't process the page again.
+			 * have any deletions to do.  (If we do, _bt_delitems_vacuum takes
+			 * care of this.)  This ensures we won't process the page again.
 			 *
 			 * We treat this like a hint-bit update because there's no need to
 			 * WAL-log it.
@@ -1165,7 +1299,7 @@ restart:
 				opaque->btpo_cycleid == vstate->cycleid)
 			{
 				opaque->btpo_cycleid = 0;
-				MarkBufferDirtyHint(buf);
+				MarkBufferDirtyHint(buf, true);
 			}
 		}
 
@@ -1190,7 +1324,7 @@ restart:
 		MemoryContextReset(vstate->pagedelcontext);
 		oldcontext = MemoryContextSwitchTo(vstate->pagedelcontext);
 
-		ndel = _bt_pagedel(rel, buf, NULL);
+		ndel = _bt_pagedel(rel, buf);
 
 		/* count only this page, else may double-count parent */
 		if (ndel)
@@ -1214,4 +1348,15 @@ restart:
 		blkno = recurse_to;
 		goto restart;
 	}
+}
+
+/*
+ *	btcanreturn() -- Check whether btree indexes support index-only scans.
+ *
+ * btrees always do, so this is trivial.
+ */
+Datum
+btcanreturn(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_BOOL(true);
 }

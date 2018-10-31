@@ -10,8 +10,8 @@
  * high-precision-timing APIs on yet other platforms.
  *
  * The basic data type is instr_time, which all callers should treat as an
- * opaque typedef.	instr_time can store either an absolute time (of
- * unspecified reference time) or an interval.	The operations provided
+ * opaque typedef.  instr_time can store either an absolute time (of
+ * unspecified reference time) or an interval.  The operations provided
  * for it are:
  *
  * INSTR_TIME_IS_ZERO(t)			is t equal to zero?
@@ -43,9 +43,9 @@
  * Beware of multiple evaluations of the macro arguments.
  *
  *
- * Copyright (c) 2001-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2001-2014, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/portability/instr_time.h,v 1.6 2010/02/13 02:34:15 tgl Exp $
+ * src/include/portability/instr_time.h
  *
  *-------------------------------------------------------------------------
  */

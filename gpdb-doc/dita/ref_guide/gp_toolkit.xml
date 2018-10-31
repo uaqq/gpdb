@@ -25,8 +25,8 @@
     <note type="warning" class="- topic/note ">Do not change database objects in the gp_toolkit schema. Do not create database objects in the schema.
       Changes to objects in the schema might affect the accuracy of administrative information
       returned by schema objects. <ph>Any changes made in the gp_toolkit schema are lost when the database is backed up and then
-        restored with the <codeph class="+ topic/ph pr-d/codeph ">gpcrondump</codeph> and <codeph
-          class="+ topic/ph pr-d/codeph ">gpdbrestore</codeph> utilities. </ph></note>
+        restored with the <codeph class="+ topic/ph pr-d/codeph ">gpbackup</codeph> and <codeph
+          class="+ topic/ph pr-d/codeph ">gprestore</codeph> utilities. </ph></note>
     <p otherprops="op-print">These are the categories for views in the <codeph>gp_toolkit</codeph>
       schema.</p>
   </body>
@@ -1597,7 +1597,7 @@
 
               <row class="- topic/row ">
                 <entry colname="col1" class="- topic/entry ">cpu_rate_limit</entry>
-                <entry colname="col2" class="- topic/entry ">The CPU limit (<codeph>CPU_RATE_LIMIT</codeph>) value specified for the resource group.</entry>
+                <entry colname="col2" class="- topic/entry ">The CPU limit (<codeph>CPU_RATE_LIMIT</codeph>) value specified for the resource group, or -1.</entry>
               </row>
               <row class="- topic/row ">
                 <entry colname="col1" class="- topic/entry ">memory_limit</entry>
@@ -1622,6 +1622,14 @@
               <row class="- topic/row ">
                 <entry colname="col1" class="- topic/entry ">proposed_memory_spill_ratio</entry>
                 <entry colname="col2" class="- topic/entry ">The pending memory spill ratio value for the resource group.</entry>
+              </row>
+              <row class="- topic/row ">
+                <entry colname="col1" class="- topic/entry ">memory_auditor</entry>
+                <entry colname="col2" class="- topic/entry ">The memory auditor for the resource group.</entry>
+              </row>
+              <row class="- topic/row ">
+                <entry colname="col1" class="- topic/entry ">cpuset</entry>
+                <entry colname="col2" class="- topic/entry ">The CPU cores reserved for the resource group, or -1.</entry>
               </row>
             </tbody>
           </tgroup>
@@ -1703,13 +1711,17 @@
           <codeph>1</codeph> are running on the same host; their CPU usage
           is the same.</p> 
         <p id="json_field_info2">The <codeph>memory_usage</codeph> field is also a JSON-formatted,
-          key:value string. This string identifies, for each resource group, the
-          used, available, granted, and proposed fixed and shared memory quota 
-          allocations on each segment. The key is segment id. The values are 
-          memory values displayed in MB units. Example
-          <codeph>memory_usage</codeph> column output for a
-          single segment:<codeblock>
-"0":{"used":0, "available":76, "quota_used":-1, "quota_available":60, "quota_granted":60, "quota_proposed":60, "shared_used":0, "shared_available":16, "shared_granted":16, "shared_proposed":16}</codeblock></p>
+          key:value string. The string contents differ depending upon the type of resource
+          group. For each resource group that you assign to a role (default memory auditor <codeph>vmtracker</codeph>), this string
+          identifies the used, available, granted, and proposed fixed and shared memory
+          quota allocations on each segment. The key is segment id. The values are 
+          memory values displayed in MB units. The following example shows
+          <codeph>memory_usage</codeph> column output for a single segment for a resource group that you assign to a role:<codeblock>
+"0":{"used":0, "available":76, "quota_used":-1, "quota_available":60, "quota_granted":60, "quota_proposed":60, "shared_used":0, "shared_available":16, "shared_granted":16, "shared_proposed":16}</codeblock>
+         For each resource group that you assign to
+          an external component, the <codeph>memory_usage</codeph> JSON-formatted string identifies the memory used
+          and the memory limit on each segment.  The following example shows
+          <codeph>memory_usage</codeph> column output for an external component resource group for a single segment: <codeblock>"1":{"used":11, "limit_granted":15}</codeblock></p>
       </body>
     </topic>
   </topic>

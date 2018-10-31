@@ -148,6 +148,8 @@ FI_IDENT(AppendOnlyInsert, "appendonly_insert")
 FI_IDENT(AppendOnlyDelete, "appendonly_delete")
 /* inject fault before an append-only update */
 FI_IDENT(AppendOnlyUpdate, "appendonly_update")
+/* inject fault before creating an appendonly hash entry*/
+FI_IDENT(BeforeCreatingAnAOHashEntry, "before_creating_an_ao_hash_entry")
 /* inject fault in append-only compression function */
 FI_IDENT(AppendOnlySkipCompression, "appendonly_skip_compression")
 /* inject fault while reindex db is in progress */
@@ -190,10 +192,10 @@ FI_IDENT(OptRelcacheTranslatorCatalogAccess, "opt_relcache_translator_catalog_ac
 FI_IDENT(SendQEDetailsInitBackend, "send_qe_details_init_backend")
 /* inject fault in ProcessStartupPacket() */
 FI_IDENT(ProcessStartupPacketFault, "process_startup_packet")
-/* inject fault in quickdie*/
-FI_IDENT(QuickDie, "quickdie")
 /* inject fault in cdbdisp_dispatchX*/
 FI_IDENT(AfterOneSliceDispatched, "after_one_slice_dispatched")
+/* inject fault in cdbdisp_dispatchX*/
+FI_IDENT(BeforeOneSliceDispatched, "before_one_slice_dispatched")
 /* inject fault in interconnect to skip sending the stop ack */
 FI_IDENT(InterconnectStopAckIsLost, "interconnect_stop_ack_is_lost")
 /* inject fault in interconnect to make palloc0 fail in setup */
@@ -220,6 +222,39 @@ FI_IDENT(CheckPointDtxInfo, "checkpoint_dtx_info")
 FI_IDENT(WalSenderLoop, "wal_sender_loop")
 /* inject fault at SyncRepWaitForLSN function for QueryCancelPending */
 FI_IDENT(SyncRepQueryCancel, "sync_rep_query_cancel")
+/* inject fault at start of function DistributedLog_AdvanceOldestXmin() */
+FI_IDENT(DistributedLogAdvanceOldestXmin, "distributedlog_advance_oldest_xmin")
+/* inject fault at initialization of wal sender */
+FI_IDENT(InitializeWalSender, "initialize_wal_sender")
+/* inject fault when fts connection is received on primary/mirror */
+FI_IDENT(FTSConnStartupPacket, "fts_conn_startup_packet")
+/*
+ * inject fault to report recovery is hung to FTS. This fault only works with
+ * FTSConnStartupPacket fault set to skip.
+ */
+FI_IDENT(FTSRecoveryInProgress, "fts_recovery_in_progress")
+/* inject fault after CdbTryOpenRelation function */
+FI_IDENT(UpgradeRowLock, "upgrade_row_lock")
+/* inject fault in Gdd loop */
+FI_IDENT(GddProbe, "gdd_probe")
+/* inject fault after updating pg_database.datfrozenxid (but before committing) */
+FI_IDENT(VacuumUpdateDatFrozenXid, "vacuum_update_dat_frozen_xid")
+/* inject fault in initial OS collation locale lookup */
+FI_IDENT(CollateLocaleOsLookup, "collate_locale_os_lookup")
+/* inject fault before create resource group committing */
+FI_IDENT(CreateResourceGroupFail, "create_resource_group_fail")
+/* inject fault before auto vacuum worker calls do_autovacuum */
+FI_IDENT(AutoVacWorkerBeforeDoAutovacuum, "auto_vac_worker_before_do_autovacuum")
+/* inject fault when search DNS cache */
+FI_IDENT(GetDnsCachedAddress, "get_dns_cached_address")
+/* inject fault before aquiring lock during AlterTableCreateAoBlkdirTable */
+FI_IDENT(BeforeAcquireLockDuringCreateAoBlkdirTable, "before_acquire_lock_during_create_ao_blkdir_table")
+/* inject fault during gang creation, before check for interrupts */
+FI_IDENT(CreateGangInProgress, "create_gang_in_progress")
+/* inject fault when creating new TOAST tables, to modify the chunk size */
+FI_IDENT(DecreaseToastMaxChunkSize, "decrease_toast_max_chunk_size")
+/* inject fault to let cleanupGang return false */
+FI_IDENT(CleanupQE, "cleanup_qe")
 #endif
 
 /*
@@ -229,22 +264,18 @@ FI_IDENT(SyncRepQueryCancel, "sync_rep_query_cancel")
 #ifdef FI_TYPE
 FI_TYPE(FaultInjectorTypeNotSpecified = 0, "")
 FI_TYPE(FaultInjectorTypeSleep, "sleep")
-FI_TYPE(FaultInjectorTypeFault, "fault")
 FI_TYPE(FaultInjectorTypeFatal, "fatal")
 FI_TYPE(FaultInjectorTypePanic, "panic")
 FI_TYPE(FaultInjectorTypeError, "error")
 FI_TYPE(FaultInjectorTypeInfiniteLoop, "infinite_loop")
-FI_TYPE(FaultInjectorTypeDataCorruption, "data_corruption")
 FI_TYPE(FaultInjectorTypeSuspend, "suspend")
 FI_TYPE(FaultInjectorTypeResume, "resume")
 FI_TYPE(FaultInjectorTypeSkip, "skip")
-FI_TYPE(FaultInjectorTypeMemoryFull, "memory_full")
 FI_TYPE(FaultInjectorTypeReset, "reset")
 FI_TYPE(FaultInjectorTypeStatus, "status")
 FI_TYPE(FaultInjectorTypeSegv, "segv")
 FI_TYPE(FaultInjectorTypeInterrupt, "interrupt")
 FI_TYPE(FaultInjectorTypeFinishPending, "finish_pending")
-FI_TYPE(FaultInjectorTypeCheckpointAndPanic, "checkpoint_and_panic")
 FI_TYPE(FaultInjectorTypeWaitUntilTriggered, "wait_until_triggered")
 #endif
 

@@ -4,10 +4,10 @@
  *	  POSTGRES buffer manager definitions.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/bufmgr.h,v 1.124 2010/01/23 16:37:12 sriggs Exp $
+ * src/include/storage/bufmgr.h
  *
  *-------------------------------------------------------------------------
  */
@@ -41,7 +41,9 @@ typedef enum
 	RBM_NORMAL,					/* Normal read */
 	RBM_ZERO,					/* Don't read from disk, caller will
 								 * initialize */
-	RBM_ZERO_ON_ERROR			/* Read, but return an all-zeros page on error */
+	RBM_ZERO_ON_ERROR,			/* Read, but return an all-zeros page on error */
+	RBM_NORMAL_NO_LOG			/* Don't log page as invalid during WAL
+								 * replay; otherwise same as RBM_NORMAL */
 } ReadBufferMode;
 
 /* in globals.c ... this duplicates miscadmin.h */
@@ -49,16 +51,14 @@ extern PGDLLIMPORT int NBuffers;
 
 /* in bufmgr.c */
 
-/* should not be accessed directly.  Use ShouldMemoryProtectBufferPool() instead */
-extern bool memory_protect_buffer_pool;
 extern bool zero_damaged_pages;
 extern int	bgwriter_lru_maxpages;
 extern double bgwriter_lru_multiplier;
+extern bool track_io_timing;
 extern int	target_prefetch_pages;
 extern bool bgwriter_flush_all_buffers;
 
 extern PGDLLIMPORT bool IsUnderPostmaster; /* from utils/init/globals.c */
-#define ShouldMemoryProtectBufferPool() (memory_protect_buffer_pool && IsUnderPostmaster)
 
 /* in buf_init.c */
 extern PGDLLIMPORT char *BufferBlocks;
@@ -88,20 +88,24 @@ extern PGDLLIMPORT int32 *LocalRefCount;
  *		True iff the given buffer number is valid (either as a shared
  *		or local buffer).
  *
- * This is not quite the inverse of the BufferIsInvalid() macro, since this
- * adds sanity rangechecks on the buffer number.
- *
  * Note: For a long time this was defined the same as BufferIsPinned,
  * that is it would say False if you didn't hold a pin on the buffer.
  * I believe this was bogus and served only to mask logic errors.
  * Code should always know whether it has a buffer reference,
  * independently of the pin state.
+ *
+ * Note: For a further long time this was not quite the inverse of the
+ * BufferIsInvalid() macro, in that it also did sanity checks to verify
+ * that the buffer number was in range.  Most likely, this macro was
+ * originally intended only to be used in assertions, but its use has
+ * since expanded quite a bit, and the overhead of making those checks
+ * even in non-assert-enabled builds can be significant.  Thus, we've
+ * now demoted the range checks to assertions within the macro itself.
  */
 #define BufferIsValid(bufnum) \
 ( \
-	(bufnum) != InvalidBuffer && \
-	(bufnum) >= -NLocBuffer && \
-	(bufnum) <= NBuffers \
+	AssertMacro((bufnum) <= NBuffers && (bufnum) >= -NLocBuffer), \
+	(bufnum) != InvalidBuffer  \
 )
 
 /*
@@ -170,7 +174,7 @@ extern Buffer ReadBuffer(Relation reln, BlockNumber blockNum);
 extern Buffer ReadBufferExtended(Relation reln, ForkNumber forkNum,
 				   BlockNumber blockNum, ReadBufferMode mode,
 				   BufferAccessStrategy strategy);
-extern Buffer ReadBufferWithoutRelcache(RelFileNode rnode, bool isLocalBuf,
+extern Buffer ReadBufferWithoutRelcache(RelFileNode rnode,
 						  ForkNumber forkNum, BlockNumber blockNum,
 						  ReadBufferMode mode, BufferAccessStrategy strategy);
 extern void ReleaseBuffer(Buffer buffer);
@@ -187,12 +191,20 @@ extern void AtEOXact_Buffers(bool isCommit);
 extern void PrintBufferLeakWarning(Buffer buffer);
 extern void CheckPointBuffers(int flags);
 extern BlockNumber BufferGetBlockNumber(Buffer buffer);
-extern BlockNumber RelationGetNumberOfBlocks(Relation relation);
+extern BlockNumber RelationGetNumberOfBlocksInFork(Relation relation,
+								ForkNumber forkNum);
 extern void FlushRelationBuffers(Relation rel);
 extern void FlushDatabaseBuffers(Oid dbid);
-extern void DropRelFileNodeBuffers(RelFileNode rnode, ForkNumber forkNum,
-					   bool istemp, BlockNumber firstDelBlock);
+extern void DropRelFileNodeBuffers(RelFileNodeBackend rnode,
+					   ForkNumber forkNum, BlockNumber firstDelBlock);
+extern void DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes);
 extern void DropDatabaseBuffers(Oid dbid);
+extern XLogRecPtr BufferGetLSNAtomic(Buffer buffer);
+
+#define RelationGetNumberOfBlocks(reln) \
+	RelationGetNumberOfBlocksInFork(reln, MAIN_FORKNUM)
+
+extern bool BufferIsPermanent(Buffer buffer);
 extern XLogRecPtr BufferGetLSNAtomic(Buffer buffer);
 
 #ifdef NOT_USED
@@ -202,7 +214,7 @@ extern Size BufferShmemSize(void);
 extern void BufferGetTag(Buffer buffer, RelFileNode *rnode,
 			 ForkNumber *forknum, BlockNumber *blknum);
 
-extern void MarkBufferDirtyHint(Buffer buffer);
+extern void MarkBufferDirtyHint(Buffer buffer, bool buffer_std);
 
 extern void UnlockBuffers(void);
 extern void LockBuffer(Buffer buffer, int mode);
@@ -214,7 +226,7 @@ extern bool HoldingBufferPinThatDelaysRecovery(void);
 extern void AbortBufferIO(void);
 
 extern void BufmgrCommit(void);
-extern void BgBufferSync(void);
+extern bool BgBufferSync(void);
 
 extern void AtProcExit_LocalBuffers(void);
 

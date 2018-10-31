@@ -162,11 +162,6 @@ typedef struct CdbDispatchResults
 	
 	/* num of slots in sliceMap */
 	int sliceCapacity;
-	
-	/*during dispatch, it is important to check to see that
-	 * the writer gang isn't already doing something -- this is an
-	 * important, missing sanity check */
-	struct Gang *writer_gang;
 } CdbDispatchResults;
 
 
@@ -201,22 +196,6 @@ void
 cdbdisp_seterrcode(int errcode, /* ERRCODE_xxx or 0 */
                    int resultIndex, /* -1 if no PGresult */
                    CdbDispatchResult *dispatchResult);
-
-/*
- * Format a message, printf-style, and append to the error_message buffer.
- * Also write it to stderr if logging is enabled for messages of the
- * given severity level 'elevel' (for example, DEBUG1; or 0 to suppress).
- * 'errcode' is the ERRCODE_xxx value for setting the client's SQLSTATE.
- * NB: This can be called from a dispatcher thread, so it must not use
- * palloc/pfree or elog/ereport because they are not thread safe.
- */
-void
-cdbdisp_appendMessage(CdbDispatchResult *dispatchResult,
-                      int errcode,
-                      const char *fmt,
-                      ...)
-/* This extension allows gcc to check the format string */
-__attribute__((format(printf, 3, 4)));
 
 /*
  * Format a message, printf-style, and append to the error_message buffer.
@@ -280,6 +259,8 @@ void
 cdbdisp_dumpDispatchResults(struct CdbDispatchResults *gangResults,
 							ErrorData **qeError);
 
+extern ErrorData *cdbdisp_get_PQerror(struct pg_result *pgresult);
+
 /*
  * Return sum of the cmdTuples values from CdbDispatchResult
  * entries that have a successful PGresult.  If sliceIndex >= 0,
@@ -329,12 +310,12 @@ cdbdisp_checkResultsErrcode(struct CdbDispatchResults *meeleResults);
 
 /*
  * cdbdisp_makeDispatchResults:
- * Allocates a CdbDispatchResults object in the current memory context.
  * Will be freed in function cdbdisp_destroyDispatcherState by deleting the
  * memory context.
  */
-CdbDispatchResults *
-cdbdisp_makeDispatchResults(int sliceCapacity,
+void
+cdbdisp_makeDispatchResults(struct CdbDispatcherState *ds,
+							int sliceCapacity,
 							bool cancelOnError);
 
 void

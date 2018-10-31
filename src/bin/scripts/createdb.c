@@ -2,10 +2,10 @@
  *
  * createdb
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/bin/scripts/createdb.c,v 1.35 2010/01/02 16:58:00 momjian Exp $
+ * src/bin/scripts/createdb.c
  *
  *-------------------------------------------------------------------------
  */
@@ -35,6 +35,7 @@ main(int argc, char *argv[])
 		{"lc-collate", required_argument, NULL, 1},
 		{"lc-ctype", required_argument, NULL, 2},
 		{"locale", required_argument, NULL, 'l'},
+		{"maintenance-db", required_argument, NULL, 3},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -43,6 +44,7 @@ main(int argc, char *argv[])
 	int			c;
 
 	const char *dbname = NULL;
+	const char *maintenance_db = NULL;
 	char	   *comment = NULL;
 	char	   *host = NULL;
 	char	   *port = NULL;
@@ -72,13 +74,13 @@ main(int argc, char *argv[])
 		switch (c)
 		{
 			case 'h':
-				host = optarg;
+				host = pg_strdup(optarg);
 				break;
 			case 'p':
-				port = optarg;
+				port = pg_strdup(optarg);
 				break;
 			case 'U':
-				username = optarg;
+				username = pg_strdup(optarg);
 				break;
 			case 'w':
 				prompt_password = TRI_NO;
@@ -90,25 +92,28 @@ main(int argc, char *argv[])
 				echo = true;
 				break;
 			case 'O':
-				owner = optarg;
+				owner = pg_strdup(optarg);
 				break;
 			case 'D':
-				tablespace = optarg;
+				tablespace = pg_strdup(optarg);
 				break;
 			case 'T':
-				template = optarg;
+				template = pg_strdup(optarg);
 				break;
 			case 'E':
-				encoding = optarg;
+				encoding = pg_strdup(optarg);
 				break;
 			case 1:
-				lc_collate = optarg;
+				lc_collate = pg_strdup(optarg);
 				break;
 			case 2:
-				lc_ctype = optarg;
+				lc_ctype = pg_strdup(optarg);
 				break;
 			case 'l':
-				locale = optarg;
+				locale = pg_strdup(optarg);
+				break;
+			case 3:
+				maintenance_db = pg_strdup(optarg);
 				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
@@ -169,7 +174,7 @@ main(int argc, char *argv[])
 		else if (getenv("PGUSER"))
 			dbname = getenv("PGUSER");
 		else
-			dbname = get_user_name(progname);
+			dbname = get_user_name_or_exit(progname);
 	}
 
 	initPQExpBuffer(&sql);
@@ -190,13 +195,17 @@ main(int argc, char *argv[])
 	if (lc_ctype)
 		appendPQExpBuffer(&sql, " LC_CTYPE '%s'", lc_ctype);
 
-	appendPQExpBuffer(&sql, ";\n");
+	appendPQExpBufferStr(&sql, ";");
 
-	conn = connectDatabase(strcmp(dbname, "postgres") == 0 ? "template1" : "postgres",
-						   host, port, username, prompt_password, progname);
+	/* No point in trying to use postgres db when creating postgres db. */
+	if (maintenance_db == NULL && strcmp(dbname, "postgres") == 0)
+		maintenance_db = "template1";
+
+	conn = connectMaintenanceDatabase(maintenance_db, host, port, username,
+									  prompt_password, progname);
 
 	if (echo)
-		printf("%s", sql.data);
+		printf("%s\n", sql.data);
 	result = PQexec(conn, sql.data);
 
 	if (PQresultStatus(result) != PGRES_COMMAND_OK)
@@ -208,18 +217,15 @@ main(int argc, char *argv[])
 	}
 
 	PQclear(result);
-	PQfinish(conn);
 
 	if (comment)
 	{
-		conn = connectDatabase(dbname, host, port, username, prompt_password, progname);
-
 		printfPQExpBuffer(&sql, "COMMENT ON DATABASE %s IS ", fmtId(dbname));
 		appendStringLiteralConn(&sql, comment, conn);
-		appendPQExpBuffer(&sql, ";\n");
+		appendPQExpBufferStr(&sql, ";");
 
 		if (echo)
-			printf("%s", sql.data);
+			printf("%s\n", sql.data);
 		result = PQexec(conn, sql.data);
 
 		if (PQresultStatus(result) != PGRES_COMMAND_OK)
@@ -231,8 +237,9 @@ main(int argc, char *argv[])
 		}
 
 		PQclear(result);
-		PQfinish(conn);
 	}
+
+	PQfinish(conn);
 
 	exit(0);
 }
@@ -253,14 +260,15 @@ help(const char *progname)
 	printf(_("      --lc-ctype=LOCALE        LC_CTYPE setting for the database\n"));
 	printf(_("  -O, --owner=OWNER            database user to own the new database\n"));
 	printf(_("  -T, --template=TEMPLATE      template database to copy\n"));
-	printf(_("  --help                       show this help, then exit\n"));
-	printf(_("  --version                    output version information, then exit\n"));
+	printf(_("  -V, --version                output version information, then exit\n"));
+	printf(_("  -?, --help                   show this help, then exit\n"));
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME          database server host or socket directory\n"));
 	printf(_("  -p, --port=PORT              database server port\n"));
 	printf(_("  -U, --username=USERNAME      user name to connect as\n"));
 	printf(_("  -w, --no-password            never prompt for password\n"));
 	printf(_("  -W, --password               force password prompt\n"));
+	printf(_("  --maintenance-db=DBNAME      alternate maintenance database\n"));
 	printf(_("\nBy default, a database with the same name as the current user is created.\n"));
 	printf(_("\nReport bugs to <bugs@greenplum.org>.\n"));
 }

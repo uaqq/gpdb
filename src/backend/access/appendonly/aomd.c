@@ -22,17 +22,23 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "access/aomd.h"
-#include "catalog/catalog.h"
 
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <access/aomd.h>
 
-#include "utils/guc.h"
+#include "access/aomd.h"
 #include "access/appendonlytid.h"
+#include "access/appendonlywriter.h"
+#include "catalog/catalog.h"
 #include "cdb/cdbappendonlystorage.h"
 #include "cdb/cdbappendonlyxlog.h"
+#include "common/relpath.h"
+#include "utils/guc.h"
+
+static bool mdunlink_ao_perFile(const int segno, void *ctx);
+static bool copy_append_only_data_perFile(const int segno, void *ctx);
 
 int
 AOSegmentFilePathNameLen(Relation rel)
@@ -41,7 +47,7 @@ AOSegmentFilePathNameLen(Relation rel)
 	int 		len;
 		
 	/* Get base path for this relation file */
-	basepath = relpath(rel->rd_node, MAIN_FORKNUM);
+	basepath = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
 
 	/*
 	 * The basepath will be the RelFileNode number.  Optional part is dot "." plus 
@@ -60,12 +66,11 @@ AOSegmentFilePathNameLen(Relation rel)
  * The filepathname parameter assume sufficient space.
  */
 void
-FormatAOSegmentFileName(
-							char *basepath, 
-							int segno, 
-							int col, 
-							int32 *fileSegNo,
-							char *filepathname)
+FormatAOSegmentFileName(char *basepath,
+						int segno,
+						int col,
+						int32 *fileSegNo,
+						char *filepathname)
 {
 	int	pseudoSegNo;
 	
@@ -103,18 +108,17 @@ FormatAOSegmentFileName(
  * The filepathname parameter assume sufficient space.
  */
 void
-MakeAOSegmentFileName(
-							Relation rel, 
-							int segno, 
-							int col, 
-							int32 *fileSegNo,
-							char *filepathname)
+MakeAOSegmentFileName(Relation rel,
+					  int segno,
+					  int col,
+					  int32 *fileSegNo,
+					  char *filepathname)
 {
 	char	*basepath;
 	int32   fileSegNoLocal;
 	
 	/* Get base path for this relation file */
-	basepath = relpath(rel->rd_node, MAIN_FORKNUM);
+	basepath = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
 
 	FormatAOSegmentFileName(basepath, segno, col, &fileSegNoLocal, filepathname);
 	
@@ -194,6 +198,196 @@ TruncateAOSegmentFile(File fd, Relation rel, int32 segFileNum, int64 offset)
 		ereport(ERROR,
 				(errmsg("\"%s\": failed to truncate data after eof: %m",
 					    relname)));
-	if (!rel->rd_istemp)
+	if (RelationNeedsWAL(rel))
 		xlog_ao_truncate(rel->rd_node, segFileNum, offset);
 }
+
+struct mdunlink_ao_callback_ctx {
+	char *segPath;
+	char *segpathSuffixPosition;
+};
+
+void
+mdunlink_ao(const char *path)
+{
+	int pathSize = strlen(path);
+	char *segPath = (char *) palloc(pathSize + 12);
+	char *segPathSuffixPosition = segPath + pathSize;
+	struct mdunlink_ao_callback_ctx unlinkFiles = { 0 };
+
+	strncpy(segPath, path, pathSize);
+
+	unlinkFiles.segPath = segPath;
+	unlinkFiles.segpathSuffixPosition = segPathSuffixPosition;
+
+    ao_foreach_extent_file(mdunlink_ao_perFile, &unlinkFiles);
+
+	pfree(segPath);
+}
+
+static bool
+mdunlink_ao_perFile(const int segno, void *ctx)
+{
+	const struct mdunlink_ao_callback_ctx *unlinkFiles = ctx;
+
+	char *segPath = unlinkFiles->segPath;
+	char *segPathSuffixPosition = unlinkFiles->segpathSuffixPosition;
+
+	sprintf(segPathSuffixPosition, ".%u", segno);
+	if (unlink(segPath) != 0)
+	{
+		/* ENOENT is expected after the end of the extensions */
+		if (errno != ENOENT)
+			ereport(WARNING,
+					(errcode_for_file_access(),
+							errmsg("could not remove file \"%s\": %m", segPath)));
+		else
+			return false;
+	}
+
+	return true;
+}
+
+static void
+copy_file(char *srcsegpath, char *dstsegpath,
+		  RelFileNode dst, int segfilenum, bool use_wal)
+{
+	File		srcFile;
+	File		dstFile;
+	int64		left;
+	off_t		offset;
+	char       *buffer = palloc(BLCKSZ);
+	int dstflags;
+
+	srcFile = PathNameOpenFile(srcsegpath, O_RDONLY | PG_BINARY, 0600);
+	if (srcFile < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 (errmsg("could not open file %s: %m", srcsegpath))));
+
+	dstflags = O_WRONLY | O_EXCL | PG_BINARY;
+	/*
+	 * .0 relfilenode is expected to exist before calling this
+	 * function. Caller calls RelationCreateStorage() which creates the base
+	 * file for the relation. Hence use different flag for the same.
+	 */
+	if (segfilenum)
+		dstflags |= O_CREAT;
+
+	dstFile = PathNameOpenFile(dstsegpath, dstflags, 0600);
+	if (dstFile < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 (errmsg("could not create destination file %s: %m", dstsegpath))));
+
+	left = FileSeek(srcFile, 0, SEEK_END);
+	if (left < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 (errmsg("could not seek to end of file %s: %m", srcsegpath))));
+
+	if (FileSeek(srcFile, 0, SEEK_SET) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 (errmsg("could not seek to beginning of file %s: %m", srcsegpath))));
+
+	offset = 0;
+	while(left > 0)
+	{
+		int			len;
+
+		CHECK_FOR_INTERRUPTS();
+
+		len = Min(left, BLCKSZ);
+		if (FileRead(srcFile, buffer, len) != len)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not read %d bytes from file \"%s\": %m",
+							len, srcsegpath)));
+
+		if (FileWrite(dstFile, buffer, len) != len)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not write %d bytes to file \"%s\": %m",
+							len, dstsegpath)));
+
+		if (use_wal)
+			xlog_ao_insert(dst, segfilenum, offset, buffer, len);
+
+		offset += len;
+		left -= len;
+	}
+
+	if (FileSync(dstFile) != 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not fsync file \"%s\": %m",
+						dstsegpath)));
+	FileClose(srcFile);
+	FileClose(dstFile);
+	pfree(buffer);
+}
+
+struct copy_append_only_data_callback_ctx {
+	char *srcPath;
+	char *dstPath;
+	RelFileNode dst;
+	bool useWal;
+};
+
+/*
+ * Like copy_relation_data(), but for AO tables.
+ *
+ * Currently, AO tables don't have any extra forks.
+ */
+void
+copy_append_only_data(RelFileNode src, RelFileNode dst,
+        BackendId backendid, char relpersistence)
+{
+	char *srcPath;
+	char *dstPath;
+	bool useWal;
+	struct copy_append_only_data_callback_ctx copyFiles = { 0 };
+	/*
+	 * We need to log the copied data in WAL iff WAL archiving/streaming is
+	 * enabled AND it's a permanent relation.
+	 */
+	useWal = XLogIsNeeded() && relpersistence == RELPERSISTENCE_PERMANENT;
+
+	srcPath = relpathbackend(src, backendid, MAIN_FORKNUM);
+	dstPath = relpathbackend(dst, backendid, MAIN_FORKNUM);
+
+	copy_file(srcPath, dstPath, dst, 0, useWal);
+
+	copyFiles.srcPath = srcPath;
+	copyFiles.dstPath = dstPath;
+	copyFiles.dst = dst;
+	copyFiles.useWal = useWal;
+
+    ao_foreach_extent_file(copy_append_only_data_perFile, &copyFiles);
+}
+
+static bool
+copy_append_only_data_perFile(const int segno, void *ctx)
+{
+	const struct copy_append_only_data_callback_ctx *copyFiles = ctx;
+
+	char srcSegPath[MAXPGPATH + 12];
+	char dstSegPath[MAXPGPATH + 12];
+
+	sprintf(srcSegPath, "%s.%u", copyFiles->srcPath, segno);
+	if (access(srcSegPath, F_OK) != 0)
+	{
+		/* ENOENT is expected after the end of the extensions */
+		if (errno != ENOENT)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+							errmsg("access failed for file \"%s\": %m", srcSegPath)));
+		return false;
+	}
+	sprintf(dstSegPath, "%s.%u", copyFiles->dstPath, segno);
+	copy_file(srcSegPath, dstSegPath, copyFiles->dst, segno, copyFiles->useWal);
+
+	return true;
+}
+

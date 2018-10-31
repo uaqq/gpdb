@@ -23,8 +23,10 @@
                 engine understands. SQL queries consist of a sequence of commands. Commands consist
                 of a sequence of valid tokens in correct syntax order, terminated by a semicolon
                     (<codeph>;</codeph>). </p>
-            <p>For more information about SQL commands, see the <cite>Greenplum Database Reference
-                    Guide</cite>.</p>
+            <p>For more information about SQL commands, see <xref
+                    href="../../../ref_guide/sql_commands/sql_ref.xml">SQL Command
+                    Reference</xref><ph otherprops="op-print"> in the <cite>Greenplum Database
+                        Reference Guide</cite></ph>.</p>
             <p>Greenplum Database uses PostgreSQL's structure and syntax, with some exceptions. For
                 more information about SQL rules and concepts in PostgreSQL, see "SQL Syntax" in the
                 PostgreSQL documentation.</p>
@@ -186,8 +188,10 @@
                 <p>
                     <codeblock>sqrt(2)</codeblock>
                 </p>
-                <p>For information about using and creating functions, see <xref
-                        href="functions-operators.xml#topic26"/>.</p>
+                <p>See <xref href="../../../ref_guide/function-summary.xml#topic1">Summary of
+                        Built-in Functions</xref><ph otherprops="op-print"> in the <cite>Greenplum
+                            Database Reference Guide</cite></ph> for lists of the built-in functions
+                    by category. You can add custom functions, too.</p>
             </body>
         </topic>
         <topic id="topic11" xml:lang="en">
@@ -355,27 +359,56 @@
         <topic id="topic14" xml:lang="en">
             <title>Type Casts</title>
             <body>
-                <p>A type cast specifies a conversion from one data type to another. Greenplum
-                    Database accepts two equivalent syntaxes for type casts:</p>
-                <p>
-                    <codeblock>CAST ( expression AS type )
-expression::type
-</codeblock>
-                </p>
-                <p>The <codeph>CAST</codeph> syntax conforms to SQL; the syntax with
-                        <codeph>::</codeph> is historical PostgreSQL usage.</p>
-                <p>A cast applied to a value expression of a known type is a run-time type
-                    conversion. The cast succeeds only if a suitable type conversion function is
-                    defined. This differs from the use of casts with constants. A cast applied to a
-                    string literal represents the initial assignment of a type to a literal constant
-                    value, so it succeeds for any type if the contents of the string literal are
-                    acceptable input syntax for the data type.</p>
+                <p>A type cast specifies a conversion from one data type to another. A cast applied
+                    to a value expression of a known type is a run-time type conversion. The cast
+                    succeeds only if a suitable type conversion is defined. This differs
+                    from the use of casts with constants. A cast applied to a string literal
+                    represents the initial assignment of a type to a literal constant value, so it
+                    succeeds for any type if the contents of the string literal are acceptable input
+                    syntax for the data type.</p>
+                <p>Greenplum Database supports three types of casts applied to a value expression:
+                        <ul id="ul_f4w_svt_rdb">
+                        <li><i>Explicit cast</i> - Greenplum Database applies a cast when you
+                            explicitly specify a cast between two data types. Greenplum Database
+                            accepts two equivalent syntaxes for explicit type casts:<p>
+                                <codeblock>CAST ( expression AS type )
+expression::type</codeblock>
+                            </p><p>The <codeph>CAST</codeph> syntax conforms to SQL; the syntax using
+                                    <codeph>::</codeph> is historical PostgreSQL usage.</p></li>
+                        <li><i>Assignment cast</i> - Greenplum Database implicitly invokes a cast in
+                            assignment contexts, when assigning a value to a column of the target
+                            data type. For example, a <codeph><xref
+                                    href="../../../ref_guide/sql_commands/CREATE_CAST.xml">CREATE
+                                    CAST</xref></codeph> command with the <codeph>AS
+                                ASSIGNMENT</codeph> clause creates a cast that is applied implicitly
+                            in the assignment context. This example assignment cast assumes that
+                                <codeph>tbl1.f1</codeph> is a column of type <codeph>text</codeph>.
+                            The <codeph>INSERT</codeph> command is allowed because the value is
+                            implicitly cast from the <codeph>integer</codeph> to
+                                <codeph>text</codeph> type.
+                            <codeblock>INSERT INTO tbl1 (f1) VALUES (42);</codeblock></li>
+                        <li><i>Implicit cast</i> - Greenplum Database implicitly invokes a cast in
+                            assignment or expression contexts. For example, a <codeph>CREATE
+                                CAST</codeph> command with the <codeph>AS IMPLICIT</codeph> clause
+                            creates an implicit cast, a cast that is applied implicitly in both the
+                            assignment and expression context. This example implicit cast assumes
+                            that <codeph>tbl1.c1</codeph> is a column of type <codeph>int</codeph>.
+                            For the calculation in the predicate, the value of <codeph>c1</codeph>
+                            is implicitly cast from <codeph>int</codeph> to a
+                                <codeph>decimal</codeph>
+                            type.<codeblock>SELECT * FROM tbl1 WHERE tbl1.c2 = (4.3 + tbl1.c1) ;</codeblock></li>
+                    </ul></p>
                 <p>You can usually omit an explicit type cast if there is no ambiguity about the
-                    type a value expression must produce; for example, when it is assigned to a
-                    table column, the system automatically applies a type cast. The system applies
-                    automatic casting only to casts marked "OK to apply implicitly" in system
-                    catalogs. Other casts must be invoked with explicit casting syntax to prevent
-                    unexpected conversions from being applied without the user's knowledge.</p>
+                    type a value expression must produce (for example, when it is assigned to a
+                    table column); the system automatically applies a type cast. Greenplum Database
+                    implicitly applies casts only to casts defined with a cast context of
+                    assignment or explicit in the system catalogs. Other casts must be
+                    invoked with explicit casting syntax to prevent unexpected conversions from
+                    being applied without the user's knowledge. </p>
+                <p>You can display cast information with the <codeph>psql</codeph> meta-command
+                        <codeph>\dC</codeph>. Cast information is stored in the catalog table
+                        <codeph>pg_cast</codeph>, and type information is stored in the catalog
+                    table <codeph>pg_type</codeph>. </p>
             </body>
         </topic>
         <topic id="topic15" xml:lang="en">
@@ -483,31 +516,6 @@ WHERE x &lt; (SELECT count(*) FROM t3 WHERE t1.y = t3.y)
                     query will run on every row of the outer query, and the query is a candidate for
                     rewriting. For more information about these statements, see <xref
                         href="query-profiling.xml#topic39"/>.</p>
-            </body>
-        </topic>
-        <topic id="topic22" xml:lang="en">
-            <title>Advanced Table Functions</title>
-            <body>
-                <p>Greenplum Database supports table functions with <codeph>TABLE</codeph> value
-                    expressions. You can sort input rows for advanced table functions with an
-                        <codeph>ORDER BY</codeph> clause. You can redistribute them with a
-                        <codeph>SCATTER BY</codeph> clause to specify one or more columns or an
-                    expression for which rows with the specified characteristics are available to
-                    the same process. This usage is similar to using a <codeph>DISTRIBUTED
-                        BY</codeph> clause when creating a table, but the redistribution occurs when
-                    the query runs.</p>
-                <note type="note">Based on the distribution of data, Greenplum Database
-                    automatically parallelizes table functions with <codeph>TABLE</codeph> value
-                    parameters over the nodes of the cluster.</note>
-                <p otherprops="pivotal">The following command uses the <codeph>TABLE</codeph>
-                    function with the <codeph>SCATTER BY</codeph> clause in the the GPText function
-                        <codeph>gptext.index()</codeph> to populate the index
-                        <codeph>mytest.articles</codeph> with data from the messages
-                    table:<codeblock>SELECT * FROM gptext.index(TABLE(SELECT * FROM messages 
-SCATTER BY distrib_id), 'mytest.articles');
-</codeblock></p>
-                <p otherprops="pivotal">For information about the function
-                        <codeph>gptext.index()</codeph>, see the Pivotal GPText documentation.</p>
             </body>
         </topic>
         <topic id="topic23" xml:lang="en">

@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/delete.sgml,v 1.37 2010/04/03 07:23:00 petere Exp $
+doc/src/sgml/ref/delete.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-DELETE">
+ <indexterm zone="sql-delete">
+  <primary>DELETE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DELETE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,13 +19,10 @@ PostgreSQL documentation
   <refpurpose>delete rows of a table</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-delete">
-  <primary>DELETE</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
-DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">alias</replaceable> ]
+[ WITH [ RECURSIVE ] <replaceable class="parameter">with_query</replaceable> [, ...] ]
+DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table_name</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">alias</replaceable> ]
     [ USING <replaceable class="PARAMETER">using_list</replaceable> ]
     [ WHERE <replaceable class="PARAMETER">condition</replaceable> | WHERE CURRENT OF <replaceable class="PARAMETER">cursor_name</replaceable> ]
     [ RETURNING * | <replaceable class="parameter">output_expression</replaceable> [ [ AS ] <replaceable class="parameter">output_name</replaceable> ] [, ...] ]
@@ -77,7 +78,19 @@ DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table</replaceable> [ * ] [ 
 
   <variablelist>
    <varlistentry>
-    <term><replaceable class="parameter">table</replaceable></term>
+    <term><replaceable class="parameter">with_query</replaceable></term>
+    <listitem>
+     <para>
+      The <literal>WITH</literal> clause allows you to specify one or more
+      subqueries that can be referenced by name in the <command>DELETE</>
+      query. See <xref linkend="queries-with"> and <xref linkend="sql-select">
+      for details.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">table_name</replaceable></term>
     <listitem>
      <para>
       The name (optionally schema-qualified) of the table to delete rows
@@ -154,7 +167,7 @@ DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table</replaceable> [ * ] [ 
      <para>
       An expression to be computed and returned by the <command>DELETE</>
       command after each row is deleted.  The expression can use any
-      column names of the <replaceable class="PARAMETER">table</replaceable>
+      column names of the table named by <replaceable class="PARAMETER">table_name</replaceable>
       or table(s) listed in <literal>USING</>.
       Write <literal>*</> to return all columns.
      </para>
@@ -182,10 +195,12 @@ DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table</replaceable> [ * ] [ 
 DELETE <replaceable class="parameter">count</replaceable>
 </screen>
    The <replaceable class="parameter">count</replaceable> is the number
-   of rows deleted.  If <replaceable class="parameter">count</replaceable> is
-   0, no rows matched the <replaceable
-   class="parameter">condition</replaceable> (this is not considered
-   an error).
+   of rows deleted.  Note that the number may be less than the number of
+   rows that matched the <replaceable
+   class="parameter">condition</replaceable> when deletes were
+   suppressed by a <literal>BEFORE DELETE</> trigger.  If <replaceable
+   class="parameter">count</replaceable> is 0, no rows were deleted by
+   the query (this is not considered an error).
   </para>
 
   <para>
@@ -251,8 +266,7 @@ DELETE FROM tasks WHERE status = 'DONE' RETURNING *;
    <literal>c_tasks</> is currently positioned:
 <programlisting>
 DELETE FROM tasks WHERE CURRENT OF c_tasks;
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>
@@ -261,7 +275,8 @@ DELETE FROM tasks WHERE CURRENT OF c_tasks;
   <para>
    This command conforms to the <acronym>SQL</acronym> standard, except
    that the <literal>USING</literal> and <literal>RETURNING</> clauses
-   are <productname>PostgreSQL</productname> extensions.
+   are <productname>PostgreSQL</productname> extensions, as is the ability
+   to use <literal>WITH</> with <command>DELETE</>.
   </para>
  </refsect1>
 </refentry>

@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/alter_language.sgml,v 1.10 2010/04/03 07:22:57 petere Exp $
+doc/src/sgml/ref/alter_language.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-ALTERLANGUAGE">
+ <indexterm zone="sql-alterlanguage">
+  <primary>ALTER LANGUAGE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>ALTER LANGUAGE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>ALTER LANGUAGE</refname>
   <refpurpose>change the definition of a procedural language</refpurpose>
  </refnamediv>
-
- <indexterm zone="sql-alterlanguage">
-  <primary>ALTER LANGUAGE</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
@@ -72,7 +72,7 @@ ALTER [ PROCEDURAL ] LANGUAGE <replaceable>name</replaceable> OWNER TO <replacea
 
  <refsect1>
   <title>Compatibility</title>
-    
+
   <para>
    There is no <command>ALTER LANGUAGE</command> statement in the SQL
    standard.

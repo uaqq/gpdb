@@ -8,6 +8,11 @@
 --  - EXCLUDE clauses
 --
 
+-- start_matchsubs
+-- m/DETAIL:  Failing row contains \(.*\)/
+-- s/DETAIL:  Failing row contains \(.*\)/DETAIL:  Failing row contains (#####)/
+-- end_matchsubs
+
 --
 -- DEFAULT syntax
 --
@@ -88,7 +93,7 @@ CREATE TABLE INSERT_TBL (x INT DEFAULT nextval('insert_seq'),
 	y TEXT DEFAULT '-NULL-',
 	z INT DEFAULT -1 * (nextval('insert_seq')-1),
 	CONSTRAINT INSERT_CON CHECK (x >= 3 AND y <> 'check failed' AND x < 8),
-	CHECK (x + z = 0));
+	CHECK (x + z = 0)) DISTRIBUTED BY(y);
 
 INSERT INTO INSERT_TBL(x,z) VALUES (2, -2);
 
@@ -134,12 +139,28 @@ INSERT INTO INSERT_TBL(y) VALUES ('Y');
 
 SELECT 'eight' AS one, nextval('insert_seq');
 
--- According to SQL92, it is OK to insert a record that gives rise to NULL
+-- According to SQL, it is OK to insert a record that gives rise to NULL
 -- constraint-condition results.  Postgres used to reject this, but it
 -- was wrong:
 INSERT INTO INSERT_TBL VALUES (null, null, null);
 
 SELECT '' AS nine, * FROM INSERT_TBL;
+
+--
+-- Check constraints on system columns
+--
+-- GPDB: tableoid is allowed in upstream, but not in GPDB.
+
+CREATE TABLE SYS_COL_CHECK_TBL (city text, state text, is_capital bool,
+                  altitude int,
+                  CHECK (NOT (is_capital AND tableoid::regclass::text = 'sys_col_check_tbl')));
+
+--
+-- Check constraints on system columns other then TableOid should return error
+--
+CREATE TABLE SYS_COL_CHECK_TBL (city text, state text, is_capital bool,
+                  altitude int,
+				  CHECK (NOT (is_capital AND ctid::text = 'sys_col_check_tbl')));
 
 --
 -- Check inheritance of defaults and constraints
@@ -157,6 +178,34 @@ INSERT INTO INSERT_CHILD(x,y,z,cy) VALUES (6,'check failed',-6,7);
 SELECT * FROM INSERT_CHILD;
 
 DROP TABLE INSERT_CHILD;
+
+--
+-- Check NO INHERIT type of constraints and inheritance
+--
+
+CREATE TABLE ATACC1 (TEST INT
+	CHECK (TEST > 0) NO INHERIT);
+
+CREATE TABLE ATACC2 (TEST2 INT) INHERITS (ATACC1);
+-- check constraint is not there on child
+INSERT INTO ATACC2 (TEST) VALUES (-3);
+-- check constraint is there on parent
+INSERT INTO ATACC1 (TEST) VALUES (-3);
+DROP TABLE ATACC1 CASCADE;
+
+CREATE TABLE ATACC1 (TEST INT, TEST2 INT
+	CHECK (TEST > 0), CHECK (TEST2 > 10) NO INHERIT);
+
+CREATE TABLE ATACC2 () INHERITS (ATACC1);
+-- check constraint is there on child
+INSERT INTO ATACC2 (TEST) VALUES (-3);
+-- check constraint is there on parent
+INSERT INTO ATACC1 (TEST) VALUES (-3);
+-- check constraint is not there on child
+INSERT INTO ATACC2 (TEST2) VALUES (3);
+-- check constraint is there on parent
+INSERT INTO ATACC1 (TEST2) VALUES (3);
+DROP TABLE ATACC1 CASCADE;
 
 --
 -- Check constraints on INSERT INTO
@@ -197,7 +246,6 @@ DROP TABLE tmp;
 --
 -- Check constraints on UPDATE
 --
-ALTER TABLE insert_tbl SET DISTRIBUTED BY (y);
 
 UPDATE INSERT_TBL SET x = NULL WHERE x = 5;
 UPDATE INSERT_TBL SET x = 6 WHERE x = 6;
@@ -437,6 +485,9 @@ INSERT INTO circles VALUES('<(20,20), 10>', '<(1,1), 5>');
 -- should fail on existing data without the WHERE clause
 ALTER TABLE circles ADD EXCLUDE USING gist
   (c1 WITH &&, (c2::circle) WITH ~=);
+
+-- try reindexing an existing constraint
+REINDEX INDEX circles_c1_c2_excl;
 
 DROP TABLE circles;
 

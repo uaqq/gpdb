@@ -51,13 +51,13 @@ select
  city_uao.name as populationwise_top_five_cities,city_uao.population
  from
  city_uao order by city_uao.population desc LIMIT 5;
- world_max_pop |  world_avg_pop   | populationwise_top_five_cities | population 
----------------+------------------+--------------------------------+------------
-      10500000 | 350468.223584212 | Mumbai (Bombay)                |   10500000
-      10500000 | 350468.223584212 | Seoul                          |    9981619
-      10500000 | 350468.223584212 | Sao Paulo                      |    9968485
-      10500000 | 350468.223584212 | Shanghai                       |    9696300
-      10500000 | 350468.223584212 | Jakarta                        |    9604900
+ world_max_pop |    world_avg_pop    | populationwise_top_five_cities | population 
+---------------+---------------------+--------------------------------+------------
+      10500000 | 350468.223584211817 | Mumbai (Bombay)                |   10500000
+      10500000 | 350468.223584211817 | Seoul                          |    9981619
+      10500000 | 350468.223584211817 | Sao Paulo                      |    9968485
+      10500000 | 350468.223584211817 | Shanghai                       |    9696300
+      10500000 | 350468.223584211817 | Jakarta                        |    9604900
 (5 rows)
 
 select
@@ -1406,7 +1406,6 @@ AND ename like 'H%' order by 1 asc LIMIT 15;
 DROP TABLE IF EXISTS uao_orders;
 CREATE TABLE uao_orders(order_id serial , customer_id integer, 
       order_datetime timestamp, order_total numeric(10,2)) with (appendonly=true); 
-NOTICE:  CREATE TABLE will create implicit sequence "uao_orders_order_id_seq" for serial column "uao_orders.order_id"
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'order_id' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 INSERT INTO uao_orders(customer_id, order_datetime, order_total)

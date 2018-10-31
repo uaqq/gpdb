@@ -119,7 +119,7 @@ SERVER_PLATFORMS=rhel5_x86_32 rhel5_x86_64 rhel7_x86_64 rhel6_x86_64 suse10_x86_
 ## Support gppkg platforms
 ##
 
-GPPKG_PLATFORMS=rhel5_x86_64 rhel7_x86_64 rhel6_x86_64 suse10_x86_64 suse11_x86_64 sles11_x86_64
+GPPKG_PLATFORMS=rhel5_x86_64 rhel7_x86_64 rhel6_x86_64 suse10_x86_64 suse11_x86_64 sles11_x86_64 ubuntu1604_amd64
 
 #---------------------------------------------------------------------
 # Compiler options
@@ -164,16 +164,17 @@ win32_CONFIGFLAGS=--with-gssapi --without-libcurl --disable-orca --disable-pxf -
 sol10_x86_64_CONFIGFLAGS=--enable-snmp --with-libxml $(APR_CONFIG)
 rhel5_x86_32_CONFIGFLAGS=--host=i686-pc-linux-gnu --enable-snmp --with-gssapi --with-libxml $(APR_CONFIG)
 rhel5_x86_64_CONFIGFLAGS=--enable-snmp --enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
-rhel6_x86_64_CONFIGFLAGS=--enable-snmp --enable-tap-tests --enable-gpperfmon --with-gssapi --enable-mapreduce ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
-rhel7_x86_64_CONFIGFLAGS=--enable-snmp --enable-tap-tests --enable-gpperfmon --with-gssapi --enable-mapreduce ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
+rhel6_x86_64_CONFIGFLAGS=--enable-snmp --enable-tap-tests --enable-gpperfmon --with-gssapi --enable-mapreduce --enable-orafce ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
+rhel7_x86_64_CONFIGFLAGS=--enable-snmp --enable-tap-tests --enable-gpperfmon --with-gssapi --enable-mapreduce --enable-orafce ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
 #suse10_x86_64_CONFIGFLAGS=--enable-snmp --enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
 #suse11_x86_64_CONFIGFLAGS=--enable-snmp --enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
 #sles11_x86_64_CONFIGFLAGS=--enable-snmp --enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
 suse10_x86_64_CONFIGFLAGS=--enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
-suse11_x86_64_CONFIGFLAGS=--enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
-sles11_x86_64_CONFIGFLAGS=--enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
+suse11_x86_64_CONFIGFLAGS=--enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml --enable-orafce $(APR_CONFIG) $(APU_CONFIG)
+sles11_x86_64_CONFIGFLAGS=--enable-gpperfmon --with-gssapi ${ORCA_CONFIG} --with-libxml --enable-orafce $(APR_CONFIG) $(APU_CONFIG)
 linux_x86_64_CONFIGFLAGS=--enable-snmp ${ORCA_CONFIG} --with-libxml $(APR_CONFIG)
 osx106_x86_CONFIGFLAGS=--enable-snmp ${ORCA_CONFIG} --with-libxml $(APR_CONFIG)
+ubuntu1604_amd64_CONFIGFLAGS=--enable-snmp --enable-tap-tests --enable-gpperfmon --with-gssapi --enable-mapreduce ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
 
 BLD_CONFIGFLAGS=$($(BLD_ARCH)_CONFIGFLAGS)
 
@@ -192,8 +193,11 @@ ifneq (false, ${PG_LANG})
 ifeq ($(BLD_ARCH), sles11_x86_64)
 CONFIGFLAGS+= --with-python
 else
+ifneq ($(BLD_ARCH),win32)
+# GPDB_91_MERGE_FIXME: Our MinGW environment doesn't currently include Perl and Python.
 CONFIGFLAGS+= --with-perl --with-python
-endif   # ifdef sles11
+endif   # win32
+endif   # sles11_x86_64
 ifdef TCL_CFG
 CONFIGFLAGS+= --with-tcl-config=${TCL_CFG}
 endif
@@ -339,8 +343,7 @@ define BUILD_STEPS
 	@$(MAKE) mkpgbouncer INSTLOC=$(INSTLOC) BUILDDIR=$(BUILDDIR)
 	@$(MAKE) mkpgbench INSTLOC=$(INSTLOC) BUILDDIR=$(BUILDDIR)
 	if [ "$(findstring $(BLD_ARCH),$(SERVER_PLATFORMS))" != "" ]; then \
-	  $(MAKE) mkgphdfs INSTLOC=$(INSTLOC) && \
-	  $(MAKE) mkorafce INSTLOC=$(INSTLOC);  \
+	  $(MAKE) -C ../gpcontrib mkgphdfs INSTLOC=$(INSTLOC); \
 	fi
 	@$(MAKE) copydocs INSTLOC=$(INSTLOC)
 	@$(MAKE) copylibs INSTLOC=$(INSTLOC)
@@ -360,6 +363,7 @@ define BUILD_STEPS
 	rm -rf $(INSTLOC)
 	cd $(BUILDDIR)/gpMgmt/ && $(MAKE) generate_greenplum_path_file
 	cd $(BUILDDIR)/src/backend/ && $(MAKE) ../../src/include/parser/gram.h
+	cd $(BUILDDIR)/src/backend/ && $(MAKE) ../../src/include/utils/errcodes.h
 	cd $(BUILDDIR)/src/backend/ && $(MAKE) ../../src/include/utils/fmgroids.h
 	cd $(BUILDDIR)/src/include/ && $(MAKE) install
 	cd $(BUILDDIR)/src/interfaces/libpq/ && $(MAKE) install
@@ -390,6 +394,7 @@ define BUILD_STEPS
 	fi
 	cd $(BUILDDIR)/gpMgmt/ && $(MAKE) generate_greenplum_path_file
 	cd $(BUILDDIR)/src/backend/ && $(MAKE) ../../src/include/parser/gram.h
+	cd $(BUILDDIR)/src/backend/ && $(MAKE) ../../src/include/utils/errcodes.h
 	cd $(BUILDDIR)/src/backend/ && $(MAKE) ../../src/include/utils/fmgroids.h
 	cd $(BUILDDIR)/src/port/ && $(MAKE) install
 	cd $(BUILDDIR)/src/bin/scripts/ && $(MAKE) install
@@ -656,7 +661,9 @@ VERSION:=$(shell [ -f ../VERSION ] && perl -pe 's, ,-,g' ../VERSION)
 VERSION_SHORT:=$(shell [ -f ../VERSION ] && perl -pe 's, .*,,g' ../VERSION)
 
 ifeq "$(findstring win,$(BLD_ARCH))" "win"
+ifeq "$(findstring $(MAKECMDGOALS),sync_tools)" ""
 BLD_PACKAGING_PID:=$(shell ssh $(WIX_PACKAGER) 'echo $$$$')
+endif
 endif
 
 clients :
@@ -793,7 +800,6 @@ PVK_SCRIPTS = \
 	bin/gpscp			\
 	bin/gpssh			\
 	bin/gpcheckperf			\
-	bin/run_operator_tests.pl	\
 	$(NULL)
 
 PVK_FILESET = \
@@ -801,9 +807,7 @@ PVK_FILESET = \
 	bin/lib/gplib.py	\
 	bin/lib/pxssh.py	\
 	bin/lib/pexpect.py	\
-	bin/lib/gpsys.py	\
 	bin/lib/multidd		\
-	bin/lib/netserver	\
 	bin/lib/stream		\
 	$(NULL)
 
@@ -849,10 +853,8 @@ SET_VERSION_SCRIPTS = \
 	sbin/gpcleansegmentdir.py \
 	sbin/gpfixuserlimts \
 	sbin/gpgetstatususingtransition.py \
-	sbin/gprepairmirrorseg.py \
 	sbin/gpsegstart.py \
 	sbin/gpsegstop.py \
-	sbin/gpsegtoprimaryormirror.py \
 	sbin/gpsetdbid.py \
 	sbin/gpupgrademirror.py \
 	lib/python/gppylib/programs/clsAddMirrors.py \
@@ -876,12 +878,6 @@ set_scripts_version :
 # Internal functions
 #---------------------------------------------------------------------
 
-mkgphdfs:
-	@cd extensions && $(MAKE) mkgphdfs OPT="$(INSTCFLAGS)" INSTLOC=$(INSTLOC)
-
-mkorafce:
-	@cd extensions && $(MAKE) mkorafce OPT="$(INSTCFLAGS)" INSTLOC=$(INSTLOC)
-
 mkpgbench:
 	@cd $(BUILDDIR)/contrib/pgbench && $(MAKE) install
 
@@ -890,7 +886,7 @@ ifeq "$(shell uname -s)" "Darwin"
 	echo "pgbouncer can't build on Mac"
 else
 	@if [ ! -f extensions/pgbouncer/source/configure ]; then cd extensions/pgbouncer/source && ./autogen.sh ;fi
-	@cd extensions/pgbouncer/source && ./configure --with-libevent=$(BLD_TOP)/ext/$(BLD_ARCH) --prefix=$(INSTLOC) --enable-evdns
+	@cd extensions/pgbouncer/source && ./configure --with-libevent=$(BLD_TOP)/ext/$(BLD_ARCH) --prefix=$(INSTLOC) --enable-evdns --with-pam
 	$(MAKE) -C extensions/pgbouncer/source install
 endif
 
@@ -947,7 +943,6 @@ endif
 	rm -rf $(INSTLOC)/bin/lib/CVS
 	rm -rf $(INSTLOC)/bin/lib/.p4ignore
 	rm -rf $(INSTLOC)/bin/src
-	rm -f $(INSTLOC)/bin/gpchecksubnetcfg
 	rm -rf $(INSTLOC)/bin/gppylib
 	find $(INSTLOC)/lib/python/gppylib -name test -type d | xargs rm -rf
 
@@ -1015,11 +1010,6 @@ else
 	cp -rp /usr/include/openssl $(INSTLOC)/include/
 	cp -rp /System/Library/OpenSSL/openssl.cnf $(INSTLOC)/etc/
 endif
-endif
-
-ifneq "$(BLD_ARCH)" "aix7_ppc_64"
-	# Copy glider stack trace capture tool
-	-cp -rp $(BLD_THIRDPARTY_BIN_DIR)/glider $(INSTLOC)/sbin/
 endif
 
 ifeq "$(BLD_ARCH)" "win32"

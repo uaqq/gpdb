@@ -9,22 +9,21 @@
  * there's hardly any use case for using these without superuser-rights
  * anyway.
  *
- * Copyright (c) 2007-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/contrib/pageinspect/fsmfuncs.c,v 1.4 2010/01/02 16:57:32 momjian Exp $
+ *	  contrib/pageinspect/fsmfuncs.c
  *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
+
+#include "funcapi.h"
 #include "lib/stringinfo.h"
+#include "miscadmin.h"
 #include "storage/fsm_internals.h"
 #include "utils/builtins.h"
-#include "miscadmin.h"
-#include "funcapi.h"
-
-Datum		fsm_page_contents(PG_FUNCTION_ARGS);
 
 /*
  * Dumps the contents of a FSM page.
@@ -35,7 +34,6 @@ Datum
 fsm_page_contents(PG_FUNCTION_ARGS)
 {
 	bytea	   *raw_page = PG_GETARG_BYTEA_P(0);
-	int			raw_page_size;
 	StringInfoData sinfo;
 	FSMPage		fsmpage;
 	int			i;
@@ -45,7 +43,6 @@ fsm_page_contents(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 (errmsg("must be superuser to use raw page functions"))));
 
-	raw_page_size = VARSIZE(raw_page) - VARHDRSZ;
 	fsmpage = (FSMPage) PageGetContents(VARDATA(raw_page));
 
 	initStringInfo(&sinfo);
@@ -57,5 +54,5 @@ fsm_page_contents(PG_FUNCTION_ARGS)
 	}
 	appendStringInfo(&sinfo, "fp_next_slot: %d\n", fsmpage->fp_next_slot);
 
-	PG_RETURN_TEXT_P(cstring_to_text(sinfo.data));
+	PG_RETURN_TEXT_P(cstring_to_text_with_len(sinfo.data, sinfo.len));
 }

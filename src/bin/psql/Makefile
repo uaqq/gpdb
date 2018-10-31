@@ -2,10 +2,10 @@
 #
 # Makefile for src/bin/psql
 #
-# Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+# Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
-# $PostgreSQL: pgsql/src/bin/psql/Makefile,v 1.70 2010/07/05 18:54:38 tgl Exp $
+# src/bin/psql/Makefile
 #
 #-------------------------------------------------------------------------
 
@@ -35,14 +35,13 @@ OBJS=	command.o common.o help.o input.o stringutils.o mainloop.o copy.o \
 	sql_help.o \
 	$(WIN32RES)
 
-FLEXFLAGS = -Cfe
-
 # The frontend doesn't need everything that's in LIBS, some are backend only
 LIBS := $(filter-out -lresolv -lbz2, $(LIBS))
 
-all: submake-libpq submake-libpgport psql
 
-psql: $(OBJS) $(libpq_builddir)/libpq.a
+all: psql
+
+psql: $(OBJS) | submake-libpq submake-libpgport
 	$(CC) $(CFLAGS) $(OBJS) $(libpq_pgport) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 help.o: sql_help.h
@@ -60,12 +59,8 @@ sql_help.h: create_help.pl $(wildcard $(REFDOCDIR)/*.sgml)
 # psqlscan is compiled as part of mainloop
 mainloop.o: psqlscan.c
 
-psqlscan.c: psqlscan.l
-ifdef FLEX
-	$(FLEX) $(FLEXFLAGS) -o'$(srcdir)/psqlscan.c' $<
-else
-	@$(missing) flex $< $@
-endif
+psqlscan.c: FLEXFLAGS = -Cfe -p -p
+psqlscan.c: FLEX_NO_BACKUP=yes
 
 distprep: sql_help.h psqlscan.c
 
@@ -74,7 +69,7 @@ install: all installdirs
 	$(INSTALL_DATA) $(srcdir)/psqlrc.sample '$(DESTDIR)$(datadir)/psqlrc.sample'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(bindir)' '$(DESTDIR)$(datadir)'
 
 uninstall:
 	rm -f '$(DESTDIR)$(bindir)/psql$(X)' '$(DESTDIR)$(datadir)/psqlrc.sample'

@@ -4,10 +4,10 @@
  *	  Two-phase-commit related declarations.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/twophase.h,v 1.15 2010/04/13 14:17:46 heikki Exp $
+ * src/include/access/twophase.h
  *
  *-------------------------------------------------------------------------
  */
@@ -15,9 +15,10 @@
 #define TWOPHASE_H
 
 #include "access/xlogdefs.h"
-#include "storage/backendid.h"
-#include "storage/proc.h"
-#include "utils/timestamp.h"
+#include "datatype/timestamp.h"
+#include "storage/lock.h"
+
+#include "cdb/cdblocaldistribxact.h"
 
 /*
  * Directory where two phase commit files reside within PGDATA
@@ -70,7 +71,7 @@ extern GlobalTransaction MarkAsPreparing(TransactionId xid,
 				const char *gid,
 				TimestampTz prepared_at,
 				Oid owner, Oid databaseid
-			      , XLogRecPtr *xlogrecptr);
+			      , XLogRecPtr xlogrecptr);
 
 extern void StartPrepare(GlobalTransaction gxact);
 extern void EndPrepare(GlobalTransaction gxact);
@@ -92,19 +93,17 @@ extern void TwoPhaseAddPreparedTransactionInit(
 					        prepared_transaction_agg_state **ptas
 					      , int                             *maxCount);
 
-extern XLogRecPtr * getTwoPhaseOldestPreparedTransactionXLogRecPtr(XLogRecData *rdata);
+struct XLogRecData;
+extern XLogRecPtr *getTwoPhaseOldestPreparedTransactionXLogRecPtr(struct XLogRecData *rdata);
 
 extern void TwoPhaseAddPreparedTransaction(
                  prepared_transaction_agg_state **ptas
 		 , int                           *maxCount
                  , TransactionId                  xid
-		 , XLogRecPtr                    *xlogPtr
-		 , char                          *caller);
+		 , XLogRecPtr                    *xlogPtr);
 
-extern void getTwoPhasePreparedTransactionData(prepared_transaction_agg_state **ptas, char *caller);
+extern void getTwoPhasePreparedTransactionData(prepared_transaction_agg_state **ptas);
 
 extern void SetupCheckpointPreparedTransactionList(prepared_transaction_agg_state *ptas);
-
-extern bool TwoPhaseFindRecoverPostCheckpointPreparedTransactionsMapEntry(TransactionId xid, XLogRecPtr *m, char *caller);
 
 #endif   /* TWOPHASE_H */

@@ -4,11 +4,11 @@
  *	  POSTGRES free space map for quickly finding free space in relations
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/freespace/freespace.c,v 1.77 2010/02/26 02:00:59 momjian Exp $
+ *	  src/backend/storage/freespace/freespace.c
  *
  *
  * NOTES:
@@ -23,17 +23,13 @@
  */
 #include "postgres.h"
 
-#include "access/htup.h"
+#include "access/htup_details.h"
 #include "access/xlogutils.h"
 #include "miscadmin.h"
-#include "storage/bufmgr.h"
-#include "storage/bufpage.h"
 #include "storage/freespace.h"
 #include "storage/fsm_internals.h"
 #include "storage/lmgr.h"
-#include "storage/lwlock.h"
 #include "storage/smgr.h"
-#include "utils/rel.h"
 
 
 /*
@@ -45,14 +41,14 @@
  * MaxFSMRequestSize, exclusive.
  *
  * MaxFSMRequestSize depends on the architecture and BLCKSZ, but assuming
- * default 8k BLCKSZ, and that MaxFSMRequestSize is 24 bytes, the categories
- * look like this
+ * default 8k BLCKSZ, and that MaxFSMRequestSize is 8164 bytes, the
+ * categories look like this:
  *
  *
  * Range	 Category
  * 0	- 31   0
  * 32	- 63   1
- * ...	  ...  ...
+ * ...    ...  ...
  * 8096 - 8127 253
  * 8128 - 8163 254
  * 8164 - 8192 255
@@ -127,7 +123,7 @@ static uint8 fsm_vacuum_page(Relation rel, FSMAddress addr, bool *eof);
  * will turn out to have too little space available by the time the caller
  * gets a lock on it.  In that case, the caller should report the actual
  * amount of free space available on that page and then try again (see
- * RecordAndGetPageWithFreeSpace).	If InvalidBlockNumber is returned,
+ * RecordAndGetPageWithFreeSpace).  If InvalidBlockNumber is returned,
  * extend the relation.
  */
 BlockNumber
@@ -220,9 +216,7 @@ XLogRecordPageWithFreeSpace(RelFileNode rnode, BlockNumber heapBlk,
 		PageInit(page, BLCKSZ, 0);
 
 	if (fsm_set_avail(page, slot, new_cat))
-		/* GPDB_84_MERGE_FIXME: upstream calls MarkBufferDirtyHint instead.
-		 * Backport commit 20723ce80 to fix. */
-		MarkBufferDirty(buf);
+		MarkBufferDirtyHint(buf, false);
 	UnlockReleaseBuffer(buf);
 }
 
@@ -292,9 +286,7 @@ FreeSpaceMapTruncateRel(Relation rel, BlockNumber nblocks)
 			return;				/* nothing to do; the FSM was already smaller */
 		LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
 		fsm_truncate_avail(BufferGetPage(buf), first_removed_slot);
-		/* GPDB_84_MERGE_FIXME: upstream calls MarkBufferDirtyHint instead.
-		 * Backport commit 20723ce80 to fix. */
-		MarkBufferDirty(buf);
+		MarkBufferDirtyHint(buf, false);
 		UnlockReleaseBuffer(buf);
 
 		new_nfsmblocks = fsm_logical_to_physical(first_removed_address) + 1;
@@ -307,7 +299,7 @@ FreeSpaceMapTruncateRel(Relation rel, BlockNumber nblocks)
 	}
 
 	/* Truncate the unused FSM pages, and send smgr inval message */
-	smgrtruncate(rel->rd_smgr, FSM_FORKNUM, new_nfsmblocks, rel->rd_isLocalBuf);
+	smgrtruncate(rel->rd_smgr, FSM_FORKNUM, new_nfsmblocks);
 
 	/*
 	 * We might as well update the local smgr_fsm_nblocks setting.
@@ -387,8 +379,7 @@ fsm_space_needed_to_cat(Size needed)
 
 	/* Can't ask for more space than the highest category represents */
 	if (needed > MaxFSMRequestSize)
-		elog(ERROR, "invalid FSM request size %lu",
-			 (unsigned long) needed);
+		elog(ERROR, "invalid FSM request size %zu", needed);
 
 	if (needed == 0)
 		return 1;
@@ -542,10 +533,29 @@ fsm_readbuf(Relation rel, FSMAddress addr, bool extend)
 	 * pages than error out. Since the FSM changes are not WAL-logged, the
 	 * so-called torn page problem on crash can lead to pages with corrupt
 	 * headers, for example.
+	 *
+	 * The initialize-the-page part is trickier than it looks, because of the
+	 * possibility of multiple backends doing this concurrently, and our
+	 * desire to not uselessly take the buffer lock in the normal path where
+	 * the page is OK.  We must take the lock to initialize the page, so
+	 * recheck page newness after we have the lock, in case someone else
+	 * already did it.  Also, because we initially check PageIsNew with no
+	 * lock, it's possible to fall through and return the buffer while someone
+	 * else is still initializing the page (i.e., we might see pd_upper as set
+	 * but other page header fields are still zeroes).  This is harmless for
+	 * callers that will take a buffer lock themselves, but some callers
+	 * inspect the page without any lock at all.  The latter is OK only so
+	 * long as it doesn't depend on the page header having correct contents.
+	 * Current usage is safe because PageGetContents() does not require that.
 	 */
 	buf = ReadBufferExtended(rel, FSM_FORKNUM, blkno, RBM_ZERO_ON_ERROR, NULL);
 	if (PageIsNew(BufferGetPage(buf)))
-		PageInit(BufferGetPage(buf), BLCKSZ, 0);
+	{
+		LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
+		if (PageIsNew(BufferGetPage(buf)))
+			PageInit(BufferGetPage(buf), BLCKSZ, 0);
+		LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+	}
 	return buf;
 }
 
@@ -594,7 +604,7 @@ fsm_extend(Relation rel, BlockNumber fsm_nblocks)
 		PageSetChecksumInplace(pg, fsm_nblocks_now);
 
 		smgrextend(rel->rd_smgr, FSM_FORKNUM, fsm_nblocks_now,
-				   (char *) pg, rel->rd_istemp);
+				   (char *) pg, false);
 		fsm_nblocks_now++;
 	}
 
@@ -627,9 +637,7 @@ fsm_set_and_search(Relation rel, FSMAddress addr, uint16 slot,
 	page = BufferGetPage(buf);
 
 	if (fsm_set_avail(page, slot, newValue))
-		/* GPDB_84_MERGE_FIXME: upstream calls MarkBufferDirtyHint instead.
-		 * Backport commit 20723ce80 to fix. */
-		MarkBufferDirty(buf);
+		MarkBufferDirtyHint(buf, false);
 
 	if (minValue != 0)
 	{
@@ -780,9 +788,7 @@ fsm_vacuum_page(Relation rel, FSMAddress addr, bool *eof_p)
 			{
 				LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
 				fsm_set_avail(BufferGetPage(buf), slot, child_avail);
-				/* GPDB_84_MERGE_FIXME: upstream calls MarkBufferDirtyHint instead.
-				 * Backport commit 20723ce80 to fix. */
-				MarkBufferDirty(buf);
+				MarkBufferDirtyHint(buf, false);
 				LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 			}
 		}
@@ -795,8 +801,17 @@ fsm_vacuum_page(Relation rel, FSMAddress addr, bool *eof_p)
 	 * pages, increasing the chances that a later vacuum can truncate the
 	 * relation.
 	 */
+#ifdef MPROTECT_BUFFERS
+	/*
+	 * When mprotect() is used to detect shared buffer access violations, lock
+	 * must be acquired so that write access is allowed on this buffer.
+	 */
+	LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
+#endif
 	((FSMPage) PageGetContents(page))->fp_next_slot = 0;
-
+#ifdef MPROTECT_BUFFERS
+	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+#endif
 	ReleaseBuffer(buf);
 
 	return max_avail;

@@ -13,17 +13,18 @@
             <topicref href="admin_utilities/gpcheckcat.xml"/>
             <topicref href="admin_utilities/gpcheckperf.xml"/>
             <topicref href="admin_utilities/gpconfig.xml"/>
-            <topicref href="admin_utilities/gpcrondump.xml"/>
-            <topicref href="admin_utilities/gpdbrestore.xml"/>
+            <topicref href="admin_utilities/gpcopy.xml" otherprops="pivotal"/>
             <topicref href="admin_utilities/gpdeletesystem.xml"/>
             <topicref href="admin_utilities/gpexpand.xml"/>
             <topicref href="admin_utilities/gpfdist.xml"/>
             <topicref href="admin_utilities/gpinitstandby.xml"/>
             <topicref href="admin_utilities/gpinitsystem.xml"/>
+            <topicref href="../greenplum-kafka/gpkafka-check.xml" otherprops="pivotal" scope="peer" navtitle="gpkafka check"/>
+            <topicref href="../greenplum-kafka/gpkafka-load.xml" otherprops="pivotal" scope="peer" navtitle= "gpkafka load"/>
+            <topicref href="../greenplum-kafka/gpkafka-yaml.xml" otherprops="pivotal" scope="peer" navtitle="gpkafka.yaml"/>
             <topicref href="admin_utilities/gpload.xml"/>
             <topicref href="admin_utilities/gplogfilter.xml"/>
             <topicref href="admin_utilities/gpmapreduce.xml"/>
-            <topicref href="admin_utilities/gpmfr.xml"/>
             <!-- hidden until testing is complete -msk
             <topicref href="admin_utilities/gpmovemirrors.xml"/>
 -->
@@ -41,7 +42,9 @@
             <topicref href="admin_utilities/gpstop.xml"/>
             <topicref href="admin_utilities/gpsys.xml"/>
             <topicref href="admin_utilities/gptransfer.xml"/>
-            <topicref href="admin_utilities/pgbouncer-ref.xml"/>
+            <topicref href="admin_utilities/pgbouncer.xml"/>
+            <topicref href="admin_utilities/pgbouncer-ini.xml"/>
+            <topicref href="admin_utilities/pgbouncer-admin.xml"/>
         </topicref>
         <topicref href="cli_ref.xml">
             <topicref href="client_utilities/ClientUtilitySummary.xml" linking="targetonly">

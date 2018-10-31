@@ -303,7 +303,7 @@ on (x1 = xx1) where (xx2 is not null);
 -- to outside an IN
 --
 create table foo (unique1 int, unique2 int) distributed replicated;
-insert into foo vaules (1, 2), (2, 42);
+insert into foo values (1, 2), (2, 42);
 
 select count(*) from foo a where unique1 in
   (select unique1 from foo b join foo c using (unique1)
@@ -441,5 +441,13 @@ select * from
   zt2 left join zt3 on (f2 = f3)
       left join zv1 on (f3 = f1)
 where f2 = 53;
+
+--
+-- regression test for nest loop join of rpt and entry
+--
+create temp table t_5628 (c1 int, c2 int) distributed replicated;
+insert into t_5628 values (1,1), (2,2);
+explain (costs off) select max(c1) from pg_class left join t_5628 on true;
+select max(c1) from pg_class left join t_5628 on true;
 
 drop schema rpt_joins cascade;

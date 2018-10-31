@@ -1,4 +1,12 @@
 set enable_partition_rules = false;
+drop table if exists d;
+NOTICE:  table "d" does not exist, skipping
+drop table if exists c;
+NOTICE:  table "c" does not exist, skipping
+drop table if exists b;
+NOTICE:  table "b" does not exist, skipping
+drop table if exists a;
+NOTICE:  table "a" does not exist, skipping
 -- Check multi level partition COPY
 create table region
 (
@@ -47,6 +55,33 @@ NOTICE:  CREATE TABLE will create partition "region_1_prt_region3_2_prt_europe" 
 NOTICE:  CREATE TABLE will create partition "region_1_prt_region3_2_prt_mideast" for table "region_1_prt_region3"
 NOTICE:  CREATE TABLE will create partition "region_1_prt_region3_2_prt_australia" for table "region_1_prt_region3"
 NOTICE:  CREATE TABLE will create partition "region_1_prt_region3_2_prt_antarctica" for table "region_1_prt_region3"
+-- root and internal parent partitions should have relfrozenxid as 0
+select relname from pg_class where relkind = 'r' and relname like 'region%' and relfrozenxid=0;
+       relname        
+----------------------
+ region
+ region_1_prt_region1
+ region_1_prt_region2
+ region_1_prt_region3
+(4 rows)
+
+select gp_segment_id, relname from gp_dist_random('pg_class') where relkind = 'r' and relname like 'region%' and relfrozenxid=0;
+ gp_segment_id |       relname        
+---------------+----------------------
+             1 | region
+             1 | region_1_prt_region1
+             1 | region_1_prt_region2
+             1 | region_1_prt_region3
+             0 | region
+             0 | region_1_prt_region1
+             0 | region_1_prt_region2
+             0 | region_1_prt_region3
+             2 | region
+             2 | region_1_prt_region1
+             2 | region_1_prt_region2
+             2 | region_1_prt_region3
+(12 rows)
+
 create unique index region_pkey on region(r_regionkey);
 NOTICE:  building index for child partition "region_1_prt_region1"
 NOTICE:  building index for child partition "region_1_prt_region1_2_prt_africa"
@@ -479,7 +514,8 @@ alter table foo_p exchange partition for(rank(6)) with table bar_p;
 -- but we do now, so the following tries to insert a value that can't go
 -- in part 6.
 insert into bar_p values(10, 10);
-ERROR:  new row for relation "bar_p" violates check constraint "foo_p_1_prt_6_check"  (seg1 slarimac:40001 pid=97876)
+ERROR:  new row for relation "bar_p" violates check constraint "foo_p_1_prt_6_check"
+DETAIL:  Failing row contains (10, 10).
 drop table foo_p;
 select * from bar_p;
  i | j 
@@ -688,6 +724,125 @@ NOTICE:  CREATE TABLE will create partition "sto_ao_ao_1_prt_5" for table "sto_a
 NOTICE:  CREATE TABLE will create partition "sto_ao_ao_1_prt_5_2_prt_subothers" for table "sto_ao_ao_1_prt_5"
 NOTICE:  CREATE TABLE will create partition "sto_ao_ao_1_prt_5_2_prt_sub1" for table "sto_ao_ao_1_prt_5"
 NOTICE:  CREATE TABLE will create partition "sto_ao_ao_1_prt_5_2_prt_sub2" for table "sto_ao_ao_1_prt_5"
+-- Non-leaf (empty) partitions along with their auxiliary tables
+-- should have relfrozenxid = 0.  Select the names of those tables
+-- within this partition hierarchy whose aoseg auxiliary tables have
+-- relfrozenxid = 0.
+select c1.relname from pg_appendonly a, pg_class c1, pg_class c2 where
+c1.oid = a.relid and c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and a.segrelid = c2.oid;
+        relname         
+------------------------
+ sto_ao_ao_1_prt_2
+ sto_ao_ao
+ sto_ao_ao_1_prt_others
+ sto_ao_ao_1_prt_3
+ sto_ao_ao_1_prt_4
+ sto_ao_ao_1_prt_5
+(6 rows)
+
+-- Same query as above but obtain relnames from segments.
+select c2.gp_segment_id, c1.relname from pg_appendonly a, pg_class c1,
+gp_dist_random('pg_class') c2 where
+c1.oid = a.relid and c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and a.segrelid = c2.oid;
+ gp_segment_id |        relname         
+---------------+------------------------
+             1 | sto_ao_ao_1_prt_2
+             1 | sto_ao_ao
+             1 | sto_ao_ao_1_prt_others
+             1 | sto_ao_ao_1_prt_3
+             1 | sto_ao_ao_1_prt_4
+             1 | sto_ao_ao_1_prt_5
+             2 | sto_ao_ao_1_prt_2
+             2 | sto_ao_ao
+             2 | sto_ao_ao_1_prt_others
+             2 | sto_ao_ao_1_prt_3
+             2 | sto_ao_ao_1_prt_4
+             2 | sto_ao_ao_1_prt_5
+             0 | sto_ao_ao_1_prt_2
+             0 | sto_ao_ao
+             0 | sto_ao_ao_1_prt_others
+             0 | sto_ao_ao_1_prt_3
+             0 | sto_ao_ao_1_prt_4
+             0 | sto_ao_ao_1_prt_5
+(18 rows)
+
+-- Same two queries as above but for visimap auxiliary table.
+select c1.relname from pg_appendonly a, pg_class c1, pg_class c2 where
+c1.oid = a.relid and c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and a.visimaprelid = c2.oid;
+        relname         
+------------------------
+ sto_ao_ao_1_prt_2
+ sto_ao_ao
+ sto_ao_ao_1_prt_others
+ sto_ao_ao_1_prt_3
+ sto_ao_ao_1_prt_4
+ sto_ao_ao_1_prt_5
+(6 rows)
+
+-- Obtain relnames from segments whose visimap tables have relfrozenxid = 0.
+select c2.gp_segment_id, c1.relname from pg_appendonly a, pg_class c1,
+gp_dist_random('pg_class') c2 where
+c1.oid = a.relid and c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and a.visimaprelid = c2.oid;
+ gp_segment_id |        relname         
+---------------+------------------------
+             0 | sto_ao_ao_1_prt_2
+             0 | sto_ao_ao
+             0 | sto_ao_ao_1_prt_others
+             0 | sto_ao_ao_1_prt_3
+             0 | sto_ao_ao_1_prt_4
+             0 | sto_ao_ao_1_prt_5
+             2 | sto_ao_ao_1_prt_2
+             2 | sto_ao_ao
+             2 | sto_ao_ao_1_prt_others
+             2 | sto_ao_ao_1_prt_3
+             2 | sto_ao_ao_1_prt_4
+             2 | sto_ao_ao_1_prt_5
+             1 | sto_ao_ao_1_prt_2
+             1 | sto_ao_ao
+             1 | sto_ao_ao_1_prt_others
+             1 | sto_ao_ao_1_prt_3
+             1 | sto_ao_ao_1_prt_4
+             1 | sto_ao_ao_1_prt_5
+(18 rows)
+
+-- Same validation toast - select all relnames whose toast tables have relfrozenxid = 0.
+select c1.relname from pg_class c1, pg_class c2 where c1.relname like 'sto_ao_ao%' and
+c2.relfrozenxid = 0 and c1.reltoastrelid = c2.oid;
+        relname         
+------------------------
+ sto_ao_ao_1_prt_2
+ sto_ao_ao
+ sto_ao_ao_1_prt_others
+ sto_ao_ao_1_prt_3
+ sto_ao_ao_1_prt_4
+ sto_ao_ao_1_prt_5
+(6 rows)
+
+-- Obtain relnames from segments whose toast tables have relfrozenxid = 0.
+select c2.gp_segment_id, c1.relname from pg_class c1, gp_dist_random('pg_class') c2 where
+c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and c1.reltoastrelid = c2.oid;
+ gp_segment_id |        relname         
+---------------+------------------------
+             2 | sto_ao_ao_1_prt_2
+             2 | sto_ao_ao
+             2 | sto_ao_ao_1_prt_others
+             2 | sto_ao_ao_1_prt_3
+             2 | sto_ao_ao_1_prt_4
+             2 | sto_ao_ao_1_prt_5
+             1 | sto_ao_ao_1_prt_2
+             1 | sto_ao_ao
+             1 | sto_ao_ao_1_prt_others
+             1 | sto_ao_ao_1_prt_3
+             1 | sto_ao_ao_1_prt_4
+             1 | sto_ao_ao_1_prt_5
+             0 | sto_ao_ao_1_prt_2
+             0 | sto_ao_ao
+             0 | sto_ao_ao_1_prt_others
+             0 | sto_ao_ao_1_prt_3
+             0 | sto_ao_ao_1_prt_4
+             0 | sto_ao_ao_1_prt_5
+(18 rows)
+
 create table exh_ao_ao (like sto_ao_ao) with (appendonly=true);
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause, defaulting to distribution columns from LIKE table
 -- Exchange default sub-partition, should fail
@@ -704,8 +859,84 @@ ERROR:  Cannot specify a name, rank, or value for a DEFAULT partition in this co
 -- Exchange a partition that has sub partitions, should fail.
 alter table sto_ao_ao exchange partition for ('2008-01-01') with table exh_ao_ao;
 ERROR:  cannot EXCHANGE PARTITION for relation "sto_ao_ao" -- partition has children
-drop table sto_ao_ao;
-drop table exh_ao_ao;
+-- Alter table that causes rewrite.  Then validate that auxiliary
+-- tables of non-leaf partitions still have relfrozenxid = 0.
+alter table sto_ao_ao alter column col4 type bigint;
+-- aoseg
+select c1.relname from pg_appendonly a, pg_class c1, pg_class c2 where
+c1.oid = a.relid and c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and a.segrelid = c2.oid;
+        relname         
+------------------------
+ sto_ao_ao
+ sto_ao_ao_1_prt_others
+ sto_ao_ao_1_prt_2
+ sto_ao_ao_1_prt_3
+ sto_ao_ao_1_prt_4
+ sto_ao_ao_1_prt_5
+(6 rows)
+
+select c2.gp_segment_id, c1.relname from pg_appendonly a, pg_class c1,
+gp_dist_random('pg_class') c2 where
+c1.oid = a.relid and c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and a.segrelid = c2.oid;
+ gp_segment_id |        relname         
+---------------+------------------------
+             1 | sto_ao_ao
+             1 | sto_ao_ao_1_prt_others
+             1 | sto_ao_ao_1_prt_2
+             1 | sto_ao_ao_1_prt_3
+             1 | sto_ao_ao_1_prt_4
+             1 | sto_ao_ao_1_prt_5
+             2 | sto_ao_ao
+             2 | sto_ao_ao_1_prt_others
+             2 | sto_ao_ao_1_prt_2
+             2 | sto_ao_ao_1_prt_3
+             2 | sto_ao_ao_1_prt_4
+             2 | sto_ao_ao_1_prt_5
+             0 | sto_ao_ao
+             0 | sto_ao_ao_1_prt_others
+             0 | sto_ao_ao_1_prt_2
+             0 | sto_ao_ao_1_prt_3
+             0 | sto_ao_ao_1_prt_4
+             0 | sto_ao_ao_1_prt_5
+(18 rows)
+
+-- toast
+select c1.relname from pg_class c1, pg_class c2 where c1.relname like 'sto_ao_ao%' and
+c2.relfrozenxid = 0 and c1.reltoastrelid = c2.oid;
+        relname         
+------------------------
+ sto_ao_ao
+ sto_ao_ao_1_prt_others
+ sto_ao_ao_1_prt_2
+ sto_ao_ao_1_prt_3
+ sto_ao_ao_1_prt_4
+ sto_ao_ao_1_prt_5
+(6 rows)
+
+select c2.gp_segment_id, c1.relname from pg_class c1, gp_dist_random('pg_class') c2 where
+c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and c1.reltoastrelid = c2.oid;
+ gp_segment_id |        relname         
+---------------+------------------------
+             0 | sto_ao_ao
+             0 | sto_ao_ao_1_prt_others
+             0 | sto_ao_ao_1_prt_2
+             0 | sto_ao_ao_1_prt_3
+             0 | sto_ao_ao_1_prt_4
+             0 | sto_ao_ao_1_prt_5
+             1 | sto_ao_ao
+             1 | sto_ao_ao_1_prt_others
+             1 | sto_ao_ao_1_prt_2
+             1 | sto_ao_ao_1_prt_3
+             1 | sto_ao_ao_1_prt_4
+             1 | sto_ao_ao_1_prt_5
+             2 | sto_ao_ao
+             2 | sto_ao_ao_1_prt_others
+             2 | sto_ao_ao_1_prt_2
+             2 | sto_ao_ao_1_prt_3
+             2 | sto_ao_ao_1_prt_4
+             2 | sto_ao_ao_1_prt_5
+(18 rows)
+
 -- XXX: not yet: VALIDATE parameter
 -- Exchange a partition with an external table; ensure that we require to use
 -- WITHOUT VALIDATION and that the new partition won't be included in TRUNCATE
@@ -1112,7 +1343,7 @@ PS_COMMENT VARCHAR(199)
 )
 partition by range (ps_suppkey)
 subpartition by range (ps_partkey)
-,subpartition by range (ps_supplycost) subpartition template (start('1')
+subpartition by range (ps_supplycost) subpartition template (start('1')
 end('1001') every(500))
 (
 partition p1 start('1') end('10001') every(5000)
@@ -1253,7 +1484,7 @@ PS_COMMENT VARCHAR(199)
 )
 partition by range (ps_suppkey)
 subpartition by range (ps_partkey)
-,subpartition by range (ps_supplycost) subpartition template (start('1')
+subpartition by range (ps_supplycost) subpartition template (start('1')
 end('1001') every(500))
 (
 partition p1 start('1') end('10001') every(5000)
@@ -1352,7 +1583,7 @@ subpartition jan02 start (date '2002-01-01'),
 subpartition jan03 start (date '2003-01-01'),
 subpartition jan04 start (date '2004-01-01'),
 subpartition jan05 start (date '2005-01-01')
-),
+)
 subpartition by list (usstate)
 subpartition template (
 subpartition mass values ('MA'),
@@ -1411,7 +1642,7 @@ year date, gender char(1),
 usstate char(2))
 DISTRIBUTED BY (id, gender, year, usstate)
 partition by list (gender)
-subpartition by range (year),
+subpartition by range (year)
 subpartition by list (usstate)
 (
   partition boys values ('M') 
@@ -1446,8 +1677,7 @@ subpartition mass values ('MA'),
 subpartition cali values ('CA'),
 subpartition ohio values ('OH')
 )
-)
-,
+),
   partition girls values ('F')
 (
 subpartition jan01 start (date '2001-01-01')
@@ -1800,7 +2030,9 @@ create table f (n numeric(20, 2)) partition by range(n) (start(1::bigint)
 end('f'::bool));
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'n' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
-ERROR:  cannot coerce RANGE partition parameter (false) to column type (numeric)
+ERROR:  cannot coerce partition parameter to column type "numeric"
+LINE 2: end('f'::bool));
+            ^
 -- see that grant and revoke cascade to children
 create role part_role;
 NOTICE:  resource queue required -- using default resource queue "pg_default"
@@ -1955,7 +2187,7 @@ from pg_class where relname like 'granttest%';
 drop table granttest;
 drop role part_role;
 -- deep inline + optional subpartition comma:
-CREATE TABLE partsupp (
+CREATE TABLE partsupp_1 (
     ps_partkey integer,
     ps_suppkey integer,
     ps_availqty integer,
@@ -2018,35 +2250,34 @@ CREATE TABLE partsupp (
                           )
                   )
           );
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1" for table "partsupp"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1_2_prt_1" for table "partsupp_1_prt_p1_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1_2_prt_1_3_prt_1" for table "partsupp_1_prt_p1_1_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1_2_prt_1_3_prt_2" for table "partsupp_1_prt_p1_1_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1_2_prt_2" for table "partsupp_1_prt_p1_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1_2_prt_2_3_prt_1" for table "partsupp_1_prt_p1_1_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_1_2_prt_2_3_prt_2" for table "partsupp_1_prt_p1_1_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2" for table "partsupp"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2_2_prt_1" for table "partsupp_1_prt_p1_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2_2_prt_1_3_prt_1" for table "partsupp_1_prt_p1_2_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2_2_prt_1_3_prt_2" for table "partsupp_1_prt_p1_2_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2_2_prt_2" for table "partsupp_1_prt_p1_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2_2_prt_2_3_prt_1" for table "partsupp_1_prt_p1_2_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_2_2_prt_2_3_prt_2" for table "partsupp_1_prt_p1_2_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3" for table "partsupp"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3_2_prt_1" for table "partsupp_1_prt_p1_3"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3_2_prt_1_3_prt_1" for table "partsupp_1_prt_p1_3_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3_2_prt_1_3_prt_2" for table "partsupp_1_prt_p1_3_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3_2_prt_2" for table "partsupp_1_prt_p1_3"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3_2_prt_2_3_prt_1" for table "partsupp_1_prt_p1_3_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_3_2_prt_2_3_prt_2" for table "partsupp_1_prt_p1_3_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4" for table "partsupp"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4_2_prt_1" for table "partsupp_1_prt_p1_4"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4_2_prt_1_3_prt_1" for table "partsupp_1_prt_p1_4_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4_2_prt_1_3_prt_2" for table "partsupp_1_prt_p1_4_2_prt_1"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4_2_prt_2" for table "partsupp_1_prt_p1_4"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4_2_prt_2_3_prt_1" for table "partsupp_1_prt_p1_4_2_prt_2"
-NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_p1_4_2_prt_2_3_prt_2" for table "partsupp_1_prt_p1_4_2_prt_2"
-drop table partsupp;
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1" for table "partsupp_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1_2_prt_1" for table "partsupp_1_1_prt_p1_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1_2_prt_1_3_prt_1" for table "partsupp_1_1_prt_p1_1_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1_2_prt_1_3_prt_2" for table "partsupp_1_1_prt_p1_1_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1_2_prt_2" for table "partsupp_1_1_prt_p1_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1_2_prt_2_3_prt_1" for table "partsupp_1_1_prt_p1_1_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_1_2_prt_2_3_prt_2" for table "partsupp_1_1_prt_p1_1_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2" for table "partsupp_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2_2_prt_1" for table "partsupp_1_1_prt_p1_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2_2_prt_1_3_prt_1" for table "partsupp_1_1_prt_p1_2_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2_2_prt_1_3_prt_2" for table "partsupp_1_1_prt_p1_2_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2_2_prt_2" for table "partsupp_1_1_prt_p1_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2_2_prt_2_3_prt_1" for table "partsupp_1_1_prt_p1_2_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_2_2_prt_2_3_prt_2" for table "partsupp_1_1_prt_p1_2_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3" for table "partsupp_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3_2_prt_1" for table "partsupp_1_1_prt_p1_3"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3_2_prt_1_3_prt_1" for table "partsupp_1_1_prt_p1_3_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3_2_prt_1_3_prt_2" for table "partsupp_1_1_prt_p1_3_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3_2_prt_2" for table "partsupp_1_1_prt_p1_3"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3_2_prt_2_3_prt_1" for table "partsupp_1_1_prt_p1_3_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_3_2_prt_2_3_prt_2" for table "partsupp_1_1_prt_p1_3_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4" for table "partsupp_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4_2_prt_1" for table "partsupp_1_1_prt_p1_4"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4_2_prt_1_3_prt_1" for table "partsupp_1_1_prt_p1_4_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4_2_prt_1_3_prt_2" for table "partsupp_1_1_prt_p1_4_2_prt_1"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4_2_prt_2" for table "partsupp_1_1_prt_p1_4"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4_2_prt_2_3_prt_1" for table "partsupp_1_1_prt_p1_4_2_prt_2"
+NOTICE:  CREATE TABLE will create partition "partsupp_1_1_prt_p1_4_2_prt_2_3_prt_2" for table "partsupp_1_1_prt_p1_4_2_prt_2"
 -- Accept negative values trivially:
 create table partition_g (i int) partition by range(i) (start((-1)) end(10));
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as the Greenplum Database data distribution key for this table.
@@ -2216,7 +2447,6 @@ NOTICE:  CREATE TABLE will create partition "orders_1_prt_p1_5_2_prt_sp2_3_prt_1
 NOTICE:  CREATE TABLE will create partition "orders_1_prt_p1_5_2_prt_sp2_3_prt_2" for table "orders_1_prt_p1_5_2_prt_sp2"
 NOTICE:  CREATE TABLE will create partition "orders_1_prt_p1_5_2_prt_sp2_3_prt_3" for table "orders_1_prt_p1_5_2_prt_sp2"
 NOTICE:  CREATE TABLE will create partition "orders_1_prt_p1_5_2_prt_sp2_3_prt_4" for table "orders_1_prt_p1_5_2_prt_sp2"
-drop table orders;
 -- grammar bug: MPP-3361
 create table i2 (i int) partition by range(i) (start(-2::int) end(20));
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as the Greenplum Database data distribution key for this table.
@@ -3087,7 +3317,7 @@ HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sur
 ERROR:  starting value of partition "b" overlaps previous range
 LINE 3: partition b start('e') end('g')
                     ^
--- MPP-5159
+-- MPP-5159 MPP-26829
 -- Should fail -- missing partition spec and subpartition template follows the
 -- partition declaration.
 CREATE TABLE list_sales (trans_id int, date date, amount
@@ -3099,10 +3329,10 @@ SUBPARTITION TEMPLATE
   SUBPARTITION asia VALUES ('asia'),
   SUBPARTITION europe VALUES ('europe')
 );
-ERROR:  syntax error at or near ";"
-LINE 9: );
-         ^
--- MPP-5185
+ERROR:  syntax error at or near "TEMPLATE"
+LINE 5: SUBPARTITION TEMPLATE
+                     ^
+-- MPP-5185 MPP-26829
 -- Should work
 CREATE TABLE rank_settemp (id int, rank int, year date, gender
 char(1)) DISTRIBUTED BY (id, gender, year)
@@ -3414,7 +3644,6 @@ select tablename, partitionboundary from pg_partitions where tablename like 'mpp
  mpp5878a  | VALUES( ('e', 'f'),  ('g', 'h'))
 (4 rows)
 
-drop table mpp5878, mpp5878a;
 -- MPP-5941: work with many levels of templates
 CREATE TABLE mpp5941 (a int, b date, c char, 
 	   		 		 d char(4), e varchar(20), f timestamp)
@@ -3422,11 +3651,11 @@ partition by range (b)
 subpartition by list (a) 
 subpartition template ( 
 subpartition l1 values (1,2,3,4,5), 
-subpartition l2 values (6,7,8,9,10) ),
+subpartition l2 values (6,7,8,9,10) )
 subpartition by list (e) 
 subpartition template ( 
 subpartition ll1 values ('Engineering'), 
-subpartition ll2 values ('QA') ),
+subpartition ll2 values ('QA') )
 subpartition by list (c) 
 subpartition template ( 
 subpartition lll1 values ('M'), 
@@ -3696,6 +3925,25 @@ NOTICE:  CREATE TABLE will create partition "partsupp_1_prt_nnull" for table "pa
 alter table partsupp add partition foo start(500) end(NULL);
 ERROR:  cannot use NULL with range partition specification
 drop table partsupp;
+-- Test for an old bug, where we used to crash on NULLs, because the code
+-- to order the partitions by their start/end boundaries did not anticipate
+-- NULLs. NULLs in boundaries are not accepted, but because we check for
+-- them only after ordering the partitions, the sorting code needs to
+-- handle them. (This test needs at least two partitions, so that there
+-- is something to sort.)
+create table partnulltest (
+  col1 int,
+  col2 numeric
+)
+distributed by (col1)
+partition by range(col2)
+(
+  partition part2 start(1) end(10) ,
+  partition part1 start (NULL)
+);
+ERROR:  cannot use NULL with range partition specification
+LINE 9:   partition part1 start (NULL)
+                          ^
 --MPP-6240
 CREATE TABLE supplier_hybrid_part(
                 S_SUPPKEY INTEGER,
@@ -3932,15 +4180,12 @@ select schemaname, tablename, indexname from pg_indexes where schemaname = 'publ
 (0 rows)
 
 alter table it add constraint it_unique_i unique (i);
-NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "it_i_key" for table "it"
-NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "it_1_prt_1_idx" for table "it_1_prt_1"
-NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "it_1_prt_2_idx" for table "it_1_prt_2"
 select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
- schemaname | tablename  |   indexname    
-------------+------------+----------------
+ schemaname | tablename  |    indexname     
+------------+------------+------------------
  public     | it         | it_i_key
- public     | it_1_prt_1 | it_1_prt_1_idx
- public     | it_1_prt_2 | it_1_prt_2_idx
+ public     | it_1_prt_1 | it_1_prt_1_i_key
+ public     | it_1_prt_2 | it_1_prt_2_i_key
 (3 rows)
 
 alter table it drop constraint it_unique_i;
@@ -3960,15 +4205,12 @@ select schemaname, tablename, indexname from pg_indexes where schemaname = 'publ
 (0 rows)
 
 alter table it add primary key(i);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_pkey" for table "it"
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_1_prt_1_idx" for table "it_1_prt_1"
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_1_prt_2_idx" for table "it_1_prt_2"
 select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
- schemaname | tablename  |   indexname    
-------------+------------+----------------
+ schemaname | tablename  |    indexname    
+------------+------------+-----------------
  public     | it         | it_pkey
- public     | it_1_prt_1 | it_1_prt_1_idx
- public     | it_1_prt_2 | it_1_prt_2_idx
+ public     | it_1_prt_1 | it_1_prt_1_pkey
+ public     | it_1_prt_2 | it_1_prt_2_pkey
 (3 rows)
 
 -- FIXME: dropping a primary key doesn't currently work correctly. It doesn't
@@ -3987,15 +4229,12 @@ select schemaname, tablename, indexname from pg_indexes where schemaname = 'publ
 (0 rows)
 
 alter table it add primary key(i);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_pkey" for table "it"
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_1_prt_1_idx" for table "it_1_prt_1"
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_1_prt_2_idx" for table "it_1_prt_2"
 select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
- schemaname | tablename  |   indexname    
-------------+------------+----------------
+ schemaname | tablename  |    indexname    
+------------+------------+-----------------
  public     | it         | it_pkey
- public     | it_1_prt_1 | it_1_prt_1_idx
- public     | it_1_prt_2 | it_1_prt_2_idx
+ public     | it_1_prt_1 | it_1_prt_1_pkey
+ public     | it_1_prt_2 | it_1_prt_2_pkey
 (3 rows)
 
 drop table it;
@@ -4395,7 +4634,6 @@ select pg_get_partition_def('mpp6589a'::regclass,true);
            )
 (1 row)
 
-drop table mpp6589a;
 CREATE TABLE mpp6589i(a int, b int) 
 partition by range (b) (start (1) end (3));
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'a' as the Greenplum Database data distribution key for this table.
@@ -4429,7 +4667,6 @@ select pg_get_partition_def('mpp6589i'::regclass,true);
            )
 (1 row)
 
-DROP TABLE mpp6589i;
 -- test open-ended SPLIT
 CREATE TABLE mpp6589b
 (
@@ -4469,7 +4706,6 @@ select pg_get_partition_def('mpp6589b'::regclass,true);
            )
 (1 row)
 
-drop table mpp6589b;
 -- MPP-7191, MPP-7193: partitioned tables - fully-qualify storage type
 -- if not specified (and not a template)
 CREATE TABLE mpp5992 (a int, b date, c char,
@@ -4479,11 +4715,11 @@ partition by range (b)
 subpartition by list (a)
 subpartition template (
 subpartition l1 values (1,2,3,4,5),
-subpartition l2 values (6,7,8,9,10) ),
+subpartition l2 values (6,7,8,9,10) )
 subpartition by list (e)
 subpartition template (
 subpartition ll1 values ('Engineering'),
-subpartition ll2 values ('QA') ),
+subpartition ll2 values ('QA') )
 subpartition by list (c)
 subpartition template (
 subpartition lll1 values ('M'),
@@ -5285,7 +5521,6 @@ select pg_get_partition_def('mpp5992'::regclass,true, true);
            )
 (1 row)
 
-drop table mpp5992;
 -- MPP-10223: split subpartitions
 CREATE TABLE MPP10223pk
 (
@@ -5358,26 +5593,6 @@ NOTICE:  CREATE TABLE will create partition "mpp10223pk_1_prt_daypart_2_prt_p201
 NOTICE:  CREATE TABLE will create partition "mpp10223pk_1_prt_daypart_2_prt_p20100625" for table "mpp10223pk_1_prt_daypart"
 NOTICE:  CREATE TABLE will create partition "mpp10223pk_1_prt_daypart_2_prt_p20100626" for table "mpp10223pk_1_prt_daypart"
 NOTICE:  CREATE TABLE will create partition "mpp10223pk_1_prt_daypart_2_prt_p_endpart" for table "mpp10223pk_1_prt_daypart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_pkey" for table "mpp10223pk"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_min15part_pkey" for table "mpp10223pk_1_prt_min15part"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_min15part_2_prt_p_future_pkey" for table "mpp10223pk_1_prt_min15part_2_prt_p_future"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_min15part_2_prt_p_endpart_pkey" for table "mpp10223pk_1_prt_min15part_2_prt_p_endpart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_pkey" for table "mpp10223pk_1_prt_hourpart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p_future_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p_future"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p20100622_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p20100622"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p20100623_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p20100623"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p20100624_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p20100624"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p20100625_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p20100625"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p20100626_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p20100626"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_hourpart_2_prt_p_endpart_pkey" for table "mpp10223pk_1_prt_hourpart_2_prt_p_endpart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_pkey" for table "mpp10223pk_1_prt_daypart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p_future_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p_future"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p20100622_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p20100622"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p20100623_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p20100623"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p20100624_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p20100624"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p20100625_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p20100625"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p20100626_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p20100626"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_daypart_2_prt_p_endpart_pkey" for table "mpp10223pk_1_prt_daypart_2_prt_p_endpart"
 -- MPP-10421: works -- can re-use name for non-DEFAULT partitions, and
 -- primary key problems fixed
 ALTER TABLE MPP10223pk
@@ -5387,9 +5602,7 @@ INTO (PARTITION P20010101, PARTITION P_FUTURE);
 NOTICE:  exchanged partition "p_future" of partition "min15part" of relation "mpp10223pk" with relation "pg_temp_4049276"
 NOTICE:  dropped partition "p_future" for partition "min15part" of relation "mpp10223pk"
 NOTICE:  CREATE TABLE will create partition "mpp10223pk_1_prt_min15part_2_prt_p20010101" for table "mpp10223pk_1_prt_min15part"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_min15part_2_prt_p20010101_pkey" for table "mpp10223pk_1_prt_min15part_2_prt_p20010101"
 NOTICE:  CREATE TABLE will create partition "mpp10223pk_1_prt_min15part_2_prt_p_future" for table "mpp10223pk_1_prt_min15part"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10223pk_1_prt_min15part_2_prt_p_future_pkey1" for table "mpp10223pk_1_prt_min15part_2_prt_p_future"
 drop table mpp10223pk;
 -- rebuild the table without a primary key
 CREATE TABLE MPP10223
@@ -5504,7 +5717,6 @@ select pg_get_partition_def('mpp10223'::regclass,true);
            )
 (1 row)
 
-drop table mpp10223;
 -- simpler version
 create table mpp10223b (a int, b int , d int)
 partition by range (b)
@@ -5547,7 +5759,6 @@ select pg_get_partition_def('mpp10223b'::regclass,true);
            )
 (1 row)
 
-drop table mpp10223b;
 -- MPP-10480: dump templates (but don't use "foo")
 create table MPP10480 (a int, b int, d int)
 partition by range (b)
@@ -5675,7 +5886,6 @@ select pg_get_partition_template_def('MPP10480'::regclass, true, true);
  
 (1 row)
 
-drop table MPP10480;
 -- MPP-10421: fix SPLIT of partitions with PRIMARY KEY constraint/indexes
 CREATE TABLE mpp10321a
 (
@@ -5716,13 +5926,6 @@ NOTICE:  CREATE TABLE will create partition "mpp10321a_1_prt_min15part_2_prt_p_f
 NOTICE:  CREATE TABLE will create partition "mpp10321a_1_prt_min15part_2_prt_p_endpart" for table "mpp10321a_1_prt_min15part"
 NOTICE:  CREATE TABLE will create partition "mpp10321a_1_prt_hourpart_2_prt_p20100622" for table "mpp10321a_1_prt_hourpart"
 NOTICE:  CREATE TABLE will create partition "mpp10321a_1_prt_hourpart_2_prt_p_endpart" for table "mpp10321a_1_prt_hourpart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_pkey" for table "mpp10321a"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_min15part_pkey" for table "mpp10321a_1_prt_min15part"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_min15part_2_prt_p_future_pkey" for table "mpp10321a_1_prt_min15part_2_prt_p_future"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_min15part_2_prt_p_endpart_pkey" for table "mpp10321a_1_prt_min15part_2_prt_p_endpart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_hourpart_pkey" for table "mpp10321a_1_prt_hourpart"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_hourpart_2_prt_p20100622_pkey" for table "mpp10321a_1_prt_hourpart_2_prt_p20100622"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_hourpart_2_prt_p_endpart_pkey" for table "mpp10321a_1_prt_hourpart_2_prt_p_endpart"
 ALTER TABLE mpp10321a
 ALTER PARTITION min15part
 SPLIT PARTITION  P_FUTURE AT ('2010-06-25')
@@ -5730,9 +5933,7 @@ INTO (PARTITION P20010101, PARTITION P_FUTURE);
 NOTICE:  exchanged partition "p_future" of partition "min15part" of relation "mpp10321a" with relation "pg_temp_4055957"
 NOTICE:  dropped partition "p_future" for partition "min15part" of relation "mpp10321a"
 NOTICE:  CREATE TABLE will create partition "mpp10321a_1_prt_min15part_2_prt_p20010101" for table "mpp10321a_1_prt_min15part"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_min15part_2_prt_p20010101_pkey" for table "mpp10321a_1_prt_min15part_2_prt_p20010101"
 NOTICE:  CREATE TABLE will create partition "mpp10321a_1_prt_min15part_2_prt_p_future" for table "mpp10321a_1_prt_min15part"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "mpp10321a_1_prt_min15part_2_prt_p_future_pkey1" for table "mpp10321a_1_prt_min15part_2_prt_p_future"
 DROP TABLE mpp10321a;
 -- test for default partition with boundary spec
 create table bhagp_range (a int, b int) 
@@ -5872,9 +6073,6 @@ partition by range (b)
 );
 NOTICE:  CREATE TABLE will create partition "test_table_1_prt_default_partition" for table "test_table"
 NOTICE:  CREATE TABLE will create partition "test_table_1_prt_p1" for table "test_table"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "test_table_pkey" for table "test_table"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "test_table_1_prt_default_partition_pkey" for table "test_table_1_prt_default_partition"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "test_table_1_prt_p1_pkey" for table "test_table_1_prt_p1"
 insert into test_table values(1,2,3);
 select * from test_table; -- expected: (1,2,3)
  a | b | c 
@@ -5907,9 +6105,7 @@ alter table test_table split default partition
 NOTICE:  exchanged partition "default_partition" of relation "test_table" with relation "pg_temp_4057318"
 NOTICE:  dropped partition "default_partition" for relation "test_table"
 NOTICE:  CREATE TABLE will create partition "test_table_1_prt_p2" for table "test_table"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "test_table_1_prt_p2_pkey" for table "test_table_1_prt_p2"
 NOTICE:  CREATE TABLE will create partition "test_table_1_prt_default_partition" for table "test_table"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "test_table_1_prt_default_partition_pkey1" for table "test_table_1_prt_default_partition"
 select relname, attrnums as distribution_attributes from
 gp_distribution_policy p, pg_class c where p.localoid = c.oid and 
 relname like 'test_table%' order by p.localoid;
@@ -5930,7 +6126,6 @@ select * from test_table; -- expected, no rows! But we see the row. Wrong result
 alter table test_table drop partition default_partition;
 alter table test_table add partition foo start(10) end(20);
 NOTICE:  CREATE TABLE will create partition "test_table_1_prt_foo" for table "test_table"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "test_table_1_prt_foo_pkey" for table "test_table_1_prt_foo"
 select relname, attrnums as distribution_attributes from
 gp_distribution_policy p, pg_class c where p.localoid = c.oid and
 relname like 'test_table%' order by p.localoid;
@@ -6151,19 +6346,19 @@ where relname ~ '^s_'
 group by relname; 
           relname          | missing | oid_count 
 ---------------------------+---------+-----------
+ s_1_prt_s_test            |       0 |         1
  s_1_prt_s_test2           |       0 |         1
- s_1_prt_s_test2_amt_idx   |       0 |         1
- s_1_prt_s_test2_log_idx   |       0 |         1
- s_1_prt_s_test_amt_idx1   |       0 |         1
+ s_1_prt_s_test2_key       |       0 |         1
+ s_1_prt_s_test2_units_key |       0 |         1
+ s_1_prt_s_test_amt_key1   |       0 |         1
+ s_i                       |       0 |         1
+ s_i_expr                  |       0 |         1
  s_j_1_prt_1               |       0 |         1
  s_1_prt_1                 |       0 |         1
- s_1_prt_s_test            |       0 |         1
- s_1_prt_s_test_units_idx1 |       0 |         1
+ s_1_prt_s_test2_amt_key   |       0 |         1
+ s_1_prt_s_test_key1       |       0 |         1
+ s_1_prt_s_test_units_key1 |       0 |         1
  s_i_1_prt_1               |       0 |         1
- s_i_expr                  |       0 |         1
- s_1_prt_s_test2_units_idx |       0 |         1
- s_1_prt_s_test_log_idx1   |       0 |         1
- s_i                       |       0 |         1
  s_i_expr_1_prt_1          |       0 |         1
  s_j                       |       0 |         1
 (15 rows)
@@ -6519,7 +6714,6 @@ CREATE TABLE dim_phone_numbers (
 ) DISTRIBUTED BY (dim_phone_number_key);
 ALTER TABLE ONLY dim_phone_numbers
     ADD CONSTRAINT dim_phone_numbers_pk1 PRIMARY KEY (dim_phone_number_key);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "dim_phone_numbers_pkey" for table "dim_phone_numbers"
 INSERT INTO dim_phone_numbers VALUES (999902, 'test', '800-123-4568', '8001234568', '2012-09-25 13:34:35.037637');
 INSERT INTO dim_phone_numbers VALUES (999904, 'test', '(800) 123-4570', '8001234570', '2012-09-25 13:34:35.148104');
 INSERT INTO dim_phone_numbers VALUES (999903, 'test', '(800) 123-4569', '8001234569', '2012-09-25 13:34:35.093523');
@@ -6951,8 +7145,6 @@ select * from parttest_t;
 reset optimizer_nestloop_factor;
 -- Sub-partition insertion with checking if the user provided correct leaf part
 set dml_ignore_target_partition_check=false;
-drop table if exists part_tab;
-NOTICE:  table "part_tab" does not exist, skipping
 create table part_tab ( i int, j int) distributed by (i) partition by range(j) (start(0) end(10) every(2));
 NOTICE:  CREATE TABLE will create partition "part_tab_1_prt_1" for table "part_tab"
 NOTICE:  CREATE TABLE will create partition "part_tab_1_prt_2" for table "part_tab"
@@ -7105,8 +7297,6 @@ select * from part_tab;
 (13 rows)
 
 -- Multi-level partitioning
-drop table if exists deep_part;
-NOTICE:  table "deep_part" does not exist, skipping
 create table deep_part ( i int, j int, k int, s char(5)) 
 distributed by (i) 
 partition by list(s)
@@ -7639,8 +7829,6 @@ select * from deep_part;
 
 drop table input2;
 drop table input1;
-drop table part_tab;
-drop table deep_part;
 -- Avoid TupleDesc leak when COPY partition table from files
 -- This also covers the bug reported in MPP-9548 where insertion
 -- into a dropped/added column yielded incorrect results
@@ -7725,6 +7913,21 @@ NOTICE:  exchanged partition "other_log_ids" of relation "test_split_part" with 
 NOTICE:  dropped partition "other_log_ids" for relation "test_split_part"
 NOTICE:  CREATE TABLE will create partition "test_split_part_1_prt_New" for table "test_split_part"
 NOTICE:  CREATE TABLE will create partition "test_split_part_1_prt_other_log_ids" for table "test_split_part"
+-- Only the root partition should have automatically created an array type
+select typname, typtype, typcategory from pg_type where typname like '%test_split_part%' and typcategory = 'A';
+     typname      | typtype | typcategory 
+------------------+---------+-------------
+ _test_split_part | b       | A
+(1 row)
+
+select array_agg(test_split_part) from test_split_part where log_id = 500;
+   array_agg    
+----------------
+ {"(500,{10})"}
+(1 row)
+
+select array_agg(test_split_part_1_prt_other_log_ids) from test_split_part_1_prt_other_log_ids where log_id = 500;
+ERROR:  could not find array type for data type test_split_part_1_prt_other_log_ids
 -- Test that pg_get_partition_def() correctly dumps the renamed names for
 -- partitions. Originally reported in MPP-7232
 create table mpp7232a (a int, b int) distributed by (a) partition by range (b) (start (1) end (3) every (1));
@@ -7808,20 +8011,42 @@ distributed by (pkid) partition by range (option3)
 	partition bb start(101) end(200),
 	partition cc start(201) end (300)
 );
-NOTICE:  CREATE TABLE will create implicit sequence "sales_pkid_seq" for serial column "sales.pkid"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sales_pkey" for table "sales"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sales_1_prt_aa_pkey" for table "sales_1_prt_aa"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sales_1_prt_bb_pkey" for table "sales_1_prt_bb"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sales_1_prt_cc_pkey" for table "sales_1_prt_cc"
+-- root partition (and only root) should have relfrozenxid as 0
+select relname from pg_class where relkind = 'r' and relname like 'sales%' and relfrozenxid=0;
+ relname 
+---------
+ sales
+(1 row)
+
+select gp_segment_id, relname from gp_dist_random('pg_class') where relkind = 'r' and relname like 'sales%' and relfrozenxid=0;
+ gp_segment_id | relname 
+---------------+---------
+             1 | sales
+             2 | sales
+             0 | sales
+(3 rows)
+
 alter table sales add column tax float;
+-- root partition (and only root) continues to have relfrozenxid as 0
+select relname from pg_class where relkind = 'r' and relname like 'sales%' and relfrozenxid=0;
+ relname 
+---------
+ sales
+(1 row)
+
+select gp_segment_id, relname from gp_dist_random('pg_class') where relkind = 'r' and relname like 'sales%' and relfrozenxid=0;
+ gp_segment_id | relname 
+---------------+---------
+             1 | sales
+             2 | sales
+             0 | sales
+(3 rows)
+
 alter table sales drop column tax;
 create table newpart(like sales);
 alter table newpart add constraint partable_pkey primary key(pkid, option3);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "newpart_pkey" for table "newpart"
 alter table sales split partition for(1) at (50) into (partition aa1, partition aa2);
 NOTICE:  dropped partition "aa" for relation "sales"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sales_1_prt_aa1_pkey" for table "sales_1_prt_aa1"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sales_1_prt_aa2_pkey" for table "sales_1_prt_aa2"
 select table_schema, table_name, constraint_name, constraint_type
 	from information_schema.table_constraints
 	where table_name in ('sales', 'newpart')

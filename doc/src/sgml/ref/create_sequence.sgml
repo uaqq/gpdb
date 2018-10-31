@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/create_sequence.sgml,v 1.50 2010/04/03 07:22:59 petere Exp $
+doc/src/sgml/ref/create_sequence.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-CREATESEQUENCE">
+ <indexterm zone="sql-createsequence">
+  <primary>CREATE SEQUENCE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>CREATE SEQUENCE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,16 +19,12 @@ PostgreSQL documentation
   <refpurpose>define a new sequence generator</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-createsequence">
-  <primary>CREATE SEQUENCE</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 CREATE [ TEMPORARY | TEMP ] SEQUENCE <replaceable class="parameter">name</replaceable> [ INCREMENT [ BY ] <replaceable class="parameter">increment</replaceable> ]
     [ MINVALUE <replaceable class="parameter">minvalue</replaceable> | NO MINVALUE ] [ MAXVALUE <replaceable class="parameter">maxvalue</replaceable> | NO MAXVALUE ]
     [ START [ WITH ] <replaceable class="parameter">start</replaceable> ] [ CACHE <replaceable class="parameter">cache</replaceable> ] [ [ NO ] CYCLE ]
-    [ OWNED BY { <replaceable class="parameter">table</replaceable>.<replaceable class="parameter">column</replaceable> | NONE } ]
+    [ OWNED BY { <replaceable class="parameter">table_name</replaceable>.<replaceable class="parameter">column_name</replaceable> | NONE } ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -45,7 +45,7 @@ CREATE [ TEMPORARY | TEMP ] SEQUENCE <replaceable class="parameter">name</replac
    Temporary sequences exist in a special schema, so a schema name cannot be
    given when creating a temporary sequence.
    The sequence name must be distinct from the name of any other sequence,
-   table, index, or view in the same schema.
+   table, index, view, or foreign table in the same schema.
   </para>
 
   <para>
@@ -197,7 +197,7 @@ SELECT * FROM <replaceable>name</replaceable>;
    </varlistentry>
 
    <varlistentry>
-    <term><literal>OWNED BY</literal> <replaceable class="parameter">table</replaceable>.<replaceable class="parameter">column</replaceable></term>
+    <term><literal>OWNED BY</literal> <replaceable class="parameter">table_name</replaceable>.<replaceable class="parameter">column_name</replaceable></term>
     <term><literal>OWNED BY NONE</literal></term>
     <listitem>
      <para>
@@ -318,8 +318,7 @@ BEGIN;
 COPY distributors FROM 'input_file';
 SELECT setval('serial', max(id)) FROM distributors;
 END;
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>
@@ -345,11 +344,10 @@ END;
     <listitem>
      <para>
       The <literal>OWNED BY</> clause is a <productname>PostgreSQL</>
-      extension. 
+      extension.
      </para>
     </listitem>
-   </itemizedlist>
-  </para>
+   </itemizedlist></para>
  </refsect1>
 
  <refsect1>

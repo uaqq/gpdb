@@ -12,6 +12,7 @@ from optparse import Option, OptionGroup, OptionParser, OptionValueError, SUPPRE
 import os, sys, getopt, socket, StringIO, signal, copy
 
 from gppylib import gparray, gplog, pgconf, userinput, utils, heapchecksum
+from gppylib.commands.base import Command
 from gppylib.util import gp_utils
 from gppylib.commands import base, gp, pg, unix
 from gppylib.db import catalog, dbconn
@@ -21,7 +22,6 @@ from gppylib.operations.buildMirrorSegments import *
 from gppylib.programs import programIoUtils
 from gppylib.system import configurationInterface as configInterface
 from gppylib.system.environment import GpMasterEnvironment
-from gppylib.testold.testUtils import *
 from gppylib.parseutils import line_reader, parse_gpaddmirrors_line, \
     canonicalize_address
 from gppylib.utils import ParsedConfigFile, ParsedConfigFileRow, \
@@ -380,7 +380,7 @@ class GpAddMirrorsProgram:
             #
             while len(dirs) < maxPrimariesPerHost:
                 print 'Enter mirror segment data directory location %d of %d >' % (len(dirs) + 1, maxPrimariesPerHost)
-                line = sys.stdin.readline().strip()
+                line = raw_input().strip()
                 if len(line) > 0:
                     try:
                         dirs.append(normalizeAndValidateInputPath(line))
@@ -454,7 +454,7 @@ class GpAddMirrorsProgram:
         """
 
         maxAllowedPort = 61000
-        minAllowedPort = 7000
+        minAllowedPort = 6432
 
         minPort = min([seg.getSegmentPort() for seg in gpArray.getDbList()])
         maxPort = max([seg.getSegmentPort() for seg in gpArray.getDbList()])
@@ -504,6 +504,24 @@ class GpAddMirrorsProgram:
         else:
             logger.info("Heap checksum setting consistent across cluster")
 
+    def config_primaries_for_replication(self, gpArray):
+        logger.info("Starting to modify pg_hba.conf on primary segments to allow replication connections")
+        replicationStr = ". {0}/greenplum_path.sh; echo 'host  replication {1} samenet trust' >> {2}/pg_hba.conf; pg_ctl -D {2} reload"
+
+        try:
+            for segmentPair in gpArray.getSegmentList():
+                cmdStr = replicationStr.format(os.environ["GPHOME"], unix.getUserName(), segmentPair.primaryDB.datadir)
+                logger.debug(cmdStr)
+                cmd = Command(name="append to pg_hba.conf", cmdStr=cmdStr, ctxt=base.REMOTE, remoteHost=segmentPair.primaryDB.hostname)
+                cmd.run(validateAfter=True)
+
+        except Exception, e:
+            logger.error("Failed while modifying pg_hba.conf on primary segments to allow replication connections: %s" % str(e))
+            raise
+
+        else:
+            logger.info("Successfully modified pg_hba.conf on primary segments to allow replication connections")
+
 
     def run(self):
         if self.__options.parallelDegree < 1 or self.__options.parallelDegree > 64:
@@ -520,12 +538,14 @@ class GpAddMirrorsProgram:
         # check that heap_checksums is consistent across cluster, fail immediately if not
         self.validate_heap_checksums(gpArray)
 
+        self.checkMirrorOffset(gpArray)
+        
         # check that we actually have mirrors
         if gpArray.hasMirrors:
             raise ExceptionNoStackTraceNeeded( \
                 "GPDB physical mirroring cannot be added.  The cluster is already configured with Mirrors.")
 
-        # figure out what needs to be done
+        # figure out what needs to be done (AND update the gpArray!)
         mirrorBuilder = self.__getMirrorsToBuildBasedOnOptions(gpEnv, gpArray)
         mirrorBuilder.checkForPortAndDirectoryConflicts(gpArray)
 
@@ -539,6 +559,7 @@ class GpAddMirrorsProgram:
                 if not userinput.ask_yesno(None, "\nContinue with add mirrors procedure", 'N'):
                     raise UserAbortedException()
 
+            self.config_primaries_for_replication(gpArray)
             if not mirrorBuilder.buildMirrors("add", gpEnv, gpArray):
                 return 1
 

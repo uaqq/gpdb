@@ -4,12 +4,12 @@
  *	  Functions for the built-in type "char" (not to be confused with
  *	  bpchar, which is the SQL CHAR(n) type).
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/char.c,v 1.50 2010/01/02 16:57:53 momjian Exp $
+ *	  src/backend/utils/adt/char.c
  *
  *-------------------------------------------------------------------------
  */
@@ -59,7 +59,7 @@ charout(PG_FUNCTION_ARGS)
  *		charrecv			- converts external binary format to char
  *
  * The external representation is one byte, with no character set
- * conversion.	This is somewhat dubious, perhaps, but in many
+ * conversion.  This is somewhat dubious, perhaps, but in many
  * cases people use char for a 1-byte binary type.
  */
 Datum

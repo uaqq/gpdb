@@ -259,10 +259,8 @@ BitmapAppendOnlyScanNext(BitmapAppendOnlyScanState *node)
 
 	for (;;)
 	{
-		/* GPDB_84_MERGE_FIXME: can the baos_tbmres state be removed from
-		 * BitmapAppendOnlyScanState, or is it possible for it to be carried
-		 * through multiple calls to BitmapAppendOnlyScanNext()? */
 		TBMIterateResult *tbmres = node->baos_tbmres;
+		bool		need_recheck;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -329,6 +327,9 @@ BitmapAppendOnlyScanNext(BitmapAppendOnlyScanState *node)
 			continue;
 		}
 
+		if (node->baos_lossy || tbmres->recheck)
+			need_recheck = true;
+
 		/*
 		 * Must account for lossy page info...
 		 */
@@ -362,10 +363,9 @@ BitmapAppendOnlyScanNext(BitmapAppendOnlyScanState *node)
 		{
 			appendonly_fetch(aoFetchDesc, &aoTid, slot);
 		}
-		
 		else
 		{
-			if (node->baos_lossy) 
+			if (need_recheck)
 			{
 				Assert(aocsLossyFetchDesc != NULL);
 				aocs_fetch(aocsLossyFetchDesc, &aoTid, slot);
@@ -386,7 +386,7 @@ BitmapAppendOnlyScanNext(BitmapAppendOnlyScanState *node)
 		 * If we are using lossy info, we have to recheck the qual
 		 * conditions at every tuple.
 		 */
-		if (node->baos_lossy)
+		if (need_recheck)
 		{
 			econtext->ecxt_scantuple = slot;
 			ResetExprContext(econtext);
@@ -449,24 +449,12 @@ ExecBitmapAppendOnlyScan(BitmapAppendOnlyScanState *node)
 }
 
 /* ----------------------------------------------------------------
- *		ExecBitmapAppendOnlyReScan(node)
+ *		ExecReScanBitmapAppendOnly(node)
  * ----------------------------------------------------------------
  */
 void
-ExecBitmapAppendOnlyReScan(BitmapAppendOnlyScanState *node, ExprContext *exprCtxt)
+ExecReScanBitmapAppendOnly(BitmapAppendOnlyScanState *node)
 {
-	/*
-	 * If we are being passed an outer tuple, link it into the "regular"
-	 * per-tuple econtext for possible qual eval.
-	 */
-	if (exprCtxt != NULL)
-	{
-		ExprContext *stdecontext;
-
-		stdecontext = node->ss.ps.ps_ExprContext;
-		stdecontext->ecxt_outertuple = exprCtxt->ecxt_outertuple;
-	}
-
 	/*
 	 * NOTE: The appendonly_fetch routine can fetch randomly, so no need to reset it.
 	 */
@@ -477,7 +465,7 @@ ExecBitmapAppendOnlyReScan(BitmapAppendOnlyScanState *node, ExprContext *exprCtx
 	 * Always rescan the input immediately, to ensure we can pass down any
 	 * outer tuple that might be used in index quals.
 	 */
-	ExecReScan(outerPlanState(node), exprCtxt);
+	ExecReScan(outerPlanState(node));
 }
 
 /* ----------------------------------------------------------------
@@ -587,8 +575,6 @@ ExecInitBitmapAppendOnlyScan(BitmapAppendOnlyScan *node, EState *estate, int efl
 		ExecInitExpr((Expr *) node->bitmapqualorig,
 					 (PlanState *) scanstate);
 
-#define BITMAPAPPENDONLYSCAN_NSLOTS 2
-
 	/*
 	 * tuple table initialization
 	 */
@@ -598,7 +584,7 @@ ExecInitBitmapAppendOnlyScan(BitmapAppendOnlyScan *node, EState *estate, int efl
 	/*
 	 * open the base relation and acquire appropriate lock on it.
 	 */
-	currentRelation = ExecOpenScanRelation(estate, node->scan.scanrelid);
+	currentRelation = ExecOpenScanRelation(estate, node->scan.scanrelid, 0 /* eflags */);
 
 	scanstate->ss.ss_currentRelation = currentRelation;
 

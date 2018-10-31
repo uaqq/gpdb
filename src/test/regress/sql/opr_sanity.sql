@@ -4,9 +4,9 @@
 -- pg_operator, pg_proc, pg_cast, pg_aggregate, pg_am,
 -- pg_amop, pg_amproc, pg_opclass, pg_opfamily.
 --
--- None of the SELECTs here should ever find any matching entries,
--- so the expected output is easy to maintain ;-).
--- A test failure indicates someone messed up an entry in the system tables.
+-- Every test failures in this file should be closely inspected. The
+-- description of the failing test should be read carefully before
+-- adjusting the expected output.
 --
 -- NB: we assume the oidjoins test will have caught any dangling links,
 -- that is OID or REGPROC fields that are not zero and do not match some
@@ -149,6 +149,8 @@ WHERE p1.oid != p2.oid AND
     p1.prolang = 12 AND p2.prolang = 12 AND
     NOT p1.proisagg AND NOT p2.proisagg AND
     NOT p1.proiswindow AND NOT p2.proiswindow AND
+    p1.prosrc NOT LIKE E'range\\_constructor_' AND
+    p2.prosrc NOT LIKE E'range\\_constructor_' AND
     (p1.prorettype < p2.prorettype)
 ORDER BY 1, 2; -- order none
 
@@ -160,6 +162,8 @@ WHERE p1.oid != p2.oid AND
     p1.prolang = 12 AND p2.prolang = 12 AND
     NOT p1.proisagg AND NOT p2.proisagg AND
     NOT p1.proiswindow AND NOT p2.proiswindow AND
+    p1.prosrc NOT LIKE E'range\\_constructor_' AND
+    p2.prosrc NOT LIKE E'range\\_constructor_' AND
     (p1.proargtypes[0] < p2.proargtypes[0])
 ORDER BY 1, 2; -- order none
 
@@ -171,6 +175,8 @@ WHERE p1.oid != p2.oid AND
     p1.prolang = 12 AND p2.prolang = 12 AND
     NOT p1.proisagg AND NOT p2.proisagg AND
     NOT p1.proiswindow AND NOT p2.proiswindow AND
+    p1.prosrc NOT LIKE E'range\\_constructor_' AND
+    p2.prosrc NOT LIKE E'range\\_constructor_' AND
     (p1.proargtypes[1] < p2.proargtypes[1])
 ORDER BY 1, 2; -- order none
 
@@ -246,6 +252,7 @@ SELECT proname, pronargs
 FROM pg_proc 
 WHERE pronargs > 8 and prolang = 12 AND
 	proname NOT IN ('gp_add_segment') AND
+	proname NOT LIKE '%costestimate' AND
     NOT proisagg AND 
     NOT proiswindow;
 
@@ -253,7 +260,8 @@ WHERE pronargs > 8 and prolang = 12 AND
 -- Look for functions that return type "internal" and do not have any
 -- "internal" argument.  Such a function would be a security hole since
 -- it might be used to call an internal function from an SQL command.
--- As of 7.3 this query should find only internal_in.
+-- As of 7.3 this query should find only internal_in, which is safe because
+-- it always throws an error when called.
 
 SELECT p1.oid, p1.proname
 FROM pg_proc as p1
@@ -269,12 +277,13 @@ SELECT p1.oid, p1.proname
 FROM pg_proc as p1
 WHERE p1.prorettype IN
     ('anyelement'::regtype, 'anyarray'::regtype, 'anynonarray'::regtype,
-     'anyenum'::regtype)
+     'anyenum'::regtype, 'anyrange'::regtype)
   AND NOT
     ('anyelement'::regtype = ANY (p1.proargtypes) OR
      'anyarray'::regtype = ANY (p1.proargtypes) OR
      'anynonarray'::regtype = ANY (p1.proargtypes) OR
-     'anyenum'::regtype = ANY (p1.proargtypes))
+     'anyenum'::regtype = ANY (p1.proargtypes) OR
+     'anyrange'::regtype = ANY (p1.proargtypes))
 ORDER BY 2;
 
 -- Check for length inconsistencies between the various argument-info arrays.
@@ -308,6 +317,47 @@ SELECT p1.oid, p1.proname
 FROM pg_proc as p1
 WHERE proargmodes IS NOT NULL AND proargnames IS NOT NULL AND
     array_length(proargmodes,1) <> array_length(proargnames,1);
+
+-- Check that proallargtypes matches proargtypes
+SELECT p1.oid, p1.proname, p1.proargtypes, p1.proallargtypes, p1.proargmodes
+FROM pg_proc as p1
+WHERE proallargtypes IS NOT NULL AND
+  ARRAY(SELECT unnest(proargtypes)) <>
+  ARRAY(SELECT proallargtypes[i]
+        FROM generate_series(1, array_length(proallargtypes, 1)) g(i)
+        WHERE proargmodes IS NULL OR proargmodes[i] IN ('i', 'b', 'v'));
+
+-- Check for protransform functions with the wrong signature
+SELECT p1.oid, p1.proname, p2.oid, p2.proname
+FROM pg_proc AS p1, pg_proc AS p2
+WHERE p2.oid = p1.protransform AND
+    (p2.prorettype != 'internal'::regtype OR p2.proretset OR p2.pronargs != 1
+     OR p2.proargtypes[0] != 'internal'::regtype);
+
+-- Insist that all built-in pg_proc entries have descriptions
+SELECT p1.oid, p1.proname
+FROM pg_proc as p1 LEFT JOIN pg_description as d
+     ON p1.tableoid = d.classoid and p1.oid = d.objoid and d.objsubid = 0
+WHERE d.classoid IS NULL AND p1.oid <= 9999;
+
+-- List of built-in leakproof functions
+--
+-- Leakproof functions should only be added after carefully
+-- scrutinizing all possibly executed codepaths for possible
+-- information leaks. Don't add functions here unless you know what a
+-- leakproof function is. If unsure, don't mark it as such.
+
+-- temporarily disable fancy output, so catalog changes create less diff noise
+\a\t
+
+SELECT p1.oid::regprocedure
+FROM pg_proc p1 JOIN pg_namespace pn
+     ON pronamespace = pn.oid
+WHERE nspname = 'pg_catalog' AND proleakproof
+ORDER BY 1;
+
+-- restore normal output mode
+\a\t
 
 
 -- **************** pg_cast ****************
@@ -377,7 +427,10 @@ WHERE c.castfunc = p.oid AND
 -- because those are binary-compatible while the reverse goes through
 -- texttoxml(), which does an XML syntax check.
 
-SELECT *
+-- As of 9.1, this finds the cast from pg_node_tree to text, which we
+-- intentionally do not provide a reverse pathway for.
+
+SELECT castsource::regtype, casttarget::regtype, castfunc, castcontext
 FROM pg_cast c
 WHERE c.castmethod = 'b' AND
     NOT EXISTS (SELECT 1 FROM pg_cast k
@@ -572,6 +625,51 @@ WHERE p1.oprjoin = p2.oid AND
      p2.proargtypes[3] != 'int2'::regtype OR
      p2.proargtypes[4] != 'internal'::regtype);
 
+-- Insist that all built-in pg_operator entries have descriptions
+SELECT p1.oid, p1.oprname
+FROM pg_operator as p1 LEFT JOIN pg_description as d
+     ON p1.tableoid = d.classoid and p1.oid = d.objoid and d.objsubid = 0
+WHERE d.classoid IS NULL AND p1.oid <= 9999;
+
+-- Check that operators' underlying functions have suitable comments,
+-- namely 'implementation of XXX operator'.  (Note: it's not necessary to
+-- put such comments into pg_proc.h; initdb will generate them as needed.)
+-- In some cases involving legacy names for operators, there are multiple
+-- operators referencing the same pg_proc entry, so ignore operators whose
+-- comments say they are deprecated.
+-- We also have a few functions that are both operator support and meant to
+-- be called directly; those should have comments matching their operator.
+WITH funcdescs AS (
+  SELECT p.oid as p_oid, proname, o.oid as o_oid,
+    obj_description(p.oid, 'pg_proc') as prodesc,
+    'implementation of ' || oprname || ' operator' as expecteddesc,
+    obj_description(o.oid, 'pg_operator') as oprdesc
+  FROM pg_proc p JOIN pg_operator o ON oprcode = p.oid
+  WHERE o.oid <= 9999
+)
+SELECT * FROM funcdescs
+  WHERE prodesc IS DISTINCT FROM expecteddesc
+    AND oprdesc NOT LIKE 'deprecated%'
+    AND prodesc IS DISTINCT FROM oprdesc;
+
+-- Show all the operator-implementation functions that have their own
+-- comments.  This should happen only in cases where the function and
+-- operator syntaxes are both documented at the user level.
+-- This should be a pretty short list; it's mostly legacy cases.
+WITH funcdescs AS (
+  SELECT p.oid as p_oid, proname, o.oid as o_oid,
+    obj_description(p.oid, 'pg_proc') as prodesc,
+    'implementation of ' || oprname || ' operator' as expecteddesc,
+    obj_description(o.oid, 'pg_operator') as oprdesc
+  FROM pg_proc p JOIN pg_operator o ON oprcode = p.oid
+  WHERE o.oid <= 9999
+)
+SELECT p_oid, proname, prodesc FROM funcdescs
+  WHERE prodesc IS DISTINCT FROM expecteddesc
+    AND oprdesc NOT LIKE 'deprecated%'
+ORDER BY 1;
+
+
 -- **************** pg_aggregate ****************
 
 -- Look for illegal values in pg_aggregate fields.
@@ -582,7 +680,7 @@ WHERE aggfnoid = 0 OR aggtransfn = 0 OR
     aggkind NOT IN ('n', 'o', 'h') OR
     aggnumdirectargs < 0 OR
     (aggkind = 'n' AND aggnumdirectargs > 0) OR
-    aggtranstype = 0;
+    aggtranstype = 0 OR aggtransspace < 0 OR aggmtransspace < 0;
 
 -- Make sure the matching pg_proc entry is sensible, too.
 
@@ -658,13 +756,180 @@ WHERE a.aggfnoid = p.oid AND
     a.agginitval IS NULL AND
     NOT binary_coercible(p.proargtypes[0], a.aggtranstype);
 
+-- Check for inconsistent specifications of moving-aggregate columns.
+
+SELECT ctid, aggfnoid::oid
+FROM pg_aggregate as p1
+WHERE aggmtranstype != 0 AND
+    (aggmtransfn = 0 OR aggminvtransfn = 0);
+
+SELECT ctid, aggfnoid::oid
+FROM pg_aggregate as p1
+WHERE aggmtranstype = 0 AND
+    (aggmtransfn != 0 OR aggminvtransfn != 0 OR aggmfinalfn != 0 OR
+     aggmtransspace != 0 OR aggminitval IS NOT NULL);
+
+-- If there is no mfinalfn then the output type must be the mtranstype.
+
+SELECT a.aggfnoid::oid, p.proname
+FROM pg_aggregate as a, pg_proc as p
+WHERE a.aggfnoid = p.oid AND
+    a.aggmtransfn != 0 AND
+    a.aggmfinalfn = 0 AND p.prorettype != a.aggmtranstype;
+
+-- Cross-check mtransfn (if present) against its entry in pg_proc.
+SELECT a.aggfnoid::oid, p.proname, ptr.oid, ptr.proname
+FROM pg_aggregate AS a, pg_proc AS p, pg_proc AS ptr
+WHERE a.aggfnoid = p.oid AND
+    a.aggmtransfn = ptr.oid AND
+    (ptr.proretset
+     OR NOT (ptr.pronargs =
+             CASE WHEN a.aggkind = 'n' THEN p.pronargs + 1
+             ELSE greatest(p.pronargs - a.aggnumdirectargs, 1) + 1 END)
+     OR NOT physically_coercible(ptr.prorettype, a.aggmtranstype)
+     OR NOT physically_coercible(a.aggmtranstype, ptr.proargtypes[0])
+     OR (p.pronargs > 0 AND
+         NOT physically_coercible(p.proargtypes[0], ptr.proargtypes[1]))
+     OR (p.pronargs > 1 AND
+         NOT physically_coercible(p.proargtypes[1], ptr.proargtypes[2]))
+     OR (p.pronargs > 2 AND
+         NOT physically_coercible(p.proargtypes[2], ptr.proargtypes[3]))
+     -- we could carry the check further, but 3 args is enough for now
+    );
+
+-- Cross-check minvtransfn (if present) against its entry in pg_proc.
+SELECT a.aggfnoid::oid, p.proname, ptr.oid, ptr.proname
+FROM pg_aggregate AS a, pg_proc AS p, pg_proc AS ptr
+WHERE a.aggfnoid = p.oid AND
+    a.aggminvtransfn = ptr.oid AND
+    (ptr.proretset
+     OR NOT (ptr.pronargs =
+             CASE WHEN a.aggkind = 'n' THEN p.pronargs + 1
+             ELSE greatest(p.pronargs - a.aggnumdirectargs, 1) + 1 END)
+     OR NOT physically_coercible(ptr.prorettype, a.aggmtranstype)
+     OR NOT physically_coercible(a.aggmtranstype, ptr.proargtypes[0])
+     OR (p.pronargs > 0 AND
+         NOT physically_coercible(p.proargtypes[0], ptr.proargtypes[1]))
+     OR (p.pronargs > 1 AND
+         NOT physically_coercible(p.proargtypes[1], ptr.proargtypes[2]))
+     OR (p.pronargs > 2 AND
+         NOT physically_coercible(p.proargtypes[2], ptr.proargtypes[3]))
+     -- we could carry the check further, but 3 args is enough for now
+    );
+
+-- Cross-check mfinalfn (if present) against its entry in pg_proc.
+
+SELECT a.aggfnoid::oid, p.proname, pfn.oid, pfn.proname
+FROM pg_aggregate AS a, pg_proc AS p, pg_proc AS pfn
+WHERE a.aggfnoid = p.oid AND
+    a.aggmfinalfn = pfn.oid AND
+    (pfn.proretset OR
+     NOT binary_coercible(pfn.prorettype, p.prorettype) OR
+     NOT binary_coercible(a.aggmtranstype, pfn.proargtypes[0]) OR
+     CASE WHEN a.aggmfinalextra THEN pfn.pronargs != p.pronargs + 1
+          ELSE pfn.pronargs != a.aggnumdirectargs + 1 END
+     OR (pfn.pronargs > 1 AND
+         NOT binary_coercible(p.proargtypes[0], pfn.proargtypes[1]))
+     OR (pfn.pronargs > 2 AND
+         NOT binary_coercible(p.proargtypes[1], pfn.proargtypes[2]))
+     OR (pfn.pronargs > 3 AND
+         NOT binary_coercible(p.proargtypes[2], pfn.proargtypes[3]))
+     -- we could carry the check further, but 3 args is enough for now
+    );
+
+-- If mtransfn is strict then either minitval should be non-NULL, or
+-- input type should match mtranstype so that the first non-null input
+-- can be assigned as the state value.
+
+SELECT a.aggfnoid::oid, p.proname, ptr.oid, ptr.proname
+FROM pg_aggregate AS a, pg_proc AS p, pg_proc AS ptr
+WHERE a.aggfnoid = p.oid AND
+    a.aggmtransfn = ptr.oid AND ptr.proisstrict AND
+    a.aggminitval IS NULL AND
+    NOT binary_coercible(p.proargtypes[0], a.aggmtranstype);
+
+-- mtransfn and minvtransfn should have same strictness setting.
+
+SELECT a.aggfnoid::oid, p.proname, ptr.oid, ptr.proname, iptr.oid, iptr.proname
+FROM pg_aggregate AS a, pg_proc AS p, pg_proc AS ptr, pg_proc AS iptr
+WHERE a.aggfnoid = p.oid AND
+    a.aggmtransfn = ptr.oid AND
+    a.aggminvtransfn = iptr.oid AND
+    ptr.proisstrict != iptr.proisstrict;
+
+-- Check that all combine functions have signature
+-- combine(transtype, transtype) returns transtype
+-- NOTE: use physically_coercible here, not binary_coercible, because
+-- max and min on abstime are implemented using int4larger/int4smaller.
+
+SELECT a.aggfnoid, p.proname
+FROM pg_aggregate as a, pg_proc as p
+WHERE a.aggcombinefn = p.oid AND
+    (p.pronargs != 2 OR
+     p.prorettype != p.proargtypes[0] OR
+     p.prorettype != p.proargtypes[1] OR
+     NOT physically_coercible(a.aggtranstype, p.proargtypes[0]));
+
+-- Check that no combine function for an INTERNAL transtype is strict.
+
+SELECT a.aggfnoid, p.proname
+FROM pg_aggregate as a, pg_proc as p
+WHERE a.aggcombinefn = p.oid AND
+    a.aggtranstype = 'internal'::regtype AND p.proisstrict;
+
+-- serialize/deserialize functions should be specified only for aggregates
+-- with transtype internal and a combine function, and we should have both
+-- or neither of them.
+
+SELECT aggfnoid, aggtranstype, aggserialfn, aggdeserialfn
+FROM pg_aggregate
+WHERE (aggserialfn != 0 OR aggdeserialfn != 0)
+  AND (aggtranstype != 'internal'::regtype OR aggcombinefn = 0 OR
+       aggserialfn = 0 OR aggdeserialfn = 0);
+
+-- Check that all serialization functions have signature
+-- serialize(internal) returns bytea
+-- Also insist that they be strict; it's wasteful to run them on NULLs.
+
+SELECT a.aggfnoid, p.proname
+FROM pg_aggregate as a, pg_proc as p
+WHERE a.aggserialfn = p.oid AND
+    (p.prorettype != 'bytea'::regtype OR p.pronargs != 1 OR
+     p.proargtypes[0] != 'internal'::regtype OR
+     NOT p.proisstrict);
+
+-- Check that all deserialization functions have signature
+-- deserialize(bytea, internal) returns internal
+-- Also insist that they be strict; it's wasteful to run them on NULLs.
+
+SELECT a.aggfnoid, p.proname
+FROM pg_aggregate as a, pg_proc as p
+WHERE a.aggdeserialfn = p.oid AND
+    (p.prorettype != 'internal'::regtype OR p.pronargs != 2 OR
+     p.proargtypes[0] != 'bytea'::regtype OR
+     p.proargtypes[1] != 'internal'::regtype OR
+     NOT p.proisstrict);
+
+-- Check that aggregates which have the same transition function also have
+-- the same combine, serialization, and deserialization functions.
+-- While that isn't strictly necessary, it's fishy if they don't.
+
+SELECT a.aggfnoid, a.aggcombinefn, a.aggserialfn, a.aggdeserialfn,
+       b.aggfnoid, b.aggcombinefn, b.aggserialfn, b.aggdeserialfn
+FROM
+    pg_aggregate a, pg_aggregate b
+WHERE
+    a.aggfnoid < b.aggfnoid AND a.aggtransfn = b.aggtransfn AND
+    (a.aggcombinefn != b.aggcombinefn OR a.aggserialfn != b.aggserialfn
+     OR a.aggdeserialfn != b.aggdeserialfn);
+
 -- Cross-check aggsortop (if present) against pg_operator.
--- We expect to find only "<" for "min" and ">" for "max".
+-- We expect to find entries for bool_and, bool_or, every, max, and min.
 
 SELECT DISTINCT proname, oprname
 FROM pg_operator AS o, pg_aggregate AS a, pg_proc AS p
 WHERE a.aggfnoid = p.oid AND a.aggsortop = o.oid
-ORDER BY 1;
+ORDER BY 1, 2;
 
 -- Check datatypes match
 
@@ -710,12 +975,6 @@ WHERE p1.oid < p2.oid AND p1.proname = p2.proname AND
     p1.proisagg AND p2.proisagg AND
     array_dims(p1.proargtypes) != array_dims(p2.proargtypes)
 ORDER BY 1;
-
--- For the same reason, we avoid creating built-in variadic aggregates.
-
-SELECT oid, proname
-FROM pg_proc AS p
-WHERE proisagg AND provariadic != 0;
 
 -- For the same reason, built-in aggregates with default arguments are no good.
 
@@ -772,6 +1031,11 @@ FROM pg_amop as p1
 WHERE p1.amopfamily = 0 OR p1.amoplefttype = 0 OR p1.amoprighttype = 0
     OR p1.amopopr = 0 OR p1.amopmethod = 0 OR p1.amopstrategy < 1;
 
+SELECT p1.amopfamily, p1.amopstrategy
+FROM pg_amop as p1
+WHERE NOT ((p1.amoppurpose = 's' AND p1.amopsortfamily = 0) OR
+           (p1.amoppurpose = 'o' AND p1.amopsortfamily <> 0));
+
 -- amoplefttype/amoprighttype must match the operator
 
 SELECT p1.oid, p2.oid
@@ -784,6 +1048,21 @@ WHERE p1.amopopr = p2.oid AND NOT
 SELECT p1.oid, p2.oid
 FROM pg_amop AS p1, pg_opfamily AS p2
 WHERE p1.amopfamily = p2.oid AND p1.amopmethod != p2.opfmethod;
+
+-- amopsortfamily, if present, must reference a btree family
+
+SELECT p1.amopfamily, p1.amopstrategy
+FROM pg_amop AS p1
+WHERE p1.amopsortfamily <> 0 AND NOT EXISTS
+    (SELECT 1 from pg_opfamily op WHERE op.oid = p1.amopsortfamily
+     AND op.opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+
+-- check for ordering operators not supported by parent AM
+
+SELECT p1.amopfamily, p1.amopopr, p2.oid, p2.amname
+FROM pg_amop AS p1, pg_am AS p2
+WHERE p1.amopmethod = p2.oid AND
+    p1.amoppurpose = 'o' AND NOT p2.amcanorderbyop;
 
 -- Cross-check amopstrategy index against parent AM
 
@@ -803,15 +1082,35 @@ WHERE p2.amopmethod = p1.oid AND
     p1.amstrategies != (SELECT count(*) FROM pg_amop AS p3
                         WHERE p3.amopfamily = p2.amopfamily AND
                               p3.amoplefttype = p2.amoplefttype AND
-                              p3.amoprighttype = p2.amoprighttype);
+                              p3.amoprighttype = p2.amoprighttype AND
+                              p3.amoppurpose = 's');
+
+-- Currently, none of the AMs with fixed strategy sets support ordering ops.
+
+SELECT p1.amname, p2.amopfamily, p2.amopstrategy
+FROM pg_am AS p1, pg_amop AS p2
+WHERE p2.amopmethod = p1.oid AND
+    p1.amstrategies <> 0 AND p2.amoppurpose <> 's';
 
 -- Check that amopopr points at a reasonable-looking operator, ie a binary
--- operator yielding boolean.
+-- operator.  If it's a search operator it had better yield boolean,
+-- otherwise an input type of its sort opfamily.
 
 SELECT p1.amopfamily, p1.amopopr, p2.oid, p2.oprname
 FROM pg_amop AS p1, pg_operator AS p2
 WHERE p1.amopopr = p2.oid AND
-    (p2.oprkind != 'b' OR p2.oprresult != 'bool'::regtype);
+    p2.oprkind != 'b';
+
+SELECT p1.amopfamily, p1.amopopr, p2.oid, p2.oprname
+FROM pg_amop AS p1, pg_operator AS p2
+WHERE p1.amopopr = p2.oid AND p1.amoppurpose = 's' AND
+    p2.oprresult != 'bool'::regtype;
+
+SELECT p1.amopfamily, p1.amopopr, p2.oid, p2.oprname
+FROM pg_amop AS p1, pg_operator AS p2
+WHERE p1.amopopr = p2.oid AND p1.amoppurpose = 'o' AND NOT EXISTS
+    (SELECT 1 FROM pg_opclass op
+     WHERE opcfamily = p1.amopsortfamily AND opcintype = p2.oprresult);
 
 -- Make a list of all the distinct operator names being used in particular
 -- strategy slots.  This is a bit hokey, since the list might need to change
@@ -822,13 +1121,13 @@ SELECT DISTINCT amopmethod, amopstrategy, oprname
 FROM pg_amop p1 LEFT JOIN pg_operator p2 ON amopopr = p2.oid
 ORDER BY 1, 2, 3;
 
--- Check that all operators linked to by opclass entries have selectivity
--- estimators.  This is not absolutely required, but it seems a reasonable
--- thing to insist on for all standard datatypes.
+-- Check that all opclass search operators have selectivity estimators.
+-- This is not absolutely required, but it seems a reasonable thing
+-- to insist on for all standard datatypes.
 
 SELECT p1.amopfamily, p1.amopopr, p2.oid, p2.oprname
 FROM pg_amop AS p1, pg_operator AS p2
-WHERE p1.amopopr = p2.oid AND
+WHERE p1.amopopr = p2.oid AND p1.amoppurpose = 's' AND
     (p2.oprrest = 0 OR p2.oprjoin = 0);
 
 -- Check that each opclass in an opfamily has associated operators, that is
@@ -839,6 +1138,19 @@ FROM pg_opclass AS p1
 WHERE NOT EXISTS(SELECT 1 FROM pg_amop AS p2
                  WHERE p2.amopfamily = p1.opcfamily
                    AND binary_coercible(p1.opcintype, p2.amoplefttype));
+
+-- Check that each operator listed in pg_amop has an associated opclass,
+-- that is one whose opcintype matches oprleft (possibly by coercion).
+-- Otherwise the operator is useless because it cannot be matched to an index.
+-- (In principle it could be useful to list such operators in multiple-datatype
+-- btree opfamilies, but in practice you'd expect there to be an opclass for
+-- every datatype the family knows about.)
+
+SELECT p1.amopfamily, p1.amopstrategy, p1.amopopr
+FROM pg_amop AS p1
+WHERE NOT EXISTS(SELECT 1 FROM pg_opclass AS p2
+                 WHERE p2.opcfamily = p1.amopfamily
+                   AND binary_coercible(p2.opcintype, p1.amoplefttype));
 
 -- Operators that are primary members of opclasses must be immutable (else
 -- it suggests that the index ordering isn't fixed).  Operators that are
@@ -935,46 +1247,48 @@ WHERE p1.amprocfamily = p3.oid AND p3.opfmethod = p2.oid AND
 
 -- Detect missing pg_amproc entries: should have as many support functions
 -- as AM expects for each datatype combination supported by the opfamily.
--- GIN is a special case because it has an optional support function.
 
-SELECT p1.amname, p2.opfname, p3.amproclefttype, p3.amprocrighttype
-FROM pg_am AS p1, pg_opfamily AS p2, pg_amproc AS p3
-WHERE p2.opfmethod = p1.oid AND p3.amprocfamily = p2.oid AND
-    p1.amname <> 'gin' AND
-    p1.amsupport != (SELECT count(*) FROM pg_amproc AS p4
-                     WHERE p4.amprocfamily = p2.oid AND
-                           p4.amproclefttype = p3.amproclefttype AND
-                           p4.amprocrighttype = p3.amprocrighttype);
-
--- Similar check for GIN, allowing one optional proc
-
-SELECT p1.amname, p2.opfname, p3.amproclefttype, p3.amprocrighttype
-FROM pg_am AS p1, pg_opfamily AS p2, pg_amproc AS p3
-WHERE p2.opfmethod = p1.oid AND p3.amprocfamily = p2.oid AND
-    p1.amname = 'gin' AND
-    p1.amsupport - 1 >  (SELECT count(*) FROM pg_amproc AS p4
-                         WHERE p4.amprocfamily = p2.oid AND
-                           p4.amproclefttype = p3.amproclefttype AND
-                           p4.amprocrighttype = p3.amprocrighttype);
+SELECT * FROM (
+  SELECT p1.amname, p2.opfname, p3.amproclefttype, p3.amprocrighttype,
+         array_agg(p3.amprocnum ORDER BY amprocnum) AS procnums
+  FROM pg_am AS p1, pg_opfamily AS p2, pg_amproc AS p3
+  WHERE p2.opfmethod = p1.oid AND p3.amprocfamily = p2.oid
+  GROUP BY p1.amname, p2.opfname, p3.amproclefttype, p3.amprocrighttype
+) AS t
+WHERE NOT (
+  -- btree has one mandatory and one optional support function.
+  -- hash has one support function, which is mandatory.
+  -- GiST has eight support functions, one of which is optional.
+  -- GIN has six support functions. 1-3 are mandatory, 5 is optional, and
+  --   at least one of 4 and 6 must be given.
+  -- SP-GiST has five support functions, all mandatory
+  amname = 'btree' AND procnums @> '{1}' OR
+  amname = 'bitmap' AND procnums @> '{1}' OR
+  amname = 'hash' AND procnums = '{1}' OR
+  amname = 'gist' AND procnums @> '{1, 2, 3, 4, 5, 6, 7}' OR
+  amname = 'gin' AND (procnums @> '{1, 2, 3}' AND (procnums && '{4, 6}')) OR
+  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}'
+);
 
 -- Also, check if there are any pg_opclass entries that don't seem to have
--- pg_amproc support.  Again, GIN has to be checked separately.
+-- pg_amproc support.
 
-SELECT amname, opcname, count(*)
-FROM pg_am am JOIN pg_opclass op ON opcmethod = am.oid
-     LEFT JOIN pg_amproc p ON amprocfamily = opcfamily AND
-         amproclefttype = amprocrighttype AND amproclefttype = opcintype
-WHERE am.amname <> 'gin'
-GROUP BY amname, amsupport, opcname, amprocfamily
-HAVING count(*) != amsupport OR amprocfamily IS NULL;
-
-SELECT amname, opcname, count(*)
-FROM pg_am am JOIN pg_opclass op ON opcmethod = am.oid
-     LEFT JOIN pg_amproc p ON amprocfamily = opcfamily AND
-         amproclefttype = amprocrighttype AND amproclefttype = opcintype
-WHERE am.amname = 'gin'
-GROUP BY amname, amsupport, opcname, amprocfamily
-HAVING count(*) < amsupport - 1 OR amprocfamily IS NULL;
+SELECT * FROM (
+  SELECT amname, opcname, array_agg(amprocnum ORDER BY amprocnum) as procnums
+  FROM pg_am am JOIN pg_opclass op ON opcmethod = am.oid
+       LEFT JOIN pg_amproc p ON amprocfamily = opcfamily AND
+           amproclefttype = amprocrighttype AND amproclefttype = opcintype
+  GROUP BY amname, opcname, amprocfamily
+) AS t
+WHERE NOT (
+  -- same per-AM rules as above
+  amname = 'btree' AND procnums @> '{1}' OR
+  amname = 'bitmap' AND procnums @> '{1}' OR
+  amname = 'hash' AND procnums = '{1}' OR
+  amname = 'gist' AND procnums @> '{1, 2, 3, 4, 5, 6, 7}' OR
+  amname = 'gin' AND (procnums @> '{1, 2, 3}' AND (procnums && '{4, 6}')) OR
+  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}'
+);
 
 -- Unfortunately, we can't check the amproc link very well because the
 -- signature of the function may be different for different support routines
@@ -997,20 +1311,23 @@ WHERE p1.amprocfamily = p3.oid AND p4.amprocfamily = p6.oid AND
     (p2.proretset OR p5.proretset OR p2.pronargs != p5.pronargs);
 
 -- For btree, though, we can do better since we know the support routines
--- must be of the form cmp(lefttype, righttype) returns int4.
+-- must be of the form cmp(lefttype, righttype) returns int4
+-- or sortsupport(internal) returns void.
 
 SELECT p1.amprocfamily, p1.amprocnum,
 	p2.oid, p2.proname,
 	p3.opfname
 FROM pg_amproc AS p1, pg_proc AS p2, pg_opfamily AS p3
-WHERE p3.opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree')
+WHERE p3.opfmethod IN (SELECT oid FROM pg_am WHERE amname IN ('btree', 'bitmap'))
     AND p1.amprocfamily = p3.oid AND p1.amproc = p2.oid AND
-    (amprocnum != 1
-     OR proretset
-     OR prorettype != 'int4'::regtype
-     OR pronargs != 2
-     OR proargtypes[0] != amproclefttype
-     OR proargtypes[1] != amprocrighttype);
+    (CASE WHEN amprocnum = 1
+          THEN prorettype != 'int4'::regtype OR proretset OR pronargs != 2
+               OR proargtypes[0] != amproclefttype
+               OR proargtypes[1] != amprocrighttype
+          WHEN amprocnum = 2
+          THEN prorettype != 'void'::regtype OR proretset OR pronargs != 1
+               OR proargtypes[0] != 'internal'::regtype
+          ELSE true END);
 
 -- For hash we can also do a little better: the support routines must be
 -- of the form hash(lefttype) returns int4.  There are several cases where
@@ -1029,6 +1346,25 @@ WHERE p3.opfmethod = (SELECT oid FROM pg_am WHERE amname = 'hash')
      OR NOT physically_coercible(amproclefttype, proargtypes[0])
      OR amproclefttype != amprocrighttype)
 ORDER BY 1;
+
+-- We can also check SP-GiST carefully, since the support routine signatures
+-- are independent of the datatype being indexed.
+
+SELECT p1.amprocfamily, p1.amprocnum,
+	p2.oid, p2.proname,
+	p3.opfname
+FROM pg_amproc AS p1, pg_proc AS p2, pg_opfamily AS p3
+WHERE p3.opfmethod = (SELECT oid FROM pg_am WHERE amname = 'spgist')
+    AND p1.amprocfamily = p3.oid AND p1.amproc = p2.oid AND
+    (CASE WHEN amprocnum = 1 OR amprocnum = 2 OR amprocnum = 3 OR amprocnum = 4
+          THEN prorettype != 'void'::regtype OR proretset OR pronargs != 2
+               OR proargtypes[0] != 'internal'::regtype
+               OR proargtypes[1] != 'internal'::regtype
+          WHEN amprocnum = 5
+          THEN prorettype != 'bool'::regtype OR proretset OR pronargs != 2
+               OR proargtypes[0] != 'internal'::regtype
+               OR proargtypes[1] != 'internal'::regtype
+          ELSE true END);
 
 -- Support routines that are primary members of opfamilies must be immutable
 -- (else it suggests that the index ordering isn't fixed).  But cross-type

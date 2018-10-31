@@ -8,12 +8,12 @@
  * Perhaps someday that code should be moved here, but it'd have to be
  * disentangled from other stuff such as pg_depend updates.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_inherits.c,v 1.8 2010/02/26 02:00:37 momjian Exp $
+ *	  src/backend/catalog/pg_inherits.c
  *
  *-------------------------------------------------------------------------
  */
@@ -21,8 +21,8 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "catalog/indexing.h"
-#include "catalog/pg_class.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_inherits_fn.h"
 #include "parser/parse_type.h"
@@ -82,7 +82,7 @@ find_inheritance_children(Oid parentrelId, LOCKMODE lockmode)
 				ObjectIdGetDatum(parentrelId));
 
 	scan = systable_beginscan(relation, InheritsParentIndexId, true,
-							  SnapshotNow, 1, key);
+							  NULL, 1, key);
 
 	while ((inheritsTuple = systable_getnext(scan)) != NULL)
 	{
@@ -258,11 +258,12 @@ find_all_inheritors(Oid parentrelId, LOCKMODE lockmode, List **numparents)
  * In the current implementation, has_subclass returns whether a
  * particular class *might* have a subclass. It will not return the
  * correct result if a class had a subclass which was later dropped.
- * This is because relhassubclass in pg_class is not updated when a
- * subclass is dropped, primarily because of concurrency concerns.
+ * This is because relhassubclass in pg_class is not updated immediately
+ * when a subclass is dropped, primarily because of concurrency concerns.
  *
  * Currently has_subclass is only used as an efficiency hack to skip
- * unnecessary inheritance searches, so this is OK.
+ * unnecessary inheritance searches, so this is OK.  Note that ANALYZE
+ * on a childless table will clean up the obsolete relhassubclass flag.
  *
  * Although this doesn't actually touch pg_inherits, it seems reasonable
  * to keep it here since it's normally used with the other routines here.
@@ -353,7 +354,7 @@ typeInheritsFrom(Oid subclassTypeId, Oid superclassTypeId)
 					ObjectIdGetDatum(this_relid));
 
 		inhscan = systable_beginscan(inhrel, InheritsRelidSeqnoIndexId, true,
-									 SnapshotNow, 1, &skey);
+									 NULL, 1, &skey);
 
 		while ((inhtup = systable_getnext(inhscan)) != NULL)
 		{

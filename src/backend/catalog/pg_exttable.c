@@ -48,7 +48,6 @@
 void
 InsertExtTableEntry(Oid 	tbloid,
 					bool 	iswritable,
-					bool 	isweb,
 					bool	issreh,
 					char	formattype,
 					char	rejectlimittype,
@@ -159,7 +158,7 @@ InsertExtTableEntry(Oid 	tbloid,
 			myself.objectSubId = 0;
 
 			referenced.classId = ExtprotocolRelationId;
-			referenced.objectId = LookupExtProtocolOid(protocol, true);
+			referenced.objectId = get_extprotocol_oid(protocol, true);
 			referenced.objectSubId = 0;
 
 			/*
@@ -224,7 +223,7 @@ GetExtTableEntryIfExists(Oid relid)
 				ObjectIdGetDatum(relid));
 
 	scan = systable_beginscan(pg_exttable_rel, ExtTableReloidIndexId, true,
-							  SnapshotNow, 1, &skey);
+							  NULL, 1, &skey);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
@@ -449,7 +448,7 @@ RemoveExtTableEntry(Oid relid)
 				ObjectIdGetDatum(relid));
 
 	scan = systable_beginscan(pg_exttable_rel, ExtTableReloidIndexId, true,
-							  SnapshotNow, 1, &skey);
+							  NULL, 1, &skey);
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,

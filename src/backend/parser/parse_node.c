@@ -3,18 +3,19 @@
  * parse_node.c
  *	  various routines that make nodes for querytrees
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_node.c,v 1.108 2010/02/14 18:42:15 rhaas Exp $
+ *	  src/backend/parser/parse_node.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "mb/pg_wchar.h"
 #include "nodes/makefuncs.h"
@@ -25,7 +26,7 @@
 #include "parser/parse_relation.h"
 #include "utils/builtins.h"
 #include "utils/int8.h"
-#include "utils/hsearch.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/varbit.h"
 
@@ -136,8 +137,8 @@ parser_get_namecache(ParseState *pstate)
  * is a dummy (always 0, in fact).
  *
  * The locations stored in raw parsetrees are byte offsets into the source
- * string.	We have to convert them to 1-based character indexes for reporting
- * to clients.	(We do things this way to avoid unnecessary overhead in the
+ * string.  We have to convert them to 1-based character indexes for reporting
+ * to clients.  (We do things this way to avoid unnecessary overhead in the
  * normal non-error case: computing character indexes would be much more
  * expensive than storing token offsets.)
  */
@@ -166,7 +167,7 @@ parser_errposition(ParseState *pstate, int location)
  * Sometimes the parser calls functions that aren't part of the parser
  * subsystem and can't reasonably be passed a ParseState; yet we would
  * like any errors thrown in those functions to be tagged with a parse
- * error location.	Use this function to set up an error context stack
+ * error location.  Use this function to set up an error context stack
  * entry that will accomplish that.  Usage pattern:
  *
  *		declare a local variable "ParseCallbackState pcbstate"
@@ -182,10 +183,10 @@ setup_parser_errposition_callback(ParseCallbackState *pcbstate,
 	/* Setup error traceback support for ereport() */
 	pcbstate->pstate = pstate;
 	pcbstate->location = location;
-	pcbstate->errcontext.callback = pcb_error_callback;
-	pcbstate->errcontext.arg = (void *) pcbstate;
-	pcbstate->errcontext.previous = error_context_stack;
-	error_context_stack = &pcbstate->errcontext;
+	pcbstate->errcallback.callback = pcb_error_callback;
+	pcbstate->errcallback.arg = (void *) pcbstate;
+	pcbstate->errcallback.previous = error_context_stack;
+	error_context_stack = &pcbstate->errcallback;
 }
 
 /*
@@ -195,7 +196,7 @@ void
 cancel_parser_errposition_callback(ParseCallbackState *pcbstate)
 {
 	/* Pop the error context stack */
-	error_context_stack = pcbstate->errcontext.previous;
+	error_context_stack = pcbstate->errcallback.previous;
 }
 
 /*
@@ -227,29 +228,58 @@ make_var(ParseState *pstate, RangeTblEntry *rte, int attrno, int location)
 				sublevels_up;
 	Oid			vartypeid;
 	int32		type_mod;
+	Oid			varcollid;
 
 	vnum = RTERangeTablePosn(pstate, rte, &sublevels_up);
-	get_rte_attribute_type(rte, attrno, &vartypeid, &type_mod);
-	result = makeVar(vnum, attrno, vartypeid, type_mod, sublevels_up);
+	get_rte_attribute_type(rte, attrno, &vartypeid, &type_mod, &varcollid);
+	result = makeVar(vnum, attrno, vartypeid, type_mod, varcollid, sublevels_up);
 	result->location = location;
 	return result;
 }
 
 /*
  * transformArrayType()
- *		Get the element type of an array type in preparation for subscripting
+ *		Identify the types involved in a subscripting operation
+ *
+ * On entry, arrayType/arrayTypmod identify the type of the input value
+ * to be subscripted (which could be a domain type).  These are modified
+ * if necessary to identify the actual array type and typmod, and the
+ * array's element type is returned.  An error is thrown if the input isn't
+ * an array type.
  */
 Oid
-transformArrayType(Oid arrayType)
+transformArrayType(Oid *arrayType, int32 *arrayTypmod)
 {
+	Oid			origArrayType = *arrayType;
 	Oid			elementType;
 	HeapTuple	type_tuple_array;
 	Form_pg_type type_struct_array;
 
+	/*
+	 * If the input is a domain, smash to base type, and extract the actual
+	 * typmod to be applied to the base type.  Subscripting a domain is an
+	 * operation that necessarily works on the base array type, not the domain
+	 * itself.  (Note that we provide no method whereby the creator of a
+	 * domain over an array type could hide its ability to be subscripted.)
+	 */
+	*arrayType = getBaseTypeAndTypmod(*arrayType, arrayTypmod);
+
+	/*
+	 * We treat int2vector and oidvector as though they were domains over
+	 * int2[] and oid[].  This is needed because array slicing could create an
+	 * array that doesn't satisfy the dimensionality constraints of the
+	 * xxxvector type; so we want the result of a slice operation to be
+	 * considered to be of the more general type.
+	 */
+	if (*arrayType == INT2VECTOROID)
+		*arrayType = INT2ARRAYOID;
+	else if (*arrayType == OIDVECTOROID)
+		*arrayType = OIDARRAYOID;
+
 	/* Get the type tuple for the array */
-	type_tuple_array = SearchSysCache1(TYPEOID, ObjectIdGetDatum(arrayType));
+	type_tuple_array = SearchSysCache1(TYPEOID, ObjectIdGetDatum(*arrayType));
 	if (!HeapTupleIsValid(type_tuple_array))
-		elog(ERROR, "cache lookup failed for type %u", arrayType);
+		elog(ERROR, "cache lookup failed for type %u", *arrayType);
 	type_struct_array = (Form_pg_type) GETSTRUCT(type_tuple_array);
 
 	/* needn't check typisdefined since this will fail anyway */
@@ -259,7 +289,7 @@ transformArrayType(Oid arrayType)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("cannot subscript type %s because it is not an array",
-						format_type_be(arrayType))));
+						format_type_be(origArrayType))));
 
 	ReleaseSysCache(type_tuple_array);
 
@@ -277,16 +307,21 @@ transformArrayType(Oid arrayType)
  *
  * In an array assignment, we are given a destination array value plus a
  * source value that is to be assigned to a single element or a slice of
- * that array.	We produce an expression that represents the new array value
+ * that array.  We produce an expression that represents the new array value
  * with the source data inserted into the right part of the array.
+ *
+ * For both cases, if the source array is of a domain-over-array type,
+ * the result is of the base array type or its element type; essentially,
+ * we must fold a domain to its base type before applying subscripting.
+ * (Note that int2vector and oidvector are treated as domains here.)
  *
  * pstate		Parse state
  * arrayBase	Already-transformed expression for the array as a whole
- * arrayType	OID of array's datatype (should match type of arrayBase)
+ * arrayType	OID of array's datatype (should match type of arrayBase,
+ *				or be the base type of arrayBase's domain type)
  * elementType	OID of array's element type (fetch with transformArrayType,
  *				or pass InvalidOid to do it here)
- * elementTypMod typmod to be applied to array elements (if storing) or of
- *				the source array (if fetching)
+ * arrayTypMod	typmod for the array (which is also typmod for the elements)
  * indirection	Untransformed list of subscripts (must not be NIL)
  * assignFrom	NULL for array fetch, else transformed expression for source.
  */
@@ -295,7 +330,7 @@ transformArraySubscripts(ParseState *pstate,
 						 Node *arrayBase,
 						 Oid arrayType,
 						 Oid elementType,
-						 int32 elementTypMod,
+						 int32 arrayTypMod,
 						 List *indirection,
 						 Node *assignFrom)
 {
@@ -305,9 +340,13 @@ transformArraySubscripts(ParseState *pstate,
 	ListCell   *idx;
 	ArrayRef   *aref;
 
-	/* Caller may or may not have bothered to determine elementType */
+	/*
+	 * Caller may or may not have bothered to determine elementType.  Note
+	 * that if the caller did do so, arrayType/arrayTypMod must be as modified
+	 * by transformArrayType, ie, smash domain to base type.
+	 */
 	if (!OidIsValid(elementType))
-		elementType = transformArrayType(arrayType);
+		elementType = transformArrayType(&arrayType, &arrayTypMod);
 
 	/*
 	 * A list containing only single subscripts refers to a single array
@@ -360,6 +399,7 @@ transformArraySubscripts(ParseState *pstate,
 				/* Make a constant 1 */
 				subexpr = (Node *) makeConst(INT4OID,
 											 -1,
+											 InvalidOid,
 											 sizeof(int32),
 											 Int32GetDatum(1),
 											 false,
@@ -395,7 +435,7 @@ transformArraySubscripts(ParseState *pstate,
 
 		newFrom = coerce_to_target_type(pstate,
 										assignFrom, typesource,
-										typeneeded, elementTypMod,
+										typeneeded, arrayTypMod,
 										COERCION_ASSIGNMENT,
 										COERCE_IMPLICIT_CAST,
 										-1);
@@ -417,7 +457,8 @@ transformArraySubscripts(ParseState *pstate,
 	aref = makeNode(ArrayRef);
 	aref->refarraytype = arrayType;
 	aref->refelemtype = elementType;
-	aref->reftypmod = elementTypMod;
+	aref->reftypmod = arrayTypMod;
+	/* refcollid will be set by parse_collate.c */
 	aref->refupperindexpr = upperIndexpr;
 	aref->reflowerindexpr = lowerIndexpr;
 	aref->refexpr = (Expr *) arrayBase;
@@ -538,6 +579,7 @@ make_const(ParseState *pstate, Value *value, int location)
 			/* return a null const */
 			con = makeConst(UNKNOWNOID,
 							-1,
+							InvalidOid,
 							-2,
 							(Datum) 0,
 							true,
@@ -552,6 +594,7 @@ make_const(ParseState *pstate, Value *value, int location)
 
 	con = makeConst(typeid,
 					-1,			/* typmod -1 is OK for all cases */
+					InvalidOid, /* all cases are uncollatable types */
 					typelen,
 					val,
 					false,

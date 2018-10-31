@@ -20,11 +20,13 @@
 #include "postgres.h"
 #include "miscadmin.h"
 
+#include "catalog/pg_trigger.h"
 #include "cdb/cdbpartition.h"
 #include "commands/tablecmds.h"
 #include "executor/nodeRowTrigger.h"
 #include "executor/instrument.h"
 #include "commands/trigger.h"
+#include "parser/parsetree.h"
 
 /* Optimizer mapping for Row Triggers */
 #define GPMD_TRIGGER_ROW 1
@@ -33,8 +35,6 @@
 #define GPMD_TRIGGER_DELETE 8
 #define GPMD_TRIGGER_UPDATE 16
 
-/* Number of slots used by node.*/
-#define ROWTRIGGER_NSLOTS 4
 /* Memory used by RowTrigger */
 #define ROWTRIGGER_MEM 1
 
@@ -47,18 +47,18 @@ ExecTriggers(EState *estate, ResultRelInfo *relinfo,
 /* Executes Before and After Update triggers. */
 static HeapTuple
 ExecUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
-				TriggerDesc *trigdesc, int ntrigs, int *tgindx, HeapTuple newtuple,
+				TriggerDesc *trigdesc, bool before, HeapTuple newtuple,
 				HeapTuple trigtuple /*old*/, TriggerEvent eventFlags);
 
 /* Executes Before and After Insert triggers. */
 static HeapTuple
 ExecInsertTriggers(EState *estate, ResultRelInfo *relinfo,
-				TriggerDesc *trigdesc, int ntrigs, int *tgindx,  HeapTuple	trigtuple, TriggerEvent eventFlags);
+				TriggerDesc *trigdesc, bool before,  HeapTuple	trigtuple, TriggerEvent eventFlags);
 
 /* Executes Before and After Delete triggers. */
 static bool
 ExecDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
-				TriggerDesc *trigdesc, int ntrigs, int *tgindx,  HeapTuple	trigtuple, TriggerEvent eventFlags);
+				TriggerDesc *trigdesc, bool before,  HeapTuple	trigtuple, TriggerEvent eventFlags);
 
 /* Stores the matching attribute values in a TupleTableSlot.
  * This is used to generate a TupleTableSlot for the new and old values. */
@@ -105,23 +105,32 @@ InitTriggerData(TriggerData *triggerData, TriggerEvent eventFlags, Relation rela
  * */
 HeapTuple
 ExecUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
-				TriggerDesc *trigdesc, int ntrigs, int *tgindx, HeapTuple newtuple,
+				TriggerDesc *trigdesc, bool before, HeapTuple newtuple,
 				HeapTuple trigtuple /*old*/, TriggerEvent eventFlags)
 {
 	TriggerData triggerData;
+	Bitmapset	*modifiedCols;
 
 	HeapTuple	oldtuple;
 	HeapTuple	intuple = newtuple;
 
 	InitTriggerData(&triggerData, eventFlags, relinfo->ri_RelationDesc);
 
+	modifiedCols = GetModifiedColumns(relinfo, estate);
 	/* Executes all update triggers one by one. The resulting tuple from a
 	* trigger is given to the following one */
-	for (int i = 0; i < ntrigs; i++)
+	for (int i = 0; i < trigdesc->numtriggers; i++)
 	{
-		Trigger    *trigger = &trigdesc->triggers[tgindx[i]];
+		Trigger    *trigger = &trigdesc->triggers[i];
 
-		if (!trigger->tgenabled)
+		if (!TRIGGER_TYPE_MATCHES(trigger->tgtype,
+								  TRIGGER_TYPE_ROW,
+								  before ? TRIGGER_TYPE_BEFORE : TRIGGER_TYPE_AFTER,
+								  TRIGGER_TYPE_UPDATE))
+			continue;
+
+		if (!TriggerEnabled(estate, relinfo, trigger, eventFlags,
+					modifiedCols, trigtuple, newtuple))
 		{
 			continue;
 		}
@@ -133,7 +142,7 @@ ExecUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 		triggerData.tg_trigger = trigger;
 
 		newtuple = ExecCallTriggerFunc(&triggerData,
-									   tgindx[i],
+									   i,
 									   relinfo->ri_TrigFunctions,
 									   relinfo->ri_TrigInstrument,
 									   GetPerTupleMemoryContext(estate));
@@ -159,8 +168,8 @@ ExecUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
  * */
 HeapTuple
 ExecInsertTriggers(EState *estate, ResultRelInfo *relinfo,
-				TriggerDesc *trigdesc, int ntrigs, int *tgindx,
-				HeapTuple	trigtuple, TriggerEvent eventFlags)
+				   TriggerDesc *trigdesc, bool before,
+				   HeapTuple	trigtuple, TriggerEvent eventFlags)
 {
 	HeapTuple	newtuple = trigtuple;
 	HeapTuple	oldtuple;
@@ -173,11 +182,18 @@ ExecInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	/* Executes all insert triggers one by one. The resulting tuple from a
 	 * trigger is given to the following one */
-	for (int i = 0; i < ntrigs; i++)
+	for (int i = 0; i < trigdesc->numtriggers; i++)
 	{
-		Trigger    *trigger = &trigdesc->triggers[tgindx[i]];
+		Trigger    *trigger = &trigdesc->triggers[i];
 
-		if (!trigger->tgenabled)
+		if (!TRIGGER_TYPE_MATCHES(trigger->tgtype,
+								  TRIGGER_TYPE_ROW,
+								  before ? TRIGGER_TYPE_BEFORE : TRIGGER_TYPE_AFTER,
+								  TRIGGER_TYPE_INSERT))
+			continue;
+
+		if (!TriggerEnabled(estate, relinfo, trigger, eventFlags,
+					NULL, NULL, newtuple))
 		{
 			continue;
 		}
@@ -187,7 +203,7 @@ ExecInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 		triggerData.tg_trigger = trigger;
 
 		newtuple = ExecCallTriggerFunc(&triggerData,
-									   tgindx[i],
+									   i,
 									   relinfo->ri_TrigFunctions,
 									   relinfo->ri_TrigInstrument,
 									   GetPerTupleMemoryContext(estate));
@@ -215,8 +231,8 @@ ExecInsertTriggers(EState *estate, ResultRelInfo *relinfo,
  */
 bool
 ExecDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
-				TriggerDesc *trigdesc, int ntrigs, int *tgindx,
-				HeapTuple	trigtuple, TriggerEvent eventFlags)
+				   TriggerDesc *trigdesc, bool before,
+				   HeapTuple	trigtuple, TriggerEvent eventFlags)
 {
 	TriggerData triggerData;
 	HeapTuple	newtuple;
@@ -232,11 +248,18 @@ ExecDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	/* Executes all triggers one by one. If a predicate fails the execution
 	 * of the rest of the triggers is suspended. */
-	for (int i = 0; i < ntrigs; i++)
+	for (int i = 0; i < trigdesc->numtriggers; i++)
 	{
-		Trigger    *trigger = &trigdesc->triggers[tgindx[i]];
+		Trigger    *trigger = &trigdesc->triggers[i];
 
-		if (!trigger->tgenabled)
+		if (!TRIGGER_TYPE_MATCHES(trigger->tgtype,
+								  TRIGGER_TYPE_ROW,
+								  before ? TRIGGER_TYPE_BEFORE : TRIGGER_TYPE_AFTER,
+								  TRIGGER_TYPE_DELETE))
+			continue;
+
+		if (!TriggerEnabled(estate, relinfo, trigger, eventFlags,
+					NULL, trigtuple, NULL))
 		{
 			continue;
 		}
@@ -246,7 +269,7 @@ ExecDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 		triggerData.tg_trigger = trigger;
 
 		newtuple = ExecCallTriggerFunc(&triggerData,
-									   tgindx[i],
+									   i,
 									   relinfo->ri_TrigFunctions,
 									   relinfo->ri_TrigInstrument,
 									   GetPerTupleMemoryContext(estate));
@@ -285,33 +308,17 @@ ExecTriggers(EState *estate, ResultRelInfo *relinfo,
 	int delete = (eventFlags & GPMD_TRIGGER_DELETE) ? TRIGGER_EVENT_DELETE:0;
 	int update = (eventFlags & GPMD_TRIGGER_UPDATE) ? TRIGGER_EVENT_UPDATE:0;
 	int before = (eventFlags & GPMD_TRIGGER_BEFORE) ? TRIGGER_EVENT_BEFORE:0;
-
-
-	int			ntrigs = 0;
-	int		   *tgindx = NULL;
-
 	TriggerEvent triggerType = insert | delete | update;
 	TriggerEvent triggerFlags = triggerType | TRIGGER_EVENT_ROW | before;
 
-	if (before)
-	{
-		ntrigs = trigdesc->n_before_row[triggerType];
-		tgindx = trigdesc->tg_before_row[triggerType];
-	}
-	else
-	{
-		ntrigs = trigdesc->n_after_row[triggerType];
-		tgindx = trigdesc->tg_after_row[triggerType];
-	}
-
 	if (delete)
 	{
-		*processTuple = ExecDeleteTriggers(estate, relinfo, trigdesc, ntrigs, tgindx,
-										originalTuple, triggerFlags);
+		*processTuple = ExecDeleteTriggers(estate, relinfo, trigdesc, before,
+										   originalTuple, triggerFlags);
 	}
 	else if (update)
 	{
-		originalTuple = ExecUpdateTriggers(estate, relinfo, trigdesc, ntrigs, tgindx,
+		originalTuple = ExecUpdateTriggers(estate, relinfo, trigdesc, before,
 										originalTuple, finalTuple, triggerFlags);
 
 		if (NULL == originalTuple)
@@ -321,7 +328,7 @@ ExecTriggers(EState *estate, ResultRelInfo *relinfo,
 	}
 	else if (!insert)
 	{
-		originalTuple = ExecInsertTriggers(estate, relinfo, trigdesc, ntrigs, tgindx,
+		originalTuple = ExecInsertTriggers(estate, relinfo, trigdesc, before,
 										originalTuple, triggerFlags);
 	}
 	else
@@ -578,8 +585,6 @@ ExecInitRowTrigger(RowTrigger *node, EState *estate, int eflags)
 	        rowTriggerState->ps.cdbexplainfun = ExecRowTriggerExplainEnd;
 	}
 
-	initGpmonPktForRowTrigger((Plan *)node, &rowTriggerState->ps.gpmon_pkt, estate);
-
 	return rowTriggerState;
 }
 
@@ -590,13 +595,4 @@ ExecEndRowTrigger(RowTriggerState *node)
 	ExecFreeExprContext(&node->ps);
 	ExecEndNode(outerPlanState(node));
 	EndPlanStateGpmonPkt(&node->ps);
-}
-
-/* Tracing execution for GP Monitor. */
-void
-initGpmonPktForRowTrigger(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate)
-{
-	Assert(planNode != NULL && gpmon_pkt != NULL && IsA(planNode, RowTrigger));
-
-	InitPlanNodeGpmonPkt(planNode, gpmon_pkt, estate);
 }

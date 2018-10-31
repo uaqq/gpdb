@@ -9,23 +9,21 @@
  * See utils/resowner/README for more info.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/resowner.h,v 1.19 2010/01/02 16:58:10 momjian Exp $
+ * src/include/utils/resowner.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef RESOWNER_H
 #define RESOWNER_H
 
-#include "storage/buf.h"
 #include "storage/fd.h"
 #include "storage/lock.h"
 #include "utils/catcache.h"
 #include "utils/plancache.h"
 #include "utils/snapshot.h"
-
 
 /*
  * ResourceOwner objects are an opaque data structure known only within
@@ -43,7 +41,7 @@ extern PGDLLIMPORT ResourceOwner TopTransactionResourceOwner;
 
 /*
  * Resource releasing is done in three phases: pre-locks, locks, and
- * post-locks.	The pre-lock phase must release any resources that are
+ * post-locks.  The pre-lock phase must release any resources that are
  * visible to other backends (such as pinned buffers); this ensures that
  * when we release a lock that another backend may be waiting on, it will
  * see us as being fully out of our transaction.  The post-lock phase
@@ -65,6 +63,7 @@ typedef void (*ResourceReleaseCallback) (ResourceReleasePhase phase,
 													 bool isTopLevel,
 													 void *arg);
 
+typedef void (*ResourceWalkerCallback) (const struct ResourceOwnerData * owner);
 
 /*
  * Functions in resowner.c
@@ -141,5 +140,8 @@ extern void ResourceOwnerRememberFile(ResourceOwner owner,
 						  File file);
 extern void ResourceOwnerForgetFile(ResourceOwner owner,
 						File file);
+
+extern void CdbResourceOwnerWalker(ResourceOwner owner,
+							ResourceWalkerCallback callback);
 
 #endif   /* RESOWNER_H */

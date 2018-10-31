@@ -101,7 +101,6 @@ create table toolkit_skew (a int);
 insert into toolkit_skew select i from generate_series(1,50000) i;
 select sifnamespace, sifrelname from gp_toolkit.gp_skew_idle_fractions where sifoid = 'toolkit_skew'::regclass;
 
------------------------------------
 -- Test gp_bloat_expected_pages and gp_bloat_diag views
 -- (re-using the toolkit_skew table)
 analyze toolkit_skew;
@@ -139,12 +138,19 @@ select btdrelpages > 0 as btdrelpages_over_0,
 from gp_toolkit.gp_bloat_expected_pages where btdrelid = 'toolkit_skew'::regclass;
 select * from gp_toolkit.gp_bloat_diag where bdirelid = 'toolkit_skew'::regclass;
 
+-- Make sure gp_toolkit.gp_bloat_expected_pages does not report partition roots
+create table do_not_report_partition_root (i int, j int) distributed by (i)
+partition by range(j)
+(start(1) end(2) every(1));
+insert into do_not_report_partition_root values (1,1);
+analyze do_not_report_partition_root;
+select count(*) from gp_toolkit.gp_bloat_expected_pages where btdrelid = 'do_not_report_partition_root'::regclass::oid;
 
 -- Check that gp_bloat_diag can deal with big numbers. (This used to provoke an
 -- integer overflow error, before the view was fixed to use numerics for all the
 -- calculations.)
 create table wide_width_test as select * from pg_attribute;
-set allow_system_table_mods=dml ;
+set allow_system_table_mods=true ;
 update pg_statistic set stawidth=2034567890 where starelid = (select oid from pg_class where relname='test');
 
 select * from gp_toolkit.gp_bloat_diag WHERE bdinspname <> 'pg_catalog';
@@ -219,7 +225,6 @@ select lorlocktype,lorrelname,lormode,lorgranted from gp_toolkit.gp_locks_on_rel
 -- gp_roles_assigned
 select rarolename,ramemberid,ramembername from gp_toolkit.gp_roles_assigned where rarolename like 'toolkit%';
 
------------------------------------
 -- Test size views.
 --
 -- We can't include the exact sizes in the output, as they differ slightly depending
@@ -315,7 +320,6 @@ where pg.oid=gsopai.sopaidpartitionoid and pg.relname like 'gptoolkit_user_table
 select count(*) > 0 from gp_toolkit.__gp_number_of_segments;
 
 
------------------------------------
 -- Test Resource Queue views
 
 

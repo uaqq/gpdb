@@ -18,17 +18,17 @@ function expand_glob_ensure_exists() {
 function prep_env_for_centos() {
   case "${TARGET_OS_VERSION}" in
     5)
-      BLDARCH=rhel5_x86_64
+      BLD_ARCH=rhel5_x86_64
       export JAVA_HOME=/usr/lib/jvm/java-1.6.0-openjdk-1.6.0.39.x86_64
       ;;
 
     6)
-      BLDARCH=rhel6_x86_64
+      BLD_ARCH=rhel6_x86_64
       export JAVA_HOME=/usr/lib/jvm/java-1.7.0-openjdk.x86_64
       ;;
 
     7)
-      BLDARCH=rhel7_x86_64
+      BLD_ARCH=rhel7_x86_64
       echo "Detecting java7 path ..."
       java7_packages=$(rpm -qa | grep -F java-1.7)
       java7_bin="$(rpm -ql ${java7_packages} | grep /jre/bin/java$)"
@@ -44,7 +44,7 @@ function prep_env_for_centos() {
   esac
 
   source /opt/gcc_env.sh
-  ln -sf $(pwd)/${GPDB_SRC_PATH}/gpAux/ext/${BLDARCH}/python-2.7.12 /opt/python-2.7.12
+  ln -sf $(pwd)/${GPDB_SRC_PATH}/gpAux/ext/${BLD_ARCH}/python-2.7.12 /opt/python-2.7.12
   export PATH=${JAVA_HOME}/bin:${PATH}
 }
 
@@ -64,14 +64,6 @@ function generate_build_number() {
   popd
 }
 
-function make_sync_tools() {
-  pushd ${GPDB_SRC_PATH}/gpAux
-    # Requires these variables in the env:
-    # IVYREPO_HOST IVYREPO_REALM IVYREPO_USER IVYREPO_PASSWD
-    make sync_tools
-  popd
-}
-
 function link_tools_for_sles() {
   ln -sf "$(expand_glob_ensure_exists $(pwd)/${GPDB_SRC_PATH}/gpAux/ext/*/python-2.7.12 )" /opt
 }
@@ -87,6 +79,15 @@ function build_gpdb() {
     else
       make GPROOT=/usr/local PARALLEL_MAKE_OPTS=-j4 -s dist
     fi
+  popd
+}
+
+function build_quicklz() {
+  pushd gpaddon_src/quicklz
+    # Need to have pg_config available to compile and install quicklz.
+    source ${GREENPLUM_INSTALL_DIR}/greenplum_path.sh
+    export PATH=${GREENPLUM_INSTALL_DIR}/bin:$PATH
+    make install
   popd
 }
 
@@ -152,7 +153,10 @@ function _main() {
   esac
 
   generate_build_number
-  make_sync_tools
+  
+  # Copy input ext dir; assuming ext doesnt exist
+  mv gpAux_ext/ext ${GPDB_SRC_PATH}/gpAux
+
   case "${TARGET_OS}" in
     sles) link_tools_for_sles ;;
   esac
@@ -176,7 +180,12 @@ function _main() {
   # addon directory assumes that it is located in a particular location under
   # the source tree and hence needs to be copied over.
   rsync -au gpaddon_src/ ${GPDB_SRC_PATH}/gpAux/${ADDON_DIR}
+
   build_gpdb "${BLD_TARGET_OPTION[@]}"
+  if [ "${TARGET_OS}" != "win32" ] ; then
+      # Do not build quicklz support for windows
+      build_quicklz
+  fi
   build_gppkg
   if [ "${TARGET_OS}" != "win32" ] ; then
       # Don't unit test when cross compiling. Tests don't build because they

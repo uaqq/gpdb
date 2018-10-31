@@ -10,7 +10,6 @@ create table customer
   cloc text,
   primary key (cn)
 ) distributed by (cn);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "customer_pkey" for table "customer"
 insert into customer values
   ( 1, 'Macbeth', 'Inverness'),
   ( 2, 'Duncan', 'Forres'),
@@ -23,7 +22,6 @@ create table vendor
   vloc text,
   primary key (vn)
 ) distributed by (vn);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "vendor_pkey" for table "vendor"
 insert into vendor values
   ( 10, 'Witches, Inc', 'Lonely Heath'),
   ( 20, 'Lady Macbeth', 'Inverness'),
@@ -40,7 +38,6 @@ create table sale
   prc float not null,
   primary key (cn, vn, pn)
 ) distributed by (cn,vn,pn);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "sale_pkey" for table "sale"
 insert into sale values
   ( 2, 40, 100, '1401-1-1', 1100, 2400),
   ( 1, 10, 200, '1401-3-1', 1, 0),
@@ -55,7 +52,8 @@ insert into sale values
   ( 4, 40, 700, '1401-6-1', 1, 1),
   ( 4, 40, 800, '1401-6-1', 1, 1);
 --
--- Test case errors out when we define aggregates without preliminary functions and use it as an aggregate derived window function.
+-- Test case errors out when we define aggregates without combine functions
+-- and use it as an aggregate derived window function.
 --
 -- SETUP
 -- start_ignore
@@ -69,7 +67,7 @@ NOTICE:  aggregate mysum2(int4) does not exist, skipping
 create table toy(id,val) as select i,i from generate_series(1,5) i;
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column(s) named 'id' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
-create aggregate mysum1(int4) (sfunc = int4_sum, prefunc=int8pl, stype=bigint);
+create aggregate mysum1(int4) (sfunc = int4_sum, combinefunc=int8pl, stype=bigint);
 create aggregate mysum2(int4) (sfunc = int4_sum, stype=bigint);
 -- TEST
 select id, val, sum(val) over (w), mysum1(val) over (w), mysum2(val) over (w) from toy window w as (order by id rows 2 preceding);
@@ -212,7 +210,6 @@ CREATE TABLE r
 ) DISTRIBUTED BY (a,b);
 ALTER TABLE r ADD CONSTRAINT PKEY PRIMARY KEY (b);
 NOTICE:  updating distribution policy to match new primary key
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "r_pkey" for table "r"
 --TEST
 SELECT MAX(a) AS m FROM r GROUP BY b ORDER BY m;
  m 
@@ -318,7 +315,6 @@ CREATE TABLE dm_calendar (
     month_number numeric(10,0)
 ) DISTRIBUTED BY (calendar_id);
 ALTER TABLE ONLY dm_calendar ADD CONSTRAINT dm_calendar_pkey PRIMARY KEY (calendar_id);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "dm_calendar_pkey" for table "dm_calendar"
 --TEST
 SELECT "year_id" as id , min("year_name") as a  from (select "year_id" as "year_id" , min("year_name") as "year_name" from  "dm_calendar" group by "year_id") "dm_calendar3" group by "year_id" order by a ASC ;
  id | a 
@@ -346,7 +342,6 @@ create table t
     e date
 ) distributed by (b);
 alter table t ADD CONSTRAINT pkey primary key (b);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "t_pkey" for table "t"
 -- TEST
 SELECT MAX(a) AS m FROM t GROUP BY b ORDER BY m;
  m 

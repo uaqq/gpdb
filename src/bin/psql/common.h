@@ -1,9 +1,9 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/common.h,v 1.59 2010/01/02 16:57:59 momjian Exp $
+ * src/bin/psql/common.h
  */
 #ifndef COMMON_H
 #define COMMON_H
@@ -12,31 +12,14 @@
 #include <setjmp.h>
 #include "libpq-fe.h"
 
-#ifdef USE_ASSERT_CHECKING
-#include <assert.h>
-#define psql_assert(p) assert(p)
-#else
-#define psql_assert(p)
-#endif
-
 #define atooid(x)  ((Oid) strtoul((x), NULL, 10))
-
-/*
- * Safer versions of some standard C library functions. If an
- * out-of-memory condition occurs, these functions will bail out
- * safely; therefore, their return value is guaranteed to be non-NULL.
- */
-extern char *pg_strdup(const char *string);
-extern void *pg_malloc(size_t size);
-extern void *pg_malloc_zero(size_t size);
-extern void *pg_calloc(size_t nmemb, size_t size);
 
 extern bool setQFout(const char *fname);
 
 extern void
 psql_error(const char *fmt,...)
 /* This lets gcc check the format string for consistency. */
-__attribute__((format(printf, 1, 2)));
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
 
 extern void NoticeProcessor(void *arg, const char *message);
 
@@ -61,6 +44,6 @@ extern bool is_superuser(void);
 extern bool standard_strings(void);
 extern const char *session_username(void);
 
-extern char *expand_tilde(char **filename);
+extern void expand_tilde(char **filename);
 
 #endif   /* COMMON_H */

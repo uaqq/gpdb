@@ -3,10 +3,13 @@
  *
  * This file contains various configuration symbols and limits.  In
  * all cases, changing them is only useful in very rare situations or
- * for developers.	If you edit any of these, be sure to do a *full*
+ * for developers.  If you edit any of these, be sure to do a *full*
  * rebuild (and an initdb if noted).
  *
- * $PostgreSQL: pgsql/src/include/pg_config_manual.h,v 1.40 2010/01/07 04:53:35 tgl Exp $
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ * src/include/pg_config_manual.h
  *------------------------------------------------------------------------
  */
 
@@ -22,7 +25,7 @@
 /*
  * Maximum number of arguments to a function.
  *
- * The minimum value is 8 (index cost estimation uses 8-argument functions).
+ * The minimum value is 8 (GIN indexes use 8-argument support functions).
  * The maximum possible value is around 600 (limited by index tuple size in
  * pg_proc's index; BLCKSZ larger than 8K would allow more).  Values larger
  * than needed will waste memory and processing time, but do not directly
@@ -54,6 +57,14 @@
 #define NUM_USER_DEFINED_LWLOCKS	4
 
 /*
+ * When we don't have native spinlocks, we use semaphores to simulate them.
+ * Decreasing this value reduces consumption of OS resources; increasing it
+ * may improve performance, but supplying a real spinlock implementation is
+ * probably far better.
+ */
+#define NUM_SPINLOCK_SEMAPHORES		1024
+
+/*
  * When we have neither spinlocks nor atomic operations support we're
  * implementing atomic operations on top of spinlock on top of semaphores. To
  * be safe against atomic operations while holding a spinlock separate
@@ -63,8 +74,8 @@
 
 /*
  * Define this if you want to allow the lo_import and lo_export SQL
- * functions to be executed by ordinary users.	By default these
- * functions are only available to the Postgres superuser.	CAUTION:
+ * functions to be executed by ordinary users.  By default these
+ * functions are only available to the Postgres superuser.  CAUTION:
  * These functions are SECURITY HOLES since they can read and write
  * any file that the PostgreSQL server has permission to access.  If
  * you turn this on, don't say we didn't warn you.
@@ -143,7 +154,7 @@
 
 /*
  * This is the default directory in which AF_UNIX socket files are
- * placed.	Caution: changing this risks breaking your existing client
+ * placed.  Caution: changing this risks breaking your existing client
  * applications, which are likely to continue to look in the old
  * directory.  But if you just hate the idea of sockets in /tmp,
  * here's where to twiddle it.  You can also override this at runtime
@@ -156,12 +167,48 @@
  * MAX_RANDOM_VALUE.  Currently, all known implementations yield
  * 0..2^31-1, so we just hardwire this constant.  We could do a
  * configure test if it proves to be necessary.  CAUTION: Think not to
- * replace this with RAND_MAX.	RAND_MAX defines the maximum value of
+ * replace this with RAND_MAX.  RAND_MAX defines the maximum value of
  * the older rand() function, which is often different from --- and
  * considerably inferior to --- random().
  */
 #define MAX_RANDOM_VALUE  (0x7FFFFFFF)
 
+/*
+ * On PPC machines, decide whether to use the mutex hint bit in LWARX
+ * instructions.  Setting the hint bit will slightly improve spinlock
+ * performance on POWER6 and later machines, but does nothing before that,
+ * and will result in illegal-instruction failures on some pre-POWER4
+ * machines.  By default we use the hint bit when building for 64-bit PPC,
+ * which should be safe in nearly all cases.  You might want to override
+ * this if you are building 32-bit code for a known-recent PPC machine.
+ */
+#ifdef HAVE_PPC_LWARX_MUTEX_HINT	/* must have assembler support in any case */
+#if defined(__ppc64__) || defined(__powerpc64__)
+#define USE_PPC_LWARX_MUTEX_HINT
+#endif
+#endif
+
+/*
+ * On PPC machines, decide whether to use LWSYNC instructions in place of
+ * ISYNC and SYNC.  This provides slightly better performance, but will
+ * result in illegal-instruction failures on some pre-POWER4 machines.
+ * By default we use LWSYNC when building for 64-bit PPC, which should be
+ * safe in nearly all cases.
+ */
+#if defined(__ppc64__) || defined(__powerpc64__)
+#define USE_PPC_LWSYNC
+#endif
+
+/*
+ * Assumed cache line size. This doesn't affect correctness, but can be
+ * used for low-level optimizations. Currently, this is only used to pad
+ * some data structures in xlog.c, to ensure that highly-contended fields
+ * are on different cache lines. Too small a value can hurt performance due
+ * to false sharing, while the only downside of too large a value is a few
+ * bytes of wasted memory. The default is 128, which should be large enough
+ * for all supported platforms.
+ */
+#define CACHE_LINE_SIZE		128
 
 /*
  *------------------------------------------------------------------------
@@ -171,27 +218,43 @@
  */
 
 /*
+ * Include Valgrind "client requests", mostly in the memory allocator, so
+ * Valgrind understands PostgreSQL memory contexts.  This permits detecting
+ * memory errors that Valgrind would not detect on a vanilla build.  See also
+ * src/tools/valgrind.supp.  "make installcheck" runs 20-30x longer under
+ * Valgrind.  Note that USE_VALGRIND slowed older versions of Valgrind by an
+ * additional order of magnitude; Valgrind 3.8.1 does not have this problem.
+ * The client requests fall in hot code paths, so USE_VALGRIND also slows
+ * native execution by a few percentage points.
+ *
+ * You should normally use MEMORY_CONTEXT_CHECKING with USE_VALGRIND;
+ * instrumentation of repalloc() is inferior without it.
+ */
+/* #define USE_VALGRIND */
+
+/*
  * Define this to cause pfree()'d memory to be cleared immediately, to
  * facilitate catching bugs that refer to already-freed values.
  * Right now, this gets defined automatically if --enable-cassert.
  */
 #ifdef USE_ASSERT_CHECKING
 #define CLOBBER_FREED_MEMORY
+#define RELCACHE_FORCE_RELEASE
 #endif
 
 /*
  * Define this to check memory allocation errors (scribbling on more
- * bytes than were allocated).	Right now, this gets defined
- * automatically if --enable-cassert.
+ * bytes than were allocated).  Right now, this gets defined
+ * automatically if --enable-cassert or USE_VALGRIND.
  */
-#ifdef USE_ASSERT_CHECKING
+#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
 #define MEMORY_CONTEXT_CHECKING
 #endif
 
 /*
  * Define this to cause palloc()'d memory to be filled with random data, to
  * facilitate catching code that depends on the contents of uninitialized
- * memory.	Caution: this is horrendously expensive.
+ * memory.  Caution: this is horrendously expensive.
  */
 /* #define RANDOMIZE_ALLOCATED_MEMORY */
 
@@ -237,52 +300,8 @@
 /* #define RTDEBUG */
 
 /*
- * This define lets the system header files know we are interested in features up to Posix 6
- *
- * Solaris is strange... If you want >= 600, you MUST use a C99 compiler, if < 600, you MUST
- * use a C89 compiler.  So, set it to 600 if we are C99, and set it to 500 if we aren't.
+ * Automatic configuration file name for ALTER SYSTEM.
+ * This file will be used to store values of configuration parameters
+ * set by ALTER SYSTEM command.
  */
-#if !defined(_XOPEN_SOURCE) || _XOPEN_SOURCE<600
-#undef _XOPEN_SOURCE
-#if !defined(__sun__) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L)
-#define _XOPEN_SOURCE 600
-#else
-#define _XOPEN_SOURCE 500
-#endif
-#endif
-
-/* Define to activate features from IEEE Stds 1003.1-2001 */
-#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE<200112L
-#undef _POSIX_C_SOURCE
-/* Define to activate features from IEEE Stds 1003.1-2001 */
-#define _POSIX_C_SOURCE 200112L
-#endif
-
-/*
- * Solaris likes this to be defined if we define _XOPEN_SOURCE, otherwise
- * they turn off anything they think is an extension to XOPEN
- */
-#ifndef __EXTENSIONS__
-#define __EXTENSIONS__ 1
-#endif
-
-/*
- * OSX (darwin) wants this if XOPEN_SOURCE is defined
- */
-#ifndef _DARWIN_C_SOURCE
-#define _DARWIN_C_SOURCE 1
-#endif 
-
-/*
- * AIX wants this if XOPEN_SOURCE is defined
- */
-#ifdef _AIX
-#define _ALL_SOURCE
-#endif
-
-/*
- * Greenplum replication configuration file name.
- * This file will be used to store values of replication GUCs
- * set by set_gp_replication_config()
- */
-#define GP_REPLICATION_CONFIG_FILENAME "gp_replication.conf"
+#define PG_AUTOCONF_FILENAME		"postgresql.auto.conf"

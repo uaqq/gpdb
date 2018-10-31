@@ -3,20 +3,22 @@
  * pg_namespace.c
  *	  routines to support manipulation of the pg_namespace relation
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_namespace.c,v 1.23 2010/02/14 18:42:13 rhaas Exp $
+ *	  src/backend/catalog/pg_namespace.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_namespace.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
@@ -25,10 +27,18 @@
 
 /* ----------------
  * NamespaceCreate
+ *
+ * Create a namespace (schema) with the given name and owner OID.
+ *
+ * If isTemp is true, this schema is a per-backend schema for holding
+ * temporary tables.  Currently, the only effect of that is to prevent it
+ * from being linked as a member of any active extension.  (If someone
+ * does CREATE TEMP TABLE in an extension script, we don't want the temp
+ * schema to become part of the extension.)
  * ---------------
  */
 Oid
-NamespaceCreate(const char *nspName, Oid ownerId)
+NamespaceCreate(const char *nspName, Oid ownerId, bool isTemp)
 {
 	Relation	nspdesc;
 	HeapTuple	tup;
@@ -73,16 +83,20 @@ NamespaceCreate(const char *nspName, Oid ownerId)
 
 	heap_close(nspdesc, RowExclusiveLock);
 
-	/* Record dependency on owner */
-	recordDependencyOnOwner(NamespaceRelationId, nspoid, ownerId);
-
 	/* Record dependencies */
 	myself.classId = NamespaceRelationId;
 	myself.objectId = nspoid;
 	myself.objectSubId = 0;
 
-	/* dependency on extension */
-	recordDependencyOnCurrentExtension(&myself, false);
+	/* dependency on owner */
+	recordDependencyOnOwner(NamespaceRelationId, nspoid, ownerId);
+
+	/* dependency on extension ... but not for magic temp schemas */
+	if (!isTemp)
+		recordDependencyOnCurrentExtension(&myself, false);
+
+	/* Post creation hook for new schema */
+	InvokeObjectPostCreateHook(NamespaceRelationId, nspoid, 0);
 
 	return nspoid;
 }

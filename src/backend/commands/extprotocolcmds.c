@@ -107,75 +107,6 @@ DefineExtProtocol(List *name, List *parameters, bool trusted)
 	}
 }
 
-
-/*
- * RemoveExtProtocols
- *		Implements DROP EXTERNAL PROTOCOL
- */
-void
-RemoveExtProtocols(DropStmt *drop)
-{
-	ObjectAddresses *objects;
-	ListCell		*cell;
-
-	/*
-	 * First we identify all the objects, then we delete them in a single
-	 * performMultipleDeletions() call.  This is to avoid unwanted
-	 * DROP RESTRICT errors if one of the objects depends on another.
-	 */
-	objects = new_object_addresses();
-
-	foreach(cell, drop->objects)
-	{
-		List		*names = (List *) lfirst(cell);
-		char	   *protocolName;
-		Oid			protocolOid;
-		ObjectAddress object;
-
-		if (list_length(names) != 1)
-			ereport(ERROR,
-					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("protocol name may not be qualified")));
-		protocolName = strVal(linitial(names));
-
-		protocolOid = LookupExtProtocolOid(protocolName, drop->missing_ok);
-
-		if (!OidIsValid(protocolOid))
-		{
-			if (!drop->missing_ok)
-			{
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("protocol \"%s\" does not exist",
-								protocolName)));
-			}
-			else
-			{
-				if (Gp_role != GP_ROLE_EXECUTE)
-					ereport(NOTICE,
-							(errcode(ERRCODE_UNDEFINED_OBJECT),
-							 errmsg("protocol \"%s\" does not exist, skipping",
-									protocolName)));
-			}
-			continue;
-		}
-
-		/* Permission check: must own protocol */
-		if (!pg_extprotocol_ownercheck(protocolOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_EXTPROTOCOL, protocolName);
-
-		object.classId = ExtprotocolRelationId;
-		object.objectId = protocolOid;
-		object.objectSubId = 0;
-
-		add_exact_object_address(&object, objects);
-	}
-
-	performMultipleDeletions(objects, drop->behavior);
-
-	free_object_addresses(objects);
-}
-
 /*
  * Drop PROTOCOL by OID. This is the guts of deletion.
  * This is called to clean up dependencies.
@@ -183,13 +114,41 @@ RemoveExtProtocols(DropStmt *drop)
 void
 RemoveExtProtocolById(Oid protOid)
 {
-	ExtProtocolDeleteByOid(protOid);
+	Relation	rel;
+	ScanKeyData skey;
+	SysScanDesc scan;
+	HeapTuple	tup;
+	bool		found = false;
+
+	/*
+	 * Search pg_extprotocol.
+	 */
+	rel = heap_open(ExtprotocolRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(protOid));
+	scan = systable_beginscan(rel, ExtprotocolOidIndexId, true,
+							  NULL, 1, &skey);
+
+	while (HeapTupleIsValid(tup = systable_getnext(scan)))
+	{
+		simple_heap_delete(rel, &tup->t_self);
+		found = true;
+	}
+	systable_endscan(scan);
+
+	if (!found)
+		elog(ERROR, "protocol %u could not be found", protOid);
+
+	heap_close(rel, NoLock);
 }
 
 /*
  * Change external protocol owner
  */
-void
+Oid
 AlterExtProtocolOwner(const char *name, Oid newOwnerId)
 {
 	HeapTuple	tup;
@@ -214,7 +173,7 @@ AlterExtProtocolOwner(const char *name, Oid newOwnerId)
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(name));
 	scan = systable_beginscan(rel, ExtprotocolPtcnameIndexId, true,
-							  SnapshotNow, 1, &scankey);
+							  NULL, 1, &scankey);
 	tup = systable_getnext(scan);
 	if (!HeapTupleIsValid(tup))
 		ereport(ERROR,
@@ -317,87 +276,6 @@ AlterExtProtocolOwner(const char *name, Oid newOwnerId)
 
 	systable_endscan(scan);
 	heap_close(rel, NoLock);
-}
 
-/*
- * Change external protocol owner
- */
-void
-RenameExtProtocol(const char *oldname, const char *newname)
-{
-	HeapTuple	tup;
-	Relation	rel;
-	ScanKeyData scankey;
-	SysScanDesc scan;
-	Oid			ptcId;
-	bool		isNull;
-	
-	/*
-	 * Check the pg_extprotocol relation to be certain the protocol 
-	 * is there. 
-	 */
-	rel = heap_open(ExtprotocolRelationId, RowExclusiveLock);
-	ScanKeyInit(&scankey,
-				Anum_pg_extprotocol_ptcname,
-				BTEqualStrategyNumber, F_NAMEEQ,
-				CStringGetDatum(oldname));
-	scan = systable_beginscan(rel, ExtprotocolPtcnameIndexId, true,
-							  SnapshotNow, 1, &scankey);
-	tup = systable_getnext(scan);
-	if (!HeapTupleIsValid(tup))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("protocol \"%s\" does not exist",
-						oldname)));
-
-	ptcId = HeapTupleGetOid(tup);
-
-	(void) heap_getattr(tup,
-						Anum_pg_extprotocol_ptcowner,
-						RelationGetDescr(rel),
-						&isNull);
-	if (isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("internal error: protocol \"%s\"  has no owner defined",
-						 oldname)));	
-
-	if (strcmp(oldname, newname) != 0)
-	{
-		Datum		values[Natts_pg_extprotocol];
-		bool		nulls[Natts_pg_extprotocol];
-		bool		replaces[Natts_pg_extprotocol];
-		HeapTuple	newtuple;
-
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Must be owner */
-			if (!pg_extprotocol_ownercheck(ptcId, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_EXTPROTOCOL,
-							   oldname);
-		}
-
-		MemSet(values, 0, sizeof(values));
-		MemSet(nulls, false, sizeof(nulls));
-		MemSet(replaces, false, sizeof(replaces));
-
-		replaces[Anum_pg_extprotocol_ptcname - 1] = true;
-		values[Anum_pg_extprotocol_ptcname - 1] =
-			DirectFunctionCall1(namein, CStringGetDatum((char *) newname));
-		
-		newtuple = heap_modify_tuple(tup,
-									 RelationGetDescr(rel),
-									 values, nulls, replaces);
-		simple_heap_update(rel, &tup->t_self, newtuple);
-
-		/* Update indexes */
-		CatalogUpdateIndexes(rel, newtuple);
-
-		heap_freetuple(newtuple);		
-	}
-
-	systable_endscan(scan);
-
-	heap_close(rel, NoLock);
+	return ptcId;
 }

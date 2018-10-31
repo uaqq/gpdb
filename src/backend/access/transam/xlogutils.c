@@ -10,10 +10,10 @@
  *
  * Portions Copyright (c) 2006-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/xlogutils.c,v 1.71 2010/07/08 16:08:30 tgl Exp $
+ * src/backend/access/transam/xlogutils.c
  *
  *-------------------------------------------------------------------------
  */
@@ -23,9 +23,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "access/xlog.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
-#include "storage/bufmgr.h"
 #include "storage/smgr.h"
 #include "utils/guc.h"
 #include "utils/hsearch.h"
@@ -57,6 +57,22 @@ typedef struct xl_invalid_page
 static HTAB *invalid_page_tab = NULL;
 
 
+/* Report a reference to an invalid page */
+static void
+report_invalid_page(int elevel, RelFileNode node, ForkNumber forkno,
+					BlockNumber blkno, bool present)
+{
+	char	   *path = relpathperm(node, forkno);
+
+	if (present)
+		elog(elevel, "page %u of relation %s is uninitialized",
+			 blkno, path);
+	else
+		elog(elevel, "page %u of relation %s does not exist",
+			 blkno, path);
+	pfree(path);
+}
+
 /* Log a reference to an invalid page */
 static void
 log_invalid_page(RelFileNode node, ForkNumber forkno, BlockNumber blkno,
@@ -67,26 +83,26 @@ log_invalid_page(RelFileNode node, ForkNumber forkno, BlockNumber blkno,
 	bool		found;
 
 	/*
+	 * Once recovery has reached a consistent state, the invalid-page table
+	 * should be empty and remain so. If a reference to an invalid page is
+	 * found after consistency is reached, PANIC immediately. This might seem
+	 * aggressive, but it's better than letting the invalid reference linger
+	 * in the hash table until the end of recovery and PANIC there, which
+	 * might come only much later if this is a standby server.
+	 */
+	if (reachedConsistency)
+	{
+		report_invalid_page(WARNING, node, forkno, blkno, present);
+		elog(PANIC, "WAL contains references to invalid pages");
+	}
+
+	/*
 	 * Log references to invalid pages at DEBUG1 level.  This allows some
 	 * tracing of the cause (note the elog context mechanism will tell us
 	 * something about the XLOG record that generated the reference).
 	 */
 	if (log_min_messages <= DEBUG1 || client_min_messages <= DEBUG1)
-	{
-		char	   *path = relpath(node, forkno);
-
-		if (present)
-		{
-			elog(DEBUG1, "page %u of relation %s is uninitialized",
-				 blkno, path);
-		}
-		else
-		{
-			elog(DEBUG1, "page %u of relation %s does not exist",
-				 blkno, path);
-		}
-		pfree(path);
-	}
+		report_invalid_page(DEBUG1, node, forkno, blkno, present);
 
 	if (invalid_page_tab == NULL)
 	{
@@ -142,7 +158,7 @@ forget_invalid_pages(RelFileNode node, ForkNumber forkno, BlockNumber minblkno)
 		{
 			if (log_min_messages <= DEBUG2 || client_min_messages <= DEBUG2)
 			{
-				char	   *path = relpath(hentry->key.node, forkno);
+				char	   *path = relpathperm(hentry->key.node, forkno);
 
 				elog(DEBUG2, "page %u of relation %s has been dropped",
 					 hentry->key.blkno, path);
@@ -175,7 +191,7 @@ forget_invalid_pages_db(Oid dbid)
 		{
 			if (log_min_messages <= DEBUG2 || client_min_messages <= DEBUG2)
 			{
-				char	   *path = relpath(hentry->key.node, hentry->key.forkno);
+				char	   *path = relpathperm(hentry->key.node, hentry->key.forkno);
 
 				elog(DEBUG2, "page %u of relation %s has been dropped",
 					 hentry->key.blkno, path);
@@ -215,6 +231,16 @@ forget_invalid_segment_file(RelFileNode rnode, uint32 segmentFileNum)
 		elog(ERROR, "hash table corrupted");
 }
 
+/* Are there any unresolved references to invalid pages? */
+bool
+XLogHaveInvalidPages(void)
+{
+	if (invalid_page_tab != NULL &&
+		hash_get_num_entries(invalid_page_tab) > 0)
+		return true;
+	return false;
+}
+
 /* Complain about any remaining invalid-page entries */
 void
 XLogCheckInvalidPages(void)
@@ -234,15 +260,8 @@ XLogCheckInvalidPages(void)
 	 */
 	while ((hentry = (xl_invalid_page *) hash_seq_search(&status)) != NULL)
 	{
-		char	   *path = relpath(hentry->key.node, hentry->key.forkno);
-
-		if (hentry->present)
-			elog(WARNING, "page %u of relation %s was uninitialized",
-				 hentry->key.blkno, path);
-		else
-			elog(WARNING, "page %u of relation %s did not exist",
-				 hentry->key.blkno, path);
-		pfree(path);
+		report_invalid_page(WARNING, hentry->key.node, hentry->key.forkno,
+							hentry->key.blkno, hentry->present);
 		foundone = true;
 	}
 
@@ -298,6 +317,10 @@ XLogReadBuffer(RelFileNode rnode, BlockNumber blkno, bool init)
  *
  * In RBM_ZERO and RBM_ZERO_ON_ERROR modes, if the page doesn't exist, the
  * relation is extended with all-zeroes pages up to the given block number.
+ *
+ * In RBM_NORMAL_NO_LOG mode, we return InvalidBuffer if the page doesn't
+ * exist, and we don't check for all-zeroes.  Thus, no log entry is made
+ * to imply that the page should be dropped or truncated later.
  */
 Buffer
 XLogReadBufferExtended(RelFileNode rnode, ForkNumber forknum,
@@ -310,7 +333,7 @@ XLogReadBufferExtended(RelFileNode rnode, ForkNumber forknum,
 	Assert(blkno != P_NEW);
 
 	/* Open the relation at smgr level */
-	smgr = smgropen(rnode);
+	smgr = smgropen(rnode, InvalidBackendId);
 
 	/*
 	 * Create the target file if it doesn't already exist.  This lets us cope
@@ -327,7 +350,7 @@ XLogReadBufferExtended(RelFileNode rnode, ForkNumber forknum,
 	if (blkno < lastblock)
 	{
 		/* page exists in file */
-		buffer = ReadBufferWithoutRelcache(rnode, false, forknum, blkno,
+		buffer = ReadBufferWithoutRelcache(rnode, forknum, blkno,
 										   mode, NULL);
 	}
 	else
@@ -338,19 +361,27 @@ XLogReadBufferExtended(RelFileNode rnode, ForkNumber forknum,
 			log_invalid_page(rnode, forknum, blkno, false);
 			return InvalidBuffer;
 		}
+		if (mode == RBM_NORMAL_NO_LOG)
+			return InvalidBuffer;
 		/* OK to extend the file */
 		/* we do this in recovery only - no rel-extension lock needed */
 		Assert(InRecovery);
 		buffer = InvalidBuffer;
-		while (blkno >= lastblock)
+		do
 		{
 			if (buffer != InvalidBuffer)
 				ReleaseBuffer(buffer);
-			buffer = ReadBufferWithoutRelcache(rnode, false, forknum,
+			buffer = ReadBufferWithoutRelcache(rnode, forknum,
 											   P_NEW, mode, NULL);
-			lastblock++;
 		}
-		Assert(BufferGetBlockNumber(buffer) == blkno);
+		while (BufferGetBlockNumber(buffer) < blkno);
+		/* Handle the corner case that P_NEW returns non-consecutive pages */
+		if (BufferGetBlockNumber(buffer) != blkno)
+		{
+			ReleaseBuffer(buffer);
+			buffer = ReadBufferWithoutRelcache(rnode, forknum, blkno,
+											   mode, NULL);
+		}
 	}
 
 	if (mode == RBM_NORMAL)
@@ -417,12 +448,19 @@ CreateFakeRelcacheEntry(RelFileNode rnode)
 	FakeRelCacheEntry fakeentry;
 	Relation	rel;
 
+	Assert(InRecovery);
+
 	/* Allocate the Relation struct and all related space in one block. */
 	fakeentry = palloc0(sizeof(FakeRelCacheEntryData));
 	rel = (Relation) fakeentry;
 
 	rel->rd_rel = &fakeentry->pgc;
 	rel->rd_node = rnode;
+	/* We will never be working with temp rels during recovery */
+	rel->rd_backend = InvalidBackendId;
+
+	/* It must be a permanent table if we're in recovery. */
+	rel->rd_rel->relpersistence = RELPERSISTENCE_PERMANENT;
 
 	/* We don't know the name of the relation; use relfilenode instead */
 	sprintf(RelationGetRelationName(rel), "%u", rnode.relNode);
@@ -448,6 +486,9 @@ CreateFakeRelcacheEntry(RelFileNode rnode)
 void
 FreeFakeRelcacheEntry(Relation fakerel)
 {
+	/* make sure the fakerel is not referenced by the SmgrRelation anymore */
+	if (fakerel->rd_smgr != NULL)
+		smgrclearowner(&fakerel->rd_smgr, fakerel->rd_smgr);
 	pfree(fakerel);
 }
 

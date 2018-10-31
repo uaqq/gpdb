@@ -1269,7 +1269,7 @@ int82complex(PG_FUNCTION_ARGS)
 Datum
 int42complex(PG_FUNCTION_ARGS)
 {
-	int4		a = PG_GETARG_INT32(0);
+	int32		a = PG_GETARG_INT32(0);
 
 	PG_RETURN_COMPLEX_P(construct_complex_in(a, 0));
 }
@@ -1277,7 +1277,7 @@ int42complex(PG_FUNCTION_ARGS)
 Datum
 int22complex(PG_FUNCTION_ARGS)
 {
-	int4		a = PG_GETARG_INT16(0);
+	int32		a = PG_GETARG_INT16(0);
 
 	PG_RETURN_COMPLEX_P(construct_complex_in(a, 0));
 }
@@ -1288,7 +1288,7 @@ numeric2complex(PG_FUNCTION_ARGS)
 	Numeric		num = PG_GETARG_NUMERIC(0);
 	double		float_num;
 
-	if (NUMERIC_IS_NAN(num))
+	if (numeric_is_nan(num))
 	{
 		float_num = get_float8_nan();
 	}

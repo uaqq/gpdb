@@ -18,6 +18,7 @@
 #include "access/itup.h"
 #include "access/relscan.h"
 #include "access/sdir.h"
+#include "access/xlog.h"
 #include "access/xlogutils.h"
 #include "storage/lock.h"
 #include "miscadmin.h"
@@ -558,15 +559,14 @@ typedef BMScanOpaqueData *BMScanOpaque;
  *
  * Some information in high 4 bits of log record xl_info field.
  */
-#define XLOG_BITMAP_INSERT_NEWLOV	0x10 /* add a new LOV page */
+/* 0x10 is unused */
 #define XLOG_BITMAP_INSERT_LOVITEM	0x20 /* add a new entry into a LOV page */
 #define XLOG_BITMAP_INSERT_META		0x30 /* update the metapage */
 #define XLOG_BITMAP_INSERT_BITMAP_LASTWORDS	0x40 /* update the last 2 words
 													in a bitmap */
 /* insert bitmap words into a bitmap page which is not the last one. */
 #define XLOG_BITMAP_INSERT_WORDS		0x50
-/* insert bitmap words to the last bitmap page and the lov buffer */
-#define XLOG_BITMAP_INSERT_LASTWORDS	0x60
+/* 0x60 is unused */
 #define XLOG_BITMAP_UPDATEWORD			0x70
 #define XLOG_BITMAP_UPDATEWORDS			0x80
 
@@ -673,6 +673,7 @@ typedef struct xl_bm_updateword
 typedef struct xl_bm_lovitem
 {
 	RelFileNode 	bm_node;
+	ForkNumber		bm_fork;
 
 	BlockNumber		bm_lov_blkno;
 	OffsetNumber	bm_lov_offset;
@@ -727,6 +728,7 @@ typedef struct xl_bm_bitmap_lastwords
 typedef struct xl_bm_metapage
 {
 	RelFileNode 	bm_node;
+	ForkNumber		bm_fork;
 	Oid				bm_lov_heapId;		/* the relation id for the heap */
 	Oid				bm_lov_indexId;		/* the relation id for the index */
 	/* the block number for the last LOV pages. */
@@ -735,6 +737,7 @@ typedef struct xl_bm_metapage
 
 /* public routines */
 extern Datum bmbuild(PG_FUNCTION_ARGS);
+extern Datum bmbuildempty(PG_FUNCTION_ARGS);
 extern Datum bminsert(PG_FUNCTION_ARGS);
 extern Datum bmbeginscan(PG_FUNCTION_ARGS);
 extern Datum bmgettuple(PG_FUNCTION_ARGS);
@@ -757,7 +760,7 @@ extern void _bitmap_init_lovpage(Relation rel, Buffer buf);
 extern void _bitmap_init_bitmappage(Relation rel, Buffer buf);
 extern void _bitmap_init_buildstate(Relation index, BMBuildState* bmstate);
 extern void _bitmap_cleanup_buildstate(Relation index, BMBuildState* bmstate);
-extern void _bitmap_init(Relation indexrel, bool use_wal);
+extern void _bitmap_init(Relation indexrel, bool use_wal, bool for_empty);
 
 /* bitmapinsert.c */
 extern void _bitmap_buildinsert(Relation rel, ItemPointerData ht_ctid, 
@@ -797,11 +800,10 @@ extern void _bitmap_intersect(BMBatchWords **batches, uint32 numBatches,
 extern void _bitmap_union(BMBatchWords **batches, uint32 numBatches,
 					   BMBatchWords *result);
 extern void _bitmap_begin_iterate(BMBatchWords *words, BMIterateResult *result);
-extern void _bitmap_log_newpage(Relation rel, uint8 info, Buffer buf);
-extern void _bitmap_log_metapage(Relation rel, Page page);
+extern void _bitmap_log_metapage(Relation rel, ForkNumber fork, Page page);
 extern void _bitmap_log_bitmap_lastwords(Relation rel, Buffer lovBuffer,
 									 OffsetNumber lovOffset, BMLOVItem lovItem);
-extern void _bitmap_log_lovitem	(Relation rel, Buffer lovBuffer,
+extern void _bitmap_log_lovitem	(Relation rel, ForkNumber fork, Buffer lovBuffer,
 								 OffsetNumber offset, BMLOVItem lovItem,
 								 Buffer metabuf,  bool is_new_lov_blkno);
 extern void _bitmap_log_bitmapwords(Relation rel, Buffer bitmapBuffer, Buffer lovBuffer,
@@ -843,7 +845,7 @@ extern bool _bitmap_findvalue(Relation lovHeap, Relation lovIndex,
  * prototypes for functions in bitmapxlog.c
  */
 extern void bitmap_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record);
-extern void bitmap_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record);
+extern void bitmap_desc(StringInfo buf, XLogRecord *record);
 extern void bitmap_xlog_startup(void);
 extern void bitmap_xlog_cleanup(void);
 extern bool bitmap_safe_restartpoint(void);

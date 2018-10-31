@@ -7,7 +7,7 @@
  *
  * 1999/1/15 Tatsuo Ishii
  *
- * $PostgreSQL: pgsql/src/backend/utils/mb/conversion_procs/euc_tw_and_big5/big5.c,v 1.7 2005/11/22 18:17:26 momjian Exp $
+ * src/backend/utils/mb/conversion_procs/euc_tw_and_big5/big5.c
  */
 
 /* can be used in either frontend or backend */
@@ -231,7 +231,7 @@ static unsigned short BinarySearchRange
 				/*
 				 * NOTE: big5 high_byte: 0xa1-0xfe, low_byte: 0x40-0x7e,
 				 * 0xa1-0xfe (radicals: 0x00-0x3e, 0x3f-0x9c) big5 radix is
-				 * 0x9d.					 [region_low, region_high] We
+				 * 0x9d.                     [region_low, region_high] We
 				 * should remember big5 has two different regions (above).
 				 * There is a bias for the distance between these regions.
 				 * 0xa1 - 0x7e + bias = 1 (Distance between 0xa1 and 0x7e is

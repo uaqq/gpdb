@@ -11,7 +11,6 @@ from gppylib.commands import unix
 from gppylib.commands import gp
 from gppylib.commands import base
 from gppylib.gparray import GpArray
-from gppylib.testold.testUtils import *
 from gppylib.operations import startSegments
 from gppylib.gp_era import read_era
 from gppylib.operations.utils import ParallelOperation, RemoteOperation
@@ -22,7 +21,7 @@ from gppylib.commands.unix import check_pid_on_remotehost, Scp
 logger = gplog.get_default_logger()
 
 gDatabaseDirectories = [
-    # this list and the gDatabaseSubDirectories occur combined inside initdb.c
+    # this list occur inside initdb.c
     "global",
     "pg_log",
     "pg_xlog",
@@ -38,12 +37,6 @@ gDatabaseDirectories = [
     "pg_tblspc",
     "pg_stat_tmp"
 ]
-gDatabaseSubDirectories = [
-    "pg_xlog/archive_status",
-    "pg_multixact/members",
-    "pg_multixact/offsets",
-    "base/1"
-]
 
 #
 # Database files that may exist in the root directory and need deleting 
@@ -58,20 +51,6 @@ gDatabaseFiles = [
     "postmaster.pid",
     "gp_dbid"
 ]
-
-
-def MPP_12038_fault_injection():
-    """This function will check for the environment variable
-    GP_MPP_12038 and if it is set will sleep for 2 * gp_fts_probe_interval.
-    This is used in this module to check interaction with the FTS prober and
-    should only be used for testing.  Note this delay is long enough for a 
-    small test installation but would likely not be long enough for a large
-    cluster."""
-    if os.getenv("GP_MPP_12038_INJECT_DELAY", None):
-        faultProber = faultProberInterface.getFaultProber()
-        probe_interval_secs = faultProber.getFaultProberInterval()
-        logger.info("Sleeping for %d seconds for MPP-12038 test..." % (probe_interval_secs * 2))
-        time.sleep(probe_interval_secs * 2)
 
 
 #
@@ -169,11 +148,12 @@ class GpMirrorToBuild:
 
 
 class GpMirrorListToBuild:
-    def __init__(self, toBuild, pool, quiet, parallelDegree, additionalWarnings=None, logger=logger):
+    def __init__(self, toBuild, pool, quiet, parallelDegree, additionalWarnings=None, logger=logger, forceoverwrite=False):
         self.__mirrorsToBuild = toBuild
         self.__pool = pool
         self.__quiet = quiet
         self.__parallelDegree = parallelDegree
+        self.__forceoverwrite = forceoverwrite
         self.__additionalWarnings = additionalWarnings or []
         if not logger:
             raise Exception('logger argument cannot be None')
@@ -200,7 +180,6 @@ class GpMirrorListToBuild:
             from the mirrorsToBuild must be present in gpArray.
 
         """
-        testOutput("building %s segment(s)" % len(self.__mirrorsToBuild))
 
         if len(self.__mirrorsToBuild) == 0:
             self.__logger.info("No segments to " + actionName)
@@ -247,7 +226,8 @@ class GpMirrorListToBuild:
         self.__ensureStopped(gpEnv, toStopDirectives)
         self.__ensureSharedMemCleaned(gpEnv, toStopDirectives)
         self.__ensureMarkedDown(gpEnv, toEnsureMarkedDown)
-        self.__cleanUpSegmentDirectories(cleanupDirectives)
+        if not self.__forceoverwrite:
+            self.__cleanUpSegmentDirectories(cleanupDirectives)
         self.__copySegmentDirectories(gpEnv, gpArray, copyDirectives)
 
         # update and save metadata in memory
@@ -296,15 +276,13 @@ class GpMirrorListToBuild:
         # Disable Ctrl-C, going to save metadata in database and transition segments
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            MPP_12038_fault_injection()
-
             self.__logger.info("Updating mirrors")
             self.__updateGpIdFile(gpEnv, gpArray, mirrorsToStart)
+            if actionName ==  "add":
+                self.__registerMirrorsInCatalog(gpArray)
 
             self.__logger.info("Starting mirrors")
             start_all_successful = self.__startAll(gpEnv, gpArray, mirrorsToStart)
-
-            MPP_12038_fault_injection()
         finally:
             # Reenable Ctrl-C
             signal.signal(signal.SIGINT, signal.default_int_handler)
@@ -396,7 +374,8 @@ class GpMirrorListToBuild:
                                           batchSize=self.__parallelDegree,
                                           ctxt=gp.REMOTE,
                                           remoteHost=hostName,
-                                          validationOnly=validationOnly)
+                                          validationOnly=validationOnly,
+                                          forceoverwrite=self.__forceoverwrite)
 
         #
         # validate directories for target segments
@@ -616,6 +595,27 @@ class GpMirrorListToBuild:
                                                     gpEnv.getGpVersion(),
                                                     gpEnv.getGpHome(), gpEnv.getMasterDataDir()
                                                     )
+
+    def __registerMirrorsInCatalog(self, gpArray):
+        self.__logger.info("Updating gp_segment_configuration with mirror info")
+        dburl = dbconn.DbURL(dbname='template1', port=gpArray.master.port)
+        conn = dbconn.connect(dburl, utility=False)
+        query = "select pg_catalog.gp_add_segment_mirror(%s::int2, '%s', '%s', %s, '%s');"
+
+        try:
+            for segmentPair in gpArray.getSegmentList():
+                mirror = segmentPair.mirrorDB
+                filledInQuery = query % (mirror.getSegmentContentId(), mirror.getSegmentAddress(),
+                                         mirror.getSegmentAddress(), mirror.getSegmentPort(), mirror.getSegmentDataDirectory())
+                dbconn.execSQL(conn, filledInQuery)
+
+        except Exception as e:
+            self.__logger.error("Failed while updating mirror info in gp_segment_configuration: %s" % str(e))
+            raise
+
+        else:
+            conn.commit()
+            self.__logger.info("Successfully updated gp_segment_configuration with mirror info")
 
     def __updateGpIdFile(self, gpEnv, gpArray, segments):
         segmentByHost = GpArray.getSegmentsByHostName(segments)

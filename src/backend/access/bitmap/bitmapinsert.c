@@ -1563,15 +1563,6 @@ create_lovitem(Relation rel, Buffer metabuf, uint64 tidnum,
 		newLovBuffer = _bitmap_getbuf(rel, P_NEW, BM_WRITE);
 		_bitmap_init_lovpage(rel, newLovBuffer);
 
-		/*
-		START_CRIT_SECTION();
-
-		if(use_wal)
-			_bitmap_log_newpage(rel, XLOG_BITMAP_INSERT_NEWLOV, 
-								newLovBuffer);
-		END_CRIT_SECTION();
-		*/
-
 		_bitmap_relbuf(currLovBuffer);
 
 		currLovBuffer = newLovBuffer;
@@ -1580,6 +1571,7 @@ create_lovitem(Relation rel, Buffer metabuf, uint64 tidnum,
 		is_new_lov_blkno = true;
 	}
 
+	/* First create the LOV item. */
 	START_CRIT_SECTION();
 
 	if (is_new_lov_blkno)
@@ -1594,6 +1586,27 @@ create_lovitem(Relation rel, Buffer metabuf, uint64 tidnum,
 
 	MarkBufferDirty(currLovBuffer);
 
+	if (PageAddItem(currLovPage, (Item)lovitem, itemSize, *lovOffsetP,
+					false, false) == InvalidOffsetNumber)
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				errmsg("failed to add LOV item to \"%s\"",
+				RelationGetRelationName(rel))));
+
+	if(use_wal)
+		_bitmap_log_lovitem(rel, MAIN_FORKNUM, currLovBuffer, *lovOffsetP, lovitem,
+							metabuf, is_new_lov_blkno);
+
+	END_CRIT_SECTION();
+
+	/*
+	 * .. and then create the entry in the auxiliary LOV heap and index for it.
+	 *
+	 * This could still fail for various reasons, e.g. if you run out of disk
+	 * space. In that case, we'll leave behind an "orphan" LOV item, with no
+	 * corresponding item in the LOV heap. That's a bit sloppy and leaky, but
+	 * harmless; the orphaned LOV item won't be encountered by any scans.
+	 */
 	lovDatum = palloc0((numOfAttrs + 2) * sizeof(Datum));
 	lovNulls = palloc0((numOfAttrs + 2) * sizeof(bool));
 	memcpy(lovDatum, attdata, numOfAttrs * sizeof(Datum));
@@ -1604,19 +1617,6 @@ create_lovitem(Relation rel, Buffer metabuf, uint64 tidnum,
 	lovNulls[numOfAttrs + 1] = false;
 
 	_bitmap_insert_lov(lovHeap, lovIndex, lovDatum, lovNulls, use_wal);
-
-	if (PageAddItem(currLovPage, (Item)lovitem, itemSize, *lovOffsetP,
-					false, false) == InvalidOffsetNumber)
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				errmsg("failed to add LOV item to \"%s\"",
-				RelationGetRelationName(rel))));
-
-	if(use_wal)
-		_bitmap_log_lovitem(rel, currLovBuffer, *lovOffsetP, lovitem,
-							metabuf, is_new_lov_blkno);
-
-	END_CRIT_SECTION();
 
 	_bitmap_relbuf(currLovBuffer);
 
@@ -2284,7 +2284,7 @@ build_inserttuple(Relation rel, uint64 tidnum,
 				}
 			}
 
-			index_rescan(state->bm_lov_scanDesc, state->bm_lov_scanKeys);	
+			index_rescan(state->bm_lov_scanDesc, state->bm_lov_scanKeys, tupDesc->natts, NULL, 0);
 
 			found = _bitmap_findvalue(state->bm_lov_heap, state->bm_lov_index,
 									  state->bm_lov_scanKeys, state->bm_lov_scanDesc,
@@ -2476,32 +2476,28 @@ _bitmap_doinsert(Relation rel, ItemPointerData ht_ctid, Datum *attdata,
 
 		get_sort_group_operators(tupDesc->attrs[attno]->atttypid,
 								 false, true, false,
-								 NULL, &eq_opr, NULL);
+								 NULL, &eq_opr, NULL, NULL);
 		opfuncid = get_opcode(eq_opr);
 
 		scanKey = (ScanKey) (((char *)scanKeys) + attno * sizeof(ScanKeyData));
 
-		ScanKeyEntryInitialize(scanKey, SK_ISNULL, attno + 1, 
-							   BTEqualStrategyNumber, InvalidOid, opfuncid, 0);
-
-		if (nulls[attno])
-		{
-			scanKey->sk_flags = SK_ISNULL;
-			scanKey->sk_argument = attdata[attno];
-		}
-		else
-		{
-			scanKey->sk_flags = 0;
-			scanKey->sk_argument = attdata[attno];
-		}
+		ScanKeyEntryInitialize(scanKey,
+							   nulls[attno] ? SK_ISNULL : 0,
+							   attno + 1,
+							   BTEqualStrategyNumber,
+							   InvalidOid,
+							   lovIndex->rd_indcollation[attno],
+							   opfuncid,
+							   attdata[attno]);
 	}
 
 	scanDesc = index_beginscan(lovHeap, lovIndex, GetActiveSnapshot(),
-							   tupDesc->natts, scanKeys);
+							   tupDesc->natts, 0);
+	index_rescan(scanDesc, scanKeys, tupDesc->natts, NULL, 0);
 
 	/* insert this new tuple into the bitmap index. */
 	inserttuple(rel, metabuf, tidOffset, ht_ctid, tupDesc, attdata, nulls, 
-				lovHeap, lovIndex, scanKeys, scanDesc, true);
+				lovHeap, lovIndex, scanKeys, scanDesc, RelationNeedsWAL(rel));
 
 	index_endscan(scanDesc);
 	_bitmap_close_lov_heapandindex(lovHeap, lovIndex, RowExclusiveLock);

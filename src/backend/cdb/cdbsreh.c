@@ -35,15 +35,15 @@
 #include "commands/dbcommands.h"
 #include "commands/tablecmds.h"
 #include "funcapi.h"
-#define PQArgBlock PQArgBlock_
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "storage/fd.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/bytea.h"
+#include "utils/timestamp.h"
 
-static int	GetNextSegid(CdbSreh *cdbsreh);
 static void PreprocessByteaData(char *src);
 static void ErrorLogWrite(CdbSreh *cdbsreh);
 
@@ -95,8 +95,6 @@ makeCdbSreh(int rejectlimit, bool is_limit_in_rows,
 	h->is_limit_in_rows = is_limit_in_rows;
 	h->rejectcount = 0;
 	h->is_server_enc = false;
-	h->cdbcopy = NULL;
-	h->lastsegid = 0;
 	h->consec_csv_err = 0;
 	h->log_to_file = log_to_file;
 
@@ -162,18 +160,9 @@ HandleSingleRowError(CdbSreh *cdbsreh)
 	if (cdbsreh->log_to_file)
 	{
 		if (Gp_role == GP_ROLE_DISPATCH)
-		{
-			cdbCopySendData(cdbsreh->cdbcopy,
-							GetNextSegid(cdbsreh),
-							cdbsreh->rawdata,
-							strlen(cdbsreh->rawdata));
+			elog(ERROR, "cannot not log suppressed input error in dispatcher");
 
-		}
-		else
-		{
-			ErrorLogWrite(cdbsreh);
-		}
-
+		ErrorLogWrite(cdbsreh);
 	}
 
 	return;						/* OK */
@@ -281,19 +270,19 @@ FormErrorTuple(CdbSreh *cdbsreh)
  * rows, and whether rows were ignored or logged into an error log file.
  */
 void
-ReportSrehResults(CdbSreh *cdbsreh, int total_rejected)
+ReportSrehResults(CdbSreh *cdbsreh, uint64 total_rejected)
 {
 	if (total_rejected > 0)
 	{
 		ereport(NOTICE,
-				(errmsg("Found %d data formatting errors (%d or more "
+				(errmsg("Found " INT64_FORMAT " data formatting errors (" INT64_FORMAT " or more "
 						"input rows). Rejected related input data.",
 						total_rejected, total_rejected)));
 	}
 }
 
 static void
-sendnumrows_internal(int numrejected, int numcompleted)
+sendnumrows_internal(int numrejected, int64 numcompleted)
 {
 	StringInfoData buf;
 
@@ -301,10 +290,19 @@ sendnumrows_internal(int numrejected, int numcompleted)
 		elog(FATAL, "SendNumRows: called outside of execute context.");
 
 	pq_beginmessage(&buf, 'j'); /* 'j' is the msg code for rejected records */
+	/*
+	 * GPDB_91_MERGE_FIXME: If there are more than INT_MAX rejected rows,
+	 * this will overflow. That is possible at least if you specify the
+	 * segment reject limit as a percentage.
+	 *
+	 * If you fix this, note that there are more fields and variables that
+	 * need to be changed from int to int64. But had to put this FIXME
+	 * somewhere..
+	 */
 	pq_sendint(&buf, numrejected, 4);
 	if (numcompleted > 0)		/* optional send completed num for COPY FROM
 								 * ON SEGMENT */
-		pq_sendint(&buf, numcompleted, 4);
+		pq_sendint64(&buf, numcompleted);
 	pq_endmessage(&buf);
 }
 
@@ -327,7 +325,7 @@ SendNumRowsRejected(int numrejected)
  * of rows that were rejected and completed in this last data load
  */
 void
-SendNumRows(int numrejected, int numcompleted)
+SendNumRows(int numrejected, int64 numcompleted)
 {
 	sendnumrows_internal(numrejected, numcompleted);
 }
@@ -369,11 +367,10 @@ GetRejectLimitCode(CdbSreh *cdbsreh)
 }
 
 /*
- * Reports error if we reached segment reject limit. If non-NULL cdbCopy is passed,
- * it will call cdbCopyEnd to stop QE work before erroring out.
- * */
+ * Reports error if we reached segment reject limit.
+ */
 void
-ErrorIfRejectLimitReached(CdbSreh *cdbsreh, CdbCopy *cdbCopy)
+ErrorIfRejectLimitReached(CdbSreh *cdbsreh)
 {
 	RejectLimitCode code;
 
@@ -382,40 +379,32 @@ ErrorIfRejectLimitReached(CdbSreh *cdbsreh, CdbCopy *cdbCopy)
 	if (code == REJECT_NONE)
 		return;
 
-	/*
-	 * Stop QE copy when we error out.
-	 */
-	if (cdbCopy)
-		cdbCopyEnd(cdbCopy);
-
 	switch (code)
 	{
 		case REJECT_FIRST_BAD_LIMIT:
 			/* the special "first X rows are bad" case */
 			ereport(ERROR,
 					(errcode(ERRCODE_T_R_GP_REJECT_LIMIT_REACHED),
-					 errmsg("All %d first rows in this segment were rejected. "
-							"Aborting operation regardless of REJECT LIMIT value. "
-							"Last error was: %s",
-							gp_initial_bad_row_limit, cdbsreh->errmsg)));
+					 errmsg("all %d first rows in this segment were rejected",
+							gp_initial_bad_row_limit),
+					 errdetail("Aborting operation regardless of REJECT LIMIT value, last error was: %s",
+							   cdbsreh->errmsg)));
 			break;
 		case REJECT_UNPARSABLE_CSV:
 			/* the special "csv un-parsable" case */
 			ereport(ERROR,
 					(errcode(ERRCODE_T_R_GP_REJECT_LIMIT_REACHED),
-					 errmsg("Input includes invalid CSV data that corrupts the "
-							"ability to parse data rows. This usually means "
-							"several unescaped embedded QUOTE characters. "
-							"Data is not parsable. Last error was: %s",
-							cdbsreh->errmsg)));
+					 errmsg("input includes invalid CSV data that corrupts the ability to parse data rows"),
+					 errdetail("Data is not parsable, last error was: %s",
+							   cdbsreh->errmsg),
+					 errhint("This usually means several unescaped embedded QUOTE characters.")));
 			break;
 		case REJECT_LIMIT_REACHED:
 			/* the normal case */
 			ereport(ERROR,
 					(errcode(ERRCODE_T_R_GP_REJECT_LIMIT_REACHED),
-					 errmsg("Segment reject limit reached. Aborting operation. "
-							"Last error was: %s",
-							cdbsreh->errmsg)));
+					 errmsg("segment reject limit reached, aborting operation"),
+					 errdetail("Last error was: %s", cdbsreh->errmsg)));
 			break;
 		default:
 			elog(ERROR, "unknown reject code %d", code);
@@ -453,24 +442,6 @@ IsRejectLimitReached(CdbSreh *cdbsreh)
 {
 	return GetRejectLimitCode(cdbsreh) != REJECT_NONE;
 }
-
-/*
- * GetNextSegid
- *
- * Return the next sequential segment id of available segids (roundrobin).
- */
-static
-int
-GetNextSegid(CdbSreh *cdbsreh)
-{
-	int			total_segs = cdbsreh->cdbcopy->total_segs;
-
-	if (cdbsreh->lastsegid == total_segs)
-		cdbsreh->lastsegid = 0; /* start over from first segid */
-
-	return (cdbsreh->lastsegid++ % total_segs);
-}
-
 
 /*
  * This function is called when we are preparing to insert a bad row that
@@ -724,7 +695,7 @@ gp_read_error_log(PG_FUNCTION_ARGS)
 		 */
 
 		relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
-		relid = RangeVarGetRelid(relrv, true);
+		relid = RangeVarGetRelid(relrv, NoLock, true);
 
 		/* If the relation has gone, silently return no tuples. */
 		if (OidIsValid(relid))
@@ -937,7 +908,7 @@ gp_truncate_error_log(PG_FUNCTION_ARGS)
 		AclResult	aclresult;
 
 		relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
-		relid = RangeVarGetRelid(relrv, true);
+		relid = RangeVarGetRelid(relrv, NoLock, true);
 
 		/* Return false if the relation does not exist. */
 		if (!OidIsValid(relid))
@@ -960,17 +931,13 @@ gp_truncate_error_log(PG_FUNCTION_ARGS)
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		int			i = 0;
-		StringInfoData sql;
+		char	   *sql;
 		CdbPgResults cdb_pgresults = {NULL, 0};
 
-		initStringInfo(&sql);
+		sql = psprintf("SELECT pg_catalog.gp_truncate_error_log(%s)",
+					   quote_literal_cstr(text_to_cstring(relname)));
 
-
-		appendStringInfo(&sql,
-						 "SELECT pg_catalog.gp_truncate_error_log(%s)",
-						 quote_literal_internal(text_to_cstring(relname)));
-
-		CdbDispatchCommand(sql.data, DF_WITH_SNAPSHOT, &cdb_pgresults);
+		CdbDispatchCommand(sql, DF_WITH_SNAPSHOT, &cdb_pgresults);
 
 		for (i = 0; i < cdb_pgresults.numResults; i++)
 		{
@@ -990,7 +957,7 @@ gp_truncate_error_log(PG_FUNCTION_ARGS)
 		}
 
 		cdbdisp_clearCdbPgResults(&cdb_pgresults);
-		pfree(sql.data);
+		pfree(sql);
 	}
 
 	/* Return true iif all segments return true. */

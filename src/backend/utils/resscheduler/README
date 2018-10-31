@@ -126,9 +126,9 @@ interrupts, sleeping and wait queue removal:
 
 Deadlocks between standard and resource locks are possible, and are handled
 by the deadlock detector. We pass the lock mode as ExclusiveLock - which
-results in overly agressive detection and rollback of deadlocks. However, safety
-is the *initial* goal! More sophisticated detection logic is an obvious next
-step.
+results in overly aggressive detection and rollback of deadlocks. However,
+safety is the *initial* goal! More sophisticated detection logic is an obvious
+next step.
 
 Also deadlocks with oneself are possible, usually only achievable with several
 open cursors:
@@ -276,7 +276,7 @@ Notes
      In the current incarnation of the code it means:
 
        portal->queueId != InvalidOid
-       portal->releaseResLock == true
+       portal->hasResQueueLock == true
 
      Typically every portal gets queueId set at creation, but this may get
      reset when the to-lock-or-not-to-lock decision comes around (see

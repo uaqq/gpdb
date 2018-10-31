@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  *
  * src/bin/psql/input.c
  */
@@ -38,19 +38,14 @@ static int	history_lines_added;
  *	Preserve newlines in saved queries by mapping '\n' to NL_IN_HISTORY
  *
  *	It is assumed NL_IN_HISTORY will never be entered by the user
- *	nor appear inside a multi-byte string.	0x00 is not properly
+ *	nor appear inside a multi-byte string.  0x00 is not properly
  *	handled by the readline routines so it can not be used
  *	for this purpose.
  */
 #define NL_IN_HISTORY	0x01
 #endif
 
-#ifdef HAVE_ATEXIT
 static void finishInput(void);
-#else
-/* designed for use with on_exit() */
-static void finishInput(int, void *);
-#endif
 
 
 /*
@@ -162,7 +157,7 @@ pg_send_history(PQExpBuffer history_buf)
  *
  * Caller *must* have set up sigint_interrupt_jmp before calling.
  *
- * Note: we re-use a static PQExpBuffer for each call.	This is to avoid
+ * Note: we re-use a static PQExpBuffer for each call.  This is to avoid
  * leaking memory if interrupted by SIGINT.
  */
 char *
@@ -290,14 +285,20 @@ initializeInput(int flags)
 		history_lines_added = 0;
 
 		histfile = GetVariable(pset.vars, "HISTFILE");
+
+		if (histfile == NULL)
+		{
+			char	   *envhist;
+
+			envhist = getenv("PSQL_HISTORY");
+			if (envhist != NULL && strlen(envhist) > 0)
+				histfile = envhist;
+		}
+
 		if (histfile == NULL)
 		{
 			if (get_home_path(home))
-			{
-				psql_history = pg_malloc(strlen(home) + 1 +
-										 strlen(PSQLHISTORY) + 1);
-				snprintf(psql_history, MAXPGPATH, "%s/%s", home, PSQLHISTORY);
-			}
+				psql_history = psprintf("%s/%s", home, PSQLHISTORY);
 		}
 		else
 		{
@@ -313,11 +314,7 @@ initializeInput(int flags)
 	}
 #endif
 
-#ifdef HAVE_ATEXIT
 	atexit(finishInput);
-#else
-	on_exit(finishInput, NULL);
-#endif
 }
 
 
@@ -340,6 +337,7 @@ bool
 saveHistory(char *fname, int max_lines, bool appendFlag, bool encodeFlag)
 {
 #ifdef USE_READLINE
+	int			errnum = 0;
 
 	/*
 	 * Suppressing the write attempt when HISTFILE is set to /dev/null may
@@ -359,10 +357,6 @@ saveHistory(char *fname, int max_lines, bool appendFlag, bool encodeFlag)
 		 * history from other concurrent sessions (although there are still
 		 * race conditions when two sessions exit at about the same time). If
 		 * we don't have those functions, fall back to write_history().
-		 *
-		 * Note: return value of write_history is not standardized across GNU
-		 * readline and libedit.  Therefore, check for errno becoming set to
-		 * see if the write failed.  Similarly for append_history.
 		 */
 #if defined(HAVE_HISTORY_TRUNCATE_FILE) && defined(HAVE_APPEND_HISTORY)
 		if (appendFlag)
@@ -385,9 +379,8 @@ saveHistory(char *fname, int max_lines, bool appendFlag, bool encodeFlag)
 				nlines = Min(max_lines, history_lines_added);
 			else
 				nlines = history_lines_added;
-			errno = 0;
-			(void) append_history(nlines, fname);
-			if (errno == 0)
+			errnum = append_history(nlines, fname);
+			if (errnum == 0)
 				return true;
 		}
 		else
@@ -396,7 +389,7 @@ saveHistory(char *fname, int max_lines, bool appendFlag, bool encodeFlag)
 			/* truncate what we have ... */
 			if (max_lines >= 0)
 				stifle_history(max_lines);
-			/* ... and overwrite file.	Tough luck for concurrent sessions. */
+			/* ... and overwrite file.  Tough luck for concurrent sessions. */
 			errno = 0;
 			(void) write_history(fname);
 			if (errno == 0)
@@ -404,7 +397,7 @@ saveHistory(char *fname, int max_lines, bool appendFlag, bool encodeFlag)
 		}
 
 		psql_error("could not save history to file \"%s\": %s\n",
-				   fname, strerror(errno));
+				   fname, strerror(errnum));
 	}
 #else
 	/* only get here in \s case, so complain */
@@ -416,11 +409,7 @@ saveHistory(char *fname, int max_lines, bool appendFlag, bool encodeFlag)
 
 
 static void
-#ifdef HAVE_ATEXIT
 finishInput(void)
-#else
-finishInput(int exitstatus, void *arg)
-#endif
 {
 #ifdef USE_READLINE
 	if (useHistory && psql_history)

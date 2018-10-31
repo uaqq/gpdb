@@ -29,8 +29,8 @@ brew install dep
 
 # Installing python libraries
 brew install python2
-pip install -r python-dependencies.txt
-pip install -r python-developer-dependencies.txt
+pip install --user -r python-dependencies.txt
+pip install --user -r python-developer-dependencies.txt
 
 #echo -e "127.0.0.1\t$HOSTNAME" | sudo tee -a /etc/hosts
 echo 127.0.0.1$'\t'$HOSTNAME | sudo tee -a /etc/hosts
@@ -83,13 +83,6 @@ EOF
 cat >> ~/.bash_profile << EOF
 export GOPATH=\$HOME/go
 export PATH=\$HOME/go/bin:\$PATH
-EOF
-
-# Step: speed up compile time (optional)
-cat >> ~/.bashrc << EOF
-
-# This assumes that the macOS machine has 8 threads
-export MAKEFLAGS='-j8'
 EOF
 
 # Step: install any optional tools

@@ -13,6 +13,10 @@
  */
 #include "postgres.h"
 
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include "access/xlog.h"
 #include "libpq/pqformat.h"
 #include "libpq/libpq.h"
 #include "postmaster/fts.h"
@@ -21,7 +25,6 @@
 #include "utils/guc.h"
 #include "replication/gp_replication.h"
 #include "storage/fd.h"
-#include <unistd.h>
 
 #define FTS_PROBE_FILE_NAME "fts_probe_file.bak"
 #define FTS_PROBE_MAGIC_STRING "FtS PrObEr MaGiC StRiNg, pRoBiNg cHeCk......."
@@ -277,8 +280,12 @@ HandleFtsWalRepProbe(void)
 		 * this segment starts acting as mirror or gets copied over using
 		 * pg_basebackup.
 		 */
-		if (CheckPromoteSignal(true))
+		// GPDB_93_MERGE_FIXME: should we check for FALLBACK_PROMOTE_SIGNAL_FILE, too?
+		if (CheckPromoteSignal())
+		{
+			unlink(PROMOTE_SIGNAL_FILE);
 			elog(LOG, "found and hence deleted '%s' file", PROMOTE_SIGNAL_FILE);
+		}
 	}
 
 	/*

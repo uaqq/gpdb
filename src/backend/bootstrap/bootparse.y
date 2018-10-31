@@ -6,12 +6,12 @@
  *
  * Portions Copyright (c) 2006-2009, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootparse.y,v 1.105 2010/02/07 20:48:09 tgl Exp $
+ *	  src/backend/bootstrap/bootparse.y
  *
  *-------------------------------------------------------------------------
  */
@@ -29,6 +29,7 @@
 #include "bootstrap/bootstrap.h"
 #include "catalog/catalog.h"
 #include "catalog/heap.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
@@ -231,9 +232,11 @@ Boot_CreateStmt:
 												   PG_CATALOG_NAMESPACE,
 												   shared_relation ? GLOBALTABLESPACE_OID : 0,
 												   $3,
+												   InvalidOid,
 												   tupdesc,
 												   /* relam */ InvalidOid,
 												   RELKIND_RELATION,
+												   RELPERSISTENCE_PERMANENT,
 												   RELSTORAGE_HEAP,
 												   shared_relation,
 												   mapped_relation,
@@ -255,6 +258,7 @@ Boot_CreateStmt:
 													  NIL,
 													  /* relam */ InvalidOid,
 													  RELKIND_RELATION,
+													  RELPERSISTENCE_PERMANENT,
 													  RELSTORAGE_HEAP,
 													  shared_relation,
 													  mapped_relation,
@@ -265,7 +269,10 @@ Boot_CreateStmt:
 													  (Datum) 0,
 													  false,
 													  true,
-													  /* valid_opts */ false);
+													  false,
+													  /* valid_opts */ false,
+													  /* is_part_child */ false,
+													  /* is_part_parent */ false);
 						elog(DEBUG4, "relation created with oid %u", id);
 					}
 					do_end();
@@ -297,18 +304,40 @@ Boot_InsertStmt:
 Boot_DeclareIndexStmt:
 		  XDECLARE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN
 				{
+					IndexStmt *stmt = makeNode(IndexStmt);
+					Oid		relationId;
+
 					do_start();
 
-					DefineIndex(makeRangeVar(NULL, $6, -1),
-								$3,
+					stmt->idxname = $3;
+					stmt->relation = makeRangeVar(NULL, $6, -1);
+					stmt->accessMethod = $8;
+					stmt->tableSpace = NULL;
+					stmt->indexParams = $10;
+					stmt->options = NIL;
+					stmt->whereClause = NULL;
+					stmt->excludeOpNames = NIL;
+					stmt->idxcomment = NULL;
+					stmt->indexOid = InvalidOid;
+					stmt->oldNode = InvalidOid;
+					stmt->unique = false;
+					stmt->primary = false;
+					stmt->isconstraint = false;
+					stmt->deferrable = false;
+					stmt->initdeferred = false;
+					stmt->concurrent = false;
+
+					/* locks and races need not concern us in bootstrap mode */
+					relationId = RangeVarGetRelid(stmt->relation, NoLock,
+												  false);
+
+					DefineIndex(relationId,
+								stmt,
 								$4,
-								$8,
-								NULL,
-								$10,
-								NULL, NIL, NIL,
-								false, false, false, false, false,
-								false, false, true, false, false,
-								NULL);
+								false,
+								false,
+								true, /* skip_build */
+								false);
 					do_end();
 				}
 		;
@@ -316,18 +345,40 @@ Boot_DeclareIndexStmt:
 Boot_DeclareUniqueIndexStmt:
 		  XDECLARE UNIQUE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN
 				{
+					IndexStmt *stmt = makeNode(IndexStmt);
+					Oid		relationId;
+
 					do_start();
 
-					DefineIndex(makeRangeVar(NULL, $7, -1),
-								$4,
+					stmt->idxname = $4;
+					stmt->relation = makeRangeVar(NULL, $7, -1);
+					stmt->accessMethod = $9;
+					stmt->tableSpace = NULL;
+					stmt->indexParams = $11;
+					stmt->options = NIL;
+					stmt->whereClause = NULL;
+					stmt->excludeOpNames = NIL;
+					stmt->idxcomment = NULL;
+					stmt->indexOid = InvalidOid;
+					stmt->oldNode = InvalidOid;
+					stmt->unique = true;
+					stmt->primary = false;
+					stmt->isconstraint = false;
+					stmt->deferrable = false;
+					stmt->initdeferred = false;
+					stmt->concurrent = false;
+
+					/* locks and races need not concern us in bootstrap mode */
+					relationId = RangeVarGetRelid(stmt->relation, NoLock,
+												  false);
+
+					DefineIndex(relationId,
+								stmt,
 								$5,
-								$9,
-								NULL,
-								$11,
-								NULL, NIL, NIL,
-								true, false, false, false, false,
-								false, false, true, false, false,
-								NULL);
+								false,
+								false,
+								true, /* skip_build */
+								false);
 					do_end();
 				}
 		;
@@ -364,6 +415,7 @@ boot_index_param:
 					n->name = $1;
 					n->expr = NULL;
 					n->indexcolname = NULL;
+					n->collation = NIL;
 					n->opclass = list_make1(makeString($2));
 					n->ordering = SORTBY_DEFAULT;
 					n->nulls_ordering = SORTBY_NULLS_DEFAULT;

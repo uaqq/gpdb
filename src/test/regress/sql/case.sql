@@ -110,7 +110,7 @@ SELECT '' AS "Five",
 --
 -- NULLIF() and COALESCE()
 -- Shorthand forms for typical CASE constructs
---  defined in the SQL92 standard.
+--  defined in the SQL standard.
 --
 
 SELECT * FROM CASE_TBL WHERE COALESCE(f,i) = 4;
@@ -162,4 +162,3 @@ SELECT * FROM CASE_TBL;
 
 DROP TABLE CASE_TBL;
 DROP TABLE CASE2_TBL;
-

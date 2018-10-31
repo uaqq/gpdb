@@ -30,6 +30,7 @@
 #include "cdb/cdbappendonlystorageformat.h"
 #include "cdb/cdbappendonlystoragewrite.h"
 #include "cdb/cdbappendonlyxlog.h"
+#include "common/relpath.h"
 #include "utils/faultinjector.h"
 #include "utils/guc.h"
 
@@ -257,7 +258,7 @@ AppendOnlyStorageWrite_FinishSession(AppendOnlyStorageWrite *storageWrite)
 void
 AppendOnlyStorageWrite_TransactionCreateFile(AppendOnlyStorageWrite *storageWrite,
 											 char *filePathName,
-											 RelFileNode *relFileNode,
+											 RelFileNodeBackend *relFileNode,
 											 int32 segmentFileNum)
 {
 	Assert(segmentFileNum > 0);
@@ -275,7 +276,8 @@ AppendOnlyStorageWrite_TransactionCreateFile(AppendOnlyStorageWrite *storageWrit
 	 * gp_replica_check tool, to compare primary and mirror, will complain if
 	 * a file exists in master but not in mirror, even if it's empty.
 	 */
-	xlog_ao_insert(*relFileNode, segmentFileNum, 0, NULL, 0);
+	if (!RelFileNodeBackendIsTemp(*relFileNode))
+		xlog_ao_insert(relFileNode->node, segmentFileNum, 0, NULL, 0);
 }
 
 /*
@@ -295,7 +297,7 @@ AppendOnlyStorageWrite_OpenFile(AppendOnlyStorageWrite *storageWrite,
 								int version,
 								int64 logicalEof,
 								int64 fileLen_uncompressed,
-								RelFileNode *relFileNode,
+								RelFileNodeBackend *relFileNode,
 								int32 segmentFileNum)
 {
 	File		file;
@@ -320,19 +322,11 @@ AppendOnlyStorageWrite_OpenFile(AppendOnlyStorageWrite *storageWrite,
 	/*
 	 * Open or create the file for write.
 	 */
-	char	   *dbPath;
-	char		path[MAXPGPATH];
-	int			fileFlags = O_RDWR | PG_BINARY;
-
-	dbPath = GetDatabasePath(relFileNode->dbNode, relFileNode->spcNode);
-
-	if (segmentFileNum == 0)
-		snprintf(path, MAXPGPATH, "%s/%u", dbPath, relFileNode->relNode);
-	else
-		snprintf(path, MAXPGPATH, "%s/%u.%u", dbPath, relFileNode->relNode, segmentFileNum);
+	char	   *path = aorelpath(*relFileNode, segmentFileNum);
 
 	errno = 0;
 
+	int			fileFlags = O_RDWR | PG_BINARY;
 	file = PathNameOpenFile(path, fileFlags, 0600);
 	if (file < 0)
 		ereport(ERROR,
@@ -530,12 +524,10 @@ AppendOnlyStorageWrite_FlushAndCloseFile(
  * The new EOF of the segment file is returned in *newLogicalEof.
  */
 void
-AppendOnlyStorageWrite_TransactionFlushAndCloseFile(
-													AppendOnlyStorageWrite *storageWrite,
+AppendOnlyStorageWrite_TransactionFlushAndCloseFile(AppendOnlyStorageWrite *storageWrite,
 													int64 *newLogicalEof,
 													int64 *fileLen_uncompressed)
 {
-	RelFileNode relFileNode;
 	int32		segmentFileNum;
 
 	Assert(storageWrite != NULL);
@@ -548,7 +540,6 @@ AppendOnlyStorageWrite_TransactionFlushAndCloseFile(
 		return;
 	}
 
-	relFileNode = storageWrite->relFileNode;
 	segmentFileNum = storageWrite->segmentFileNum;
 
 	AppendOnlyStorageWrite_FlushAndCloseFile(storageWrite,
@@ -1077,13 +1068,13 @@ AppendOnlyStorageWrite_VerifyWriteBlock(AppendOnlyStorageWrite *storageWrite,
 
 		decompressor = cfns[COMPRESSION_DECOMPRESS];
 
-		gp_decompress_new(&header[offset], //Compressed data in block.
-						  compressedLen,
-						  storageWrite->verifyWriteBuffer, //Temporary buffer to hold uncompressed data.
-						  uncompressedLen,
-						  decompressor,
-						  storageWrite->verifyWriteCompressionState,
-						  storageWrite->bufferCount);
+		gp_decompress(&header[offset], //Compressed data in block.
+					  compressedLen,
+					  storageWrite->verifyWriteBuffer, //Temporary buffer to hold uncompressed data.
+					  uncompressedLen,
+					  decompressor,
+					  storageWrite->verifyWriteCompressionState,
+					  storageWrite->bufferCount);
 
 		/*
 		 * Compare.
@@ -1187,15 +1178,13 @@ AppendOnlyStorageWrite_CompressAppend(AppendOnlyStorageWrite *storageWrite,
 	 * Compress into the BufferedAppend buffer after the large header (and
 	 * optional checksum, etc.
 	 */
-	(void) gp_trycompress_new(sourceData,
-							  sourceLen,
-							  dataBuffer,
-							  dataBufferWithOverrrunLen,
-							  sourceLen, /* maxCompressedLen */
-							  compressedLen,
-							  storageWrite->storageAttributes.compressLevel,
-							  compressor,
-							  storageWrite->compressionState);
+	gp_trycompress(sourceData,
+					sourceLen,
+					dataBuffer,
+					dataBufferWithOverrrunLen,
+					compressedLen,
+					compressor,
+					storageWrite->compressionState);
 
 #ifdef FAULT_INJECTOR
 	/* Simulate that compression is not possible if the fault is set. */

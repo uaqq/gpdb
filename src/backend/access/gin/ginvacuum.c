@@ -4,27 +4,25 @@
  *	  delete & vacuum routines for the postgres GIN
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *			$PostgreSQL: pgsql/src/backend/access/gin/ginvacuum.c,v 1.33 2010/02/08 04:33:52 tgl Exp $
+ *			src/backend/access/gin/ginvacuum.c
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
 
-#include "access/genam.h"
-#include "access/gin.h"
-#include "catalog/storage.h"
+#include "access/gin_private.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
-#include "storage/bufmgr.h"
 #include "storage/indexfsm.h"
 #include "storage/lmgr.h"
+#include "utils/memutils.h"
 
-typedef struct
+struct GinVacuumState
 {
 	Relation	index;
 	IndexBulkDeleteResult *result;
@@ -32,53 +30,58 @@ typedef struct
 	void	   *callback_state;
 	GinState	ginstate;
 	BufferAccessStrategy strategy;
-} GinVacuumState;
-
+	MemoryContext tmpCxt;
+};
 
 /*
- * Cleans array of ItemPointer (removes dead pointers)
- * Results are always stored in *cleaned, which will be allocated
- * if it's needed. In case of *cleaned!=NULL caller is responsible to
- * have allocated enough space. *cleaned and items may point to the same
- * memory address.
+ * Vacuums an uncompressed posting list. The size of the must can be specified
+ * in number of items (nitems).
+ *
+ * If none of the items need to be removed, returns NULL. Otherwise returns
+ * a new palloc'd array with the remaining items. The number of remaining
+ * items is returned in *nremaining.
  */
-
-static uint32
-ginVacuumPostingList(GinVacuumState *gvs, ItemPointerData *items, uint32 nitem, ItemPointerData **cleaned)
+ItemPointer
+ginVacuumItemPointers(GinVacuumState *gvs, ItemPointerData *items,
+					  int nitem, int *nremaining)
 {
-	uint32		i,
-				j = 0;
+	int			i,
+				remaining = 0;
+	ItemPointer tmpitems = NULL;
 
 	/*
-	 * just scan over ItemPointer array
+	 * Iterate over TIDs array
 	 */
-
 	for (i = 0; i < nitem; i++)
 	{
 		if (gvs->callback(items + i, gvs->callback_state))
 		{
 			gvs->result->tuples_removed += 1;
-			if (!*cleaned)
+			if (!tmpitems)
 			{
-				*cleaned = (ItemPointerData *) palloc(sizeof(ItemPointerData) * nitem);
-				if (i != 0)
-					memcpy(*cleaned, items, sizeof(ItemPointerData) * i);
+				/*
+				 * First TID to be deleted: allocate memory to hold the
+				 * remaining items.
+				 */
+				tmpitems = palloc(sizeof(ItemPointerData) * nitem);
+				memcpy(tmpitems, items, sizeof(ItemPointerData) * i);
 			}
 		}
 		else
 		{
 			gvs->result->num_index_tuples += 1;
-			if (i != j)
-				(*cleaned)[j] = items[i];
-			j++;
+			if (tmpitems)
+				tmpitems[remaining] = items[i];
+			remaining++;
 		}
 	}
 
-	return j;
+	*nremaining = remaining;
+	return tmpitems;
 }
 
 /*
- * fills WAL record for vacuum leaf page
+ * Create a WAL record for vacuuming entry tree leaf page.
  */
 static void
 xlogVacuumPage(Relation index, Buffer buffer)
@@ -86,65 +89,64 @@ xlogVacuumPage(Relation index, Buffer buffer)
 	Page		page = BufferGetPage(buffer);
 	XLogRecPtr	recptr;
 	XLogRecData rdata[3];
-	ginxlogVacuumPage data;
-	char	   *backup;
-	char		itups[BLCKSZ];
-	uint32		len = 0;
+	ginxlogVacuumPage xlrec;
+	uint16		lower;
+	uint16		upper;
 
+	/* This is only used for entry tree leaf pages. */
+	Assert(!GinPageIsData(page));
 	Assert(GinPageIsLeaf(page));
 
-	if (index->rd_istemp)
+	if (!RelationNeedsWAL(index))
 		return;
 
-	data.node = index->rd_node;
-	data.blkno = BufferGetBlockNumber(buffer);
+	xlrec.node = index->rd_node;
+	xlrec.blkno = BufferGetBlockNumber(buffer);
 
-	if (GinPageIsData(page))
+	/* Assume we can omit data between pd_lower and pd_upper */
+	lower = ((PageHeader) page)->pd_lower;
+	upper = ((PageHeader) page)->pd_upper;
+
+	Assert(lower < BLCKSZ);
+	Assert(upper < BLCKSZ);
+
+	if (lower >= SizeOfPageHeaderData &&
+		upper > lower &&
+		upper <= BLCKSZ)
 	{
-		backup = GinDataPageGetData(page);
-		data.nitem = GinPageGetOpaque(page)->maxoff;
-		if (data.nitem)
-			len = MAXALIGN(sizeof(ItemPointerData) * data.nitem);
+		xlrec.hole_offset = lower;
+		xlrec.hole_length = upper - lower;
 	}
 	else
 	{
-		char	   *ptr;
-		OffsetNumber i;
-
-		ptr = backup = itups;
-		for (i = FirstOffsetNumber; i <= PageGetMaxOffsetNumber(page); i++)
-		{
-			IndexTuple	itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, i));
-
-			memcpy(ptr, itup, IndexTupleSize(itup));
-			ptr += MAXALIGN(IndexTupleSize(itup));
-		}
-
-		data.nitem = PageGetMaxOffsetNumber(page);
-		len = ptr - backup;
+		/* No "hole" to compress out */
+		xlrec.hole_offset = 0;
+		xlrec.hole_length = 0;
 	}
 
-	rdata[0].buffer = buffer;
-	rdata[0].buffer_std = (GinPageIsData(page)) ? FALSE : TRUE;
-	rdata[0].len = 0;
-	rdata[0].data = NULL;
-	rdata[0].next = rdata + 1;
+	rdata[0].data = (char *) &xlrec;
+	rdata[0].len = sizeof(ginxlogVacuumPage);
+	rdata[0].buffer = InvalidBuffer;
+	rdata[0].next = &rdata[1];
 
-	rdata[1].buffer = InvalidBuffer;
-	rdata[1].len = sizeof(ginxlogVacuumPage);
-	rdata[1].data = (char *) &data;
-
-	if (len == 0)
+	if (xlrec.hole_length == 0)
 	{
+		rdata[1].data = (char *) page;
+		rdata[1].len = BLCKSZ;
+		rdata[1].buffer = InvalidBuffer;
 		rdata[1].next = NULL;
 	}
 	else
 	{
-		rdata[1].next = rdata + 2;
+		/* must skip the hole */
+		rdata[1].data = (char *) page;
+		rdata[1].len = xlrec.hole_offset;
+		rdata[1].buffer = InvalidBuffer;
+		rdata[1].next = &rdata[2];
 
+		rdata[2].data = (char *) page + (xlrec.hole_offset + xlrec.hole_length);
+		rdata[2].len = BLCKSZ - (xlrec.hole_offset + xlrec.hole_length);
 		rdata[2].buffer = InvalidBuffer;
-		rdata[2].len = len;
-		rdata[2].data = backup;
 		rdata[2].next = NULL;
 	}
 
@@ -158,6 +160,7 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 	Buffer		buffer;
 	Page		page;
 	bool		hasVoidPage = FALSE;
+	MemoryContext oldCxt;
 
 	buffer = ReadBufferExtended(gvs->index, MAIN_FORKNUM, blkno,
 								RBM_NORMAL, gvs->strategy);
@@ -169,7 +172,6 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 	 * again). New scan can't start but previously started ones work
 	 * concurrently.
 	 */
-
 	if (isRoot)
 		LockBufferForCleanup(buffer);
 	else
@@ -179,33 +181,14 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 
 	if (GinPageIsLeaf(page))
 	{
-		OffsetNumber newMaxOff,
-					oldMaxOff = GinPageGetOpaque(page)->maxoff;
-		ItemPointerData *cleaned = NULL;
+		oldCxt = MemoryContextSwitchTo(gvs->tmpCxt);
+		ginVacuumPostingTreeLeaf(gvs->index, buffer, gvs);
+		MemoryContextSwitchTo(oldCxt);
+		MemoryContextReset(gvs->tmpCxt);
 
-		newMaxOff = ginVacuumPostingList(gvs,
-				(ItemPointer) GinDataPageGetData(page), oldMaxOff, &cleaned);
-
-		/* saves changes about deleted tuple ... */
-		if (oldMaxOff != newMaxOff)
-		{
-
-			START_CRIT_SECTION();
-
-			if (newMaxOff > 0)
-				memcpy(GinDataPageGetData(page), cleaned, sizeof(ItemPointerData) * newMaxOff);
-			pfree(cleaned);
-			GinPageGetOpaque(page)->maxoff = newMaxOff;
-
-			MarkBufferDirty(buffer);
-			xlogVacuumPage(gvs->index, buffer);
-
-			END_CRIT_SECTION();
-
-			/* if root is a leaf page, we don't desire further processing */
-			if (!isRoot && GinPageGetOpaque(page)->maxoff < FirstOffsetNumber)
-				hasVoidPage = TRUE;
-		}
+		/* if root is a leaf page, we don't desire further processing */
+		if (!isRoot && !hasVoidPage && GinDataLeafPageIsEmpty(page))
+			hasVoidPage = TRUE;
 	}
 	else
 	{
@@ -214,7 +197,7 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 
 		for (i = FirstOffsetNumber; i <= GinPageGetOpaque(page)->maxoff; i++)
 		{
-			PostingItem *pitem = (PostingItem *) GinDataPageGetItem(page, i);
+			PostingItem *pitem = GinDataPageGetPostingItem(page, i);
 
 			if (ginVacuumPostingTreeLeaves(gvs, PostingItemGetBlockNumber(pitem), FALSE, NULL))
 				isChildHasVoid = TRUE;
@@ -225,8 +208,8 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 	}
 
 	/*
-	 * if we have root and theres void pages in tree, then we don't release
-	 * lock to go further processing and guarantee that tree is unused
+	 * if we have root and there are empty pages in tree, then we don't
+	 * release lock to go further processing and guarantee that tree is unused
 	 */
 	if (!(isRoot && hasVoidPage))
 	{
@@ -241,6 +224,9 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, 
 	return hasVoidPage;
 }
 
+/*
+ * Delete a posting tree page.
+ */
 static void
 ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkno,
 			  BlockNumber parentBlkno, OffsetNumber myoff, bool isParentRoot)
@@ -250,49 +236,45 @@ ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkn
 	Buffer		pBuffer;
 	Page		page,
 				parentPage;
+	BlockNumber rightlink;
 
+	/*
+	 * Lock the pages in the same order as an insertion would, to avoid
+	 * deadlocks: left, then right, then parent.
+	 */
+	lBuffer = ReadBufferExtended(gvs->index, MAIN_FORKNUM, leftBlkno,
+								 RBM_NORMAL, gvs->strategy);
 	dBuffer = ReadBufferExtended(gvs->index, MAIN_FORKNUM, deleteBlkno,
 								 RBM_NORMAL, gvs->strategy);
-
-	if (leftBlkno != InvalidBlockNumber)
-		lBuffer = ReadBufferExtended(gvs->index, MAIN_FORKNUM, leftBlkno,
-									 RBM_NORMAL, gvs->strategy);
-	else
-		lBuffer = InvalidBuffer;
-
 	pBuffer = ReadBufferExtended(gvs->index, MAIN_FORKNUM, parentBlkno,
 								 RBM_NORMAL, gvs->strategy);
 
+	LockBuffer(lBuffer, GIN_EXCLUSIVE);
 	LockBuffer(dBuffer, GIN_EXCLUSIVE);
 	if (!isParentRoot)			/* parent is already locked by
 								 * LockBufferForCleanup() */
 		LockBuffer(pBuffer, GIN_EXCLUSIVE);
-	if (leftBlkno != InvalidBlockNumber)
-		LockBuffer(lBuffer, GIN_EXCLUSIVE);
 
 	START_CRIT_SECTION();
 
-	if (leftBlkno != InvalidBlockNumber)
-	{
-		BlockNumber rightlink;
+	/* Unlink the page by changing left sibling's rightlink */
+	page = BufferGetPage(dBuffer);
+	rightlink = GinPageGetOpaque(page)->rightlink;
 
-		page = BufferGetPage(dBuffer);
-		rightlink = GinPageGetOpaque(page)->rightlink;
+	page = BufferGetPage(lBuffer);
+	GinPageGetOpaque(page)->rightlink = rightlink;
 
-		page = BufferGetPage(lBuffer);
-		GinPageGetOpaque(page)->rightlink = rightlink;
-	}
-
+	/* Delete downlink from parent */
 	parentPage = BufferGetPage(pBuffer);
 #ifdef USE_ASSERT_CHECKING
 	do
 	{
-		PostingItem *tod = (PostingItem *) GinDataPageGetItem(parentPage, myoff);
+		PostingItem *tod = GinDataPageGetPostingItem(parentPage, myoff);
 
 		Assert(PostingItemGetBlockNumber(tod) == deleteBlkno);
 	} while (0);
 #endif
-	PageDeletePostingItem(parentPage, myoff);
+	GinPageDeletePostingItem(parentPage, myoff);
 
 	page = BufferGetPage(dBuffer);
 
@@ -303,16 +285,14 @@ ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkn
 	GinPageGetOpaque(page)->flags = GIN_DELETED;
 
 	MarkBufferDirty(pBuffer);
-	if (leftBlkno != InvalidBlockNumber)
-		MarkBufferDirty(lBuffer);
+	MarkBufferDirty(lBuffer);
 	MarkBufferDirty(dBuffer);
 
-	if (!gvs->index->rd_istemp)
+	if (RelationNeedsWAL(gvs->index))
 	{
 		XLogRecPtr	recptr;
 		XLogRecData rdata[4];
 		ginxlogDeletePage data;
-		int			n;
 
 		data.node = gvs->index->rd_node;
 		data.blkno = deleteBlkno;
@@ -321,6 +301,13 @@ ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkn
 		data.leftBlkno = leftBlkno;
 		data.rightLink = GinPageGetOpaque(page)->rightlink;
 
+		/*
+		 * We can't pass buffer_std = TRUE, because we didn't set pd_lower on
+		 * pre-9.4 versions. The page might've been binary-upgraded from an
+		 * older version, and hence not have pd_lower set correctly. Ditto for
+		 * the left page, but removing the item from the parent updated its
+		 * pd_lower, so we know that's OK at this point.
+		 */
 		rdata[0].buffer = dBuffer;
 		rdata[0].buffer_std = FALSE;
 		rdata[0].data = NULL;
@@ -328,46 +315,33 @@ ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkn
 		rdata[0].next = rdata + 1;
 
 		rdata[1].buffer = pBuffer;
-		rdata[1].buffer_std = FALSE;
+		rdata[1].buffer_std = TRUE;
 		rdata[1].data = NULL;
 		rdata[1].len = 0;
 		rdata[1].next = rdata + 2;
 
-		if (leftBlkno != InvalidBlockNumber)
-		{
-			rdata[2].buffer = lBuffer;
-			rdata[2].buffer_std = FALSE;
-			rdata[2].data = NULL;
-			rdata[2].len = 0;
-			rdata[2].next = rdata + 3;
-			n = 3;
-		}
-		else
-			n = 2;
+		rdata[2].buffer = lBuffer;
+		rdata[2].buffer_std = FALSE;
+		rdata[2].data = NULL;
+		rdata[2].len = 0;
+		rdata[2].next = rdata + 3;
 
-		rdata[n].buffer = InvalidBuffer;
-		rdata[n].buffer_std = FALSE;
-		rdata[n].len = sizeof(ginxlogDeletePage);
-		rdata[n].data = (char *) &data;
-		rdata[n].next = NULL;
+		rdata[3].buffer = InvalidBuffer;
+		rdata[3].buffer_std = FALSE;
+		rdata[3].len = sizeof(ginxlogDeletePage);
+		rdata[3].data = (char *) &data;
+		rdata[3].next = NULL;
 
 		recptr = XLogInsert(RM_GIN_ID, XLOG_GIN_DELETE_PAGE, rdata);
 		PageSetLSN(page, recptr);
 		PageSetLSN(parentPage, recptr);
-		if (leftBlkno != InvalidBlockNumber)
-		{
-			page = BufferGetPage(lBuffer);
-			PageSetLSN(page, recptr);
-		}
+		PageSetLSN(BufferGetPage(lBuffer), recptr);
 	}
 
 	if (!isParentRoot)
 		LockBuffer(pBuffer, GIN_UNLOCK);
 	ReleaseBuffer(pBuffer);
-
-	if (leftBlkno != InvalidBlockNumber)
-		UnlockReleaseBuffer(lBuffer);
-
+	UnlockReleaseBuffer(lBuffer);
 	UnlockReleaseBuffer(dBuffer);
 
 	END_CRIT_SECTION();
@@ -389,12 +363,14 @@ typedef struct DataPageDeleteStack
  * scans posting tree and deletes empty pages
  */
 static bool
-ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, DataPageDeleteStack *parent, OffsetNumber myoff)
+ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot,
+				DataPageDeleteStack *parent, OffsetNumber myoff)
 {
 	DataPageDeleteStack *me;
 	Buffer		buffer;
 	Page		page;
 	bool		meDelete = FALSE;
+	bool		isempty;
 
 	if (isRoot)
 	{
@@ -426,24 +402,26 @@ ginScanToDelete(GinVacuumState *gvs, BlockNumber blkno, bool isRoot, DataPageDel
 		me->blkno = blkno;
 		for (i = FirstOffsetNumber; i <= GinPageGetOpaque(page)->maxoff; i++)
 		{
-			PostingItem *pitem = (PostingItem *) GinDataPageGetItem(page, i);
+			PostingItem *pitem = GinDataPageGetPostingItem(page, i);
 
 			if (ginScanToDelete(gvs, PostingItemGetBlockNumber(pitem), FALSE, me, i))
 				i--;
 		}
 	}
 
-	if (GinPageGetOpaque(page)->maxoff < FirstOffsetNumber)
+	if (GinPageIsLeaf(page))
+		isempty = GinDataLeafPageIsEmpty(page);
+	else
+		isempty = GinPageGetOpaque(page)->maxoff < FirstOffsetNumber;
+
+	if (isempty)
 	{
-		if (!(me->leftBlkno == InvalidBlockNumber && GinPageRightMost(page)))
+		/* we never delete the left- or rightmost branch */
+		if (me->leftBlkno != InvalidBlockNumber && !GinPageRightMost(page))
 		{
-			/* we never delete right most branch */
 			Assert(!isRoot);
-			if (GinPageGetOpaque(page)->maxoff < FirstOffsetNumber)
-			{
-				ginDeletePage(gvs, blkno, me->leftBlkno, me->parent->blkno, myoff, me->parent->isRoot);
-				meDelete = TRUE;
-			}
+			ginDeletePage(gvs, blkno, me->leftBlkno, me->parent->blkno, myoff, me->parent->isRoot);
+			meDelete = TRUE;
 		}
 	}
 
@@ -515,53 +493,73 @@ ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint3
 			 * store posting tree's roots for further processing, we can't
 			 * vacuum it just now due to risk of deadlocks with scans/inserts
 			 */
-			roots[*nroot] = GinItemPointerGetBlockNumber(&itup->t_tid);
+			roots[*nroot] = GinGetDownlink(itup);
 			(*nroot)++;
 		}
 		else if (GinGetNPosting(itup) > 0)
 		{
-			/*
-			 * if we already create temporary page, we will make changes in
-			 * place
-			 */
-			ItemPointerData *cleaned = (tmppage == origpage) ? NULL : GinGetPosting(itup);
-			uint32		newN = ginVacuumPostingList(gvs, GinGetPosting(itup), GinGetNPosting(itup), &cleaned);
+			int			nitems;
+			ItemPointer uncompressed;
 
-			if (GinGetNPosting(itup) != newN)
+			/*
+			 * Vacuum posting list with proper function for compressed and
+			 * uncompressed format.
+			 */
+			if (GinItupIsCompressed(itup))
+				uncompressed = ginPostingListDecode((GinPostingList *) GinGetPosting(itup), &nitems);
+			else
 			{
-				Datum		value;
+				uncompressed = (ItemPointer) GinGetPosting(itup);
+				nitems = GinGetNPosting(itup);
+			}
+
+			uncompressed = ginVacuumItemPointers(gvs, uncompressed, nitems,
+												 &nitems);
+			if (uncompressed)
+			{
+				/*
+				 * Some ItemPointers were deleted, recreate tuple.
+				 */
 				OffsetNumber attnum;
+				Datum		key;
+				GinNullCategory category;
+				GinPostingList *plist;
+				int			plistsize;
+
+				if (nitems > 0)
+				{
+					plist = ginCompressPostingList(uncompressed, nitems, GinMaxItemSize, NULL);
+					plistsize = SizeOfGinPostingList(plist);
+				}
+				else
+				{
+					plist = NULL;
+					plistsize = 0;
+				}
 
 				/*
-				 * Some ItemPointers was deleted, so we should remake our
-				 * tuple
+				 * if we already created a temporary page, make changes in
+				 * place
 				 */
-
 				if (tmppage == origpage)
 				{
 					/*
-					 * On first difference we create temporary page in memory
-					 * and copies content in to it.
+					 * On first difference, create a temporary copy of the
+					 * page and copy the tuple's posting list to it.
 					 */
 					tmppage = PageGetTempPageCopy(origpage);
-
-					if (newN > 0)
-					{
-						Size		pos = ((char *) GinGetPosting(itup)) - ((char *) origpage);
-
-						memcpy(tmppage + pos, cleaned, sizeof(ItemPointerData) * newN);
-					}
-
-					pfree(cleaned);
 
 					/* set itup pointer to new page */
 					itup = (IndexTuple) PageGetItem(tmppage, PageGetItemId(tmppage, i));
 				}
 
-				value = gin_index_getattr(&gvs->ginstate, itup);
 				attnum = gintuple_get_attrnum(&gvs->ginstate, itup);
-				itup = GinFormTuple(gvs->index, &gvs->ginstate, attnum, value,
-									GinGetPosting(itup), newN, true);
+				key = gintuple_get_key(&gvs->ginstate, itup, &category);
+				itup = GinFormTuple(&gvs->ginstate, attnum, key, category,
+									(char *) plist, plistsize,
+									nitems, true);
+				if (plist)
+					pfree(plist);
 				PageIndexTupleDelete(tmppage, i);
 
 				if (PageAddItem(tmppage, (Item) itup, IndexTupleSize(itup), i, false, false) != i)
@@ -590,6 +588,11 @@ ginbulkdelete(PG_FUNCTION_ARGS)
 	BlockNumber rootOfPostingTree[BLCKSZ / (sizeof(IndexTupleData) + sizeof(ItemId))];
 	uint32		nRoot;
 
+	gvs.tmpCxt = AllocSetContextCreate(CurrentMemoryContext,
+									   "Gin vacuum temporary context",
+									   ALLOCSET_DEFAULT_MINSIZE,
+									   ALLOCSET_DEFAULT_INITSIZE,
+									   ALLOCSET_DEFAULT_MAXSIZE);
 	gvs.index = index;
 	gvs.callback = callback;
 	gvs.callback_state = callback_state;
@@ -602,7 +605,7 @@ ginbulkdelete(PG_FUNCTION_ARGS)
 		/* Yes, so initialize stats to zeroes */
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
 		/* and cleanup any pending inserts */
-		ginInsertCleanup(index, &gvs.ginstate, true, stats);
+		ginInsertCleanup(&gvs.ginstate, true, stats);
 	}
 
 	/* we'll re-count the tuples each time */
@@ -638,7 +641,7 @@ ginbulkdelete(PG_FUNCTION_ARGS)
 		Assert(PageGetMaxOffsetNumber(page) >= FirstOffsetNumber);
 
 		itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, FirstOffsetNumber));
-		blkno = GinItemPointerGetBlockNumber(&(itup)->t_tid);
+		blkno = GinGetDownlink(itup);
 		Assert(blkno != InvalidBlockNumber);
 
 		UnlockReleaseBuffer(buffer);
@@ -690,6 +693,8 @@ ginbulkdelete(PG_FUNCTION_ARGS)
 		LockBuffer(buffer, GIN_EXCLUSIVE);
 	}
 
+	MemoryContextDelete(gvs.tmpCxt);
+
 	PG_RETURN_POINTER(gvs.result);
 }
 
@@ -703,9 +708,8 @@ ginvacuumcleanup(PG_FUNCTION_ARGS)
 	BlockNumber npages,
 				blkno;
 	BlockNumber totFreePages;
-	BlockNumber lastBlock = GIN_ROOT_BLKNO,
-				lastFilledBlock = GIN_ROOT_BLKNO;
 	GinState	ginstate;
+	GinStatsData idxStat;
 
 	/*
 	 * In an autovacuum analyze, we want to clean up pending insertions.
@@ -716,7 +720,7 @@ ginvacuumcleanup(PG_FUNCTION_ARGS)
 		if (IsAutoVacuumWorkerProcess())
 		{
 			initGinState(&ginstate, index);
-			ginInsertCleanup(index, &ginstate, true, stats);
+			ginInsertCleanup(&ginstate, true, stats);
 		}
 		PG_RETURN_POINTER(stats);
 	}
@@ -729,8 +733,10 @@ ginvacuumcleanup(PG_FUNCTION_ARGS)
 	{
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
 		initGinState(&ginstate, index);
-		ginInsertCleanup(index, &ginstate, true, stats);
+		ginInsertCleanup(&ginstate, true, stats);
 	}
+
+	memset(&idxStat, 0, sizeof(idxStat));
 
 	/*
 	 * XXX we always report the heap tuple count as the number of index
@@ -753,7 +759,7 @@ ginvacuumcleanup(PG_FUNCTION_ARGS)
 
 	totFreePages = 0;
 
-	for (blkno = GIN_ROOT_BLKNO + 1; blkno < npages; blkno++)
+	for (blkno = GIN_ROOT_BLKNO; blkno < npages; blkno++)
 	{
 		Buffer		buffer;
 		Page		page;
@@ -767,15 +773,28 @@ ginvacuumcleanup(PG_FUNCTION_ARGS)
 
 		if (GinPageIsDeleted(page))
 		{
+			Assert(blkno != GIN_ROOT_BLKNO);
 			RecordFreeIndexPage(index, blkno);
 			totFreePages++;
 		}
-		else
-			lastFilledBlock = blkno;
+		else if (GinPageIsData(page))
+		{
+			idxStat.nDataPages++;
+		}
+		else if (!GinPageIsList(page))
+		{
+			idxStat.nEntryPages++;
+
+			if (GinPageIsLeaf(page))
+				idxStat.nEntries += PageGetMaxOffsetNumber(page);
+		}
 
 		UnlockReleaseBuffer(buffer);
 	}
-	lastBlock = npages - 1;
+
+	/* Update the metapage with accurate page and entry counts */
+	idxStat.nTotalPages = npages;
+	ginUpdateStats(info->index, &idxStat);
 
 	/* Finally, vacuum the FSM */
 	IndexFreeSpaceMapVacuum(info->index);

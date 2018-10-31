@@ -5,10 +5,10 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_database.h,v 1.53 2010/01/05 01:06:56 tgl Exp $
+ * src/include/catalog/pg_database.h
  *
  * NOTES
  *	  the genbki.pl script reads this file and generates .bki
@@ -33,16 +33,20 @@ CATALOG(pg_database,1262) BKI_SHARED_RELATION BKI_ROWTYPE_OID(1248) BKI_SCHEMA_M
 {
 	NameData	datname;		/* database name */
 	Oid			datdba;			/* owner of database */
-	int4		encoding;		/* character encoding */
+	int32		encoding;		/* character encoding */
 	NameData	datcollate;		/* LC_COLLATE setting */
 	NameData	datctype;		/* LC_CTYPE setting */
 	bool		datistemplate;	/* allowed as CREATE DATABASE template? */
 	bool		datallowconn;	/* new connections allowed? */
-	int4		datconnlimit;	/* max connections allowed (-1=no limit) */
+	int32		datconnlimit;	/* max connections allowed (-1=no limit) */
 	Oid			datlastsysoid;	/* highest OID to consider a system OID */
 	TransactionId datfrozenxid; /* all Xids < this are frozen in this DB */
+	TransactionId datminmxid;	/* all multixacts in the DB are >= this */
 	Oid			dattablespace;	/* default table space for this DB */
-	aclitem		datacl[1];		/* access permissions (VAR LENGTH) */
+	int32		hashmethod;		/* hashmethod for dist of tables in the db */
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	aclitem		datacl[1];		/* access permissions */
+#endif
 } FormData_pg_database;
 
 /* GPDB added foreign key definitions for gpcheckcat. */
@@ -60,7 +64,7 @@ typedef FormData_pg_database *Form_pg_database;
  *		compiler constants for pg_database
  * ----------------
  */
-#define Natts_pg_database				12
+#define Natts_pg_database				14
 #define Anum_pg_database_datname		1
 #define Anum_pg_database_datdba			2
 #define Anum_pg_database_encoding		3
@@ -71,11 +75,17 @@ typedef FormData_pg_database *Form_pg_database;
 #define Anum_pg_database_datconnlimit	8
 #define Anum_pg_database_datlastsysoid	9
 #define Anum_pg_database_datfrozenxid	10
-#define Anum_pg_database_dattablespace	11
-#define Anum_pg_database_datacl			12
+#define Anum_pg_database_datminmxid		11
+#define Anum_pg_database_dattablespace	12
+#define Anum_pg_database_hashmethod		13
+#define Anum_pg_database_datacl			14
 
-DATA(insert OID = 1 (  template1 PGUID ENCODING "LC_COLLATE" "LC_CTYPE" t t -1 0 0 1663 _null_));
-SHDESCR("default template database");
+/*
+ * The value for hashmethod col is defined in cdb/cdbhash.h
+ * the magic number 1 here means JUMP_HASH_METHOD
+ */
+DATA(insert OID = 1 (  template1 PGUID ENCODING "LC_COLLATE" "LC_CTYPE" t t -1 0 0 1 1663 1 _null_));
+SHDESCR("default template for new databases");
 #define TemplateDbOid			1
 
 #endif   /* PG_DATABASE_H */

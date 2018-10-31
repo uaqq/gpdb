@@ -4,10 +4,10 @@
  *	  prototypes for parse_relation.c.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/parser/parse_relation.h,v 1.68 2010/01/02 16:58:07 momjian Exp $
+ * src/include/parser/parse_relation.h
  *
  *-------------------------------------------------------------------------
  */
@@ -45,7 +45,7 @@ extern Node *colNameToVar(ParseState *pstate, char *colname, bool localonly,
 extern void markVarForSelectPriv(ParseState *pstate, Var *var,
 					 RangeTblEntry *rte);
 extern Relation parserOpenTable(ParseState *pstate, const RangeVar *relation,
-				int lockmode, bool nowait, bool *lockUpgraded);
+								int lockmode, bool nowait, bool *lockUpgraded);
 extern RangeTblEntry *addRangeTableEntry(ParseState *pstate,
 				   RangeVar *relation,
 				   Alias *alias,
@@ -59,15 +59,20 @@ extern RangeTblEntry *addRangeTableEntryForRelation(ParseState *pstate,
 extern RangeTblEntry *addRangeTableEntryForSubquery(ParseState *pstate,
 							  Query *subquery,
 							  Alias *alias,
+							  bool lateral,
 							  bool inFromCl);
 extern RangeTblEntry *addRangeTableEntryForFunction(ParseState *pstate,
-							  char *funcname,
-							  Node *funcexpr,
+							  List *funcnames,
+							  List *funcexprs,
+							  List *coldeflists,
 							  RangeFunction *rangefunc,
+							  bool lateral,
 							  bool inFromCl);
 extern RangeTblEntry *addRangeTableEntryForValues(ParseState *pstate,
 							List *exprs,
+							List *collations,
 							Alias *alias,
+							bool lateral,
 							bool inFromCl);
 extern RangeTblEntry *addRangeTableEntryForJoin(ParseState *pstate,
 						  List *colnames,
@@ -78,13 +83,15 @@ extern RangeTblEntry *addRangeTableEntryForJoin(ParseState *pstate,
 extern RangeTblEntry *addRangeTableEntryForCTE(ParseState *pstate,
 						 CommonTableExpr *cte,
 						 Index levelsup,
-						 Alias *alias,
+						 RangeVar *rv,
 						 bool inFromCl);
 extern LockingClause *getLockedRefname(ParseState *pstate, const char *refname);
 extern void addRTEtoQuery(ParseState *pstate, RangeTblEntry *rte,
 			  bool addToJoinList,
 			  bool addToRelNameSpace, bool addToVarNameSpace);
-extern void errorMissingRTE(ParseState *pstate, RangeVar *relation);
+extern void errorMissingRTE(ParseState *pstate, RangeVar *relation) __attribute__((noreturn));
+extern void errorMissingColumn(ParseState *pstate,
+	   char *relname, char *colname, int location) __attribute__((noreturn));
 extern void expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 		  int location, bool include_dropped,
 		  List **colnames, List **colvars);
@@ -93,6 +100,8 @@ extern List *expandRelAttrs(ParseState *pstate, RangeTblEntry *rte,
 extern int	attnameAttNum(Relation rd, const char *attname, bool sysColOK);
 extern Name attnumAttName(Relation rd, int attid);
 extern Oid	attnumTypeId(Relation rd, int attid);
+extern Oid	attnumCollationId(Relation rd, int attid);
+extern bool isQueryUsingTempRelation(Query *query);
 
 extern bool isSimplyUpdatableRelation(Oid relid, bool noerror);
 extern Index extractSimplyUpdatableRTEIndex(List *rtable);

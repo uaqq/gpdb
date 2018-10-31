@@ -4,10 +4,10 @@
  *	  exported definitions for utils/hash/dynahash.c; see notes therein
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/hsearch.h,v 1.50 2010/01/02 16:58:10 momjian Exp $
+ * src/include/utils/hsearch.h
  *
  *-------------------------------------------------------------------------
  */
@@ -30,7 +30,7 @@ typedef int (*HashCompareFunc) (const void *key1, const void *key2,
 											Size keysize);
 
 /*
- * Key copying functions must have this signature.	The return value is not
+ * Key copying functions must have this signature.  The return value is not
  * used.  (The definition is set up to allow memcpy() and strncpy() to be
  * used directly.)
  */
@@ -92,6 +92,7 @@ typedef struct HASHCTL
 #define HASH_CONTEXT	0x200	/* Set memory allocation context */
 #define HASH_COMPARE	0x400	/* Set user defined comparison function */
 #define HASH_KEYCOPY	0x800	/* Set user defined key-copying function */
+#define HASH_FIXED_SIZE 0x1000	/* Initial size is a hard limit */
 
 
 /* max_dsize value to indicate expansible directory */
@@ -127,6 +128,8 @@ extern uint32 get_hash_value(HTAB *hashp, const void *keyPtr);
 extern void *hash_search_with_hash_value(HTAB *hashp, const void *keyPtr,
 							uint32 hashvalue, HASHACTION action,
 							bool *foundPtr);
+extern bool hash_update_hash_key(HTAB *hashp, void *existingEntry,
+					 const void *newKeyPtr);
 extern long hash_get_num_entries(HTAB *hashp);
 extern void hash_seq_init(HASH_SEQ_STATUS *status, HTAB *hashp);
 extern void *hash_seq_search(HASH_SEQ_STATUS *status);

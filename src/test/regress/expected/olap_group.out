@@ -1,6 +1,12 @@
 --
 -- OLAP_GROUP - Test OLAP GROUP BY extensions
 --
+-- Many of the tests here test different queries that are expected to
+-- produce the same result. Such queries are kept in "start_equiv" /
+-- "end_equiv" comments. We used to have special support in gpdiff.pl to
+-- check that they really produce the same result, but they no longer
+-- bear any special meaning, the markers are for human consumption only.
+--
 -- Syntactic equivalents --
 --start_equiv
 select count(*) from sale;
@@ -2865,7 +2871,9 @@ create view cube_view as select cn,vn,grouping(vn,cn) from sale group by cube(cn
  vn       | integer |           | plain   | 
  grouping | bigint  |           | plain   | 
 View definition:
- SELECT sale.cn, sale.vn, grouping(sale.vn, sale.cn) AS "grouping"
+ SELECT sale.cn,
+    sale.vn,
+    grouping(sale.vn, sale.cn) AS "grouping"
    FROM sale
   GROUP BY CUBE (sale.cn, sale.vn);
 
@@ -2879,7 +2887,10 @@ create view rollup_view as select cn,vn,pn,grouping(cn,vn,pn) from sale group by
  pn       | integer |           | plain   | 
  grouping | bigint  |           | plain   | 
 View definition:
- SELECT sale.cn, sale.vn, sale.pn, grouping(sale.cn, sale.vn, sale.pn) AS "grouping"
+ SELECT sale.cn,
+    sale.vn,
+    sale.pn,
+    grouping(sale.cn, sale.vn, sale.pn) AS "grouping"
    FROM sale
   GROUP BY sale.vn, sale.pn, ROLLUP (sale.cn);
 
@@ -2892,7 +2903,9 @@ create view gs_view as select cn,vn,grouping(vn,cn) from sale group by grouping 
  vn       | integer |           | plain   | 
  grouping | bigint  |           | plain   | 
 View definition:
- SELECT sale.cn, sale.vn, grouping(sale.vn, sale.cn) AS "grouping"
+ SELECT sale.cn,
+    sale.vn,
+    grouping(sale.vn, sale.cn) AS "grouping"
    FROM sale
   GROUP BY GROUPING SETS ((sale.vn), (sale.cn), (), ((sale.cn), (sale.vn)));
 
@@ -5975,7 +5988,7 @@ group by a
 union all
 select null, null, array_agg((a+1)*x order by x), array_agg((b+1)*y order by y)
 from r6756 r
-;
+order by 1,2;
  a | b |       array_agg       |       array_agg       
 ---+---+-----------------------+-----------------------
  0 | 0 | {1}                   | {1}
@@ -5989,7 +6002,8 @@ from r6756 r
 
 select a, b, array_agg((a+1)*x order by x), array_agg((b+1)*y order by y)
 from r6756 r
-group by rollup (a,b);
+group by rollup (a,b)
+order by 1,2;
  a | b |       array_agg       |       array_agg       
 ---+---+-----------------------+-----------------------
  0 | 0 | {1}                   | {1}
@@ -6042,13 +6056,13 @@ insert into cust_agg values
   ('verru', 450, 'hats');
 -- return customer name from cust_agg with count of prod_agg table 
 select cusname,(select count(*) from prod_agg) from cust_agg;
- cusname | ?column? 
----------+----------
- jay     |        5
- mahi    |        5
- verru   |        5
- aryan   |        5
- nitu    |        5
+ cusname | count 
+---------+-------
+ aryan   |     5
+ nitu    |     5
+ verru   |     5
+ jay     |     5
+ mahi    |     5
 (5 rows)
 
 -- clean up

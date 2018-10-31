@@ -15,7 +15,7 @@
  * this module.
  *
  * To allow reusing existing combo cids, we also keep a hash table that
- * maps cmin,cmax pairs to combo cids.	This keeps the data structure size
+ * maps cmin,cmax pairs to combo cids.  This keeps the data structure size
  * reasonable in most cases, since the number of unique pairs used by any
  * one transaction is likely to be small.
  *
@@ -30,18 +30,19 @@
  * destroyed at the end of each transaction.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/time/combocid.c,v 1.7 2010/01/02 16:57:58 momjian Exp $
+ *	  src/backend/utils/time/combocid.c
  *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
 
-#include "access/htup.h"
+#include "miscadmin.h"
+#include "access/htup_details.h"
 #include "access/xact.h"
 #include "cdb/cdbvars.h"
 #include "utils/combocid.h"
@@ -53,6 +54,7 @@
 #include "access/twophase.h"  /* max_prepared_xacts */
 
 #include "storage/buffile.h"
+#include "storage/proc.h"
 
 /*
  * We now maintain two hashtables.
@@ -149,13 +151,20 @@ HeapTupleHeaderGetCmax(HeapTupleHeader tup)
 {
 	CommandId	cid = HeapTupleHeaderGetRawCommandId(tup);
 
-	/* We do not store cmax when locking a tuple */
-	Assert(!(tup->t_infomask & (HEAP_MOVED | HEAP_IS_LOCKED)));
+	Assert(!(tup->t_infomask & HEAP_MOVED));
 
+	/*
+	 * Because GetUpdateXid() performs memory allocations if xmax is a
+	 * multixact we can't Assert() if we're inside a critical section. This
+	 * weakens the check, but not using GetCmax() inside one would complicate
+	 * things too much.
+	 */
 	/*
 	 * MPP-8317: cursors can't always *tell* that this is the current transaction.
 	 */
-	Assert(QEDtxContextInfo.cursorContext || TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmax(tup)));
+	Assert(QEDtxContextInfo.cursorContext ||
+		   CritSectionCount > 0 ||
+		   TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tup)));
 
 	if (tup->t_infomask & HEAP_COMBOCID)
 		return GetRealCmax(HeapTupleHeaderGetXmin(tup), cid);
@@ -184,11 +193,11 @@ HeapTupleHeaderAdjustCmax(HeapTupleHeader tup,
 	/*
 	 * If we're marking a tuple deleted that was inserted by (any
 	 * subtransaction of) our transaction, we need to use a combo command id.
-	 * Test for HEAP_XMIN_COMMITTED first, because it's cheaper than a
-	 * TransactionIdIsCurrentTransactionId call.
+	 * Test for HeapTupleHeaderXminCommitted() first, because it's cheaper
+	 * than a TransactionIdIsCurrentTransactionId call.
 	 */
-	if (!(tup->t_infomask & HEAP_XMIN_COMMITTED) &&
-		TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(tup)))
+	if (!HeapTupleHeaderXminCommitted(tup) &&
+		TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmin(tup)))
 	{
 		CommandId	cmin = HeapTupleHeaderGetCmin(tup);
 
@@ -239,7 +248,7 @@ GetComboCommandId(TransactionId xmin, CommandId cmin, CommandId cmax)
 
 	if (Gp_role == GP_ROLE_EXECUTE && !Gp_is_writer)
 	{
-		if (Gp_segment == -1)
+		if (IS_QUERY_DISPATCHER())
 			elog(ERROR, "EntryReader qExec tried to allocate a Combo Command Id");
 		else
 			elog(ERROR, "Reader qExec tried to allocate a Combo Command Id");
@@ -396,10 +405,7 @@ GetRealCmin(TransactionId xmin, CommandId combocid)
 	if (combocid >= usedComboCids)
 	{
 		if (Gp_is_writer)
-		{
-			elog(LOG, "writer segworker group unable to resolve visibility %u/%u", combocid, usedComboCids);
-			Insist(false);
-		}
+			ereport(ERROR, (errmsg("writer segworker group unable to resolve visibility %u/%u", combocid, usedComboCids)));
 
 		/* We're a reader */
 		return getSharedComboCidEntry(xmin, combocid, CMIN);
@@ -414,8 +420,8 @@ GetRealCmax(TransactionId xmin, CommandId combocid)
 {
 	if (combocid >= usedComboCids)
 	{
-		insist_log(!Gp_is_writer,
-				"writer segworker group unable to resolve visibility %u/%u", combocid, usedComboCids);
+		if (Gp_is_writer)
+			ereport(ERROR, (errmsg("writer segworker group unable to resolve visibility %u/%u", combocid, usedComboCids)));
 
 		/* We're a reader */
 		return getSharedComboCidEntry(xmin, combocid, CMAX);

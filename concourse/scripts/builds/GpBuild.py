@@ -10,6 +10,7 @@ class GpBuild(GpdbBuildBase):
         self.mode = 'on' if mode == 'orca' else 'off'
         self.configure_options =  [
                                     "--enable-mapreduce",
+                                    "--enable-orafce",
                                     "--with-gssapi",
                                     "--with-perl",
                                     "--with-libxml",
@@ -49,7 +50,7 @@ class GpBuild(GpdbBuildBase):
         if option == 'world':
             return self.run_install_check_with_command('make installcheck-world')
         else:
-            return self.run_install_check_with_command('make -C src/test installcheck-good')
+            return self.run_install_check_with_command('make -C src/test/regress installcheck-good')
 
     def run_install_check_with_command(self, make_command):
         return subprocess.call([

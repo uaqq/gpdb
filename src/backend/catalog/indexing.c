@@ -4,21 +4,22 @@
  *	  This file contains routines to support indexes defined on system
  *	  catalogs.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/indexing.c,v 1.120 2010/01/02 16:57:36 momjian Exp $
+ *	  src/backend/catalog/indexing.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
-#include "access/genam.h"
+#include "access/htup_details.h"
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "executor/executor.h"
+#include "utils/rel.h"
 
 
 /*
@@ -148,7 +149,7 @@ CatalogIndexInsert(CatalogIndexState indstate, HeapTuple heapTuple)
  * CatalogUpdateIndexes - do all the indexing work for a new catalog tuple
  *
  * This is a convenience routine for the common case where we only need
- * to insert or update a single tuple in a system catalog.	Avoid using it for
+ * to insert or update a single tuple in a system catalog.  Avoid using it for
  * multiple tuples, since opening the indexes and building the index info
  * structures is moderately expensive.
  */

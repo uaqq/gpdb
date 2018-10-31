@@ -3,9 +3,9 @@
  * ts_utils.h
  *	  helper utilities for tsearch
  *
- * Copyright (c) 1998-2010, PostgreSQL Global Development Group
+ * Copyright (c) 1998-2014, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/include/tsearch/ts_utils.h,v 1.19 2010/01/02 16:58:09 momjian Exp $
+ * src/include/tsearch/ts_utils.h
  *
  *-------------------------------------------------------------------------
  */
@@ -42,7 +42,7 @@ typedef struct TSQueryParserStateData *TSQueryParserState;
 
 typedef void (*PushFunction) (Datum opaque, TSQueryParserState state,
 										  char *token, int tokenlen,
-										  int2 tokenweights,	/* bitmap as described
+										  int16 tokenweights,	/* bitmap as described
 																 * in QueryOperand
 																 * struct */
 										  bool prefix);
@@ -53,7 +53,7 @@ extern TSQuery parse_tsquery(char *buf,
 
 /* Functions for use by PushFunction implementations */
 extern void pushValue(TSQueryParserState state,
-		  char *strval, int lenval, int2 weight, bool prefix);
+		  char *strval, int lenval, int16 weight, bool prefix);
 extern void pushStop(TSQueryParserState state);
 extern void pushOperator(TSQueryParserState state, int8 oper);
 
@@ -83,12 +83,12 @@ typedef struct
 typedef struct
 {
 	ParsedWord *words;
-	int4		lenwords;
-	int4		curwords;
-	int4		pos;
+	int32		lenwords;
+	int32		curwords;
+	int32		pos;
 } ParsedText;
 
-extern void parsetext(Oid cfgId, ParsedText *prs, char *buf, int4 buflen);
+extern void parsetext(Oid cfgId, ParsedText *prs, char *buf, int32 buflen);
 
 /*
  * headline framework, flow in common to generate:
@@ -98,15 +98,15 @@ extern void parsetext(Oid cfgId, ParsedText *prs, char *buf, int4 buflen);
  */
 
 extern void hlparsetext(Oid cfgId, HeadlineParsedText *prs, TSQuery query,
-			char *buf, int4 buflen);
+			char *buf, int32 buflen);
 extern text *generateHeadline(HeadlineParsedText *prs);
 
 /*
  * Common check function for tsvector @@ tsquery
  */
-
 extern bool TS_execute(QueryItem *curitem, void *checkval, bool calcnot,
 		   bool (*chkcond) (void *checkval, QueryOperand *val));
+extern bool tsquery_requires_match(QueryItem *curitem);
 
 /*
  * to_ts* - text transformation to tsvector, tsquery
@@ -149,6 +149,10 @@ extern Datum gin_cmp_tslexeme(PG_FUNCTION_ARGS);
 extern Datum gin_cmp_prefix(PG_FUNCTION_ARGS);
 extern Datum gin_extract_tsquery(PG_FUNCTION_ARGS);
 extern Datum gin_tsquery_consistent(PG_FUNCTION_ARGS);
+extern Datum gin_tsquery_triconsistent(PG_FUNCTION_ARGS);
+extern Datum gin_extract_tsvector_2args(PG_FUNCTION_ARGS);
+extern Datum gin_extract_tsquery_5args(PG_FUNCTION_ARGS);
+extern Datum gin_tsquery_consistent_6args(PG_FUNCTION_ARGS);
 
 /*
  * Possible strategy numbers for indexes
@@ -161,14 +165,14 @@ extern Datum gin_tsquery_consistent(PG_FUNCTION_ARGS);
 /*
  * TSQuery Utilities
  */
-extern QueryItem *clean_NOT(QueryItem *ptr, int4 *len);
-extern QueryItem *clean_fakeval(QueryItem *ptr, int4 *len);
+extern QueryItem *clean_NOT(QueryItem *ptr, int32 *len);
+extern QueryItem *clean_fakeval(QueryItem *ptr, int32 *len);
 
 typedef struct QTNode
 {
 	QueryItem  *valnode;
 	uint32		flags;
-	int4		nchild;
+	int32		nchild;
 	char	   *word;
 	uint32		sign;
 	struct QTNode **child;

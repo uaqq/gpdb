@@ -5,27 +5,42 @@
  *
  *
  * For machines that have test-and-set (TAS) instructions, s_lock.h/.c
- * define the spinlock implementation.	This file contains only a stub
+ * define the spinlock implementation.  This file contains only a stub
  * implementation for spinlocks using PGSemaphores.  Unless semaphores
  * are implemented in a way that doesn't involve a kernel call, this
  * is too slow to be very useful :-(
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/spin.c,v 1.25 2010/01/02 16:57:52 momjian Exp $
+ *	  src/backend/storage/lmgr/spin.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "miscadmin.h"
+#include "replication/walsender.h"
 #include "storage/lwlock.h"
+#include "storage/pg_sema.h"
 #include "storage/spin.h"
 
+
+PGSemaphore SpinlockSemaArray;
+
+/*
+ * Report the amount of shared memory needed to store semaphores for spinlock
+ * support.
+ */
+Size
+SpinlockSemaSize(void)
+{
+	return SpinlockSemas() * sizeof(PGSemaphoreData);
+}
 
 #ifdef HAVE_SPINLOCKS
 
@@ -50,15 +65,20 @@ SpinlockSemas(void)
 int
 SpinlockSemas(void)
 {
-	/*
-	 * It would be cleaner to distribute this logic into the affected modules,
-	 * similar to the way shmem space estimation is handled.
-	 *
-	 * plus one for each LWLock and one for each buffer header,plus
-	 * NUM_ATOMICS_SEMAPHORES for atomic api(without sufficient spinlock
-	 * and/or atomics support)
-	 */
-	return NumLWLocks() + NBuffers + 10 + NUM_ATOMICS_SEMAPHORES;
+	return NUM_SPINLOCK_SEMAPHORES;
+}
+
+/*
+ * Initialize semaphores.
+ */
+extern void
+SpinlockSemaInit(PGSemaphore spinsemas)
+{
+	int			i;
+
+	for (i = 0; i < NUM_SPINLOCK_SEMAPHORES; ++i)
+		PGSemaphoreCreate(&spinsemas[i]);
+	SpinlockSemaArray = spinsemas;
 }
 
 /*
@@ -68,13 +88,15 @@ SpinlockSemas(void)
 void
 s_init_lock_sema(volatile slock_t *lock)
 {
-	PGSemaphoreCreate((PGSemaphore) lock);
+	static int	counter = 0;
+
+	*lock = (++counter) % NUM_SPINLOCK_SEMAPHORES;
 }
 
 void
 s_unlock_sema(volatile slock_t *lock)
 {
-	PGSemaphoreUnlock((PGSemaphore) lock);
+	PGSemaphoreUnlock(&SpinlockSemaArray[*lock]);
 }
 
 bool
@@ -89,7 +111,7 @@ int
 tas_sema(volatile slock_t *lock)
 {
 	/* Note that TAS macros return 0 if *success* */
-	return !PGSemaphoreTryLock((PGSemaphore) lock);
+	return !PGSemaphoreTryLock(&SpinlockSemaArray[*lock]);
 }
 
 #endif   /* !HAVE_SPINLOCKS */

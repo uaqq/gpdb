@@ -81,8 +81,8 @@ bmbuild(PG_FUNCTION_ARGS)
 
 	tupDesc = RelationGetDescr(index);
 
-	/* initialize the bitmap index. */
-	_bitmap_init(index, !index->rd_istemp);
+	/* initialize the bitmap index for MAIN_FORKNUM. */
+	_bitmap_init(index, RelationNeedsWAL(index), false);
 
 	/* initialize the build state. */
 	_bitmap_init_buildstate(index, &bmstate);
@@ -102,6 +102,17 @@ bmbuild(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(result);
 }
 
+/*
+ *	bmbuildempty() -- build an empty bitmap index in the initialization fork
+ */
+Datum
+bmbuildempty(PG_FUNCTION_ARGS)
+{
+	Relation indexrel = (Relation) PG_GETARG_POINTER(0);
+	/* initialize meta page and first LOV page for INIT_FORKNUM */
+	_bitmap_init(indexrel, true, true);
+	PG_RETURN_VOID();
+}
 
 /*
  * bminsert() -- insert an index tuple into a bitmap index.
@@ -256,11 +267,23 @@ bmbeginscan(PG_FUNCTION_ARGS)
 {
 	Relation	rel = (Relation) PG_GETARG_POINTER(0);
 	int			nkeys = PG_GETARG_INT32(1);
-	ScanKey		scankey = (ScanKey) PG_GETARG_POINTER(2);
+	int			norderbys = PG_GETARG_INT32(2);
 	IndexScanDesc scan;
+	BMScanOpaque	so;
+
+	/* no order by operators allowed */
+	Assert(norderbys == 0);
 
 	/* get the scan */
-	scan = RelationGetIndexScan(rel, nkeys, scankey);
+	scan = RelationGetIndexScan(rel, nkeys, norderbys);
+
+	/* allocate private workspace */
+	so = (BMScanOpaque) palloc(sizeof(BMScanOpaqueData));
+	so->bm_currPos = NULL;
+	so->bm_markPos = NULL;
+	so->cur_pos_valid = false;
+	so->mark_pos_valid = false;
+	scan->opaque = so;
 
 	PG_RETURN_POINTER(scan);
 }
@@ -273,18 +296,8 @@ bmrescan(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc	scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	ScanKey			scankey = (ScanKey) PG_GETARG_POINTER(1);
+	/* remaining arguments are ignored */
 	BMScanOpaque	so = (BMScanOpaque) scan->opaque;
-
-	/* so will be NULL if we were called via index_rescan() */
-	if (so == NULL)
-	{
-		so = (BMScanOpaque) palloc(sizeof(BMScanOpaqueData));
-		so->bm_currPos = NULL;
-		so->bm_markPos = NULL;
-		so->cur_pos_valid = false;
-		so->mark_pos_valid = false;
-		scan->opaque = so;
-	}
 
 	if (so->bm_currPos != NULL)
 	{

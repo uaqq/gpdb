@@ -13,11 +13,13 @@ DROP ROLE IF EXISTS regressuser3;
 DROP ROLE IF EXISTS regressuser4;
 DROP ROLE IF EXISTS regressuser5;
 DROP ROLE IF EXISTS regressuser6;
+-- start_ignore
 SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
  lo_unlink 
 -----------
 (0 rows)
 
+-- end_ignore
 RESET client_min_messages;
 -- test proper begins here
 CREATE USER regressuser1;
@@ -200,6 +202,8 @@ CREATE VIEW atestv1 AS SELECT * FROM atest1; -- ok
 /* The next *should* fail, but it's not implemented that way yet. */
 CREATE VIEW atestv2 AS SELECT * FROM atest2;
 CREATE VIEW atestv3 AS SELECT * FROM atest3; -- ok
+/* Empty view is a corner case that failed in 9.2. */
+CREATE VIEW atestv0 AS SELECT 0 as x WHERE false; -- ok
 SELECT * FROM atestv1; -- ok
  a |  b  
 ---+-----
@@ -226,6 +230,23 @@ SELECT * FROM atestv3; -- ok
 -----+-----+-------
 (0 rows)
 
+SELECT * FROM atestv0; -- fail
+ERROR:  permission denied for relation atestv0
+-- Appendrels excluded by constraints failed to check permissions in 8.4-9.2.
+select * from
+  ((select a.q1 as x from int8_tbl a offset 0)
+   union all
+   (select b.q2 as x from int8_tbl b offset 0)) ss
+where false;
+ERROR:  permission denied for relation int8_tbl
+set constraint_exclusion = on;
+select * from
+  ((select a.q1 as x, random() from int8_tbl a where q1 > 0)
+   union all
+   (select b.q2 as x, random() from int8_tbl b where q2 > 0)) ss
+where x < 0;
+ERROR:  permission denied for relation int8_tbl
+reset constraint_exclusion;
 CREATE VIEW atestv4 AS SELECT * FROM atestv3; -- nested view
 SELECT * FROM atestv4; -- ok
  one | two | three 
@@ -514,6 +535,104 @@ ERROR:  must be owner of function testfunc1
 DROP FUNCTION testfunc1(int); -- ok
 -- restore to sanity
 GRANT ALL PRIVILEGES ON LANGUAGE sql TO PUBLIC;
+-- privileges on types
+-- switch to superuser
+\c -
+CREATE TYPE testtype1 AS (a int, b text);
+REVOKE USAGE ON TYPE testtype1 FROM PUBLIC;
+GRANT USAGE ON TYPE testtype1 TO regressuser2;
+GRANT USAGE ON TYPE _testtype1 TO regressuser2; -- fail
+ERROR:  cannot set privileges of array types
+HINT:  Set the privileges of the element type instead.
+GRANT USAGE ON DOMAIN testtype1 TO regressuser2; -- fail
+ERROR:  "testtype1" is not a domain
+CREATE DOMAIN testdomain1 AS int;
+REVOKE USAGE on DOMAIN testdomain1 FROM PUBLIC;
+GRANT USAGE ON DOMAIN testdomain1 TO regressuser2;
+GRANT USAGE ON TYPE testdomain1 TO regressuser2; -- ok
+SET SESSION AUTHORIZATION regressuser1;
+-- commands that should fail
+CREATE AGGREGATE testagg1a(testdomain1) (sfunc = int4_sum, stype = bigint);
+ERROR:  permission denied for type testdomain1
+CREATE DOMAIN testdomain2a AS testdomain1;
+ERROR:  permission denied for type testdomain1
+CREATE DOMAIN testdomain3a AS int;
+CREATE FUNCTION castfunc(int) RETURNS testdomain3a AS $$ SELECT $1::testdomain3a $$ LANGUAGE SQL;
+CREATE CAST (testdomain1 AS testdomain3a) WITH FUNCTION castfunc(int);
+ERROR:  permission denied for type testdomain1
+DROP FUNCTION castfunc(int) CASCADE;
+DROP DOMAIN testdomain3a;
+CREATE FUNCTION testfunc5a(a testdomain1) RETURNS int LANGUAGE SQL AS $$ SELECT $1 $$;
+ERROR:  permission denied for type testdomain1
+CREATE FUNCTION testfunc6a(b int) RETURNS testdomain1 LANGUAGE SQL AS $$ SELECT $1::testdomain1 $$;
+ERROR:  permission denied for type testdomain1
+CREATE OPERATOR !+! (PROCEDURE = int4pl, LEFTARG = testdomain1, RIGHTARG = testdomain1);
+ERROR:  permission denied for type testdomain1
+CREATE TABLE test5a (a int, b testdomain1);
+ERROR:  permission denied for type testdomain1
+CREATE TABLE test6a OF testtype1;
+ERROR:  permission denied for type testtype1
+CREATE TABLE test10a (a int[], b testtype1[]);
+ERROR:  permission denied for type testtype1
+CREATE TABLE test9a (a int, b int);
+ALTER TABLE test9a ADD COLUMN c testdomain1;
+ERROR:  permission denied for type testdomain1
+ALTER TABLE test9a ALTER COLUMN b TYPE testdomain1;
+ERROR:  permission denied for type testdomain1
+CREATE TYPE test7a AS (a int, b testdomain1);
+ERROR:  permission denied for type testdomain1
+CREATE TYPE test8a AS (a int, b int);
+ALTER TYPE test8a ADD ATTRIBUTE c testdomain1;
+ERROR:  permission denied for type testdomain1
+ALTER TYPE test8a ALTER ATTRIBUTE b TYPE testdomain1;
+ERROR:  permission denied for type testdomain1
+CREATE TABLE test11a AS (SELECT 1::testdomain1 AS a);
+ERROR:  permission denied for type testdomain1
+REVOKE ALL ON TYPE testtype1 FROM PUBLIC;
+ERROR:  permission denied for type testtype1
+SET SESSION AUTHORIZATION regressuser2;
+-- commands that should succeed
+CREATE AGGREGATE testagg1b(testdomain1) (sfunc = int4_sum, stype = bigint);
+CREATE DOMAIN testdomain2b AS testdomain1;
+CREATE DOMAIN testdomain3b AS int;
+CREATE FUNCTION castfunc(int) RETURNS testdomain3b AS $$ SELECT $1::testdomain3b $$ LANGUAGE SQL;
+CREATE CAST (testdomain1 AS testdomain3b) WITH FUNCTION castfunc(int);
+WARNING:  cast will be ignored because the source data type is a domain
+CREATE FUNCTION testfunc5b(a testdomain1) RETURNS int LANGUAGE SQL AS $$ SELECT $1 $$;
+CREATE FUNCTION testfunc6b(b int) RETURNS testdomain1 LANGUAGE SQL AS $$ SELECT $1::testdomain1 $$;
+CREATE OPERATOR !! (PROCEDURE = testfunc5b, RIGHTARG = testdomain1);
+CREATE TABLE test5b (a int, b testdomain1);
+CREATE TABLE test6b OF testtype1;
+CREATE TABLE test10b (a int[], b testtype1[]);
+CREATE TABLE test9b (a int, b int);
+ALTER TABLE test9b ADD COLUMN c testdomain1;
+ALTER TABLE test9b ALTER COLUMN b TYPE testdomain1;
+CREATE TYPE test7b AS (a int, b testdomain1);
+CREATE TYPE test8b AS (a int, b int);
+ALTER TYPE test8b ADD ATTRIBUTE c testdomain1;
+ALTER TYPE test8b ALTER ATTRIBUTE b TYPE testdomain1;
+CREATE TABLE test11b AS (SELECT 1::testdomain1 AS a);
+REVOKE ALL ON TYPE testtype1 FROM PUBLIC;
+WARNING:  no privileges could be revoked for "testtype1"
+NOTICE:  no privileges could be revoked
+\c -
+DROP AGGREGATE testagg1b(testdomain1);
+DROP DOMAIN testdomain2b;
+DROP OPERATOR !! (NONE, testdomain1);
+DROP FUNCTION testfunc5b(a testdomain1);
+DROP FUNCTION testfunc6b(b int);
+DROP TABLE test5b;
+DROP TABLE test6b;
+DROP TABLE test9b;
+DROP TABLE test10b;
+DROP TYPE test7b;
+DROP TYPE test8b;
+DROP CAST (testdomain1 AS testdomain3b);
+DROP FUNCTION castfunc(int) CASCADE;
+DROP DOMAIN testdomain3b;
+DROP TABLE test11b;
+DROP TYPE testtype1; -- ok
+DROP DOMAIN testdomain1; -- ok
 -- truncate
 SET SESSION AUTHORIZATION regressuser5;
 TRUNCATE atest2; -- ok
@@ -528,11 +647,7 @@ select has_table_privilege(NULL,'pg_authid','select');
 (1 row)
 
 select has_table_privilege('pg_shad','select');
- has_table_privilege 
----------------------
- 
-(1 row)
-
+ERROR:  relation "pg_shad" does not exist
 select has_table_privilege('nosuchuser','pg_authid','select');
 ERROR:  role "nosuchuser" does not exist
 select has_table_privilege('pg_authid','sel');
@@ -900,6 +1015,7 @@ SELECT has_sequence_privilege('x_seq', 'USAGE');
 -- largeobject privilege tests
 \c -
 SET SESSION AUTHORIZATION regressuser1;
+-- start_ignore
 SELECT lo_create(1001);
  lo_create 
 -----------
@@ -941,8 +1057,10 @@ GRANT SELECT, UPDATE ON LARGE OBJECT 1001 TO nosuchuser;	-- to be failed
 ERROR:  role "nosuchuser" does not exist
 GRANT SELECT, UPDATE ON LARGE OBJECT  999 TO PUBLIC;	-- to be failed
 ERROR:  large object 999 does not exist
+-- end_ignore
 \c -
 SET SESSION AUTHORIZATION regressuser2;
+-- start_ignore
 SELECT lo_create(2001);
  lo_create 
 -----------
@@ -1005,7 +1123,9 @@ SELECT lo_unlink(2002);
          1
 (1 row)
 
+-- end_ignore
 \c -
+-- start_ignore
 -- confirm ACL setting
 SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_metadata;
  oid  |  ownername   |                                          lomacl                                          
@@ -1018,7 +1138,9 @@ SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_meta
  2001 | regressuser2 | {regressuser2=rw/regressuser2,regressuser3=rw/regressuser2}
 (6 rows)
 
+-- end_ignore
 SET SESSION AUTHORIZATION regressuser3;
+-- start_ignore
 SELECT loread(lo_open(1001, x'40000'::int), 32);
    loread   
 ------------
@@ -1041,10 +1163,12 @@ SELECT lo_truncate(lo_open(2001, x'20000'::int), 10);
            0
 (1 row)
 
+-- end_ignore
 -- compatibility mode in largeobject permission
 \c -
 SET lo_compat_privileges = false;	-- default setting
 SET SESSION AUTHORIZATION regressuser4;
+-- start_ignore
 SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
 ERROR:  permission denied for large object 1002
 SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');	-- to be denied
@@ -1056,9 +1180,11 @@ ERROR:  must be owner of large object 1002
 SELECT lo_export(1001, '/dev/null');			-- to be denied
 ERROR:  must be superuser to use server-side lo_export()
 HINT:  Anyone can use the client-side lo_export() provided by libpq.
+-- end_ignore
 \c -
 SET lo_compat_privileges = true;	-- compatibility mode
 SET SESSION AUTHORIZATION regressuser4;
+-- start_ignore
 SELECT loread(lo_open(1002, x'40000'::int), 32);
  loread 
 --------
@@ -1086,6 +1212,7 @@ SELECT lo_unlink(1002);
 SELECT lo_export(1001, '/dev/null');			-- to be denied
 ERROR:  must be superuser to use server-side lo_export()
 HINT:  Anyone can use the client-side lo_export() provided by libpq.
+-- end_ignore
 -- don't allow unpriv users to access pg_largeobject contents
 \c -
 SELECT * FROM pg_largeobject LIMIT 0;
@@ -1189,13 +1316,31 @@ SELECT has_function_privilege('regressuser2', 'testns.foo()', 'EXECUTE'); -- yes
 (1 row)
 
 DROP FUNCTION testns.foo();
+ALTER DEFAULT PRIVILEGES FOR ROLE regressuser1 REVOKE USAGE ON TYPES FROM public;
+CREATE DOMAIN testns.testdomain1 AS int;
+SELECT has_type_privilege('regressuser2', 'testns.testdomain1', 'USAGE'); -- no
+ has_type_privilege 
+--------------------
+ f
+(1 row)
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA testns GRANT USAGE ON TYPES to public;
+DROP DOMAIN testns.testdomain1;
+CREATE DOMAIN testns.testdomain1 AS int;
+SELECT has_type_privilege('regressuser2', 'testns.testdomain1', 'USAGE'); -- yes
+ has_type_privilege 
+--------------------
+ t
+(1 row)
+
+DROP DOMAIN testns.testdomain1;
 RESET ROLE;
 SELECT count(*)
   FROM pg_default_acl d LEFT JOIN pg_namespace n ON defaclnamespace = n.oid
   WHERE nspname = 'testns';
  count 
 -------
-     2
+     3
 (1 row)
 
 DROP SCHEMA testns CASCADE;
@@ -1261,6 +1406,34 @@ SELECT has_function_privilege('regressuser1', 'testns.testfunc(int)', 'EXECUTE')
 SET client_min_messages TO 'warning';
 DROP SCHEMA testns CASCADE;
 RESET client_min_messages;
+-- Change owner of the schema & and rename of new schema owner
+\c -
+CREATE ROLE schemauser1 superuser login;
+CREATE ROLE schemauser2 superuser login;
+SET SESSION ROLE schemauser1;
+CREATE SCHEMA testns;
+SELECT nspname, rolname FROM pg_namespace, pg_roles WHERE pg_namespace.nspname = 'testns' AND pg_namespace.nspowner = pg_roles.oid;
+ nspname |   rolname   
+---------+-------------
+ testns  | schemauser1
+(1 row)
+
+ALTER SCHEMA testns OWNER TO schemauser2;
+ALTER ROLE schemauser2 RENAME TO schemauser_renamed;
+SELECT nspname, rolname FROM pg_namespace, pg_roles WHERE pg_namespace.nspname = 'testns' AND pg_namespace.nspowner = pg_roles.oid;
+ nspname |      rolname       
+---------+--------------------
+ testns  | schemauser_renamed
+(1 row)
+
+set session role schemauser_renamed;
+SET client_min_messages TO 'warning';
+DROP SCHEMA testns CASCADE;
+RESET client_min_messages;
+-- clean up
+\c -
+DROP ROLE schemauser1;
+DROP ROLE schemauser_renamed;
 -- test that dependent privileges are revoked (or not) properly
 \c -
 set session role regressuser1;
@@ -1316,6 +1489,7 @@ drop table dep_priv_test;
 drop sequence x_seq;
 DROP FUNCTION testfunc2(int);
 DROP FUNCTION testfunc4(boolean);
+DROP VIEW atestv0;
 DROP VIEW atestv1;
 DROP VIEW atestv2;
 -- this should cascade to drop atestv4
@@ -1333,6 +1507,7 @@ DROP TABLE atest6;
 DROP TABLE atestc;
 DROP TABLE atestp1;
 DROP TABLE atestp2;
+-- start_ignore
 SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
  lo_unlink 
 -----------
@@ -1343,6 +1518,7 @@ SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
          1
 (5 rows)
 
+-- end_ignore
 DROP GROUP regressgroup1;
 DROP GROUP regressgroup2;
 -- these are needed to clean up permissions

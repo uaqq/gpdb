@@ -4,19 +4,18 @@
  *	  POSTGRES process array definitions.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/procarray.h,v 1.33 2010/07/06 19:19:00 momjian Exp $
+ * src/include/storage/procarray.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef PROCARRAY_H
 #define PROCARRAY_H
 
-#include "storage/lock.h"
-#include "storage/procsignal.h"
 #include "storage/standby.h"
+#include "utils/relcache.h"
 #include "utils/snapshot.h"
 
 #include "cdb/cdbpublic.h"
@@ -33,7 +32,7 @@ extern void ProcArrayEndGxact(void);
 extern void ProcArrayClearTransaction(PGPROC *proc, bool commit);
 extern void ClearTransactionFromPgProc_UnderLock(PGPROC *proc, bool commit);
 
-extern void ProcArrayInitRecoveryInfo(TransactionId oldestActiveXid);
+extern void ProcArrayInitRecovery(TransactionId initializedUptoXID);
 extern void ProcArrayApplyRecoveryInfo(RunningTransactions running);
 extern void ProcArrayApplyXidAssignment(TransactionId topxid,
 							int nsubxids, TransactionId *subxids);
@@ -45,14 +44,22 @@ extern void ExpireTreeKnownAssignedTransactionIds(TransactionId xid,
 extern void ExpireAllKnownAssignedTransactionIds(void);
 extern void ExpireOldKnownAssignedTransactionIds(TransactionId xid);
 
-extern RunningTransactions GetRunningTransactionData(void);
+extern int	GetMaxSnapshotXidCount(void);
+extern int	GetMaxSnapshotSubxidCount(void);
 
 extern Snapshot GetSnapshotData(Snapshot snapshot);
 
+extern bool ProcArrayInstallImportedXmin(TransactionId xmin,
+							 TransactionId sourcexid);
+
+extern RunningTransactions GetRunningTransactionData(void);
+
 extern bool TransactionIdIsInProgress(TransactionId xid);
 extern bool TransactionIdIsActive(TransactionId xid);
-extern TransactionId GetOldestXmin(bool allDbs, bool ignoreVacuum);
-extern TransactionId GetLocalOldestXmin(bool allDbs, bool ignoreVacuum);
+extern TransactionId GetOldestXmin(Relation rel, bool ignoreVacuum);
+extern TransactionId GetLocalOldestXmin(Relation rel, bool ignoreVacuum);
+extern TransactionId GetOldestActiveTransactionId(void);
+extern TransactionId GetOldestSafeDecodingTransactionId(void);
 
 extern VirtualTransactionId *GetVirtualXIDsDelayingChkpt(int *nvxids);
 extern bool HaveVirtualXIDsDelayingChkpt(VirtualTransactionId *vxids, int nvxids);
@@ -67,14 +74,13 @@ extern VirtualTransactionId *GetCurrentVirtualXIDs(TransactionId limitXmin,
 extern VirtualTransactionId *GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid);
 extern pid_t CancelVirtualTransaction(VirtualTransactionId vxid, ProcSignalReason sigmode);
 
-extern int	CountActiveBackends(void);
+extern bool MinimumActiveBackends(int min);
 extern int	CountDBBackends(Oid databaseid);
 extern void CancelDBBackends(Oid databaseid, ProcSignalReason sigmode, bool conflictPending);
 extern int	CountUserBackends(Oid roleid);
 extern bool CountOtherDBBackends(Oid databaseId,
 					 int *nbackends, int *nprepared);
 extern bool HasSerializableBackends(bool allDbs);
-extern bool HasDropTransaction(bool allDbs);
 
 extern void XidCacheRemoveRunningXids(TransactionId xid,
 						  int nxids, const TransactionId *xids,
@@ -87,8 +93,15 @@ extern void updateSharedLocalSnapshot(struct DtxContextInfo *dtxContextInfo, str
 
 extern void GetSlotTableDebugInfo(void **snapshotArray, int *maxSlots);
 
-extern bool FindAndSignalProcess(int sessionId, int commandId);
-
 extern void getDtxCheckPointInfo(char **result, int *result_size);
+
+extern List *ListAllGxid(void);
+extern int GetPidByGxid(DistributedTransactionId gxid);
+
+extern void ProcArraySetReplicationSlotXmin(TransactionId xmin,
+							TransactionId catalog_xmin, bool already_locked);
+
+extern void ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
+								TransactionId *catalog_xmin);
 
 #endif   /* PROCARRAY_H */

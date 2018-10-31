@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/show.sgml,v 1.50 2010/05/17 20:50:44 alvherre Exp $
+doc/src/sgml/ref/show.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-SHOW">
+ <indexterm zone="sql-show">
+  <primary>SHOW</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>SHOW</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>SHOW</refname>
   <refpurpose>show the value of a run-time parameter</refpurpose>
  </refnamediv>
-
- <indexterm zone="sql-show">
-  <primary>SHOW</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
@@ -109,8 +109,7 @@ SHOW ALL
          </para>
         </listitem>
        </varlistentry>
-      </variablelist>
-     </para>
+      </variablelist></para>
     </listitem>
    </varlistentry>
 
@@ -177,8 +176,7 @@ SHOW ALL;
  xmloption               | content | Sets whether XML data in implicit parsing ...
  zero_damaged_pages      | off     | Continues processing past damaged page headers.
 (196 rows)
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>

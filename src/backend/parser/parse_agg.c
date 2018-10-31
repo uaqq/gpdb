@@ -3,12 +3,12 @@
  * parse_agg.c
  *	  handle aggregates in parser
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_agg.c,v 1.93 2010/03/17 16:52:38 tgl Exp $
+ *	  src/backend/parser/parse_agg.c
  *
  *-------------------------------------------------------------------------
  */
@@ -20,7 +20,6 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/tlist.h"
-#include "optimizer/var.h"
 #include "optimizer/walkers.h"
 #include "parser/parse_agg.h"
 #include "parser/parse_clause.h"
@@ -45,8 +44,10 @@ typedef struct
 typedef struct
 {
 	ParseState *pstate;
+	Query	   *qry;
 	List	   *groupClauses;
 	bool		have_non_var_grouping;
+	List	  **func_grouped_rels;
 	int			sublevels_up;
 	bool		in_agg_direct_args;
 } check_ungrouped_columns_context;
@@ -62,12 +63,13 @@ static int check_agg_arguments(ParseState *pstate,
 					Expr *filter);
 static bool check_agg_arguments_walker(Node *node,
 						   check_agg_arguments_context *context);
-
-static void check_ungrouped_columns(Node *node, ParseState *pstate,
-						List *groupClauses, bool have_non_var_grouping);
+static void check_ungrouped_columns(Node *node, ParseState *pstate, Query *qry,
+						List *groupClauses, bool have_non_var_grouping,
+						List **func_grouped_rels);
 static bool check_ungrouped_columns_walker(Node *node,
 							   check_ungrouped_columns_context *context);
 static List* get_groupclause_exprs(Node *grpcl, List *targetList);
+static Node *make_agg_arg(Oid argtype, Oid argcollation);
 
 
 /*
@@ -263,7 +265,7 @@ transformAggregateCall(ParseState *pstate, Aggref *agg,
 			break;
 		case EXPR_KIND_FROM_SUBSELECT:
 			/* Should only be possible in a LATERAL subquery */
-			//Assert(pstate->p_lateral_active);
+			Assert(pstate->p_lateral_active);
 			/* Aggregate scope rules make it worth being explicit here */
 			err = _("aggregate functions are not allowed in FROM clause of their own query level");
 			break;
@@ -377,8 +379,17 @@ transformAggregateCall(ParseState *pstate, Aggref *agg,
  *	  one is its parent, etc).
  *
  * The aggregate's level is the same as the level of the lowest-level variable
- * or aggregate in its arguments; or if it contains no variables at all, we
- * presume it to be local.
+ * or aggregate in its aggregated arguments (including any ORDER BY columns)
+ * or filter expression; or if it contains no variables at all, we presume it
+ * to be local.
+ *
+ * Vars/Aggs in direct arguments are *not* counted towards determining the
+ * agg's level, as those arguments aren't evaluated per-row but only
+ * per-group, and so in some sense aren't really agg arguments.  However,
+ * this can mean that we decide an agg is upper-level even when its direct
+ * args contain lower-level Vars/Aggs, and that case has to be disallowed.
+ * (This is a little strange, but the SQL standard seems pretty definite that
+ * direct args are not to be considered when setting the agg's level.)
  *
  * We also take this opportunity to detect any aggregates or window functions
  * nested within the arguments.  We can throw error immediately if we find
@@ -537,6 +548,17 @@ check_agg_arguments_walker(Node *node,
 								  (void *) context);
 }
 
+/*
+ * transformWindowFuncCall -
+ *		Finish initial transformation of a window function call
+ *
+ * parse_func.c has recognized the function as a window function, and has set
+ * up all the fields of the WindowFunc except winref.  Here we must (1) add
+ * the WindowDef to the pstate (if not a duplicate of one already present) and
+ * set winref to link to it; and (2) mark p_hasWindowFuncs true in the pstate.
+ * Unlike aggregates, only the most closely nested pstate level need be
+ * considered --- there are no "outer window functions" per SQL spec.
+ */
 void
 transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 						WindowDef *windef)
@@ -792,6 +814,7 @@ parseCheckAggregates(ParseState *pstate, Query *qry)
 {
 	List	   *groupClauses = NIL;
 	bool		have_non_var_grouping;
+	List	   *func_grouped_rels = NIL;
 	ListCell   *l;
 	bool		hasJoinRTEs;
 	bool		hasSelfRefRTEs;
@@ -849,7 +872,7 @@ parseCheckAggregates(ParseState *pstate, Query *qry)
 	/*
 	 * If there are join alias vars involved, we have to flatten them to the
 	 * underlying vars, so that aliased and unaliased vars will be correctly
-	 * taken as equal.	We can skip the expense of doing this if no rangetable
+	 * taken as equal.  We can skip the expense of doing this if no rangetable
 	 * entries are RTE_JOIN kind. We use the planner's flatten_join_alias_vars
 	 * routine to do the flattening; it wants a PlannerInfo root node, which
 	 * fortunately can be mostly dummy.
@@ -884,18 +907,25 @@ parseCheckAggregates(ParseState *pstate, Query *qry)
 
 	/*
 	 * Check the targetlist and HAVING clause for ungrouped variables.
+	 *
+	 * Note: because we check resjunk tlist elements as well as regular ones,
+	 * this will also find ungrouped variables that came from ORDER BY and
+	 * WINDOW clauses.  For that matter, it's also going to examine the
+	 * grouping expressions themselves --- but they'll all pass the test ...
 	 */
 	clause = (Node *) qry->targetList;
 	if (hasJoinRTEs)
 		clause = flatten_join_alias_vars(root, clause);
-	check_ungrouped_columns(clause, pstate,
-							groupClauses, have_non_var_grouping);
+	check_ungrouped_columns(clause, pstate, qry,
+							groupClauses, have_non_var_grouping,
+							&func_grouped_rels);
 
 	clause = (Node *) qry->havingQual;
 	if (hasJoinRTEs)
 		clause = flatten_join_alias_vars(root, clause);
-	check_ungrouped_columns(clause, pstate,
-							groupClauses, have_non_var_grouping);
+	check_ungrouped_columns(clause, pstate, qry,
+							groupClauses, have_non_var_grouping,
+							&func_grouped_rels);
 
 	/*
 	 * Per spec, aggregates can't appear in a recursive term.
@@ -930,14 +960,17 @@ parseCheckAggregates(ParseState *pstate, Query *qry)
  * way more pain than the feature seems worth.
  */
 static void
-check_ungrouped_columns(Node *node, ParseState *pstate,
-						List *groupClauses, bool have_non_var_grouping)
+check_ungrouped_columns(Node *node, ParseState *pstate, Query *qry,
+						List *groupClauses, bool have_non_var_grouping,
+						List **func_grouped_rels)
 {
 	check_ungrouped_columns_context context;
 
 	context.pstate = pstate;
+	context.qry = qry;
 	context.groupClauses = groupClauses;
 	context.have_non_var_grouping = have_non_var_grouping;
+	context.func_grouped_rels = func_grouped_rels;
 	context.sublevels_up = 0;
 	context.in_agg_direct_args = false;
 	check_ungrouped_columns_walker(node, &context);
@@ -1008,7 +1041,7 @@ check_ungrouped_columns_walker(Node *node,
 	/*
 	 * If we have an ungrouped Var of the original query level, we have a
 	 * failure.  Vars below the original query level are not a problem, and
-	 * neither are Vars from above it.	(If such Vars are ungrouped as far as
+	 * neither are Vars from above it.  (If such Vars are ungrouped as far as
 	 * their own query level is concerned, that's someone else's problem...)
 	 */
 	if (IsA(node, Var))
@@ -1037,10 +1070,43 @@ check_ungrouped_columns_walker(Node *node,
 			}
 		}
 
-		/* Found an ungrouped local variable; generate error message */
+		/*
+		 * Check whether the Var is known functionally dependent on the GROUP
+		 * BY columns.  If so, we can allow the Var to be used, because the
+		 * grouping is really a no-op for this table.  However, this deduction
+		 * depends on one or more constraints of the table, so we have to add
+		 * those constraints to the query's constraintDeps list, because it's
+		 * not semantically valid anymore if the constraint(s) get dropped.
+		 * (Therefore, this check must be the last-ditch effort before raising
+		 * error: we don't want to add dependencies unnecessarily.)
+		 *
+		 * Because this is a pretty expensive check, and will have the same
+		 * outcome for all columns of a table, we remember which RTEs we've
+		 * already proven functional dependency for in the func_grouped_rels
+		 * list.  This test also prevents us from adding duplicate entries to
+		 * the constraintDeps list.
+		 */
+		if (list_member_int(*context->func_grouped_rels, var->varno))
+			return false;		/* previously proven acceptable */
+
 		Assert(var->varno > 0 &&
 			   (int) var->varno <= list_length(context->pstate->p_rtable));
 		rte = rt_fetch(var->varno, context->pstate->p_rtable);
+		if (rte->rtekind == RTE_RELATION)
+		{
+			if (check_functional_grouping(rte->relid,
+										  var->varno,
+										  0,
+										  context->groupClauses,
+										  &context->qry->constraintDeps))
+			{
+				*context->func_grouped_rels =
+					lappend_int(*context->func_grouped_rels, var->varno);
+				return false;	/* acceptable */
+			}
+		}
+
+		/* Found an ungrouped local variable; generate error message */
 		attname = get_rte_attribute_name(rte, var->varattno);
 		if (context->sublevels_up == 0)
 			ereport(ERROR,
@@ -1173,15 +1239,18 @@ resolve_aggregate_transtype(Oid aggfuncid,
  * agg_input_types, agg_state_type, agg_result_type identify the input,
  * transition, and result types of the aggregate.  These should all be
  * resolved to actual types (ie, none should ever be ANYELEMENT etc).
+ * agg_input_collation is the aggregate function's input collation.
  *
  * For an ordered-set aggregate, remember that agg_input_types describes
  * the direct arguments followed by the aggregated arguments.
  *
- * transfn_oid and finalfn_oid identify the funcs to be called; the latter
- * may be InvalidOid.
+ * transfn_oid, invtransfn_oid and finalfn_oid identify the funcs to be
+ * called; the latter two may be InvalidOid.
  *
- * Pointers to the constructed trees are returned into *transfnexpr and
- * *finalfnexpr.  The latter is set to NULL if there's no finalfn.
+ * Pointers to the constructed trees are returned into *transfnexpr,
+ * *invtransfnexpr and *finalfnexpr. If there is no invtransfn or finalfn,
+ * the respective pointers are set to NULL.  Since use of the invtransfn is
+ * optional, NULL may be passed for invtransfnexpr.
  */
 void
 build_aggregate_fnexprs(Oid *agg_input_types,
@@ -1191,16 +1260,15 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 						bool agg_variadic,
 						Oid agg_state_type,
 						Oid agg_result_type,
+						Oid agg_input_collation,
 						Oid transfn_oid,
-						Oid finalfn_oid,
-						Oid prelimfn_oid,
 						Oid invtransfn_oid,
-						Oid invprelimfn_oid,
+						Oid finalfn_oid,
+						Oid combinefn_oid,
 						Expr **transfnexpr,
-						Expr **finalfnexpr,
-						Expr **prelimfnexpr,
 						Expr **invtransfnexpr,
-						Expr **invprelimfnexpr)
+						Expr **finalfnexpr,
+						Expr **combinefnexpr)
 {
 	Param	   *argp;
 	List	   *args;
@@ -1218,6 +1286,7 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 	argp->paramid = -1;
 	argp->paramtype = agg_state_type;
 	argp->paramtypmod = -1;
+	argp->paramcollid = agg_input_collation;
 	argp->location = -1;
 
 	args = list_make1(argp);
@@ -1229,6 +1298,7 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 		argp->paramid = -1;
 		argp->paramtype = agg_input_types[i];
 		argp->paramtypmod = -1;
+		argp->paramcollid = agg_input_collation;
 		argp->location = -1;
 		args = lappend(args, argp);
 	}
@@ -1236,9 +1306,31 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 	fexpr = makeFuncExpr(transfn_oid,
 						 agg_state_type,
 						 args,
-						 COERCE_DONTCARE);
+						 InvalidOid,
+						 agg_input_collation,
+						 COERCE_EXPLICIT_CALL);
 	fexpr->funcvariadic = agg_variadic;
 	*transfnexpr = (Expr *) fexpr;
+
+	/*
+	 * Build invtransfn expression if requested, with same args as transfn
+	 */
+	if (invtransfnexpr != NULL)
+	{
+		if (OidIsValid(invtransfn_oid))
+		{
+			fexpr = makeFuncExpr(invtransfn_oid,
+								 agg_state_type,
+								 args,
+								 InvalidOid,
+								 agg_input_collation,
+								 COERCE_EXPLICIT_CALL);
+			fexpr->funcvariadic = agg_variadic;
+			*invtransfnexpr = (Expr *) fexpr;
+		}
+		else
+			*invtransfnexpr = NULL;
+	}
 
 	/* see if we have a final function */
 	if (!OidIsValid(finalfn_oid))
@@ -1266,6 +1358,7 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 			argp->paramid = -1;
 			argp->paramtype = agg_input_types[i];
 			argp->paramtypmod = -1;
+			argp->paramcollid = agg_input_collation;
 			argp->location = -1;
 			args = lappend(args, argp);
 		}
@@ -1273,14 +1366,17 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 		*finalfnexpr = (Expr *) makeFuncExpr(finalfn_oid,
 											 agg_result_type,
 											 args,
-											 COERCE_DONTCARE);
+											 InvalidOid,
+											 agg_input_collation,
+											 COERCE_EXPLICIT_CALL);
+		/* finalfn is currently never treated as variadic */
 	}
 
-	/* prelim function */
-	if (OidIsValid(prelimfn_oid))
+	/* combine function */
+	if (OidIsValid(combinefn_oid))
 	{
 		/*
-		 * Build expr tree for inverse transition function
+		 * Build expr tree for combine function
 		 */
 		argp = makeNode(Param);
 		argp->paramkind = PARAM_EXEC;
@@ -1291,48 +1387,82 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 		args = list_make1(argp);
 
 		/* XXX: is agg_state_type correct here? */
-		*prelimfnexpr = (Expr *) makeFuncExpr(prelimfn_oid, agg_state_type,
-											  args, COERCE_DONTCARE);
+		*combinefnexpr = (Expr *) makeFuncExpr(combinefn_oid,
+											   agg_state_type,
+											   args,
+											   InvalidOid,
+											   agg_input_collation,
+											   COERCE_EXPLICIT_CALL);
 	}
+}
 
-	/* inverse functions */
-	if (OidIsValid(invtransfn_oid))
-	{
-		/*
-		 * Build expr tree for inverse transition function
-		 */
-		argp = makeNode(Param);
-		argp->paramkind = PARAM_EXEC;
-		argp->paramid = -1;
-		argp->paramtype = agg_state_type;
-		argp->paramtypmod = -1;
-		argp->location = -1;
-		args = list_make1(argp);
+/*
+ * Like build_aggregate_transfn_expr, but creates an expression tree for the
+ * serialization function of an aggregate.
+ */
+void
+build_aggregate_serialfn_expr(Oid serialfn_oid,
+							  Expr **serialfnexpr)
+{
+	List	   *args;
+	FuncExpr   *fexpr;
 
-		*invtransfnexpr = (Expr *) makeFuncExpr(invtransfn_oid,
-											 agg_state_type,
-											 args,
-											 COERCE_DONTCARE);
-	}
+	/* serialfn always takes INTERNAL and returns BYTEA */
+	args = list_make1(make_agg_arg(INTERNALOID, InvalidOid));
 
-	if (OidIsValid(invprelimfn_oid))
-	{
-		/*
-		 * Build expr tree for inverse prelim function
-		 */
-		argp = makeNode(Param);
-		argp->paramkind = PARAM_EXEC;
-		argp->paramid = -1;
-		argp->paramtype = agg_state_type;
-		argp->paramtypmod = -1;
-		argp->location = -1;
-		args = list_make1(argp);
+	fexpr = makeFuncExpr(serialfn_oid,
+						 BYTEAOID,
+						 args,
+						 InvalidOid,
+						 InvalidOid,
+						 COERCE_EXPLICIT_CALL);
+	*serialfnexpr = (Expr *) fexpr;
+}
 
-		*invprelimfnexpr = (Expr *) makeFuncExpr(invprelimfn_oid,
-											 agg_state_type,
-											 args,
-											 COERCE_DONTCARE);
-	}
+/*
+ * Like build_aggregate_transfn_expr, but creates an expression tree for the
+ * deserialization function of an aggregate.
+ */
+void
+build_aggregate_deserialfn_expr(Oid deserialfn_oid,
+								Expr **deserialfnexpr)
+{
+	List	   *args;
+	FuncExpr   *fexpr;
+
+	/* deserialfn always takes BYTEA, INTERNAL and returns INTERNAL */
+	args = list_make2(make_agg_arg(BYTEAOID, InvalidOid),
+					  make_agg_arg(INTERNALOID, InvalidOid));
+
+	fexpr = makeFuncExpr(deserialfn_oid,
+						 INTERNALOID,
+						 args,
+						 InvalidOid,
+						 InvalidOid,
+						 COERCE_EXPLICIT_CALL);
+	*deserialfnexpr = (Expr *) fexpr;
+}
+
+
+/*
+ * Convenience function to build dummy argument expressions for aggregates.
+ *
+ * We really only care that an aggregate support function can discover its
+ * actual argument types at runtime using get_fn_expr_argtype(), so it's okay
+ * to use Param nodes that don't correspond to any real Param.
+ */
+static Node *
+make_agg_arg(Oid argtype, Oid argcollation)
+{
+	Param	   *argp = makeNode(Param);
+
+	argp->paramkind = PARAM_EXEC;
+	argp->paramid = -1;
+	argp->paramtype = argtype;
+	argp->paramtypmod = -1;
+	argp->paramcollid = argcollation;
+	argp->location = -1;
+	return (Node *) argp;
 }
 
 /*

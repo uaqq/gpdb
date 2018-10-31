@@ -160,7 +160,7 @@ SELECT 'Wed Jul 11 10:51:14 GMT+4 2001'::timestamptz;
 SELECT 'Wed Jul 11 10:51:14 PST-03:00 2001'::timestamptz;
 SELECT 'Wed Jul 11 10:51:14 PST+03:00 2001'::timestamptz;
 
-SELECT '' AS "64", d1 FROM TIMESTAMPTZ_TBL; 
+SELECT '' AS "64", d1 FROM TIMESTAMPTZ_TBL;
 
 -- Demonstrate functions and operators
 SELECT '' AS "48", d1 FROM TIMESTAMPTZ_TBL
@@ -208,32 +208,32 @@ SELECT '' AS "54", d1 as timestamptz,
    FROM TIMESTAMPTZ_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01';
 
 -- TO_CHAR()
-SELECT '' AS to_char_1, to_char(d1, 'DAY Day day DY Dy dy MONTH Month month RM MON Mon mon') 
+SELECT '' AS to_char_1, to_char(d1, 'DAY Day day DY Dy dy MONTH Month month RM MON Mon mon')
    FROM TIMESTAMPTZ_TBL;
-	
+
 SELECT '' AS to_char_2, to_char(d1, 'FMDAY FMDay FMday FMMONTH FMMonth FMmonth FMRM')
-   FROM TIMESTAMPTZ_TBL;	
+   FROM TIMESTAMPTZ_TBL;
 
 SELECT '' AS to_char_3, to_char(d1, 'Y,YYY YYYY YYY YY Y CC Q MM WW DDD DD D J')
    FROM TIMESTAMPTZ_TBL;
-	
-SELECT '' AS to_char_4, to_char(d1, 'FMY,YYY FMYYYY FMYYY FMYY FMY FMCC FMQ FMMM FMWW FMDDD FMDD FMD FMJ') 
-   FROM TIMESTAMPTZ_TBL;	
-	
-SELECT '' AS to_char_5, to_char(d1, 'HH HH12 HH24 MI SS SSSS') 
+
+SELECT '' AS to_char_4, to_char(d1, 'FMY,YYY FMYYYY FMYYY FMYY FMY FMCC FMQ FMMM FMWW FMDDD FMDD FMD FMJ')
    FROM TIMESTAMPTZ_TBL;
 
-SELECT '' AS to_char_6, to_char(d1, E'"HH:MI:SS is" HH:MI:SS "\\"text between quote marks\\""') 
-   FROM TIMESTAMPTZ_TBL;		
-		
+SELECT '' AS to_char_5, to_char(d1, 'HH HH12 HH24 MI SS SSSS')
+   FROM TIMESTAMPTZ_TBL;
+
+SELECT '' AS to_char_6, to_char(d1, E'"HH:MI:SS is" HH:MI:SS "\\"text between quote marks\\""')
+   FROM TIMESTAMPTZ_TBL;
+
 SELECT '' AS to_char_7, to_char(d1, 'HH24--text--MI--text--SS')
-   FROM TIMESTAMPTZ_TBL;		
-
-SELECT '' AS to_char_8, to_char(d1, 'YYYYTH YYYYth Jth') 
    FROM TIMESTAMPTZ_TBL;
-  
-SELECT '' AS to_char_9, to_char(d1, 'YYYY A.D. YYYY a.d. YYYY bc HH:MI:SS P.M. HH:MI:SS p.m. HH:MI:SS pm') 
-   FROM TIMESTAMPTZ_TBL;   
+
+SELECT '' AS to_char_8, to_char(d1, 'YYYYTH YYYYth Jth')
+   FROM TIMESTAMPTZ_TBL;
+
+SELECT '' AS to_char_9, to_char(d1, 'YYYY A.D. YYYY a.d. YYYY bc HH:MI:SS P.M. HH:MI:SS p.m. HH:MI:SS pm')
+   FROM TIMESTAMPTZ_TBL;
 
 SELECT '' AS to_char_10, to_char(d1, 'YYYY WW IYYY IYY IY I IW') 
    FROM TIMESTAMPTZ_TBL;
@@ -243,6 +243,56 @@ SELECT '' AS to_char_10, to_char(d1, 'IYYY IYY IY I IW IDDD ID')
 
 SELECT '' AS to_char_11, to_char(d1, 'FMIYYY FMIYY FMIY FMI FMIW FMIDDD FMID')
    FROM TIMESTAMPTZ_TBL;
+
+CREATE TABLE TIMESTAMPTZ_TST (a int , b timestamptz);
+
+-- Test year field value with len > 4
+INSERT INTO TIMESTAMPTZ_TST VALUES(1, 'Sat Mar 12 23:58:48 1000 IST');
+INSERT INTO TIMESTAMPTZ_TST VALUES(2, 'Sat Mar 12 23:58:48 10000 IST');
+INSERT INTO TIMESTAMPTZ_TST VALUES(3, 'Sat Mar 12 23:58:48 100000 IST');
+INSERT INTO TIMESTAMPTZ_TST VALUES(3, '10000 Mar 12 23:58:48 IST');
+INSERT INTO TIMESTAMPTZ_TST VALUES(4, '100000312 23:58:48 IST');
+INSERT INTO TIMESTAMPTZ_TST VALUES(4, '1000000312 23:58:48 IST');
+--Verify data
+SELECT * FROM TIMESTAMPTZ_TST;
+--Cleanup
+DROP TABLE TIMESTAMPTZ_TST;
+
+-- test timestamptz constructors
+set TimeZone to 'America/New_York';
+
+-- numeric timezone
+SELECT make_timestamptz(1973, 07, 15, 08, 15, 55.33);
+SELECT make_timestamptz(1973, 07, 15, 08, 15, 55.33, '+2');
+SELECT make_timestamptz(1973, 07, 15, 08, 15, 55.33, '-2');
+WITH tzs (tz) AS (VALUES
+    ('+1'), ('+1:'), ('+1:0'), ('+100'), ('+1:00'), ('+01:00'),
+    ('+10'), ('+1000'), ('+10:'), ('+10:0'), ('+10:00'), ('+10:00:'),
+    ('+10:00:1'), ('+10:00:01'),
+    ('+10:00:10'))
+     SELECT make_timestamptz(2010, 2, 27, 3, 45, 00, tz), tz FROM tzs;
+
+-- these should fail
+SELECT make_timestamptz(1973, 07, 15, 08, 15, 55.33, '2');
+SELECT make_timestamptz(2014, 12, 10, 10, 10, 10, '+16');
+SELECT make_timestamptz(2014, 12, 10, 10, 10, 10, '-16');
+
+-- should be true
+SELECT make_timestamptz(1973, 07, 15, 08, 15, 55.33, '+2') = '1973-07-15 08:15:55.33+02'::timestamptz;
+
+-- full timezone names
+SELECT make_timestamptz(2014, 12, 10, 0, 0, 0, 'Europe/Prague') = timestamptz '2014-12-10 00:00:00 Europe/Prague';
+SELECT make_timestamptz(2014, 12, 10, 0, 0, 0, 'Europe/Prague') AT TIME ZONE 'UTC';
+SELECT make_timestamptz(1846, 12, 10, 0, 0, 0, 'Asia/Manila') AT TIME ZONE 'UTC';
+SELECT make_timestamptz(1881, 12, 10, 0, 0, 0, 'Europe/Paris') AT TIME ZONE 'UTC';
+SELECT make_timestamptz(1910, 12, 24, 0, 0, 0, 'Nehwon/Lankhmar');
+
+-- abbreviations
+SELECT make_timestamptz(2008, 12, 10, 10, 10, 10, 'EST');
+SELECT make_timestamptz(2008, 12, 10, 10, 10, 10, 'EDT');
+SELECT make_timestamptz(2014, 12, 10, 10, 10, 10, 'PST8PDT');
+
+RESET TimeZone;
 
 -- TO_TIMESTAMP()
 SELECT '' AS to_timestamp_1, to_timestamp('0097/Feb/16 --> 08:14:30', 'YYYY/Mon/DD --> HH:MI:SS');

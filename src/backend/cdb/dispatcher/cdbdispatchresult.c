@@ -15,7 +15,6 @@
  */
 
 #include "postgres.h"
-#include <pthread.h>
 
 #include "libpq-fe.h"		/* prerequisite for libpq-int.h */
 #include "libpq-int.h"		/* PQExpBufferData */
@@ -29,12 +28,6 @@
 #include "cdb/cdbsreh.h"
 #include "cdb/cdbdispatchresult.h"
 #include "commands/tablecmds.h"
-
-/*
- * This mutex serializes writes by dispatcher threads to the
- * iFirstError and errcode fields of CdbDispatchResults objects.
- */
-static pthread_mutex_t setErrcodeMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int cdbdisp_snatchPGresults(CdbDispatchResult *dispatchResult,
 						struct pg_result **pgresultptrs, int maxresults);
@@ -203,8 +196,6 @@ cdbdisp_resetResult(CdbDispatchResult *dispatchResult)
 /*
  * Take note of an error.
  * 'errcode' is the ERRCODE_xxx value for setting the client's SQLSTATE.
- * NB: This can be called from a dispatcher thread, so it must not use
- * palloc/pfree or elog/ereport because they are not thread safe.
  */
 void
 cdbdisp_seterrcode(int errcode, /* ERRCODE_xxx or 0 */
@@ -257,69 +248,9 @@ cdbdisp_seterrcode(int errcode, /* ERRCODE_xxx or 0 */
 			 (meleeResults->errcode == ERRCODE_GP_INTERCONNECTION_ERROR &&
 			  errcode != ERRCODE_GP_INTERCONNECTION_ERROR))
 	{
-		pthread_mutex_lock(&setErrcodeMutex);
-		if (meleeResults->errcode == 0 ||
-			(meleeResults->errcode == ERRCODE_GP_INTERCONNECTION_ERROR &&
-			 errcode != ERRCODE_GP_INTERCONNECTION_ERROR))
-		{
-			meleeResults->errcode = errcode;
-			meleeResults->iFirstError = dispatchResult->meleeIndex;
-		}
-		pthread_mutex_unlock(&setErrcodeMutex);
+		meleeResults->errcode = errcode;
+		meleeResults->iFirstError = dispatchResult->meleeIndex;
 	}
-}
-
-/*
- * Format a message, printf-style, and append to the error_message buffer.
- * Also write it to stderr if logging is enabled for messages of the
- * given severity level 'elevel' (for example, DEBUG1; or 0 to suppress).
- * 'errcode' is the ERRCODE_xxx value for setting the client's SQLSTATE.
- * NB: This can be called from a dispatcher thread, so it must not use
- * palloc/pfree or elog/ereport because they are not thread safe.
- */
-void
-cdbdisp_appendMessage(CdbDispatchResult *dispatchResult,
-					  int elevel, const char *fmt,...)
-{
-	va_list		args;
-	int			msgoff;
-
-	/*
-	 * Remember first error.
-	 */
-	cdbdisp_seterrcode(ERRCODE_GP_INTERCONNECTION_ERROR, -1, dispatchResult);
-
-	/*
-	 * Allocate buffer if first message. Insert newline between previous
-	 * message and new one.
-	 */
-	Assert(dispatchResult->error_message != NULL);
-	oneTrailingNewlinePQ(dispatchResult->error_message);
-
-	msgoff = dispatchResult->error_message->len;
-
-	/*
-	 * Format the message and append it to the buffer.
-	 */
-	va_start(args, fmt);
-	appendPQExpBufferVA(dispatchResult->error_message, fmt, args);
-	va_end(args);
-
-	/*
-	 * Display the message on stderr for debugging, if requested. This helps
-	 * to clarify the actual timing of threaded events.
-	 */
-	if (elevel >= log_min_messages)
-	{
-		oneTrailingNewlinePQ(dispatchResult->error_message);
-		write_log("%s", dispatchResult->error_message->data + msgoff);
-	}
-
-	/*
-	 * In case the caller wants to hand the buffer to ereport(), follow the
-	 * ereport() convention of not ending with a newline.
-	 */
-	noTrailingNewlinePQ(dispatchResult->error_message);
 }
 
 
@@ -534,79 +465,11 @@ cdbdisp_dumpDispatchResult(CdbDispatchResult *dispatchResult)
 	for (ires = 0; ires < nres; ++ires)
 	{
 		PGresult   *pgresult = cdbdisp_getPGresult(dispatchResult, ires);
-		ExecStatusType resultStatus = PQresultStatus(pgresult);
 
-		/*
-		 * QE success
-		 */
-		if (resultStatus == PGRES_COMMAND_OK ||
-			resultStatus == PGRES_TUPLES_OK ||
-			resultStatus == PGRES_COPY_IN ||
-			resultStatus == PGRES_COPY_OUT ||
-			resultStatus == PGRES_EMPTY_QUERY)
-			continue;
+		errdata = cdbdisp_get_PQerror(pgresult);
 
-		/*
-		 * QE error or libpq error
-		 */
-
-		/* These will be overwritten below with the values from QE, if the QE sent them. */
-		char	   *filename = __FILE__;
-		int			lineno = __LINE__;
-		const char *funcname = PG_FUNCNAME_MACRO;
-		int			qe_errcode = ERRCODE_GP_INTERCONNECTION_ERROR;
-
-		char	   *whoami;
-		char	   *fld;
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_SOURCE_FILE);
-		if (fld)
-			filename = fld;
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_SOURCE_LINE);
-		if (fld)
-			lineno = atoi(fld);
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_SOURCE_FUNCTION);
-		if (fld)
-			funcname = fld;
-
-		/*
-		 * We should only get errors with ERROR level or above, if the
-		 * command failed. And if a QE disconnected with FATAL, or PANICed,
-		 * we don't want to do the same in the QD. So, always an ERROR.
-		 */
-		errstart(ERROR, filename, lineno, funcname, TEXTDOMAIN);
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_SQLSTATE);
-		if (fld)
-			qe_errcode = sqlstate_to_errcode(fld);
-		errcode(qe_errcode);
-
-		whoami = PQresultErrorField(pgresult, PG_DIAG_GP_PROCESS_TAG);
-		fld = PQresultErrorField(pgresult, PG_DIAG_MESSAGE_PRIMARY);
-		if (!fld)
-			fld = "no primary message received";
-
-		if (whoami)
-			errmsg("%s  (%s)", fld, whoami);
-		else
-			errmsg("%s", fld);
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_MESSAGE_DETAIL);
-		if (fld)
-			errdetail("%s", fld);
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_MESSAGE_HINT);
-		if (fld)
-			errhint("%s", fld);
-
-		fld = PQresultErrorField(pgresult, PG_DIAG_CONTEXT);
-		if (fld)
-			errcontext("%s", fld);
-
-		errdata = errfinish_and_return(0);
-		return errdata;
+		if (errdata)
+			return errdata;
 	}
 
 	/*
@@ -623,6 +486,105 @@ cdbdisp_dumpDispatchResult(CdbDispatchResult *dispatchResult)
 	}
 
 	return NULL;
+}
+
+/*
+ * The returned error object is allocated in TopTransactionContext.
+ * 
+ * Caution: do not use the returned object across transaction boundary.
+ * Current usages of this API are such that the returned object is either
+ * logged using elog() or rethrown, both within a transaction context, at the
+ * time of finishing a dispatched command.  The caution applies to future uses
+ * of this function.
+ */
+ErrorData *
+cdbdisp_get_PQerror(PGresult *pgresult)
+{
+	MemoryContext oldcontext;
+	ExecStatusType resultStatus = PQresultStatus(pgresult);
+
+	/*
+	 * QE success
+	 */
+	if (resultStatus == PGRES_COMMAND_OK ||
+		resultStatus == PGRES_TUPLES_OK ||
+		resultStatus == PGRES_COPY_IN ||
+		resultStatus == PGRES_COPY_OUT ||
+		resultStatus == PGRES_EMPTY_QUERY)
+	{
+		return NULL;
+	}
+
+	/*
+	 * QE error or libpq error
+	 */
+
+	/* These will be overwritten below with the values from QE, if the QE sent them. */
+	char	   *filename = __FILE__;
+	int			lineno = __LINE__;
+	const char *funcname = PG_FUNCNAME_MACRO;
+	int			qe_errcode = ERRCODE_GP_INTERCONNECTION_ERROR;
+
+	char	   *whoami;
+	char	   *fld;
+
+	/*
+	 * errstart need a const filename and funcname, make sure they
+	 * are at least const in this transaction.
+	 */
+	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
+	fld = PQresultErrorField(pgresult, PG_DIAG_SOURCE_FILE);
+	if (fld)
+		filename = pstrdup(fld);
+
+	fld = PQresultErrorField(pgresult, PG_DIAG_SOURCE_LINE);
+	if (fld)
+		lineno = atoi(fld);
+
+	fld = PQresultErrorField(pgresult, PG_DIAG_SOURCE_FUNCTION);
+	if (fld)
+		funcname = pstrdup(fld);
+	MemoryContextSwitchTo(oldcontext);
+
+	/*
+	 * We should only get errors with ERROR level or above, if the
+	 * command failed. And if a QE disconnected with FATAL, or PANICed,
+	 * we don't want to do the same in the QD. So, always an ERROR.
+	 */
+	errstart(ERROR, filename, lineno, funcname, TEXTDOMAIN);
+
+	fld = PQresultErrorField(pgresult, PG_DIAG_SQLSTATE);
+	if (fld)
+		qe_errcode = sqlstate_to_errcode(fld);
+	errcode(qe_errcode);
+
+	whoami = PQresultErrorField(pgresult, PG_DIAG_GP_PROCESS_TAG);
+	fld = PQresultErrorField(pgresult, PG_DIAG_MESSAGE_PRIMARY);
+	if (!fld)
+		fld = "no primary message received";
+
+	if (whoami)
+		errmsg("%s  (%s)", fld, whoami);
+	else
+		errmsg("%s", fld);
+
+	fld = PQresultErrorField(pgresult, PG_DIAG_MESSAGE_DETAIL);
+	if (fld)
+		errdetail("%s", fld);
+
+	fld = PQresultErrorField(pgresult, PG_DIAG_MESSAGE_HINT);
+	if (fld)
+		errhint("%s", fld);
+
+	fld = PQresultErrorField(pgresult, PG_DIAG_CONTEXT);
+	if (fld)
+		errcontext("%s", fld);
+
+	Assert(TopTransactionContext);
+	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
+	ErrorData *edata = errfinish_and_return(0);
+	MemoryContextSwitchTo(oldcontext);
+	return edata;
 }
 
 /*
@@ -703,7 +665,7 @@ cdbdisp_sumRejectedRows(CdbDispatchResults *results)
 	CdbDispatchResult *dispatchResult;
 	CdbDispatchResult *resultEnd = cdbdisp_resultEnd(results, -1);
 	PGresult   *pgresult;
-	int			totalRejected = 0;
+	uint64		totalRejected = 0;
 
 	for (dispatchResult = cdbdisp_resultBegin(results, -1);
 		 dispatchResult < resultEnd; ++dispatchResult)
@@ -871,7 +833,6 @@ cdbdisp_returnResults(CdbDispatchResults *primaryResults, CdbPgResults *cdb_pgre
 
 	/* tell the caller how many sets we're returning. */
 	cdb_pgresults->numResults = nresults;
-
 }
 
 /*
@@ -899,14 +860,23 @@ cdbdisp_checkResultsErrcode(struct CdbDispatchResults *meleeResults)
  * Will be freed in function cdbdisp_destroyDispatcherState by deleting the
  * memory context.
  */
-CdbDispatchResults *
-cdbdisp_makeDispatchResults(int sliceCapacity,
+void
+cdbdisp_makeDispatchResults(CdbDispatcherState *ds,
+							int sliceCapacity,
 							bool cancelOnError)
 {
-	CdbDispatchResults *results = palloc0(sizeof(*results));
-	int			resultCapacity = largestGangsize() * sliceCapacity;
-	int			nbytes = resultCapacity * sizeof(results->resultArray[0]);
+	CdbDispatchResults *results;
+	MemoryContext oldContext;
+	int	resultCapacity;
+	int nbytes;
 
+	Assert(DispatcherContext);
+	oldContext = MemoryContextSwitchTo(DispatcherContext);
+
+	resultCapacity = ds->largestGangSize * sliceCapacity;
+	nbytes = resultCapacity * sizeof(results->resultArray[0]);
+
+	results = palloc0(sizeof(*results));
 	results->resultArray = palloc0(nbytes);
 	results->resultCapacity = resultCapacity;
 	results->resultCount = 0;
@@ -922,7 +892,9 @@ cdbdisp_makeDispatchResults(int sliceCapacity,
 		results->sliceMap = palloc0(nbytes);
 	}
 
-	return results;
+	MemoryContextSwitchTo(oldContext);
+
+	ds->primaryResults = results;
 }
 
 void

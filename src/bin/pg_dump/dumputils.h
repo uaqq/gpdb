@@ -5,10 +5,10 @@
  *	Lately it's also being used by psql and bin/scripts/ ...
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/dumputils.h,v 1.29 2010/02/26 02:01:16 momjian Exp $
+ * src/bin/pg_dump/dumputils.h
  *
  *-------------------------------------------------------------------------
  */
@@ -19,8 +19,25 @@
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 
-extern void init_parallel_dump_utils(void);
+typedef struct SimpleStringListCell
+{
+	struct SimpleStringListCell *next;
+	char		val[1];			/* VARIABLE LENGTH FIELD */
+} SimpleStringListCell;
+
+typedef struct SimpleStringList
+{
+	SimpleStringListCell *head;
+	SimpleStringListCell *tail;
+} SimpleStringList;
+
+
+extern int	quote_all_identifiers;
+extern PQExpBuffer (*getLocalPQExpBuffer) (void);
+
 extern const char *fmtId(const char *identifier);
+extern const char *fmtQualifiedId(int remoteVersion,
+			   const char *schema, const char *id);
 extern void appendStringLiteral(PQExpBuffer buf, const char *str,
 					int encoding, bool std_strings);
 extern void appendStringLiteralConn(PQExpBuffer buf, const char *str,
@@ -30,7 +47,6 @@ extern void appendStringLiteralDQ(PQExpBuffer buf, const char *str,
 extern void appendByteaLiteral(PQExpBuffer buf,
 				   const unsigned char *str, size_t length,
 				   bool std_strings);
-extern int	parse_version(const char *versionString);
 extern bool parsePGArray(const char *atext, char ***itemarray, int *nitems);
 extern bool buildACLCommands(const char *name, const char *subname,
 				 const char *type, const char *acls, const char *owner,
@@ -50,5 +66,13 @@ extern char *escape_backslashes(const char *src, bool quotes_too);
 extern char *escape_fmtopts_string(const char *src);
 extern char *custom_fmtopts_string(const char *src);
 
+extern void buildShSecLabelQuery(PGconn *conn, const char *catalog_name,
+					 uint32 objectId, PQExpBuffer sql);
+extern void emitShSecLabels(PGconn *conn, PGresult *res,
+				PQExpBuffer buffer, const char *target, const char *objname);
+extern void set_dump_section(const char *arg, int *dumpSections);
+
+extern void simple_string_list_append(SimpleStringList *list, const char *val);
+extern bool simple_string_list_member(SimpleStringList *list, const char *val);
 
 #endif   /* DUMPUTILS_H */

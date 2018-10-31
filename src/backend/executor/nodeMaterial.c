@@ -5,12 +5,12 @@
  *
  * Portions Copyright (c) 2005-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeMaterial.c,v 1.71 2010/01/02 16:57:42 momjian Exp $
+ *	  src/backend/executor/nodeMaterial.c
  *
  *-------------------------------------------------------------------------
  */
@@ -33,7 +33,7 @@
 #include "cdb/cdbvars.h"
 
 static void ExecMaterialExplainEnd(PlanState *planstate, struct StringInfoData *buf);
-static void ExecChildRescan(MaterialState *node, ExprContext *exprCtxt);
+static void ExecChildRescan(MaterialState *node);
 static void DestroyTupleStore(MaterialState *node);
 
 
@@ -282,7 +282,7 @@ ExecInitMaterial(Material *node, EState *estate, int eflags)
 	/*
 	 * Tuplestore's interpretation of the flag bits is subtly different from
 	 * the general executor meaning: it doesn't think BACKWARD necessarily
-	 * means "backwards all the way to start".	If told to support BACKWARD we
+	 * means "backwards all the way to start".  If told to support BACKWARD we
 	 * must include REWIND in the tuplestore eflags, else tuplestore_trim
 	 * might throw away too much.
 	 */
@@ -525,28 +525,28 @@ DestroyTupleStore(MaterialState *node)
  * ExecChildRescan
  *      Helper function for rescanning child of materialize node
  */
-void
-ExecChildRescan(MaterialState *node, ExprContext *exprCtxt)
+static void
+ExecChildRescan(MaterialState *node)
 {
 	Assert(node);
 	/*
 	 * if parameters of subplan have changed, then subplan will be rescanned by
 	 * first ExecProcNode. Otherwise, we need to rescan subplan here
 	 */
-	if (((PlanState *) node)->lefttree->chgParam == NULL)
-		ExecReScan(((PlanState *) node)->lefttree, exprCtxt);
+	if (node->ss.ps.lefttree->chgParam == NULL)
+		ExecReScan(node->ss.ps.lefttree);
 
 	node->eof_underlying = false;
 }
 
 /* ----------------------------------------------------------------
- *		ExecMaterialReScan
+ *		ExecReScanMaterial
  *
  *		Rescans the materialized relation.
  * ----------------------------------------------------------------
  */
 void
-ExecMaterialReScan(MaterialState *node, ExprContext *exprCtxt)
+ExecReScanMaterial(MaterialState *node)
 {
 	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 
@@ -564,7 +564,7 @@ ExecMaterialReScan(MaterialState *node, ExprContext *exprCtxt)
 			 */
 			if (node->ts_destroyed)
 			{
-				ExecChildRescan(node, exprCtxt);
+				ExecChildRescan(node);
 			}
 			return;
 		}
@@ -579,12 +579,12 @@ ExecMaterialReScan(MaterialState *node, ExprContext *exprCtxt)
 		 * Otherwise we can just rewind and rescan the stored output. The
 		 * state of the subnode does not change.
 		 */
-		if (((PlanState *) node)->lefttree->chgParam != NULL ||
+		if (node->ss.ps.lefttree->chgParam != NULL ||
 			(node->eflags & EXEC_FLAG_REWIND) == 0)
 		{
 			DestroyTupleStore(node);
-			if (((PlanState *) node)->lefttree->chgParam == NULL)
-				ExecReScan(((PlanState *) node)->lefttree, exprCtxt);
+			if (node->ss.ps.lefttree->chgParam == NULL)
+				ExecReScan(node->ss.ps.lefttree);
 		}
 		else
 		{
@@ -594,7 +594,7 @@ ExecMaterialReScan(MaterialState *node, ExprContext *exprCtxt)
 	else
 	{
 		/* In this case we are just passing on the subquery's output */
-		ExecChildRescan(node, exprCtxt);
+		ExecChildRescan(node);
 	}
 }
 

@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	    src/backend/catalog/pg_extprotocol.c
+ *		src/backend/catalog/pg_extprotocol.c
  *
  *-------------------------------------------------------------------------
  */
@@ -62,7 +62,7 @@ ExtProtocolCreate(const char *protocolName,
 	int			i;
 	ObjectAddress myself,
 				referenced;
-	Oid 		ownerId = GetUserId();
+	Oid			ownerId = GetUserId();
 	ScanKeyData skey;
 	SysScanDesc scan;
 	Oid			protOid;
@@ -98,24 +98,24 @@ ExtProtocolCreate(const char *protocolName,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(protocolName));
 	scan = systable_beginscan(rel, ExtprotocolPtcnameIndexId, true,
-							  SnapshotNow, 1, &skey);
+							  NULL, 1, &skey);
 	tup = systable_getnext(scan);
 	if (HeapTupleIsValid(tup))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("protocol \"%s\" already exists", 
+				 errmsg("protocol \"%s\" already exists",
 						protocolName)));
 	systable_endscan(scan);
 
 	/*
 	 * function checks: if supplied, check existence and correct signature in the catalog
 	 */
-	
+
 	if (readfuncName)
 		readfn = ValidateProtocolFunction(readfuncName, EXTPTC_FUNC_READER);
 
 	if (writefuncName)
-		writefn = ValidateProtocolFunction(writefuncName, EXTPTC_FUNC_WRITER);				
+		writefn = ValidateProtocolFunction(writefuncName, EXTPTC_FUNC_WRITER);
 
 	if (validatorfuncName)
 		validatorfn = ValidateProtocolFunction(validatorfuncName, EXTPTC_FUNC_VALIDATOR);
@@ -182,40 +182,6 @@ ExtProtocolCreate(const char *protocolName,
 	return protOid;
 }
 
-void
-ExtProtocolDeleteByOid(Oid	protOid)
-{		
-	Relation	rel;
-	ScanKeyData skey;
-	SysScanDesc scan;
-	HeapTuple	tup;
-	bool		found = false;
-
-	/*
-	 * Search pg_extprotocol.
-	 */
-	rel = heap_open(ExtprotocolRelationId, RowExclusiveLock);
-
-	ScanKeyInit(&skey,
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(protOid));
-	scan = systable_beginscan(rel, ExtprotocolOidIndexId, true,
-							  SnapshotNow, 1, &skey);
-
-	while (HeapTupleIsValid(tup = systable_getnext(scan)))
-	{
-		simple_heap_delete(rel, &tup->t_self);
-		found = true;
-	}
-	systable_endscan(scan);
-
-	if (!found)
-		elog(ERROR, "protocol %u could not be found", protOid);
-
-	heap_close(rel, NoLock);
-}
-
 /*
  * ValidateProtocolFunction -- common code for finding readfn, writefn or validatorfn
  */
@@ -225,15 +191,15 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
 	Oid			fnOid;
 	bool		retset;
 	Oid		   *true_oid_array;
-	Oid 	    actual_rettype;
+	Oid			actual_rettype;
 	Oid			desired_rettype;
 	FuncDetailCode fdresult;
 	AclResult	aclresult;
-	Oid 		inputTypes[1] = {InvalidOid}; /* dummy */
+	Oid			inputTypes[1] = {InvalidOid}; /* dummy */
 	int			nargs = 0; /* true for all 3 function types at the moment */
 	int			nvargs;
 	Oid			vatype;
-	
+
 	if (fntype == EXTPTC_FUNC_VALIDATOR)
 		desired_rettype = VOIDOID;
 	else
@@ -268,7 +234,7 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("Invalid protocol function"),
-				 errdetail("Protocol functions cannot return sets.")));		
+				 errdetail("Protocol functions cannot return sets.")));
 
 	if (actual_rettype != desired_rettype)
 		ereport(ERROR,
@@ -277,7 +243,7 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
 						func_type_to_name(fntype),
 						func_signature_string(fnName, nargs, NIL, inputTypes),
 						(fntype == EXTPTC_FUNC_VALIDATOR ? "void" : "an integer"))));
-	
+
 	if (func_volatile(fnOid) == PROVOLATILE_IMMUTABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
@@ -286,7 +252,7 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
 						func_signature_string(fnName, nargs, NIL, inputTypes)),
 				 errhint("PROTOCOL functions must be declared STABLE or VOLATILE")));
 
-	
+
 	/* Check protocol creator has permission to call the function */
 	aclresult = pg_proc_aclcheck(fnOid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
@@ -300,11 +266,11 @@ ValidateProtocolFunction(List *fnName, ExtPtcFuncType fntype)
  * Finds an external protocol by passed in protocol name.
  * Errors if no such protocol exist, or if no function to
  * execute this protocol exists (for read or write separately).
- * 
+ *
  * Returns the protocol function to use.
  */
 Oid
-LookupExtProtocolFunction(const char *prot_name, 
+LookupExtProtocolFunction(const char *prot_name,
 						  ExtPtcFuncType prot_type,
 						  bool error)
 {
@@ -326,7 +292,7 @@ LookupExtProtocolFunction(const char *prot_name,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(prot_name));
 	scan = systable_beginscan(rel, ExtprotocolPtcnameIndexId, true,
-							  SnapshotNow, 1, &skey);
+							  NULL, 1, &skey);
 	tup = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tup))
@@ -370,7 +336,7 @@ LookupExtProtocolFunction(const char *prot_name,
  * protocol Oid.
  */
 Oid
-LookupExtProtocolOid(const char *prot_name, bool missing_ok)
+get_extprotocol_oid(const char *prot_name, bool missing_ok)
 {
 	Oid			protOid = InvalidOid;
 	Relation	rel;
@@ -389,7 +355,7 @@ LookupExtProtocolOid(const char *prot_name, bool missing_ok)
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(prot_name));
 	scan = systable_beginscan(rel, ExtprotocolPtcnameIndexId, true,
-							  SnapshotNow, 1, &skey);
+							  NULL, 1, &skey);
 	tup = systable_getnext(scan);
 
 	if (HeapTupleIsValid(tup))
@@ -408,8 +374,8 @@ LookupExtProtocolOid(const char *prot_name, bool missing_ok)
 }
 
 char *
-ExtProtocolGetNameByOid(Oid	protOid)
-{		
+ExtProtocolGetNameByOid(Oid protOid)
+{
 	char		*ptcnamestr;
 	Relation	rel;
 	ScanKeyData skey;
@@ -427,7 +393,7 @@ ExtProtocolGetNameByOid(Oid	protOid)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(protOid));
 	scan = systable_beginscan(rel, ExtprotocolOidIndexId, true,
-							  SnapshotNow, 1, &skey);
+							  NULL, 1, &skey);
 	tup = systable_getnext(scan);
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "protocol %u could not be found", protOid);
@@ -457,4 +423,3 @@ static char *func_type_to_name(ExtPtcFuncType ftype)
 			return "undefined";
 	}
 }
-

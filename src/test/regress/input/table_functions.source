@@ -334,7 +334,7 @@ SELECT b FROM multiset_5( TABLE( SELECT * from example) ) order by b;
 SELECT distinct a.a, b.b from example a, example b where a.a = b.a order by 1,2;
 select * from multiset_2( TABLE( SELECT distinct a.a, b.b from example a, example b where a.a = b.a) ) order by 1,2;
 select * from multiset_2( TABLE( SELECT distinct a.a, b.b from example a join example b using (a) ) ) order by 1,2;
--- end_equivalent
+-- end equivalent
 
 -- Support for different backend code
 
@@ -342,20 +342,20 @@ select * from multiset_2( TABLE( SELECT distinct a.a, b.b from example a join ex
 -- begin equivalent
 SELECT null as a;
 SELECT * FROM multiset_scalar_null( TABLE(SELECT 1) );
--- end_equivalent
+-- end equivalent
 
 -- this function always returns a single scalar value of 42
 -- begin equivalent
 SELECT 42 as fortytwo;
 SELECT * FROM multiset_scalar_value( TABLE(SELECT 42) ) fortytwo;
--- end_equivalent
+-- end equivalent
 
 
 -- This function always returns a single "(1,Example)" tuple
 -- begin equivalent
 SELECT 1 as a, 'Example' as b;
 SELECT * from multiset_scalar_tuple( TABLE(SELECT 1) );
--- end_equivalent
+-- end equivalent
 
 
 -- ERROR: functions returning SETOF x cannot return null
@@ -464,6 +464,11 @@ explain analyze SELECT * FROM multiset_5( TABLE( SELECT count(*)::integer, 'hell
 
 -- Test for an old bug in aggregate planning - this used to crash.
 select count(*) from multiset_5(table(select * from example)) s ;
+
+-- Test for 'select for update'
+begin;
+select count(*) from multiset_5(table(select * from example for update)) s ;
+abort;
 
 -- ===========================================
 -- Test invalid use of table value expressions
@@ -589,10 +594,7 @@ BEGIN
 END;
 $$ language plpgsql NO SQL;
 
--- python functions have no validator, error at call time.
 CREATE FUNCTION tf_python(anytable) returns int AS $$ return 1 $$ language plpythonu NO SQL;
-SELECT * FROM tf_python( TABLE(SELECT 1) );
-DROP FUNCTION tf_python(anytable);
 
 
 -- ====================================
@@ -752,7 +754,6 @@ FROM sessionize_dynamic(
 ORDER BY id, time; -- FAIL, double qualified
 
 -- Otherwise results should match
--- start_equiv
 SELECT *
 FROM sessionize_plain(
     TABLE
@@ -811,8 +812,6 @@ FROM sessionize_dynamic(
     ),
     (select '1 minute'::interval) ) as sessionize
 ORDER BY id, time;
-
--- end_equiv
 
 -- ===================================
 -- Dynamic type interaction with VIEWS

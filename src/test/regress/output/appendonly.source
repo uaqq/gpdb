@@ -189,17 +189,17 @@ SELECT count(*) FROM tenk_ao4;
 -- The first row is good (so it grows the file), the second is bad.
 --
 COPY tenk_ao1 FROM STDIN;
-ERROR:  missing data for column "unique2"
-CONTEXT:  COPY tenk_ao1, line 2: "bad data row"
+ERROR:  invalid input syntax for integer: "bad data row"
+CONTEXT:  COPY tenk_ao1, line 2, column unique1: "bad data row"
 COPY tenk_ao2 FROM STDIN;
-ERROR:  missing data for column "unique2"
-CONTEXT:  COPY tenk_ao2, line 2: "bad data row"
+ERROR:  invalid input syntax for integer: "bad data row"
+CONTEXT:  COPY tenk_ao2, line 2, column unique1: "bad data row"
 COPY tenk_ao3 FROM STDIN;
-ERROR:  missing data for column "unique2"
-CONTEXT:  COPY tenk_ao3, line 2: "bad data row"
+ERROR:  invalid input syntax for integer: "bad data row"
+CONTEXT:  COPY tenk_ao3, line 2, column unique1: "bad data row"
 COPY tenk_ao4 FROM STDIN;
-ERROR:  missing data for column "unique2"
-CONTEXT:  COPY tenk_ao4, line 2: "bad data row"
+ERROR:  invalid input syntax for integer: "bad data row"
+CONTEXT:  COPY tenk_ao4, line 2, column unique1: "bad data row"
 SELECT count(*) FROM tenk_ao1;
  count 
 -------
@@ -401,9 +401,7 @@ DROP TABLE tenk_ao2;
 DROP TABLE tenk_ao3;
 DROP TABLE tenk_ao4;
 -- CTAS
-CREATE TABLE tenk_ao1 with(appendonly=true, checksum=true) AS SELECT * FROM tenk_heap;
-NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column(s) named 'unique1' as the Greenplum Database data distribution key for this table.
-HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+CREATE TABLE tenk_ao1 with(appendonly=true, checksum=true) AS SELECT * FROM tenk_heap DISTRIBUTED BY (unique1);
 -- Incase of CTAS also, gp_fastsequence entries must get created and use segfile 0
 -- With and without ORCA last_sequence fluctuates bit and hence using >= 3300 as
 -- inserting 10k tuples to 3 node system must atleast have last_sequence >= 3300
@@ -975,7 +973,7 @@ select count(*) from tenk_ao1;
  10000
 (1 row)
 
-select count(*) from gp_toolkit.__gp_aoseg_name('tenk_ao1') where modcount > 0;
+select count(*) from gp_toolkit.__gp_aoseg('tenk_ao1') where modcount > 0;
  count 
 -------
      0
@@ -984,7 +982,7 @@ select count(*) from gp_toolkit.__gp_aoseg_name('tenk_ao1') where modcount > 0;
 DELETE FROM tenk_ao1 WHERE unique1 = 1;
 -- modcount after DELETE must increment to flag table should be included in
 -- incremental backup
-select count(*) from gp_toolkit.__gp_aoseg_name('tenk_ao1') where modcount > 0;
+select count(*) from gp_toolkit.__gp_aoseg('tenk_ao1') where modcount > 0;
  count 
 -------
      1
@@ -1007,7 +1005,7 @@ UPDATE tenk_ao1 SET unique2 = -unique1 WHERE unique2 <= 5;
 UPDATE tenk_ao1 SET two = 2;
 -- modcount after UPDATE must increment to flag table should be included in
 -- incremental backup
-select count(*) from gp_toolkit.__gp_aoseg_name('tenk_ao1') where modcount > 1;
+select count(*) from gp_toolkit.__gp_aoseg('tenk_ao1') where modcount > 1;
  count 
 -------
      1
@@ -1040,7 +1038,6 @@ relname='tenk_renamed'));
 
 ALTER TABLE tenk_renamed ALTER COLUMN twothousand SET NOT NULL;
 ALTER TABLE tenk_renamed ADD COLUMN sercol serial; -- MPP-10015
-NOTICE:  ALTER TABLE will create implicit sequence "tenk_renamed_sercol_seq" for serial column "tenk_renamed.sercol"
 ALTER TABLE tenk_renamed ADD COLUMN newcol2 int NOT NULL; -- should fail
 ERROR:  column "newcol2" contains null values
 SELECT count(*) FROM tenk_renamed;
@@ -1163,7 +1160,7 @@ select get_ao_compression_ratio('ao_compress_table') > 1.2 and get_ao_compressio
 select get_ao_distribution('ao_compress_table');
  get_ao_distribution 
 ---------------------
- (0,1)
+ (2,1)
 (1 row)
 
 truncate table ao_compress_table; -- after truncate, reclaim space from the table and index
@@ -1173,6 +1170,88 @@ select count(*) from (select distinct * from ao_compress_results) temp; -- shoul
 -------
      2
 (1 row)
+
+-- Same transaction truncate multiple times. This performs unsafe truncate means
+-- direct file truncate and not flipping the relfilenode.
+create table ao_truncate_multiple_times(a int) with (appendonly=true);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'a' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+insert into ao_truncate_multiple_times select * from generate_series(0, 9);
+begin;
+select * from ao_truncate_multiple_times;
+ a 
+---
+ 8
+ 9
+ 3
+ 4
+ 5
+ 6
+ 7
+ 0
+ 1
+ 2
+(10 rows)
+
+truncate table ao_truncate_multiple_times;
+select * from ao_truncate_multiple_times;
+ a 
+---
+(0 rows)
+
+insert into ao_truncate_multiple_times select * from generate_series(10, 19);
+select * from ao_truncate_multiple_times;
+ a  
+----
+ 18
+ 19
+ 13
+ 14
+ 15
+ 16
+ 17
+ 10
+ 11
+ 12
+(10 rows)
+
+truncate table ao_truncate_multiple_times;
+select * from ao_truncate_multiple_times;
+ a 
+---
+(0 rows)
+
+insert into ao_truncate_multiple_times select * from generate_series(20, 29);
+select * from ao_truncate_multiple_times;
+ a  
+----
+ 28
+ 29
+ 23
+ 24
+ 25
+ 26
+ 27
+ 20
+ 21
+ 22
+(10 rows)
+
+abort;
+select * from ao_truncate_multiple_times;
+ a 
+---
+ 0
+ 1
+ 2
+ 8
+ 9
+ 3
+ 4
+ 5
+ 6
+ 7
+(10 rows)
 
 -------------------- 
 -- supported sql 

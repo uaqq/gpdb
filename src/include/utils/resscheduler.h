@@ -27,7 +27,7 @@
 /*
  * GUC variables.
  */
-extern ResManagerMemoryPolicy   gp_resgroup_memory_policy;
+extern int						gp_resgroup_memory_policy;
 extern int						gp_resqueue_memory_policy;
 extern bool						gp_log_resqueue_memory;
 extern int						gp_resqueue_memory_policy_auto_fixed_mem;
@@ -38,13 +38,11 @@ extern int	MaxResourcePortalsPerXact;
 extern bool	ResourceSelectOnly;
 extern bool	ResourceCleanupIdleGangs;
 
-extern Oid MyQueueId; /* resource queue for current role. */
-
 /*
  * Data structures
  *
  * TODO:
- * To add a equivalent of locallock to handle extensions to proclock
+ * To add an equivalent of locallock to handle extensions to proclock
  * and back out the changes to it.
  */
 
@@ -130,6 +128,7 @@ typedef enum
 extern LockAcquireResult ResLockAcquire(LOCKTAG *locktag, 
 										ResPortalIncrement *incrementSet);
 extern bool				ResLockRelease(LOCKTAG *locktag, uint32 resPortalId);
+extern bool             IsResQueueLockedForPortal(Portal portal);
 extern int				ResLockCheckLimit(LOCK *lock, PROCLOCK *proclock, 
 										  ResPortalIncrement *incrementSet,
 										  bool increment);
@@ -165,7 +164,7 @@ extern ResAlterQueueResult ResAlterQueue(Oid queueid,
 						  bool overcommit, float4 ignorelimit);
 extern bool ResDestroyQueue(Oid queueid);
 
-extern bool ResLockPortal(Portal portal, QueryDesc *qDesc);
+extern void ResLockPortal(Portal portal, QueryDesc *qDesc);
 extern void ResUnLockPortal(Portal portal);
 
 extern void ResCheckPortalType(Portal portal);
@@ -177,7 +176,7 @@ extern uint32 ResCreatePortalId(const char *name);
 extern void AtCommit_ResScheduler(void);
 extern void AtAbort_ResScheduler(void);
 extern void ResHandleUtilityStmt(Portal portal, Node *stmt);
-extern bool ResLockUtilityPortal(Portal portal, float4 ignoreCostLimit);
+extern void ResLockUtilityPortal(Portal portal, float4 ignoreCostLimit);
 
  /**
   * What is the memory limit on a queue per the catalog in bytes. Returns -1 if not set.

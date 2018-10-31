@@ -37,7 +37,6 @@ Options:
     -man             full documentation
     -ignore_plans    ignore explain plan content in query output
     -init <file>     load initialization file
-    -do_equiv        construct or compare equivalent query regions
 
 =head1 OPTIONS
 
@@ -95,28 +94,6 @@ eg:
 
   -init file1 -init file2 
 
-
-=item B<-do_equiv>
-    
-    Choose one of the following options
-    
-=over 12
-
-=item ignore_all:  
-
-(default) ignore all content in a start_equiv/end_equiv block.
-
-=item make:  
-
-replace the query output of all queries in a start_equiv/end_equiv
-block with the output of the first query, processed according to any
-formatting directives for each query.
-
-
-=item compare:  
-
-process the query output of all queries in a start_equiv/end_equiv
-block (versus prefixing the entire block with GP_IGNORE).
 
 =back
 
@@ -257,19 +234,6 @@ command can use the -I flag to ignore lines with this prefix.
 
   Ends the ignored region that started with "start_ignore"
 
-=item -- start_equiv
-
-Begin an "equivalent" region, and treat contents according to the
-specified --do_equiv option.  Normally, the results are ignored.  The
-"--do_equiv=make" option replaces the contents of all queries in the
-equivalent region with the results of the first query.  If
-"--do_equiv=compare" option is specified, the region is processed
-according to the standard query formatting rules.
-
-=item -- end_equiv
-
-  Ends the equivalent region that started with "start_equiv"
-
 =item -- start_matchsubs
 
 Starts a list of match/substitution expressions, where the match and
@@ -320,6 +284,19 @@ query is complex, you may need to tag it with a comment to force the
 explain.  Using this command for non-EXPLAIN statements is
 inadvisable.
 
+=item -- explain_processing_on
+
+Enables the automated processing of the explain output, removing all
+the variable fields using the `explain` perl module
+This is the default.
+
+=item -- explain_processing_off
+
+Do not process the explain output. This might result in test failures
+if the test does not replace the variable values itself.
+An example of a test that uses this is the test that validates the
+format of the explain output.
+
 =back
 
 Note that you can combine the directives for a single query, but each
@@ -363,9 +340,6 @@ my $glob_fqo;
 
 my $man  = 0;
 my $help = 0;
-my $compare_equiv = 0;
-my $make_equiv_expected = 0;
-my $do_equiv;
 my $ignore_plans;
 my @init_file;
 my $verbose;
@@ -375,7 +349,6 @@ GetOptions(
     'help|?' => \$help, man => \$man, 
     'gpd_ignore_plans|gp_ignore_plans|ignore_plans' => \$ignore_plans,
     'gpd_init|gp_init|init:s' => \@init_file,
-    'do_equiv:s' => \$do_equiv,
     'order_warn|orderwarn' => \$orderwarn,
     'verbose' => \$verbose,
     'version|v' => \&print_version
@@ -392,7 +365,6 @@ my %args;
 
 $args{IGNORE_PLANS} = $ignore_plans if (defined ($ignore_plans));
 @{$args{INIT_FILES}} = @init_file if (scalar(@init_file));
-$args{DO_EQUIV} = $do_equiv if (defined ($do_equiv));
 $args{ORDER_WARN} = $orderwarn if (defined ($orderwarn));
 $args{VERBOSE} = $verbose if (defined ($verbose));
 

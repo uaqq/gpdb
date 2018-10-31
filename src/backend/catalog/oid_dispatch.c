@@ -80,6 +80,7 @@
 #include "catalog/pg_attrdef.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
@@ -87,6 +88,7 @@
 #include "catalog/pg_enum.h"
 #include "catalog/pg_extension.h"
 #include "catalog/pg_extprotocol.h"
+#include "catalog/pg_event_trigger.h"
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
@@ -119,6 +121,21 @@
 #include "miscadmin.h"
 
 /* #define OID_DISPATCH_DEBUG */
+
+/*
+ * In upstream PostgreSQL, the below variables are set before object creation
+ * in binary upgrade mode, while Greenplum use the Oid dispatcher functionality
+ * for binary upgrade as well.  We do however need these for signalling the
+ * TOAST code to ensure that toast tables are created in the new cluster iff
+ * they exist in the old. Since Greenplum creates partitioned tables with a
+ * single CREATE TABLE statement, the below variables are used as reference
+ * counters rather than single-use signals. The fact that Oids are defined as
+ * unsigned integers is abused to keep the datatype aligned with upstream and
+ * avoid merge conflicts. See documentation in create_toast_table() for a
+ * longer discussion on this.
+ */
+extern Oid			binary_upgrade_next_toast_pg_class_oid;
+extern Oid			binary_upgrade_next_toast_pg_type_oid;
 
 /*
  * These were received from the QD, and should be consumed by the current
@@ -188,6 +205,14 @@ CreateKeyFromCatalogTuple(Relation catalogrel, HeapTuple tuple,
 
 				key.keyOid1 = castForm->castsource;
 				key.keyOid2 = castForm->casttarget;
+				break;
+			}
+		case CollationRelationId:
+			{
+				Form_pg_collation collationForm = (Form_pg_collation) GETSTRUCT(tuple);
+
+				key.namespaceOid = collationForm->collnamespace;
+				key.objname = NameStr(collationForm->collname);
 				break;
 			}
 		case ConstraintRelationId:
@@ -424,6 +449,11 @@ CreateKeyFromCatalogTuple(Relation catalogrel, HeapTuple tuple,
 			*exempt = true;
 			 break;
 
+		 /* Event triggers are only stored and fired in the QD. */
+		case EventTriggerRelationId:
+			*exempt = true;
+			break;
+
 		/*
 		 * Large objects don't work very consistently in GPDB. They are not
 		 * distributed in the segments, but rather stored in the master node.
@@ -601,55 +631,13 @@ GetPreassignedOidForTuple(Relation catalogrel, HeapTuple tuple)
 
 	if ((oid = GetPreassignedOid(&searchkey)) == InvalidOid)
 	{
-		bool		missing_ok = false;
-
 		/*
-		 * When binary-upgrading the QD node, we must preserve the OIDs of types,
-		 * relations from the old cluster, so we should have pre-assigned OIDs for
-		 * them.
-		 *
-		 * When binary-upgrading a QE node, we should have pre-assigned OIDs for
-		 * all objects, to ensure that the same OIDs are used for all objects
-		 * between the QD and the QEs.
+		 * When binary-upgrading the QD node, we must preserve the OIDs of
+		 * types, relations and enums from the old cluster, so we should have
+		 * pre-assigned OIDs for them.  For now we don't enforce the OIDs for
+		 * these objects here, consider that a future TODO.
 		 */
-		if (IsBinaryUpgrade && !IsBinaryUpgradeQE())
-		{
-			if (RelationGetRelid(catalogrel) == NamespaceRelationId)
-			{
-				/*
-				 * OIDs of schemas must be preserved. (Only because namespace
-				 * OIDs are part of the key of types and relations.) The only
-				 * exception is pg_temp which we exempt (by definition).
-				 */
-				if (strncmp(searchkey.objname, "pg_temp", strlen("pg_temp")) == 0 ||
-					strncmp(searchkey.objname, "pg_toast_temp", strlen("pg_toast_temp")) == 0)
-					missing_ok = true;
-				else
-					missing_ok = false;
-			}
-			else if (RelationGetRelid(catalogrel) == TypeRelationId)
-			{
-				/* No need to preserve the rowtype OIDs of these special relations. */
-				if (searchkey.namespaceOid == PG_BITMAPINDEX_NAMESPACE)
-					missing_ok = true;
-				if (searchkey.namespaceOid == PG_TOAST_NAMESPACE)
-					missing_ok = true;
-				if (searchkey.namespaceOid == PG_AOSEGMENT_NAMESPACE)
-					missing_ok = true;
-			}
-			else if (RelationGetRelid(catalogrel) == RelationRelationId)
-			{
-				/* pg_upgrading indexes is currently not supported, so this is OK */
-				if (searchkey.namespaceOid == PG_BITMAPINDEX_NAMESPACE)
-					missing_ok = true;
-			}
-			else
-			{
-				missing_ok = true;
-			}
-		}
-
-		if (!missing_ok)
+		if (!IsBinaryUpgrade)
 			elog(ERROR, "no pre-assigned OID for %s tuple \"%s\" (namespace:%u keyOid1:%u keyOid2:%u)",
 				 RelationGetRelationName(catalogrel), searchkey.objname ? searchkey.objname : "",
 				 searchkey.namespaceOid, searchkey.keyOid1, searchkey.keyOid2);
@@ -697,19 +685,18 @@ GetPreassignedOidForRelation(Oid namespaceOid, const char *relname)
 		 * Special handling for binary upgrading the QD node. See
 		 * GetPreassignedOidForTuple().
 		 */
-		if (IsBinaryUpgrade && !IsBinaryUpgradeQE())
-		{
-			if (namespaceOid == PG_BITMAPINDEX_NAMESPACE)
-				return InvalidOid;
+		if (IsBinaryUpgrade)
+			return InvalidOid;
 
-			if (namespaceOid == PG_TOAST_NAMESPACE)
-				return InvalidOid;
-
-			if (namespaceOid == PG_AOSEGMENT_NAMESPACE)
-				return InvalidOid;
-		}
 		elog(ERROR, "no pre-assigned OID for relation \"%s\"", relname);
 	}
+	else
+	{
+		/* If a toast Oid was consumed, lower the flag */
+		if (strstr(relname, "pg_toast"))
+			binary_upgrade_next_toast_pg_class_oid--;
+	}
+
 	return oid;
 }
 
@@ -734,6 +721,11 @@ GetPreassignedOidForType(Oid namespaceOid, const char *typname,
 
 	if ((oid = GetPreassignedOid(&searchkey)) == InvalidOid && !allowMissing)
 		elog(ERROR, "no pre-assigned OID for type \"%s\"", typname);
+
+	/* If a toast type Oid was consumed, lower the flag */
+	if (strstr(typname, "pg_toast"))
+		binary_upgrade_next_toast_pg_type_oid--;
+
 	return oid;
 }
 

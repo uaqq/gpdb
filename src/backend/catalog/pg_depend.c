@@ -3,12 +3,12 @@
  * pg_depend.c
  *	  routines to support manipulation of the pg_depend relation
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_depend.c,v 1.33 2010/01/02 16:57:36 momjian Exp $
+ *	  src/backend/catalog/pg_depend.c
  *
  *-------------------------------------------------------------------------
  */
@@ -16,11 +16,12 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
-#include "catalog/pg_extension.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_depend.h"
+#include "catalog/pg_extension.h"
 #include "commands/extension.h"
 #include "miscadmin.h"
 #include "utils/fmgroids.h"
@@ -49,7 +50,7 @@ recordDependencyOn(const ObjectAddress *depender,
 
 /*
  * Record multiple dependencies (of the same kind) for a single dependent
- * object.	This has a little less overhead than recording each separately.
+ * object.  This has a little less overhead than recording each separately.
  */
 void
 recordMultipleDependencies(const ObjectAddress *depender,
@@ -210,12 +211,12 @@ deleteDependencyRecordsFor(Oid classId, Oid objectId,
 				ObjectIdGetDatum(objectId));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
 		if (skipExtensionDeps &&
-			((Form_pg_depend) GETSTRUCT(tup))->deptype == DEPENDENCY_EXTENSION)
+		  ((Form_pg_depend) GETSTRUCT(tup))->deptype == DEPENDENCY_EXTENSION)
 			continue;
 
 		simple_heap_delete(depRel, &tup->t_self);
@@ -260,7 +261,7 @@ deleteDependencyRecordsForClass(Oid classId, Oid objectId,
 				ObjectIdGetDatum(objectId));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
@@ -342,7 +343,7 @@ changeDependencyFor(Oid classId, Oid objectId,
 				ObjectIdGetDatum(objectId));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	while (HeapTupleIsValid((tup = systable_getnext(scan))))
 	{
@@ -406,7 +407,7 @@ isObjectPinned(const ObjectAddress *object, Relation rel)
 				ObjectIdGetDatum(object->objectId));
 
 	scan = systable_beginscan(rel, DependReferenceIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	/*
 	 * Since we won't generate additional pg_depend entries for pinned
@@ -466,7 +467,7 @@ getExtensionOfObject(Oid classId, Oid objectId)
 				ObjectIdGetDatum(objectId));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	while (HeapTupleIsValid((tup = systable_getnext(scan))))
 	{
@@ -491,7 +492,7 @@ getExtensionOfObject(Oid classId, Oid objectId)
  * Detect whether a sequence is marked as "owned" by a column
  *
  * An ownership marker is an AUTO dependency from the sequence to the
- * column.	If we find one, store the identity of the owning column
+ * column.  If we find one, store the identity of the owning column
  * into *tableId and *colId and return TRUE; else return FALSE.
  *
  * Note: if there's more than one such pg_depend entry then you get
@@ -519,7 +520,7 @@ sequenceIsOwned(Oid seqId, Oid *tableId, int32 *colId)
 				ObjectIdGetDatum(seqId));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	while (HeapTupleIsValid((tup = systable_getnext(scan))))
 	{
@@ -551,39 +552,8 @@ sequenceIsOwned(Oid seqId, Oid *tableId, int32 *colId)
 void
 markSequenceUnowned(Oid seqId)
 {
-	Relation	depRel;
-	ScanKeyData key[2];
-	SysScanDesc scan;
-	HeapTuple	tup;
-
-	depRel = heap_open(DependRelationId, RowExclusiveLock);
-
-	ScanKeyInit(&key[0],
-				Anum_pg_depend_classid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(RelationRelationId));
-	ScanKeyInit(&key[1],
-				Anum_pg_depend_objid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(seqId));
-
-	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 2, key);
-
-	while (HeapTupleIsValid((tup = systable_getnext(scan))))
-	{
-		Form_pg_depend depform = (Form_pg_depend) GETSTRUCT(tup);
-
-		if (depform->refclassid == RelationRelationId &&
-			depform->deptype == DEPENDENCY_AUTO)
-		{
-			simple_heap_delete(depRel, &tup->t_self);
-		}
-	}
-
-	systable_endscan(scan);
-
-	heap_close(depRel, RowExclusiveLock);
+	deleteDependencyRecordsForClass(RelationRelationId, seqId,
+									RelationRelationId, DEPENDENCY_AUTO);
 }
 
 /*
@@ -610,7 +580,7 @@ getOwnedSequences(Oid relid)
 				ObjectIdGetDatum(relid));
 
 	scan = systable_beginscan(depRel, DependReferenceIndexId, true,
-							  SnapshotNow, 2, key);
+							  NULL, 2, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
@@ -673,7 +643,7 @@ get_constraint_index(Oid constraintId)
 				Int32GetDatum(0));
 
 	scan = systable_beginscan(depRel, DependReferenceIndexId, true,
-							  SnapshotNow, 3, key);
+							  NULL, 3, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
@@ -731,7 +701,7 @@ get_index_constraint(Oid indexId)
 				Int32GetDatum(0));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
-							  SnapshotNow, 3, key);
+							  NULL, 3, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{

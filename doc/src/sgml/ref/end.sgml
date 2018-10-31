@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/end.sgml,v 1.16 2010/04/03 07:23:01 petere Exp $
+doc/src/sgml/ref/end.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-END">
+ <indexterm zone="sql-end">
+  <primary>END</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>END</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,16 +19,12 @@ PostgreSQL documentation
   <refpurpose>commit the current transaction</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-end">
-  <primary>END</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 END [ WORK | TRANSACTION ]
 </synopsis>
  </refsynopsisdiv>
-  
+
  <refsect1>
   <title>Description</title>
 
@@ -36,7 +36,7 @@ END [ WORK | TRANSACTION ]
    that is equivalent to <xref linkend="sql-commit">.
   </para>
  </refsect1>
-  
+
  <refsect1>
   <title>Parameters</title>
 
@@ -74,13 +74,12 @@ END [ WORK | TRANSACTION ]
    To commit the current transaction and make all changes permanent:
 <programlisting>
 END;
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>
   <title>Compatibility</title>
-  
+
   <para>
    <command>END</command> is a <productname>PostgreSQL</productname>
    extension that provides functionality equivalent to <xref

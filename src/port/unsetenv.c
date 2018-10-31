@@ -3,12 +3,12 @@
  * unsetenv.c
  *	  unsetenv() emulation for machines without it
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/port/unsetenv.c,v 1.11 2010/01/02 16:58:13 momjian Exp $
+ *	  src/port/unsetenv.c
  *
  *-------------------------------------------------------------------------
  */
@@ -30,8 +30,9 @@ unsetenv(const char *name)
 	 * entry.  When we clobber the entry in the second step we are ensuring
 	 * that we zap the actual environ member.  However, there are some libc
 	 * implementations (notably recent BSDs) that do not obey SUS but copy the
-	 * presented string.  This method fails on such platforms.	Hopefully all
-	 * such platforms have unsetenv() and thus won't be using this hack.
+	 * presented string.  This method fails on such platforms.  Hopefully all
+	 * such platforms have unsetenv() and thus won't be using this hack. See:
+	 * http://www.greenend.org.uk/rjk/2008/putenv.html
 	 *
 	 * Note that repeatedly setting and unsetting a var using this code will
 	 * leak memory.

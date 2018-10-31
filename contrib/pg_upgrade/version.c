@@ -3,13 +3,14 @@
  *
  *	Postgres-version-specific routines
  *
- *	Copyright (c) 2010, PostgreSQL Global Development Group
- *	$PostgreSQL: pgsql/contrib/pg_upgrade/version.c,v 1.5 2010/07/03 16:33:14 momjian Exp $
+ *	Copyright (c) 2010-2014, PostgreSQL Global Development Group
+ *	contrib/pg_upgrade/version.c
  */
+
+#include "postgres_fe.h"
 
 #include "pg_upgrade.h"
 
-#include "access/transam.h"
 
 
 /*
@@ -18,30 +19,26 @@
  *	9.0 has a new pg_largeobject permission table
  */
 void
-new_9_0_populate_pg_largeobject_metadata(migratorContext *ctx, bool check_mode,
-										 Cluster whichCluster)
+new_9_0_populate_pg_largeobject_metadata(ClusterInfo *cluster, bool check_mode)
 {
-	ClusterInfo *active_cluster = (whichCluster == CLUSTER_OLD) ?
-	&ctx->old : &ctx->new;
 	int			dbnum;
 	FILE	   *script = NULL;
 	bool		found = false;
 	char		output_path[MAXPGPATH];
 
-	prep_status(ctx, "Checking for large objects");
+	prep_status("Checking for large objects");
 
-	snprintf(output_path, sizeof(output_path), "%s/pg_largeobject.sql",
-			 ctx->cwd);
+	snprintf(output_path, sizeof(output_path), "pg_largeobject.sql");
 
-	for (dbnum = 0; dbnum < active_cluster->dbarr.ndbs; dbnum++)
+	for (dbnum = 0; dbnum < cluster->dbarr.ndbs; dbnum++)
 	{
 		PGresult   *res;
 		int			i_count;
-		DbInfo	   *active_db = &active_cluster->dbarr.dbs[dbnum];
-		PGconn	   *conn = connectToServer(ctx, active_db->db_name, whichCluster);
+		DbInfo	   *active_db = &cluster->dbarr.dbs[dbnum];
+		PGconn	   *conn = connectToServer(cluster, active_db->db_name);
 
 		/* find if there are any large objects */
-		res = executeQueryOrDie(ctx, conn,
+		res = executeQueryOrDie(conn,
 								"SELECT count(*) "
 								"FROM	pg_catalog.pg_largeobject ");
 
@@ -51,10 +48,16 @@ new_9_0_populate_pg_largeobject_metadata(migratorContext *ctx, bool check_mode,
 			found = true;
 			if (!check_mode)
 			{
-				if (script == NULL && (script = fopen(output_path, "w")) == NULL)
-					pg_log(ctx, PG_FATAL, "Could not create necessary file:  %s\n", output_path);
-				fprintf(script, "\\connect %s\n",
-						quote_identifier(ctx, active_db->db_name));
+				PQExpBufferData connectbuf;
+
+				if (script == NULL && (script = fopen_priv(output_path, "w")) == NULL)
+					pg_fatal("could not open file \"%s\": %s\n", output_path, getErrorText(errno));
+
+				initPQExpBuffer(&connectbuf);
+				appendPsqlMetaConnect(&connectbuf, active_db->db_name);
+				fputs(connectbuf.data, script);
+				termPQExpBuffer(&connectbuf);
+
 				fprintf(script,
 						"SELECT pg_catalog.lo_create(t.loid)\n"
 						"FROM (SELECT DISTINCT loid FROM pg_catalog.pg_largeobject) AS t;\n");
@@ -65,120 +68,117 @@ new_9_0_populate_pg_largeobject_metadata(migratorContext *ctx, bool check_mode,
 		PQfinish(conn);
 	}
 
+	if (script)
+		fclose(script);
+
 	if (found)
 	{
-		if (!check_mode)
-			fclose(script);
-		report_status(ctx, PG_WARNING, "warning");
+		report_status(PG_WARNING, "warning");
 		if (check_mode)
-			pg_log(ctx, PG_WARNING, "\n"
-				   "| Your installation contains large objects.\n"
-				   "| The new database has an additional large object\n"
-				   "| permission table.  After migration, you will be\n"
-				   "| given a command to populate the pg_largeobject\n"
-				   "| permission table with default permissions.\n\n");
+			pg_log(PG_WARNING, "\n"
+				   "Your installation contains large objects.  The new database has an\n"
+				   "additional large object permission table.  After upgrading, you will be\n"
+				   "given a command to populate the pg_largeobject permission table with\n"
+				   "default permissions.\n\n");
 		else
-			pg_log(ctx, PG_WARNING, "\n"
-				   "| Your installation contains large objects.\n"
-				   "| The new database has an additional large object\n"
-				   "| permission table so default permissions must be\n"
-				   "| defined for all large objects.  The file:\n"
-				   "| \t%s\n"
-				   "| when executed by psql by the database super-user\n"
-				   "| will define the default permissions.\n\n",
+			pg_log(PG_WARNING, "\n"
+				   "Your installation contains large objects.  The new database has an\n"
+				   "additional large object permission table, so default permissions must be\n"
+				   "defined for all large objects.  The file\n"
+				   "    %s\n"
+				   "when executed by psql by the database superuser will set the default\n"
+				   "permissions.\n\n",
 				   output_path);
 	}
 	else
-		check_ok(ctx);
+		check_ok();
 }
 
 
 /*
- * new_gpdb5_0_invalidate_indexes()
- *	new >= GPDB 5.0, old <= GPDB 4.3
- *
- * GPDB 5.0 follows the PostgreSQL 8.3 page format, while GPDB 4.3 used
- * the 8.2 format. A new field was added to the page header, so we need
- * mark all indexes as invalid.
+ * old_9_3_check_for_line_data_type_usage()
+ *	9.3 -> 9.4
+ *	Fully implement the 'line' data type in 9.4, which previously returned
+ *	"not enabled" by default and was only functionally enabled with a
+ *	compile-time switch;  9.4 "line" has different binary and text
+ *	representation formats;  checks tables and indexes.
  */
 void
-new_gpdb5_0_invalidate_indexes(migratorContext *ctx, bool check_mode,
-							   Cluster whichCluster)
+old_9_3_check_for_line_data_type_usage(ClusterInfo *cluster)
 {
 	int			dbnum;
+	FILE	   *script = NULL;
+	bool		found = false;
+	char		output_path[MAXPGPATH];
 
-	prep_status(ctx, "Invalidating indexes in new cluster");
+	prep_status("Checking for invalid \"line\" user columns");
 
-	for (dbnum = 0; dbnum < ctx->old.dbarr.ndbs; dbnum++)
+	snprintf(output_path, sizeof(output_path), "tables_using_line.txt");
+
+	for (dbnum = 0; dbnum < cluster->dbarr.ndbs; dbnum++)
 	{
-		DbInfo	   *olddb = &ctx->old.dbarr.dbs[dbnum];
-		PGconn	   *conn = connectToServer(ctx, olddb->db_name, CLUSTER_NEW);
-		char		query[QUERY_ALLOC];
+		PGresult   *res;
+		bool		db_used = false;
+		int			ntups;
+		int			rowno;
+		int			i_nspname,
+					i_relname,
+					i_attname;
+		DbInfo	   *active_db = &cluster->dbarr.dbs[dbnum];
+		PGconn	   *conn = connectToServer(cluster, active_db->db_name);
 
-		/*
-		 * GPDB doesn't allow hacking the catalogs without setting
-		 * allow_system_table_mods first.
-		 */
-		PQclear(executeQueryOrDie(ctx, conn,
-								  "set allow_system_table_mods='dml'"));
+		res = executeQueryOrDie(conn,
+								"SELECT n.nspname, c.relname, a.attname "
+								"FROM	pg_catalog.pg_class c, "
+								"		pg_catalog.pg_namespace n, "
+								"		pg_catalog.pg_attribute a "
+								"WHERE	c.oid = a.attrelid AND "
+								"		NOT a.attisdropped AND "
+								"		a.atttypid = 'pg_catalog.line'::pg_catalog.regtype AND "
+								"		c.relnamespace = n.oid AND "
+		/* exclude possible orphaned temp tables */
+								"		n.nspname !~ '^pg_temp_' AND "
+						 "		n.nspname !~ '^pg_toast_temp_' AND "
+								"		n.nspname NOT IN ('pg_catalog', 'information_schema')");
 
-		/*
-		 * check_mode doesn't do much interesting for this but at least
-		 * we'll know we are allowed to change allow_system_table_mods
-		 * which is required
-		 */
-		if (!check_mode)
+		ntups = PQntuples(res);
+		i_nspname = PQfnumber(res, "nspname");
+		i_relname = PQfnumber(res, "relname");
+		i_attname = PQfnumber(res, "attname");
+		for (rowno = 0; rowno < ntups; rowno++)
 		{
-			snprintf(query, sizeof(query),
-					 "UPDATE pg_index SET indisvalid = false WHERE indexrelid >= %u",
-					 FirstNormalObjectId);
-			PQclear(executeQueryOrDie(ctx, conn, query));
+			found = true;
+			if (script == NULL && (script = fopen_priv(output_path, "w")) == NULL)
+				pg_fatal("could not open file \"%s\": %s\n", output_path, getErrorText(errno));
+			if (!db_used)
+			{
+				fprintf(script, "Database: %s\n", active_db->db_name);
+				db_used = true;
+			}
+			fprintf(script, "  %s.%s.%s\n",
+					PQgetvalue(res, rowno, i_nspname),
+					PQgetvalue(res, rowno, i_relname),
+					PQgetvalue(res, rowno, i_attname));
 		}
+
+		PQclear(res);
+
 		PQfinish(conn);
 	}
 
-	check_ok(ctx);
-}
+	if (script)
+		fclose(script);
 
-/*
- * new_gpdb_invalidate_bitmap_indexes()
- *
- * TODO: We are currently missing the support to migrate over bitmap indexes.
- * Hence, mark all bitmap indexes as invalid.
- */
-void
-new_gpdb_invalidate_bitmap_indexes(migratorContext *ctx, bool check_mode,
-								   Cluster whichCluster)
-{
-	int			dbnum;
-
-	prep_status(ctx, "Invalidating indexes in new cluster");
-
-	for (dbnum = 0; dbnum < ctx->old.dbarr.ndbs; dbnum++)
+	if (found)
 	{
-		DbInfo	   *olddb = &ctx->old.dbarr.dbs[dbnum];
-		PGconn	   *conn = connectToServer(ctx, olddb->db_name, CLUSTER_NEW);
-
-		/*
-		 * GPDB doesn't allow hacking the catalogs without setting
-		 * allow_system_table_mods first.
-		 */
-		PQclear(executeQueryOrDie(ctx, conn,
-								  "set allow_system_table_mods='dml'"));
-
-		/*
-		 * check_mode doesn't do much interesting for this but at least
-		 * we'll know we are allowed to change allow_system_table_mods
-		 * which is required
-		 */
-		if (!check_mode)
-		{
-			PQclear(executeQueryOrDie(ctx, conn,
-									  "UPDATE pg_index SET indisvalid = false FROM pg_class c WHERE c.oid = indexrelid AND indexrelid >= %u AND relam = 3013;",
-									  FirstNormalObjectId));
-		}
-		PQfinish(conn);
+		pg_log(PG_REPORT, "fatal\n");
+		pg_fatal("Your installation contains the \"line\" data type in user tables.  This\n"
+		"data type changed its internal and input/output format between your old\n"
+				 "and new clusters so this cluster cannot currently be upgraded.  You can\n"
+		"remove the problem tables and restart the upgrade.  A list of the problem\n"
+				 "columns is in the file:\n"
+				 "    %s\n\n", output_path);
 	}
-
-	check_ok(ctx);
+	else
+		check_ok();
 }

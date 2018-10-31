@@ -3,12 +3,12 @@
  * rewriteRemove.c
  *	  routines for removing rewrite rules
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteRemove.c,v 1.80 2010/02/14 18:42:15 rhaas Exp $
+ *	  src/backend/rewrite/rewriteRemove.c
  *
  *-------------------------------------------------------------------------
  */
@@ -16,9 +16,11 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_rewrite.h"
 #include "miscadmin.h"
 #include "rewrite/rewriteRemove.h"
@@ -26,69 +28,8 @@
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
-#include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
-
-
-/*
- * RemoveRewriteRule
- *
- * Delete a rule given its name.
- */
-void
-RemoveRewriteRule(Oid owningRel, const char *ruleName, DropBehavior behavior,
-				  bool missing_ok)
-{
-	HeapTuple	tuple;
-	Oid			eventRelationOid;
-	ObjectAddress object;
-
-	/*
-	 * Find the tuple for the target rule.
-	 */
-	tuple = SearchSysCache2(RULERELNAME,
-							ObjectIdGetDatum(owningRel),
-							PointerGetDatum(ruleName));
-
-	/*
-	 * complain if no rule with such name exists
-	 */
-	if (!HeapTupleIsValid(tuple))
-	{
-		if (!missing_ok)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_OBJECT),
-					 errmsg("rule \"%s\" for relation \"%s\" does not exist",
-							ruleName, get_rel_name(owningRel))));
-		else
-			ereport(NOTICE,
-					(errmsg("rule \"%s\" for relation \"%s\" does not exist, skipping",
-							ruleName, get_rel_name(owningRel))));
-		return;
-	}
-
-	/*
-	 * Verify user has appropriate permissions.
-	 */
-	eventRelationOid = ((Form_pg_rewrite) GETSTRUCT(tuple))->ev_class;
-	Assert(eventRelationOid == owningRel);
-	if (!pg_class_ownercheck(eventRelationOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   get_rel_name(eventRelationOid));
-
-	/*
-	 * Do the deletion
-	 */
-	object.classId = RewriteRelationId;
-	object.objectId = HeapTupleGetOid(tuple);
-	object.objectSubId = 0;
-
-	ReleaseSysCache(tuple);
-
-	performDeletion(&object, behavior);
-}
-
 
 /*
  * Guts of rule deletion.
@@ -117,7 +58,7 @@ RemoveRewriteRuleById(Oid ruleOid)
 				ObjectIdGetDatum(ruleOid));
 
 	rcscan = systable_beginscan(RewriteRelation, RewriteOidIndexId, true,
-								SnapshotNow, 1, skey);
+								NULL, 1, skey);
 
 	tuple = systable_getnext(rcscan);
 

@@ -21,6 +21,7 @@
 #include "parser/parse_expr.h"	/* for expr_type() */
 #include "parser/parse_oper.h"	/* for compatible_oper_opid() */
 #include "utils/relcache.h"		/* RelationGetPartitioningKey() */
+#include "optimizer/cost.h"
 #include "optimizer/tlist.h"	/* get_sortgroupclause_tle() */
 #include "optimizer/planmain.h"
 #include "optimizer/predtest.h"
@@ -32,16 +33,19 @@
 #include "utils/syscache.h"
 #include "utils/portal.h"
 #include "optimizer/clauses.h"
+#include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
 #include "nodes/makefuncs.h"
 
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
+#include "commands/trigger.h"
 #include "catalog/catalog.h"
 #include "catalog/gp_policy.h"
 #include "catalog/pg_type.h"
 
 #include "catalog/pg_proc.h"
+#include "catalog/pg_trigger.h"
 
 #include "cdb/cdbdisp_query.h"
 #include "cdb/cdbhash.h"		/* isGreenplumDbHashable() */
@@ -50,7 +54,9 @@
 #include "cdb/cdbpartition.h"
 #include "cdb/cdbplan.h"
 #include "cdb/cdbpullup.h"
+#include "cdb/cdbsetop.h"
 #include "cdb/cdbvars.h"
+#include "cdb/cdbutil.h"
 #include "cdb/cdbtargeteddispatch.h"
 
 #include "nodes/print.h"
@@ -95,15 +101,15 @@ static int *makeDefaultSegIdxArray(int numSegs);
 
 static void add_slice_to_motion(Motion *motion,
 					MotionType motionType, List *hashExpr,
-					int numOutputSegs, int *outputSegIdx);
+					int numOutputSegs, int *outputSegIdx,
+					int numsegments);
 
 static Node *apply_motion_mutator(Node *node, ApplyMotionState *context);
 
-static AttrNumber find_segid_column(List *tlist, Index relid);
-
-static bool replace_shareinput_targetlists_walker(Node *node, PlannerGlobal *glob, bool fPop);
+static bool replace_shareinput_targetlists_walker(Node *node, PlannerInfo *root, bool fPop);
 
 static bool fixup_subplan_walker(Node *node, SubPlanWalkerContext *context);
+static AttrNumber find_segid_column(List *tlist, Index relid);
 
 /*
  * Is target list of a Result node all-constant?
@@ -143,7 +149,7 @@ directDispatchCalculateHash(Plan *plan, GpPolicy *targetPolicy)
 	ListCell   *cell = NULL;
 	bool		directDispatch;
 
-	h = makeCdbHash(GpIdentity.numsegments);
+	h = makeCdbHash(targetPolicy->numsegments);
 	cdbhashinit(h);
 
 	/*
@@ -229,6 +235,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 	ApplyMotionState state;
 	bool		needToAssignDirectDispatchContentIds = false;
 	bool		bringResultToDispatcher = false;
+	int			numsegments = GP_POLICY_ALL_NUMSEGMENTS;
 
 	/* Initialize mutator context. */
 
@@ -241,7 +248,6 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 	state.initPlans = NIL;
 
 	Assert(is_plan_node((Node *) plan) && IsA(query, Query));
-	Assert(plan->flow && plan->flow->flotype != FLOW_REPLICATED);
 
 	/* Does query have a target relation?  (INSERT/DELETE/UPDATE) */
 
@@ -256,17 +262,25 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 
 		Assert(rte->rtekind == RTE_RELATION);
 
-		targetPolicy = GpPolicyFetch(CurrentMemoryContext, rte->relid);
+		targetPolicy = GpPolicyFetch(rte->relid);
 		targetPolicyType = targetPolicy->ptype;
 	}
 
 	switch (query->commandType)
 	{
 		case CMD_SELECT:
-			if (query->intoClause)
+			/* If the query comes from 'CREAT TABLE AS' or 'SELECT INTO' */
+			if (query->isCTAS)
 			{
 				List	   *hashExpr;
 				ListCell   *exp1;
+
+				/*
+				 * In CTAS the source distribution policy is not inherited,
+				 * always set numsegments to ALL unless a DISTRIBUTED BY clause
+				 * is specified.
+				 */
+				numsegments = GP_POLICY_ALL_NUMSEGMENTS;
 
 				if (query->intoPolicy != NULL)
 				{
@@ -278,7 +292,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 				}
 				else if (gp_create_table_random_default_distribution)
 				{
-					targetPolicy = createRandomPartitionedPolicy(NULL);
+					targetPolicy = createRandomPartitionedPolicy(numsegments);
 					ereport(NOTICE,
 							(errcode(ERRCODE_SUCCESSFUL_COMPLETION),
 							 errmsg("Using default RANDOM distribution since no distribution was specified."),
@@ -324,21 +338,22 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 								if (IsA(target->expr, Var))
 								{
 									new_var = copyObject(target->expr);
-									new_var->varno = OUTER;
+									new_var->varno = OUTER_VAR;
 									new_var->varattno = n;
 								}
 
 								/*
 								 * Make a Var that references the target list
-								 * entry at this offset, using OUTER as the
+								 * entry at this offset, using OUTER_VAR as the
 								 * varno
 								 */
 								else
-									new_var = makeVar(OUTER,
-											n,
-											exprType((Node *) target->expr),
-											exprTypmod((Node *) target->expr),
-											0);
+									new_var = makeVar(OUTER_VAR,
+													  n,
+													  exprType((Node *) target->expr),
+													  exprTypmod((Node *) target->expr),
+													  exprCollation((Node *) target->expr),
+													  0);
 
 								if (equal(var1, new_var))
 								{
@@ -348,6 +363,17 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 									 * redistibution of data
 									 */
 									Assert(list_length(policykeys) < MaxPolicyAttributeNumber);
+
+									if (list_member_int(policykeys, n))
+									{
+										TargetEntry *target = get_tle_by_resno(plan->targetlist, n);
+
+										ereport(ERROR,
+												(errcode(ERRCODE_DUPLICATE_COLUMN),
+												 errmsg("duplicate DISTRIBUTED BY column '%s'",
+														target->resname ? target->resname : "???")));
+									}
+
 									policykeys = lappend_int(policykeys, n);
 									found_expr = true;
 									break;
@@ -387,7 +413,8 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 						}
 					}
 
-					targetPolicy = createHashPartitionedPolicy(NULL, policykeys);
+					targetPolicy = createHashPartitionedPolicy(policykeys,
+															   numsegments);
 
 					if (query->intoPolicy == NULL)
 					{
@@ -423,6 +450,12 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 
 				Assert(query->intoPolicy->ptype != POLICYTYPE_ENTRY);
 
+				/*
+				 * To copy data from old table to new table we must set
+				 * motion's dest numsegments the same as new table.
+				 */
+				numsegments = query->intoPolicy->numsegments;
+
 				if (GpPolicyIsReplicated(query->intoPolicy))
 				{
 					/*
@@ -442,7 +475,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 						/* do nothing */
 					}
 
-					if (!broadcastPlan(plan, false, false))
+					if (!broadcastPlan(plan, false, false, numsegments))
 						ereport(ERROR, (errcode(ERRCODE_GP_FEATURE_NOT_YET),
 									errmsg("Cannot parallelize that SELECT INTO yet")));
 
@@ -460,7 +493,8 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 							targetPolicy->nattrs,
 							targetPolicy->attrs,
 							true);
-					if (!repartitionPlan(plan, false, false, hashExpr))
+
+					if (!repartitionPlan(plan, false, false, hashExpr, numsegments))
 						ereport(ERROR, (errcode(ERRCODE_GP_FEATURE_NOT_YET),
 									errmsg("Cannot parallelize that SELECT INTO yet")
 							       ));
@@ -468,14 +502,16 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 
 				Assert(query->intoPolicy->ptype != POLICYTYPE_ENTRY);
 			}
-
-			if ((plan->flow->flotype == FLOW_PARTITIONED && !query->intoClause) ||
-				(!query->intoClause &&
-					 	plan->flow->flotype == FLOW_SINGLETON &&
-				 		plan->flow->locustype == CdbLocusType_SegmentGeneral))
+			else
+			{
+				if (plan->flow->flotype == FLOW_PARTITIONED ||
+					(plan->flow->flotype == FLOW_SINGLETON &&
+					plan->flow->locustype == CdbLocusType_SegmentGeneral))
 				bringResultToDispatcher = true;
 
-			needToAssignDirectDispatchContentIds = root->config->gp_enable_direct_dispatch && !query->intoClause;
+				needToAssignDirectDispatchContentIds = root->config->gp_enable_direct_dispatch;
+			}
+
 			break;
 
 		case CMD_INSERT:
@@ -492,6 +528,9 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 			{
 				bringResultToDispatcher = true;
 			}
+			break;
+
+		case CMD_UTILITY:
 			break;
 
 		default:
@@ -569,7 +608,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 /*
  * Function apply_motion_mutator() is the workhorse for apply_motion().
  */
-Node *
+static Node *
 apply_motion_mutator(Node *node, ApplyMotionState *context)
 {
 	Node	   *newnode;
@@ -725,17 +764,20 @@ apply_motion_mutator(Node *node, ApplyMotionState *context)
 
 			newnode = (Node *) make_union_motion(plan,
 												 flow->segindex,
-												 true /* useExecutorVarFormat */ );
+												 true /* useExecutorVarFormat */,
+												 flow->numsegments);
 			break;
 
 		case MOVEMENT_BROADCAST:
-			newnode = (Node *) make_broadcast_motion(plan, true /* useExecutorVarFormat */ );
+			newnode = (Node *) make_broadcast_motion(plan, true /* useExecutorVarFormat */,
+													 flow->numsegments);
 			break;
 
 		case MOVEMENT_REPARTITION:
 			newnode = (Node *) make_hashed_motion(plan,
 												  flow->hashExpr,
-												  true	/* useExecutorVarFormat */
+												  true	/* useExecutorVarFormat */,
+												  flow->numsegments
 				);
 			break;
 
@@ -745,7 +787,7 @@ apply_motion_mutator(Node *node, ApplyMotionState *context)
 			 * add an ExplicitRedistribute motion node only if child plan
 			 * nodes have a motion node
 			 */
-			if (context->containMotionNodes)
+			if (context->containMotionNodes || IsA(plan, Reshuffle))
 			{
 				/*
 				 * motion node in child nodes: add a ExplicitRedistribute
@@ -831,7 +873,7 @@ done:
 /*
  * Helper code for ApplyMotionState -- Assign motion id to new Motion node.
  */
-void
+static void
 assignMotionID(Node *newnode, ApplyMotionState *context, Node *oldnode)
 {
 	Assert(IsA(newnode, Motion) &&context != NULL);
@@ -854,8 +896,15 @@ assignMotionID(Node *newnode, ApplyMotionState *context, Node *oldnode)
 static void
 add_slice_to_motion(Motion *motion,
 					MotionType motionType, List *hashExpr,
-					int numOutputSegs, int *outputSegIdx)
+					int numOutputSegs, int *outputSegIdx,
+					int numsegments)
 {
+	Assert(numsegments > 0);
+	if (numsegments == __GP_POLICY_EVIL_NUMSEGMENTS)
+	{
+		Assert(!"what's the proper value of numsegments?");
+	}
+
 	/* sanity checks */
 	/* check numOutputSegs and outputSegIdx are in sync.  */
 	AssertEquivalent(numOutputSegs == 0, outputSegIdx == NULL);
@@ -913,7 +962,7 @@ add_slice_to_motion(Motion *motion,
 	switch (motion->motionType)
 	{
 		case MOTIONTYPE_HASH:
-			motion->plan.flow = makeFlow(FLOW_PARTITIONED);
+			motion->plan.flow = makeFlow(FLOW_PARTITIONED, numsegments);
 			motion->plan.flow->locustype = CdbLocusType_Hashed;
 			motion->plan.flow->hashExpr = copyObject(motion->hashExpr);
 			motion->numOutputSegs = getgpsegmentCount();
@@ -924,14 +973,14 @@ add_slice_to_motion(Motion *motion,
 			if (motion->numOutputSegs == 0)
 			{
 				/* broadcast */
-				motion->plan.flow = makeFlow(FLOW_REPLICATED);
+				motion->plan.flow = makeFlow(FLOW_REPLICATED, numsegments);
 				motion->plan.flow->locustype = CdbLocusType_Replicated;
 
 			}
 			else if (motion->numOutputSegs == 1)
 			{
 				/* Focus motion */
-				motion->plan.flow = makeFlow(FLOW_SINGLETON);
+				motion->plan.flow = makeFlow(FLOW_SINGLETON, numsegments);
 				motion->plan.flow->segindex = motion->outputSegIdx[0];
 				motion->plan.flow->locustype = (motion->plan.flow->segindex < 0) ?
 					CdbLocusType_Entry :
@@ -945,7 +994,7 @@ add_slice_to_motion(Motion *motion,
 			}
 			break;
 		case MOTIONTYPE_EXPLICIT:
-			motion->plan.flow = makeFlow(FLOW_PARTITIONED);
+			motion->plan.flow = makeFlow(FLOW_PARTITIONED, numsegments);
 
 			/*
 			 * TODO: antova - Nov 18, 2010; add a special locus type for
@@ -963,54 +1012,83 @@ add_slice_to_motion(Motion *motion,
 }
 
 Motion *
-make_union_motion(Plan *lefttree, int destSegIndex, bool useExecutorVarFormat)
+make_union_motion(Plan *lefttree, int destSegIndex,
+				  bool useExecutorVarFormat, int numsegments)
 {
 	Motion	   *motion;
 	int		   *outSegIdx = (int *) palloc(sizeof(int));
 
 	outSegIdx[0] = destSegIndex;
 
-	motion = make_motion(NULL, lefttree, NIL, useExecutorVarFormat);
-	add_slice_to_motion(motion, MOTIONTYPE_FIXED, NULL, 1, outSegIdx);
+	motion = make_motion(NULL, lefttree,
+						 0, NULL, NULL, NULL, NULL, /* no ordering */
+						 useExecutorVarFormat);
+	add_slice_to_motion(motion, MOTIONTYPE_FIXED, NULL, 1, outSegIdx,
+						numsegments);
 	return motion;
 }
 
 Motion *
 make_sorted_union_motion(PlannerInfo *root,
 						 Plan *lefttree,
+						 int numSortCols, AttrNumber *sortColIdx,
+						 Oid *sortOperators, Oid *collations, bool *nullsFirst,
 						 int destSegIndex,
-						 List *sortPathKeys,
-						 bool useExecutorVarFormat)
+						 bool useExecutorVarFormat,
+						 int numsegments)
 {
 	Motion	   *motion;
 	int		   *outSegIdx = (int *) palloc(sizeof(int));
 
 	outSegIdx[0] = destSegIndex;
 
-	motion = make_motion(root, lefttree, sortPathKeys, useExecutorVarFormat);
-	add_slice_to_motion(motion, MOTIONTYPE_FIXED, NULL, 1, outSegIdx);
+	motion = make_motion(root, lefttree,
+						 numSortCols, sortColIdx, sortOperators, collations, nullsFirst,
+						 useExecutorVarFormat);
+	add_slice_to_motion(motion, MOTIONTYPE_FIXED, NULL, 1, outSegIdx,
+						numsegments);
 	return motion;
 }
 
 Motion *
 make_hashed_motion(Plan *lefttree,
-				   List *hashExpr, bool useExecutorVarFormat)
+				   List *hashExpr,
+				   bool useExecutorVarFormat,
+				   int numsegments)
 {
 	Motion	   *motion;
+	ListCell   *lc;
 
-	motion = make_motion(NULL, lefttree, NIL, useExecutorVarFormat);
-	add_slice_to_motion(motion, MOTIONTYPE_HASH, hashExpr, 0, NULL);
+	/*
+	 * The expressions used as the distribution key must be "GPDB-hashable".
+	 * There's also an assertion for this in setrefs.c, but better to catch
+	 * these as early as possible.
+	 */
+	foreach(lc, hashExpr)
+	{
+		if (!isGreenplumDbHashable(exprType((Node *) lfirst(lc))))
+			elog(ERROR, "cannot use expression as distribution key, because it is not hashable");
+	}
+
+	motion = make_motion(NULL, lefttree,
+						 0, NULL, NULL, NULL, NULL, /* no ordering */
+						 useExecutorVarFormat);
+	add_slice_to_motion(motion, MOTIONTYPE_HASH, hashExpr, 0, NULL,
+						numsegments);
 	return motion;
 }
 
 Motion *
-make_broadcast_motion(Plan *lefttree, bool useExecutorVarFormat)
+make_broadcast_motion(Plan *lefttree, bool useExecutorVarFormat,
+					  int numsegments)
 {
 	Motion	   *motion;
 
-	motion = make_motion(NULL, lefttree, NIL, useExecutorVarFormat);
+	motion = make_motion(NULL, lefttree,
+						 0, NULL, NULL, NULL, NULL, /* no ordering */
+						 useExecutorVarFormat);
 
-	add_slice_to_motion(motion, MOTIONTYPE_FIXED, NULL, 0, NULL);
+	add_slice_to_motion(motion, MOTIONTYPE_FIXED, NULL, 0, NULL, numsegments);
 	return motion;
 }
 
@@ -1018,14 +1096,23 @@ Motion *
 make_explicit_motion(Plan *lefttree, AttrNumber segidColIdx, bool useExecutorVarFormat)
 {
 	Motion	   *motion;
+	int			numsegments;
 
-	motion = make_motion(NULL, lefttree, NIL, useExecutorVarFormat);
+	motion = make_motion(NULL, lefttree,
+						 0, NULL, NULL, NULL, NULL, /* no ordering */
+						 useExecutorVarFormat);
 
 	Assert(segidColIdx > 0 && segidColIdx <= list_length(lefttree->targetlist));
 
 	motion->segidColIdx = segidColIdx;
 
-	add_slice_to_motion(motion, MOTIONTYPE_EXPLICIT, NULL, 0, NULL);
+	/*
+	 * For explicit motion data come back to the source segments,
+	 * so numsegments is also the same with source.
+	 */
+	numsegments = lefttree->flow->numsegments;
+
+	add_slice_to_motion(motion, MOTIONTYPE_EXPLICIT, NULL, 0, NULL, numsegments);
 	return motion;
 }
 
@@ -1034,7 +1121,7 @@ make_explicit_motion(Plan *lefttree, AttrNumber segidColIdx, bool useExecutorVar
  * with values between 0 and numSegs-1
  * --------------------------------------------------------------------
  */
-int *
+static int *
 makeDefaultSegIdxArray(int numSegs)
 {
 	int		   *segIdx = palloc(numSegs * sizeof(int));
@@ -1067,7 +1154,7 @@ makeDefaultSegIdxArray(int numSegs)
  * The AttrNumber indexes actually refer to the 1 based index into the
  * target list.
  *
- * The entries have the varno field replaced by references in OUTER.
+ * The entries have the varno field replaced by references in OUTER_VAR.
  * ----------------------------------------------------------------
  */
 List *
@@ -1091,7 +1178,7 @@ getExprListFromTargetList(List *tlist,
 
 		/* After set_plan_references(), make a Var referencing subplan tlist. */
 		if (useExecutorVarFormat)
-			elist = lappend(elist, cdbpullup_make_expr(OUTER, n, target->expr, false));
+			elist = lappend(elist, cdbpullup_make_expr(OUTER_VAR, n, target->expr, false));
 
 		/* Before set_plan_references(), copy the subplan's result expr. */
 		else
@@ -1100,46 +1187,6 @@ getExprListFromTargetList(List *tlist,
 
 	return elist;
 }
-
-
-/*
- * isAnyColChangedByUpdate
- */
-bool
-isAnyColChangedByUpdate(Index targetvarno,
-						List *targetlist,
-						int nattrs,
-						AttrNumber *attrs)
-{
-	/*
-	 * Want to test whether an update statement possibly changes the value of
-	 * any of the partitioning columns.
-	 */
-
-	/*
-	 * For each partitioning column, the TargetListEntry for that varattno
-	 * should be just a Var node with the same varattno.
-	 */
-	int			i;
-
-	for (i = 0; i < nattrs; i++)
-	{
-		TargetEntry *tle = get_tle_by_resno(targetlist, attrs[i]);
-		Var		   *var;
-
-		Insist(tle);
-
-		if (!IsA(tle->expr, Var))
-			return true;
-
-		var = (Var *) tle->expr;
-		if (var->varnoold != targetvarno ||
-			var->varoattno != attrs[i])
-			return true;
-	}
-
-	return false;
-}								/* isAnyColChangedByUpdate */
 
 /*
  * Request an ExplicitRedistribute motion node for a plan node
@@ -1161,11 +1208,388 @@ request_explicit_motion(Plan *plan, Index resultRelationsIdx, List *rtable)
 	plan->flow->req_move = MOVEMENT_EXPLICIT;
 
 	/* find segid column in target list */
-	AttrNumber	segidColIdx = find_segid_column(plan->targetlist, resultRelationsIdx);
-
-	Assert(-1 != segidColIdx);
+	AttrNumber	segidColIdx = ExecFindJunkAttributeInTlist(plan->targetlist, "gp_segment_id");
+	if (segidColIdx == InvalidAttrNumber)
+		elog(ERROR, "could not find gp_segment_id column in target list");
 
 	plan->flow->segidColIdx = segidColIdx;
+}
+
+static void
+failIfUpdateTriggers(Relation relation)
+{
+	bool	found = false;
+
+	if (relation->rd_rel->relhastriggers && NULL == relation->trigdesc)
+		RelationBuildTriggers(relation);
+
+	if (!relation->trigdesc)
+		return;
+
+	if (relation->rd_rel->relhastriggers)
+	{
+		for (int i = 0; i < relation->trigdesc->numtriggers && !found; i++)
+		{
+			Trigger trigger = relation->trigdesc->triggers[i];
+			found = trigger_enabled(trigger.tgoid) &&
+					(get_trigger_type(trigger.tgoid) & TRIGGER_TYPE_UPDATE) == TRIGGER_TYPE_UPDATE;
+			if (found)
+				break;
+		}
+	}
+
+	if (found || child_triggers(relation->rd_id, TRIGGER_TYPE_UPDATE))
+		ereport(ERROR,
+				(errcode(ERRCODE_GP_FEATURE_NOT_YET),
+				 errmsg("UPDATE on distributed key column not allowed on relation with update triggers")));
+}
+
+static TargetEntry *
+find_junk_tle(List *targetList, const char *junkAttrName)
+{
+	ListCell	*lct;
+
+	foreach(lct, targetList)
+	{
+		TargetEntry	*tle = (TargetEntry*) lfirst(lct);
+
+		if (!tle->resjunk)
+			continue;
+
+		if (strcmp(tle->resname, junkAttrName) == 0)
+			return tle;
+	}
+	elog(ERROR, "could not find junk tle \"%s\"", junkAttrName);
+}
+
+static AttrNumber
+find_ctid_attribute_check(List *targetList)
+{
+	TargetEntry	*ctid;
+	Var			*var;
+
+	ctid = find_junk_tle(targetList, "ctid");
+	if (!ctid)
+		elog(ERROR, "could not find \"ctid\" column in input to UPDATE");
+	Assert(IsA(ctid->expr, Var));
+
+	var = (Var *) (ctid->expr);
+
+	/* Ctid should follow after normal attributes */
+	Assert(var->vartype == TIDOID);
+
+	return ctid->resno;
+}
+
+static AttrNumber
+find_oid_attribute_check(List *targetList)
+{
+	TargetEntry	*tle;
+	Var			*var;
+
+	tle = find_junk_tle(targetList, "oid");
+	if (!tle)
+		elog(ERROR, "could not find \"oid\" column in input to UPDATE");
+	Assert(IsA(tle->expr, Var));
+
+	var = (Var *) (tle->expr);
+
+	/* OID should follow after normal attributes */
+	Assert(var->vartype == OIDOID);
+
+	return tle->resno;
+}
+
+/*
+ * Copy all junk attributes into dest
+ */
+static void
+copy_junk_attributes(List *src, List **dest, AttrNumber startAttrIdx)
+{
+	ListCell	*currAppendCell;
+	ListCell	*lct;
+	Var			*var;
+	TargetEntry	*newTargetEntry;
+
+	/* There should be at least ctid exist */
+	Assert(startAttrIdx < list_length(src));
+
+	currAppendCell = list_nth_cell(src, startAttrIdx);
+
+	for_each_cell(lct, currAppendCell)
+	{
+		Assert(IsA(lfirst(lct), TargetEntry) && IsA(((TargetEntry *) lfirst(lct))->expr, Var));
+
+		var = copyObject(((TargetEntry *) lfirst(lct))->expr);
+		var->varno = OUTER_VAR;
+		var->varattno = ((TargetEntry *) lfirst(lct))->resno;
+
+		newTargetEntry = makeTargetEntry((Expr *) var, startAttrIdx + 1, ((TargetEntry *) lfirst(lct))->resname,
+										 true);
+		*dest = lappend(*dest, newTargetEntry);
+		++startAttrIdx;
+	}
+}
+
+/*
+ * Find attributes in the targetlist of top plan.
+ *
+ * We generates informations as following:
+ *
+ * splitUpdateTargetList which should be a simple var list used by SplitUpdate
+ * insertColIdx which point to resno of corresponding attributes in targetlist
+ * deleteColIdx which contains placeholder, and value will be corrected later
+ */
+static void
+process_targetlist_for_splitupdate(Relation resultRel, List *targetlist,
+								   List **splitUpdateTargetList, List **insertColIdx, List **deleteColIdx)
+{
+	TupleDesc	resultDesc = RelationGetDescr(resultRel);
+	GpPolicy   *cdbpolicy = resultRel->rd_cdbpolicy;
+	int			attrIdx;
+	Var		   *splitVar;
+	TargetEntry	*splitTargetEntry;
+	ListCell   *lc;
+
+	lc = list_head(targetlist);
+	for (attrIdx = 1; attrIdx <= resultDesc->natts; ++attrIdx)
+	{
+		TargetEntry			*tle;
+		Form_pg_attribute	attr;
+		int			oldAttrIdx = -1;
+
+		tle = (TargetEntry *) lfirst(lc);
+		lc = lnext(lc);
+		Assert(tle);
+
+		attr = resultDesc->attrs[attrIdx - 1];
+		if (attr->attisdropped)
+		{
+			Assert(IsA(tle->expr, Const) && ((Const *) tle->expr)->constisnull);
+
+			splitTargetEntry = makeTargetEntry((Expr *) copyObject(tle->expr), tle->resno, tle->resname, tle->resjunk);
+			*splitUpdateTargetList = lappend(*splitUpdateTargetList, splitTargetEntry);
+		}
+		else
+		{
+			int			i;
+
+			Assert(exprType((Node *) tle->expr) == attr->atttypid);
+
+			splitVar = (Var *) makeVar(OUTER_VAR,
+									   attrIdx,
+									   attr->atttypid,
+									   attr->atttypmod,
+									   attr->attcollation,
+									   0);
+			splitVar->varnoold = attrIdx;
+
+			splitTargetEntry = makeTargetEntry((Expr *) splitVar, tle->resno, tle->resname, tle->resjunk);
+			*splitUpdateTargetList = lappend(*splitUpdateTargetList, splitTargetEntry);
+
+			/*
+			 * Is this a distribution key column? If so, we will need its old value.
+			 * expand_targetlist() put the old values for distribution key columns in
+			 * the target list after the new column values.
+			 */
+			for (i = 0; i < cdbpolicy->nattrs; i++)
+			{
+				AttrNumber	keyattno = cdbpolicy->attrs[i];
+
+				if (keyattno == attrIdx)
+				{
+					TargetEntry *oldtle;
+
+					oldAttrIdx = resultDesc->natts + i + 1;
+
+					/* sanity checks. */
+					if (oldAttrIdx > list_length(targetlist))
+						elog(ERROR, "old value for attribute \"%s\" missing from split update input target list",
+							 NameStr(attr->attname));
+					oldtle = list_nth(targetlist, oldAttrIdx - 1);
+					if (exprType((Node *) oldtle->expr) != attr->atttypid)
+						elog(ERROR, "datatype mismatch for old value for attribute \"%s\" in split update input target list",
+							 NameStr(attr->attname));
+
+					break;
+				}
+			}
+			/*
+			 * If oldAttrIdx is still -1, this is not a distribution key column.
+			 */
+		}
+
+		*insertColIdx = lappend_int(*insertColIdx, attrIdx);
+		*deleteColIdx = lappend_int(*deleteColIdx, oldAttrIdx);
+	}
+}
+
+/*
+ * In legacy planner, we add a SplitUpdate node at top so that updating on distribution
+ * columns could be handled. The SplitUpdate will split each update into delete + insert.
+ *
+ * There are several important points should be highlighted:
+ *
+ * First, in order to split each update operation into two operations: delete + insert,
+ * we add several columns into targetlist:
+ *
+ * ctid: the tuple id used for deletion
+ * action: which is generated by SplitUpdate node, and can be value of delete or insert
+ * oid: if result relation has oids, we need to add oid to targetlist
+ *
+ * Second, current GPDB executor don't support statement-level update triggers and will
+ * skip row-level update triggers because a split-update is actually consist of a delete
+ * and insert. So, if the result relation has update triggers, we should reject and error
+ * out because it's not functional.  There is an exception for 'ALTER TABLE SET WITH
+ * (RESHUFFLE)', RESHUFFLE also use split update node internal to rebalance/expand table,
+ * from the view of user, ALTER TABLE should not hit any kind of triggers, so we don't
+ * need to error out in this case.
+ *
+ * Third, to support deletion, and hash delete operation to correct segment,
+ * we need to get attributes of OLD tuple. The old attributes must therefore
+ * be present in the subplan's target list. That is handled earlier in the
+ * planner, in expand_targetlist().
+ *
+ * For example, a typical plan would be as following for statement:
+ * update foo set id = l.v + 1 from dep l where foo.v = l.id:
+ *
+ * |-- join ( targetlist: [ l.v + 1, foo.v, foo.id, foo.ctid, foo.gp_segment_id ] )
+ *       |
+ *       |-- motion ( targetlist: [l.id, l.v] )
+ *       |    |
+ *       |    |-- seqscan on dep ....
+ *       |
+ *       |-- hash (targetlist [ v, foo.ctid, foo.gp_segment_id ] )
+ *            |
+ *            |-- seqscan on foo (targetlist: [ v, foo.id, foo.ctid, foo.gp_segment_id ] )
+ *
+ * From the plan above, the target foo.id is assigned as l.v + 1, and expand_targetlist()
+ * ensured that the old value of id, is also available, even though it would not otherwise
+ * be needed.
+ *
+ * 'result_relation' is the RTI of the UPDATE target relation.
+ */
+SplitUpdate *
+make_splitupdate(PlannerInfo *root, ModifyTable *mt, Plan *subplan, RangeTblEntry *rte, bool checkTrigger)
+{
+	AttrNumber		ctidColIdx = 0;
+	List			*deleteColIdx = NIL;
+	List			*insertColIdx = NIL;
+	int				actionColIdx;
+	AttrNumber		oidColIdx = 0;
+	List			*splitUpdateTargetList = NIL;
+	TargetEntry		*newTargetEntry;
+	SplitUpdate		*splitupdate;
+	DMLActionExpr	*actionExpr;
+	Relation		resultRelation;
+	TupleDesc		resultDesc;
+
+	Assert(IsA(mt, ModifyTable));
+
+	/* Suppose we already hold locks before caller */
+	resultRelation = relation_open(rte->relid, NoLock);
+
+	if (checkTrigger)
+		failIfUpdateTriggers(resultRelation);
+
+	resultDesc = RelationGetDescr(resultRelation);
+
+	/*
+	 * insertColIdx/deleteColIdx: In split update mode, we have to form two tuples,
+	 * one is for deleting and the other is for inserting. Find the old and new
+	 * values in the subplan's target list, and store their column indexes in
+	 * insertColIdx and deleteColIdx.
+	 */
+	process_targetlist_for_splitupdate(resultRelation,
+									   subplan->targetlist,
+									   &splitUpdateTargetList, &insertColIdx, &deleteColIdx);
+	ctidColIdx = find_ctid_attribute_check(subplan->targetlist);
+
+	if (resultRelation->rd_rel->relhasoids)
+		oidColIdx = find_oid_attribute_check(subplan->targetlist);
+
+	copy_junk_attributes(subplan->targetlist, &splitUpdateTargetList, resultDesc->natts);
+
+	relation_close(resultRelation, NoLock);
+
+	/* finally, we should add action column at the end of targetlist */
+	actionExpr = makeNode(DMLActionExpr);
+	actionColIdx = list_length(splitUpdateTargetList) + 1;
+	newTargetEntry = makeTargetEntry((Expr *) actionExpr, actionColIdx, "ColRef", true);
+	splitUpdateTargetList = lappend(splitUpdateTargetList, newTargetEntry);
+
+	splitupdate = makeNode(SplitUpdate);
+	splitupdate->actionColIdx = actionColIdx;
+
+	Assert(ctidColIdx > 0);
+
+	/* populate information generated above into splitupdate node */
+	splitupdate->ctidColIdx = ctidColIdx;
+	splitupdate->tupleoidColIdx = oidColIdx;
+	splitupdate->insertColIdx = insertColIdx;
+	splitupdate->deleteColIdx = deleteColIdx;
+	splitupdate->plan.targetlist = splitUpdateTargetList;
+	splitupdate->plan.lefttree = subplan;
+
+	/*
+	 * Now the plan tree has been determined, we have no choice, so use the
+	 * cost of lower plan node directly, plus the cpu_tuple_cost of each row.
+	 * GPDB_96_MERGE_FIXME: width here is incorrect, until we merge
+	 * upstream commit 3fc6e2d
+	 */
+	splitupdate->plan.startup_cost = subplan->startup_cost;
+	splitupdate->plan.total_cost = subplan->total_cost;
+	splitupdate->plan.plan_rows = 2 * subplan->plan_rows;
+	splitupdate->plan.total_cost += (splitupdate->plan.plan_rows * cpu_tuple_cost);
+	splitupdate->plan.plan_width = subplan->plan_width;
+
+	/* We need a motion node above the SplitUpdate, so mark it as strewn */
+	mark_plan_strewn((Plan *) splitupdate, subplan->flow->numsegments);
+
+	mt->action_col_idxes = lappend_int(mt->action_col_idxes, actionColIdx);
+	mt->ctid_col_idxes = lappend_int(mt->ctid_col_idxes, ctidColIdx);
+	mt->oid_col_idxes = lappend_int(mt->oid_col_idxes, oidColIdx);
+
+	return splitupdate;
+}
+
+Reshuffle *
+make_reshuffle(PlannerInfo *root,
+			   Plan *subplan,
+			   RangeTblEntry *rte,
+			   Index resultRelationsIdx)
+{
+	Reshuffle 	*reshufflePlan = makeNode(Reshuffle);
+	Relation 	rel = relation_open(rte->relid, NoLock);
+	GpPolicy 	*policy = rel->rd_cdbpolicy;
+	int 		i;
+
+	reshufflePlan->plan.targetlist = list_copy(subplan->targetlist);
+	reshufflePlan->plan.lefttree = subplan;
+
+	reshufflePlan->plan.startup_cost = subplan->startup_cost;
+	reshufflePlan->plan.total_cost = subplan->total_cost;
+	reshufflePlan->plan.plan_rows = subplan->plan_rows;
+	reshufflePlan->plan.plan_width = subplan->plan_width;
+	reshufflePlan->oldSegs = policy->numsegments;
+	reshufflePlan->tupleSegIdx =
+		find_segid_column(reshufflePlan->plan.targetlist,
+						  resultRelationsIdx);
+
+	for(i = 0; i < policy->nattrs; i++)
+	{
+		reshufflePlan->policyAttrs = lappend_int(reshufflePlan->policyAttrs,
+												 policy->attrs[i]);
+	}
+
+	reshufflePlan->ptype = policy->ptype;
+
+	/* FIXME: pass old or new cluster size to numsegments? */
+	mark_plan_strewn((Plan *) reshufflePlan, GP_POLICY_ALL_NUMSEGMENTS);
+
+	heap_close(rel, NoLock);
+
+	return reshufflePlan;
 }
 
 
@@ -1173,7 +1597,7 @@ request_explicit_motion(Plan *plan, Index resultRelationsIdx, List *rtable)
  * Find the index of the segid column of the requested relation (relid) in the
  * target list
  */
-AttrNumber
+static AttrNumber
 find_segid_column(List *tlist, Index relid)
 {
 	if (NIL == tlist)
@@ -1351,9 +1775,9 @@ cdbmutate_warn_ctid_without_segid(struct PlannerInfo *root, struct RelOptInfo *r
  * Shareinput fix shared_as_id and underlying_share_id of nodes in place.  We do not want to use
  * the ordinary tree walker as it is unnecessary to make copies etc.
  */
-typedef bool (*SHAREINPUT_MUTATOR) (Node *node, PlannerGlobal *glob, bool fPop);
+typedef bool (*SHAREINPUT_MUTATOR) (Node *node, PlannerInfo *root, bool fPop);
 static void
-shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
+shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerInfo *root)
 {
 	Plan	   *plan = NULL;
 	bool		recursive_down;
@@ -1370,7 +1794,7 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 		{
 			Node	   *n = lfirst(lc);
 
-			shareinput_walker(f, n, glob);
+			shareinput_walker(f, n, root);
 		}
 		return;
 	}
@@ -1379,7 +1803,7 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 		return;
 
 	plan = (Plan *) node;
-	recursive_down = (*f) (node, glob, false);
+	recursive_down = (*f) (node, root, false);
 
 	if (recursive_down)
 	{
@@ -1389,7 +1813,7 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 			Append	   *app = (Append *) node;
 
 			foreach(cell, app->appendplans)
-				shareinput_walker(f, (Node *) lfirst(cell), glob);
+				shareinput_walker(f, (Node *) lfirst(cell), root);
 		}
 		else if (IsA(node, ModifyTable))
 		{
@@ -1397,16 +1821,62 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 			ModifyTable *mt = (ModifyTable *) node;
 
 			foreach(cell, mt->plans)
-				shareinput_walker(f, (Node *) lfirst(cell), glob);
+				shareinput_walker(f, (Node *) lfirst(cell), root);
 		}
 		else if (IsA(node, SubqueryScan))
 		{
-			SubqueryScan *subqscan = (SubqueryScan *) node;
-			List	   *save_rtable;
+			SubqueryScan  *subqscan = (SubqueryScan *) node;
+			PlannerGlobal *glob = root->glob;
+			PlannerInfo   *subroot;
+			List	      *save_rtable;
+			RelOptInfo    *rel;
 
+			/*
+			 * If glob->finalrtable is not NULL, rtables have been flatten,
+			 * thus we should use glob->finalrtable instead.
+			 */
 			save_rtable = glob->share.curr_rtable;
-			glob->share.curr_rtable = subqscan->subrtable;
-			shareinput_walker(f, (Node *) subqscan->subplan, glob);
+			if (root->glob->finalrtable == NULL)
+			{
+				rel = find_base_rel(root, subqscan->scan.scanrelid);
+				Assert(rel->subplan == subqscan->subplan);
+				subroot = rel->subroot;
+				glob->share.curr_rtable = subroot->parse->rtable;
+			}
+			else
+			{
+				subroot = root;
+				glob->share.curr_rtable = glob->finalrtable;
+			}
+			shareinput_walker(f, (Node *) subqscan->subplan, subroot);
+			glob->share.curr_rtable = save_rtable;
+		}
+		else if (IsA(node, TableFunctionScan))
+		{
+			TableFunctionScan  *tfscan = (TableFunctionScan *) node;
+			PlannerGlobal *glob = root->glob;
+			PlannerInfo   *subroot;
+			List	      *save_rtable;
+			RelOptInfo    *rel;
+
+			/*
+			 * If glob->finalrtable is not NULL, rtables have been flatten,
+			 * thus we should use glob->finalrtable instead.
+			 */
+			save_rtable = glob->share.curr_rtable;
+			if (root->glob->finalrtable == NULL)
+			{
+				rel = find_base_rel(root, tfscan->scan.scanrelid);
+				Assert(rel->subplan == tfscan->scan.plan.lefttree);
+				subroot = rel->subroot;
+				glob->share.curr_rtable = subroot->parse->rtable;
+			}
+			else
+			{
+				subroot = root;
+				glob->share.curr_rtable = glob->finalrtable;
+			}
+			shareinput_walker(f, (Node *)  tfscan->scan.plan.lefttree, subroot);
 			glob->share.curr_rtable = save_rtable;
 		}
 		else if (IsA(node, BitmapAnd))
@@ -1415,7 +1885,7 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 			BitmapAnd  *ba = (BitmapAnd *) node;
 
 			foreach(cell, ba->bitmapplans)
-				shareinput_walker(f, (Node *) lfirst(cell), glob);
+				shareinput_walker(f, (Node *) lfirst(cell), root);
 		}
 		else if (IsA(node, BitmapOr))
 		{
@@ -1423,7 +1893,7 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 			BitmapOr   *bo = (BitmapOr *) node;
 
 			foreach(cell, bo->bitmapplans)
-				shareinput_walker(f, (Node *) lfirst(cell), glob);
+				shareinput_walker(f, (Node *) lfirst(cell), root);
 		}
 		else if (IsA(node, NestLoop))
 		{
@@ -1435,20 +1905,20 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 
 			if (nl->join.prefetch_inner)
 			{
-				shareinput_walker(f, (Node *) plan->righttree, glob);
-				shareinput_walker(f, (Node *) plan->lefttree, glob);
+				shareinput_walker(f, (Node *) plan->righttree, root);
+				shareinput_walker(f, (Node *) plan->lefttree, root);
 			}
 			else
 			{
-				shareinput_walker(f, (Node *) plan->lefttree, glob);
-				shareinput_walker(f, (Node *) plan->righttree, glob);
+				shareinput_walker(f, (Node *) plan->lefttree, root);
+				shareinput_walker(f, (Node *) plan->righttree, root);
 			}
 		}
 		else if (IsA(node, HashJoin))
 		{
 			/* Hash join the hash table is at inner */
-			shareinput_walker(f, (Node *) plan->righttree, glob);
-			shareinput_walker(f, (Node *) plan->lefttree, glob);
+			shareinput_walker(f, (Node *) plan->righttree, root);
+			shareinput_walker(f, (Node *) plan->lefttree, root);
 		}
 		else if (IsA(node, MergeJoin))
 		{
@@ -1456,13 +1926,13 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 
 			if (mj->unique_outer)
 			{
-				shareinput_walker(f, (Node *) plan->lefttree, glob);
-				shareinput_walker(f, (Node *) plan->righttree, glob);
+				shareinput_walker(f, (Node *) plan->lefttree, root);
+				shareinput_walker(f, (Node *) plan->righttree, root);
 			}
 			else
 			{
-				shareinput_walker(f, (Node *) plan->righttree, glob);
-				shareinput_walker(f, (Node *) plan->lefttree, glob);
+				shareinput_walker(f, (Node *) plan->righttree, root);
+				shareinput_walker(f, (Node *) plan->lefttree, root);
 			}
 		}
 		else if (IsA(node, Sequence))
@@ -1472,18 +1942,18 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerGlobal *glob)
 
 			foreach(cell, sequence->subplans)
 			{
-				shareinput_walker(f, (Node *) lfirst(cell), glob);
+				shareinput_walker(f, (Node *) lfirst(cell), root);
 			}
 		}
 		else
 		{
-			shareinput_walker(f, (Node *) plan->lefttree, glob);
-			shareinput_walker(f, (Node *) plan->righttree, glob);
-			shareinput_walker(f, (Node *) plan->initPlan, glob);
+			shareinput_walker(f, (Node *) plan->lefttree, root);
+			shareinput_walker(f, (Node *) plan->righttree, root);
+			shareinput_walker(f, (Node *) plan->initPlan, root);
 		}
 	}
 
-	(*f) (node, glob, true);
+	(*f) (node, root, true);
 }
 
 typedef struct
@@ -1574,6 +2044,7 @@ create_shareinput_producer_rte(ApplyShareInputContext *ctxt, int share_id,
 	List	   *colnames = NIL;
 	List	   *coltypes = NIL;
 	List	   *coltypmods = NIL;
+	List	   *colcollations = NIL;
 	ShareInputScan *producer;
 
 	Assert(ctxt->producer_count > share_id);
@@ -1585,16 +2056,18 @@ create_shareinput_producer_rte(ApplyShareInputContext *ctxt, int share_id,
 		TargetEntry *tle = (TargetEntry *) lfirst(lc);
 		Oid			vartype;
 		int32		vartypmod;
+		Oid			varcollid;
 		char	   *resname;
 
 		vartype = exprType((Node *) tle->expr);
 		vartypmod = exprTypmod((Node *) tle->expr);
+		varcollid = exprCollation((Node *) tle->expr);
 
 		/*
 		 * We should've filled in tle->resname in shareinput_save_producer().
 		 * Note that it's too late to call get_tle_name() here, because this
 		 * runs after all the varnos in Vars have already been changed to
-		 * INNER/OUTER.
+		 * INNER_VAR/OUTER_VAR.
 		 */
 		resname = tle->resname;
 		if (!resname)
@@ -1603,6 +2076,7 @@ create_shareinput_producer_rte(ApplyShareInputContext *ctxt, int share_id,
 		colnames = lappend(colnames, makeString(resname));
 		coltypes = lappend_oid(coltypes, vartype);
 		coltypmods = lappend_int(coltypmods, vartypmod);
+		colcollations = lappend_oid(colcollations, varcollid);
 		attno++;
 	}
 
@@ -1622,6 +2096,7 @@ create_shareinput_producer_rte(ApplyShareInputContext *ctxt, int share_id,
 	rte->eref = makeAlias(rte->ctename, colnames);
 	rte->ctecoltypes = coltypes;
 	rte->ctecoltypmods = coltypmods;
+	rte->ctecolcollations = colcollations;
 
 	rte->inh = false;
 	rte->inFromCl = false;
@@ -1672,8 +2147,9 @@ shareinput_save_producer(ShareInputScan *plan, ApplyShareInputContext *ctxt)
  * are linked together by the same share_id.
  */
 static bool
-shareinput_mutator_dag_to_tree(Node *node, PlannerGlobal *glob, bool fPop)
+shareinput_mutator_dag_to_tree(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
 
@@ -1742,10 +2218,12 @@ shareinput_mutator_dag_to_tree(Node *node, PlannerGlobal *glob, bool fPop)
 }
 
 Plan *
-apply_shareinput_dag_to_tree(PlannerGlobal *glob, Plan *plan, List *rtable)
+apply_shareinput_dag_to_tree(PlannerInfo *root, Plan *plan)
 {
-	glob->share.curr_rtable = rtable;
-	shareinput_walker(shareinput_mutator_dag_to_tree, (Node *) plan, glob);
+	PlannerGlobal *glob = root->glob;
+
+	glob->share.curr_rtable = root->parse->rtable;
+	shareinput_walker(shareinput_mutator_dag_to_tree, (Node *) plan, root);
 	return plan;
 }
 
@@ -1759,8 +2237,9 @@ apply_shareinput_dag_to_tree(PlannerGlobal *glob, Plan *plan, List *rtable)
  * tree conversion or assign share_ids here.
  */
 static bool
-collect_shareinput_producers_walker(Node *node, PlannerGlobal *glob, bool fPop)
+collect_shareinput_producers_walker(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 
 	if (fPop)
@@ -1782,10 +2261,12 @@ collect_shareinput_producers_walker(Node *node, PlannerGlobal *glob, bool fPop)
 }
 
 void
-collect_shareinput_producers(PlannerGlobal *glob, Plan *plan, List *rtable)
+collect_shareinput_producers(PlannerInfo *root, Plan *plan)
 {
-	glob->share.curr_rtable = rtable;
-	shareinput_walker(collect_shareinput_producers_walker, (Node *) plan, glob);
+	PlannerGlobal *glob = root->glob;
+
+	glob->share.curr_rtable = glob->finalrtable;
+	shareinput_walker(collect_shareinput_producers_walker, (Node *) plan, root);
 }
 
 /* Some helper: implements a stack using List. */
@@ -1823,15 +2304,16 @@ shareinput_peekmot(ApplyShareInputContext *ctxt)
  * Vars that point to the CTE instead of the child plan.
  */
 Plan *
-replace_shareinput_targetlists(PlannerGlobal *glob, Plan *plan, List *rtable)
+replace_shareinput_targetlists(PlannerInfo *root, Plan *plan)
 {
-	shareinput_walker(replace_shareinput_targetlists_walker, (Node *) plan, glob);
+	shareinput_walker(replace_shareinput_targetlists_walker, (Node *) plan, root);
 	return plan;
 }
 
 static bool
-replace_shareinput_targetlists_walker(Node *node, PlannerGlobal *glob, bool fPop)
+replace_shareinput_targetlists_walker(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 
 	if (fPop)
@@ -1898,6 +2380,7 @@ replace_shareinput_targetlists_walker(Node *node, PlannerGlobal *glob, bool fPop
 			newtle->expr = (Expr *) makeVar(sisc->scan.scanrelid, attno,
 											exprType((Node *) tle->expr),
 											exprTypmod((Node *) tle->expr),
+											exprCollation((Node *) tle->expr),
 											0);
 			newtargetlist = lappend(newtargetlist, newtle);
 			attno++;
@@ -1950,8 +2433,9 @@ shareinput_find_sharenode(ApplyShareInputContext *ctxt, int share_id, ShareNodeW
  * 2. Build a list a share on QD
  */
 static bool
-shareinput_mutator_xslice_1(Node *node, PlannerGlobal *glob, bool fPop)
+shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
 
@@ -2007,8 +2491,9 @@ shareinput_mutator_xslice_1(Node *node, PlannerGlobal *glob, bool fPop)
  * if a 'shared' is cross-slice.
  */
 static bool
-shareinput_mutator_xslice_2(Node *node, PlannerGlobal *glob, bool fPop)
+shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
 
@@ -2066,8 +2551,9 @@ shareinput_mutator_xslice_2(Node *node, PlannerGlobal *glob, bool fPop)
  * 	2. Bulid a list of QD slices
  */
 static bool
-shareinput_mutator_xslice_3(Node *node, PlannerGlobal *glob, bool fPop)
+shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
 
@@ -2131,8 +2617,9 @@ shareinput_mutator_xslice_3(Node *node, PlannerGlobal *glob, bool fPop)
  * this share must be on QD.  Move them to QD.
  */
 static bool
-shareinput_mutator_xslice_4(Node *node, PlannerGlobal *glob, bool fPop)
+shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
 	int			motId = shareinput_peekmot(ctxt);
@@ -2169,10 +2656,11 @@ shareinput_mutator_xslice_4(Node *node, PlannerGlobal *glob, bool fPop)
 }
 
 Plan *
-apply_shareinput_xslice(Plan *plan, PlannerGlobal *glob)
+apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 {
+	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
-	ListCell   *lp;
+	ListCell   *lp, *lr;
 
 	ctxt->motStack = NULL;
 	ctxt->qdShares = NULL;
@@ -2195,38 +2683,42 @@ apply_shareinput_xslice(Plan *plan, PlannerGlobal *glob)
 	 * walk through all plans and collect all producer subplans into the
 	 * context, before processing the consumers.
 	 */
-	foreach(lp, glob->subplans)
+	forboth(lp, glob->subplans, lr, glob->subroots)
 	{
 		Plan	   *subplan = (Plan *) lfirst(lp);
+		PlannerInfo *subroot =  (PlannerInfo *) lfirst(lr);
 
-		shareinput_walker(shareinput_mutator_xslice_1, (Node *) subplan, glob);
+		shareinput_walker(shareinput_mutator_xslice_1, (Node *) subplan, subroot);
 	}
-	shareinput_walker(shareinput_mutator_xslice_1, (Node *) plan, glob);
+	shareinput_walker(shareinput_mutator_xslice_1, (Node *) plan, root);
 
 	/* Now walk the tree again, and process all the consumers. */
-	foreach(lp, glob->subplans)
+	forboth(lp, glob->subplans, lr, glob->subroots)
 	{
 		Plan	   *subplan = (Plan *) lfirst(lp);
+		PlannerInfo *subroot =  (PlannerInfo *) lfirst(lr);
 
-		shareinput_walker(shareinput_mutator_xslice_2, (Node *) subplan, glob);
+		shareinput_walker(shareinput_mutator_xslice_2, (Node *) subplan, subroot);
 	}
-	shareinput_walker(shareinput_mutator_xslice_2, (Node *) plan, glob);
+	shareinput_walker(shareinput_mutator_xslice_2, (Node *) plan, root);
 
-	foreach(lp, glob->subplans)
+	forboth(lp, glob->subplans, lr, glob->subroots)
 	{
 		Plan	   *subplan = (Plan *) lfirst(lp);
+		PlannerInfo *subroot =  (PlannerInfo *) lfirst(lr);
 
-		shareinput_walker(shareinput_mutator_xslice_3, (Node *) subplan, glob);
+		shareinput_walker(shareinput_mutator_xslice_3, (Node *) subplan, subroot);
 	}
-	shareinput_walker(shareinput_mutator_xslice_3, (Node *) plan, glob);
+	shareinput_walker(shareinput_mutator_xslice_3, (Node *) plan, root);
 
-	foreach(lp, glob->subplans)
+	forboth(lp, glob->subplans, lr, glob->subroots)
 	{
 		Plan	   *subplan = (Plan *) lfirst(lp);
+		PlannerInfo *subroot =  (PlannerInfo *) lfirst(lr);
 
-		shareinput_walker(shareinput_mutator_xslice_4, (Node *) subplan, glob);
+		shareinput_walker(shareinput_mutator_xslice_4, (Node *) subplan, subroot);
 	}
-	shareinput_walker(shareinput_mutator_xslice_4, (Node *) plan, glob);
+	shareinput_walker(shareinput_mutator_xslice_4, (Node *) plan, root);
 
 	return plan;
 }
@@ -2376,6 +2868,7 @@ rte_param_walker(List *rtable, ParamWalkerContext *context)
 {
 	ListCell   *lc;
 	int			rteid = 0;
+	ListCell   *func_lc;
 
 	foreach(lc, rtable)
 	{
@@ -2391,7 +2884,6 @@ rte_param_walker(List *rtable, ParamWalkerContext *context)
 		switch (rte->rtekind)
 		{
 			case RTE_RELATION:
-			case RTE_SPECIAL:
 			case RTE_VOID:
 			case RTE_CTE:
 				/* nothing to do */
@@ -2403,11 +2895,19 @@ rte_param_walker(List *rtable, ParamWalkerContext *context)
 				param_walker((Node *) rte->joinaliasvars, context);
 				break;
 			case RTE_FUNCTION:
-				param_walker(rte->funcexpr, context);
+				foreach(func_lc, rte->functions)
+				{
+					RangeTblFunction *rtfunc = (RangeTblFunction *) lfirst(func_lc);
+					param_walker(rtfunc->funcexpr, context);
+				}
 				break;
 			case RTE_TABLEFUNCTION:
 				param_walker((Node *) rte->subquery, context);
-				param_walker(rte->funcexpr, context);
+				foreach(func_lc, rte->functions)
+				{
+					RangeTblFunction *rtfunc = (RangeTblFunction *) lfirst(func_lc);
+					param_walker(rtfunc->funcexpr, context);
+				}
 				break;
 			case RTE_VALUES:
 				param_walker((Node *) rte->values_lists, context);
@@ -2545,11 +3045,12 @@ fixup_subplan_walker(Node *node, SubPlanWalkerContext *context)
 			 * there is more than one subplan node which refer to the same
 			 * plan_id. In this case create a duplicate subplan, append it to
 			 * the glob->subplans and update the plan_id of the subplan to
-			 * refer to the new copy of the subplan node
+			 * refer to the new copy of the subplan node. Note since subroot
+			 * is not used there is no need of new subroot.
 			 */
 			PlannerInfo *root = (PlannerInfo *) context->base.node;
-			Plan	   *dupsubplan = (Plan *) copyObject(planner_subplan_get_plan(root, subplan));
-			int			newplan_id = list_length(root->glob->subplans) + 1;
+			Plan	    *dupsubplan = (Plan *) copyObject(planner_subplan_get_plan(root, subplan));
+			int			 newplan_id = list_length(root->glob->subplans) + 1;
 
 			subplan->plan_id = newplan_id;
 			root->glob->subplans = lappend(root->glob->subplans, dupsubplan);
@@ -2671,7 +3172,7 @@ remove_subquery_in_RTEs(Node *node)
 			 * be shared by other objects in the tree.
 			 */
 			pfree(rte->subquery);
-			rte->subquery = makeNode(Query);
+			rte->subquery = NULL;
 		}
 
 		return;
@@ -2748,8 +3249,13 @@ pre_dispatch_function_evaluation_mutator(Node *node,
 		newexpr->funcid = expr->funcid;
 		newexpr->funcresulttype = expr->funcresulttype;
 		newexpr->funcretset = expr->funcretset;
+		newexpr->funcvariadic = expr->funcvariadic;
 		newexpr->funcformat = expr->funcformat;
+		newexpr->funccollid = expr->funccollid;
+		newexpr->inputcollid = expr->inputcollid;
 		newexpr->args = args;
+		newexpr->location = expr->location;
+		newexpr->is_tablefunc = expr->is_tablefunc;
 
 		/*
 		 * Check for constant inputs
@@ -2864,7 +3370,10 @@ pre_dispatch_function_evaluation_mutator(Node *node,
 			/*
 			 * Make the constant result node.
 			 */
-			simple = (Expr *) makeConst(expr->funcresulttype, -1, resultTypLen,
+			simple = (Expr *) makeConst(expr->funcresulttype,
+										-1,
+										expr->funccollid,
+										resultTypLen,
 										const_val, const_is_null,
 										resultTypByVal);
 
@@ -2907,7 +3416,10 @@ pre_dispatch_function_evaluation_mutator(Node *node,
 		newexpr->opfuncid = expr->opfuncid;
 		newexpr->opresulttype = expr->opresulttype;
 		newexpr->opretset = expr->opretset;
+		newexpr->opcollid = expr->opcollid;
+		newexpr->inputcollid = expr->inputcollid;
 		newexpr->args = args;
+		newexpr->location = expr->location;
 
 		return (Node *) newexpr;
 	}
@@ -3080,7 +3592,7 @@ sri_optimize_for_result(PlannerInfo *root, Plan *plan, RangeTblEntry *rte,
 			estate->es_num_result_relations = 1;
 			estate->es_result_relation_info = rri;
 			rri = values_get_partition(values, nulls, RelationGetDescr(rel),
-									   estate);
+									   estate, false);
 
 			/*
 			 * 5: get target policy for destination table
@@ -3090,7 +3602,6 @@ sri_optimize_for_result(PlannerInfo *root, Plan *plan, RangeTblEntry *rte,
 			if ((*targetPolicy)->ptype != POLICYTYPE_PARTITIONED)
 				elog(ERROR, "policy must be partitioned");
 
-			ExecCloseIndices(rri);
 			heap_close(rri->ri_RelationDesc, NoLock);
 			FreeExecutorState(estate);
 		}

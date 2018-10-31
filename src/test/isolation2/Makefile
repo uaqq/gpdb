@@ -53,10 +53,7 @@ clean distclean:
 install: all gpdiff.pl gpstringsubs.pl
 
 installcheck: install
-	./pg_isolation2_regress --init-file=$(top_builddir)/src/test/regress/init_file --init-file=./init_file_isolation2 --psqldir='$(PSQLDIR)' --inputdir=$(srcdir) --ao-dir=uao --schedule=$(srcdir)/isolation2_schedule
+	./pg_isolation2_regress --init-file=$(top_builddir)/src/test/regress/init_file --init-file=./init_file_isolation2 --psqldir='$(PSQLDIR)' --inputdir=$(srcdir) --ao-dir=uao --schedule=$(srcdir)/isolation2_schedule --exclude-tests=$(EXCLUDE_TESTS)
 
-installcheck-resgroup: install prepare_dblink_sql
+installcheck-resgroup: install
 	./pg_isolation2_regress --init-file=$(top_builddir)/src/test/regress/init_file --init-file=./init_file_resgroup --psqldir='$(PSQLDIR)' --inputdir=$(srcdir) --resgroup-dir=resgroup --dbname=isolation2resgrouptest --schedule=$(srcdir)/isolation2_resgroup_schedule
-
-prepare_dblink_sql:
-	cp $(GPHOME)/share/postgresql/contrib/dblink.sql ./sql/resgroup/dblink.sql

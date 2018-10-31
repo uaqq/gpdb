@@ -6,22 +6,18 @@
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc.
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/relcache.h,v 1.69 2010/02/26 02:01:29 momjian Exp $
+ * src/include/utils/relcache.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef RELCACHE_H
 #define RELCACHE_H
 
-#include "access/htup.h"
-#include "access/skey.h"
 #include "access/tupdesc.h"
 #include "nodes/bitmapset.h"
-#include "nodes/pg_list.h"
-#include "catalog/pg_class.h"
 
 
 typedef struct RelationData *Relation;
@@ -29,7 +25,7 @@ typedef struct RelationData *Relation;
 /* ----------------
  *		RelationPtr is used in the executor to support index scans
  *		where we have to keep track of several index relations in an
- *		array.	-cim 9/10/89
+ *		array.  -cim 9/10/89
  * ----------------
  */
 typedef Relation *RelationPtr;
@@ -46,9 +42,20 @@ extern void RelationClose(Relation relation);
 struct GpPolicy *RelationGetPartitioningKey(Relation relation);
 extern List *RelationGetIndexList(Relation relation);
 extern Oid	RelationGetOidIndex(Relation relation);
+extern Oid	RelationGetReplicaIndex(Relation relation);
 extern List *RelationGetIndexExpressions(Relation relation);
 extern List *RelationGetIndexPredicate(Relation relation);
-extern Bitmapset *RelationGetIndexAttrBitmap(Relation relation);
+
+typedef enum IndexAttrBitmapKind
+{
+	INDEX_ATTR_BITMAP_ALL,
+	INDEX_ATTR_BITMAP_KEY,
+	INDEX_ATTR_BITMAP_IDENTITY_KEY
+} IndexAttrBitmapKind;
+
+extern Bitmapset *RelationGetIndexAttrBitmap(Relation relation,
+						   IndexAttrBitmapKind keyAttrs);
+
 extern void RelationGetExclusionInfo(Relation indexRelation,
 						 Oid **operators,
 						 Oid **procs,
@@ -58,6 +65,14 @@ extern void RelationSetIndexList(Relation relation,
 					 List *indexIds, Oid oidIndex);
 
 extern void RelationInitIndexAccessInfo(Relation relation);
+
+/*
+ * Routines to support ereport() reports of relation-related errors
+ */
+extern int	errtable(Relation rel);
+extern int	errtablecol(Relation rel, int attnum);
+extern int	errtablecolname(Relation rel, const char *colname);
+extern int	errtableconstraint(Relation rel, const char *conname);
 
 /*
  * Routines for backend startup
@@ -73,16 +88,18 @@ extern Relation RelationBuildLocalRelation(const char *relname,
 						   Oid relnamespace,
 						   TupleDesc tupDesc,
 						   Oid relid,
+						   Oid relfilenode,
 						   Oid reltablespace,
-			               char relkind,            /*CDB*/
 						   bool shared_relation,
-						   bool mapped_relation);
+						   bool mapped_relation,
+						   char relpersistence,
+						   char relkind);
 
 /*
  * Routine to manage assignment of new relfilenode to a relation
  */
 extern void RelationSetNewRelfilenode(Relation relation,
-						  TransactionId freezeXid);
+						  TransactionId freezeXid, MultiXactId minmulti);
 
 /*
  * Routines for flushing/rebuilding relcache entries in various scenarios
@@ -106,15 +123,6 @@ extern bool RelationIdIsInInitFile(Oid relationId);
 extern void RelationCacheInitFilePreInvalidate(void);
 extern void RelationCacheInitFilePostInvalidate(void);
 extern void RelationCacheInitFileRemove(void);
-
-extern void IndexSupportInitialize(oidvector *indclass,
-					   Oid *indexOperator,
-					   RegProcedure *indexSupport,
-					   Oid *opFamily,
-					   Oid *opcInType,
-					   StrategyNumber maxStrategyNumber,
-					   StrategyNumber maxSupportNumber,
-					   AttrNumber maxAttributeNumber);
 
 /* should be used only by relcache.c and catcache.c */
 extern bool criticalRelcachesBuilt;

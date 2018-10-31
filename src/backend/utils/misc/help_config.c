@@ -7,10 +7,10 @@
  * or GUC_DISALLOW_IN_FILE are not displayed, unless the user specifically
  * requests that variable by name
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/help_config.c,v 1.24 2010/01/02 16:57:58 momjian Exp $
+ *	  src/backend/utils/misc/help_config.c
  *
  *-------------------------------------------------------------------------
  */
@@ -43,7 +43,7 @@ static void printMixedStruct(mixedStruct *structToPrint);
 static bool displayStruct(mixedStruct *structToDisplay);
 
 
-int
+void
 GucInfoMain(void)
 {
 	struct config_generic **guc_vars;
@@ -64,7 +64,7 @@ GucInfoMain(void)
 			printMixedStruct(var);
 	}
 
-	return 0;
+	exit(0);
 }
 
 

@@ -6,10 +6,10 @@
  *
  * Portions Copyright (c) 2006-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/lmgr.h,v 1.66 2010/01/02 16:58:08 momjian Exp $
+ * src/include/storage/lmgr.h
  *
  *-------------------------------------------------------------------------
  */
@@ -21,6 +21,20 @@
 #include "storage/lock.h"
 #include "utils/rel.h"
 
+
+/* XactLockTableWait operations */
+typedef enum XLTW_Oper
+{
+	XLTW_None,
+	XLTW_Update,
+	XLTW_Delete,
+	XLTW_Lock,
+	XLTW_LockUpdated,
+	XLTW_InsertIndex,
+	XLTW_InsertIndexUnique,
+	XLTW_FetchUpdated,
+	XLTW_RecheckExclusionConstr
+} XLTW_Oper;
 
 extern void RelationInitLockInfo(Relation relation);
 
@@ -35,6 +49,7 @@ extern LockAcquireResult LockRelationNoWait(Relation relation, LOCKMODE lockmode
 
 extern bool ConditionalLockRelation(Relation relation, LOCKMODE lockmode);
 extern void UnlockRelation(Relation relation, LOCKMODE lockmode);
+extern bool LockHasWaitersRelation(Relation relation, LOCKMODE lockmode);
 
 extern void LockRelationIdForSession(LockRelId *relid, LOCKMODE lockmode);
 extern void UnlockRelationIdForSession(LockRelId *relid, LOCKMODE lockmode);
@@ -61,13 +76,13 @@ extern void UnlockTuple(Relation relation, ItemPointer tid, LOCKMODE lockmode);
 /* Lock an XID (used to wait for a transaction to finish) */
 extern void XactLockTableInsert(TransactionId xid);
 extern void XactLockTableDelete(TransactionId xid);
-extern void XactLockTableWait(TransactionId xid);
+extern void XactLockTableWait(TransactionId xid, Relation rel,
+				  ItemPointer ctid, XLTW_Oper oper);
 extern bool ConditionalXactLockTableWait(TransactionId xid);
 
-/* Lock a VXID (used to wait for a transaction to finish) */
-extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);
-extern void VirtualXactLockTableWait(VirtualTransactionId vxid);
-extern bool ConditionalVirtualXactLockTableWait(VirtualTransactionId vxid);
+/* Lock VXIDs, specified by conflicting locktags */
+extern void WaitForLockers(LOCKTAG heaplocktag, LOCKMODE lockmode);
+extern void WaitForLockersMultiple(List *locktags, LOCKMODE lockmode);
 
 /* Lock a general object (other than a relation) of the current database */
 extern void LockDatabaseObject(Oid classid, Oid objid, uint16 objsubid,
@@ -91,5 +106,7 @@ extern void DescribeLockTag(StringInfo buf, const LOCKTAG *tag);
 
 /* Knowledge about which locktags describe temp objects */
 extern bool LockTagIsTemp(const LOCKTAG *tag);
+
+extern bool CondUpgradeRelLock(Oid relid);
 
 #endif   /* LMGR_H */

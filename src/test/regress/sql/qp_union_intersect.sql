@@ -6,6 +6,11 @@
 -- therefore roll back implicitly anyway). The purpose of these tests is to
 -- exercise planner, so it doesn't matter that the changes are rolled back
 -- afterwards.
+
+-- start_matchsubs
+-- m/DETAIL:  Failing row contains \(.*\)/
+-- s/DETAIL:  Failing row contains \(.*\)/DETAIL:  Failing row contains (#####)/
+-- end_matchsubs
 begin;
 CREATE TABLE dml_union_r (
         a int CONSTRAINT r_check_a CHECK(a <> -1),
@@ -635,3 +640,27 @@ reset optimizer_segments;
 
 -- @description union_update_test31: Negative Tests  more than one row returned by a sub-query used as an expression
 UPDATE dml_union_r SET b = ( SELECT a FROM dml_union_r EXCEPT ALL SELECT a FROM dml_union_s);
+
+
+--
+-- Test for creation of MergeAppend paths.
+--
+-- We used to have a bug in creation of MergeAppend paths, so that this failed
+-- with "could not find pathkey item to sort" error.  See
+-- https://github.com/greenplum-db/gpdb/issues/5695
+--
+create table mergeappend_test ( a int, b int, x int ) distributed by (a,b);
+insert into mergeappend_test select g/100, g/100, g from generate_series(1, 500) g;
+analyze mergeappend_test;
+
+select a, b, array_dims(array_agg(x)) from mergeappend_test r group by a, b
+union all
+select null, null, array_dims(array_agg(x)) from mergeappend_test r
+order by 1,2;
+
+-- Check that it's using a MergeAppend
+explain (costs off)
+select a, b, array_dims(array_agg(x)) from mergeappend_test r group by a, b
+union all
+select null, null, array_dims(array_agg(x)) from mergeappend_test r
+order by 1,2;

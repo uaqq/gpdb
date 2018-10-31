@@ -20,6 +20,7 @@
 #include "access/distributedlog.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "cdb/cdbvars.h"
 #include "lib/stringinfo.h"
 #include "utils/builtins.h"
 #include "utils/tqual.h"
@@ -127,7 +128,7 @@ GetTupleVisibilitySummary(HeapTuple tuple,
 		tupleVisibilitySummary->xminStatus =
 			GetTupleVisibilityCLogStatus(tupleVisibilitySummary->xmin);
 	}
-	tupleVisibilitySummary->xmax = HeapTupleHeaderGetXmax(tuple->t_data);
+	tupleVisibilitySummary->xmax = HeapTupleHeaderGetRawXmax(tuple->t_data);
 	if (!TransactionIdIsNormal(tupleVisibilitySummary->xmax))
 	{
 		if (tupleVisibilitySummary->xmax == FrozenTransactionId)
@@ -236,7 +237,8 @@ GetTupleVisibilityDistribId(TransactionId xid,
 
 		case TupleTransactionStatus_HintCommitted:
 		case TupleTransactionStatus_CLogCommitted:
-			if (DistributedLog_CommittedCheck(xid,
+			if ((!IS_QUERY_DISPATCHER()) &&
+				DistributedLog_CommittedCheck(xid,
 											  &distribTimeStamp,
 											  &distribXid))
 			{
@@ -288,7 +290,7 @@ GetTupleVisibilityInfoMaskSet(int16 infomask, int16 infomask2)
 
 	TupleVisibilityAddFlagName(&buf, infomask & HEAP_COMBOCID, "HEAP_COMBOCID", &atLeastOne);
 	TupleVisibilityAddFlagName(&buf, infomask & HEAP_XMAX_EXCL_LOCK, "HEAP_XMAX_EXCL_LOCK", &atLeastOne);
-	TupleVisibilityAddFlagName(&buf, infomask & HEAP_XMAX_SHARED_LOCK, "HEAP_XMAX_SHARED_LOCK", &atLeastOne);
+	TupleVisibilityAddFlagName(&buf, infomask & HEAP_XMAX_LOCK_ONLY, "HEAP_XMAX_LOCK_ONLY", &atLeastOne);
 	TupleVisibilityAddFlagName(&buf, infomask & HEAP_XMIN_COMMITTED, "HEAP_XMIN_COMMITTED", &atLeastOne);
 	TupleVisibilityAddFlagName(&buf, infomask & HEAP_XMIN_INVALID, "HEAP_XMIN_INVALID", &atLeastOne);
 	TupleVisibilityAddFlagName(&buf, infomask & HEAP_XMAX_COMMITTED, "HEAP_XMAX_COMMITTED", &atLeastOne);

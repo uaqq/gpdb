@@ -4,6 +4,7 @@
 #include "cmockery.h"
 
 #include "postgres.h"
+#include "utils/memutils.h"
 
 /* Actual function body */
 #include "../ftsmessagehandler.c"
@@ -14,9 +15,6 @@ expectSendFtsResponse(const char *expectedMessageType, const FtsResponse *expect
 	expect_value(BeginCommand, commandTag, expectedMessageType);
 	expect_value(BeginCommand, dest, DestRemote);
 	will_be_called(BeginCommand);
-
-	expect_any(initStringInfo, str);
-	will_be_called(initStringInfo);
 
 	/* schema message */
 	expect_any(pq_beginmessage, buf);
@@ -82,8 +80,6 @@ test_HandleFtsWalRepProbePrimary(void **state)
 	will_be_called(GetMirrorStatus);
 
 	will_be_called(SetSyncStandbysDefined);
-
-	expect_value(CheckPromoteSignal, do_unlink, true);
 	will_be_called(CheckPromoteSignal);
 
 	/* SyncRep should be enabled as soon as we found mirror is up. */

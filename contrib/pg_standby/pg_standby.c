@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/pg_standby/pg_standby.c,v 1.29 2010/05/15 09:31:57 heikki Exp $
+ * contrib/pg_standby/pg_standby.c
  *
  *
  * pg_standby.c
@@ -28,20 +28,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
-
-#ifdef WIN32
-int			getopt(int argc, char *const argv[], const char *optstring);
-#else
 #include <sys/time.h>
-#include <unistd.h>
 
-#ifdef HAVE_GETOPT_H
-#include <getopt.h>
-#endif
-#endif   /* ! WIN32 */
-
-extern char *optarg;
-extern int	optind;
+#include "pg_getopt.h"
 
 const char *progname;
 
@@ -119,7 +108,7 @@ struct stat stat_buf;
  *	accessible directory. If you want to make other assumptions,
  *	such as using a vendor-specific archive and access API, these
  *	routines are the ones you'll need to change. You're
- *	enouraged to submit any changes to pgsql-hackers@postgresql.org
+ *	encouraged to submit any changes to pgsql-hackers@postgresql.org
  *	or personally to the current maintainer. Those changes may be
  *	folded in to later versions of this program.
  */
@@ -173,7 +162,7 @@ CustomizableInitialize(void)
 	 */
 	if (stat(archiveLocation, &stat_buf) != 0)
 	{
-		fprintf(stderr, "%s: archiveLocation \"%s\" does not exist\n", progname, archiveLocation);
+		fprintf(stderr, "%s: archive location \"%s\" does not exist\n", progname, archiveLocation);
 		fflush(stderr);
 		exit(2);
 	}
@@ -252,11 +241,11 @@ CustomizableCleanupPriorWALFiles(void)
 		/*
 		 * Assume it's OK to keep failing. The failure situation may change
 		 * over time, so we'd rather keep going on the main processing than
-		 * fail because we couldnt clean up yet.
+		 * fail because we couldn't clean up yet.
 		 */
 		if ((xldir = opendir(archiveLocation)) != NULL)
 		{
-			while ((xlde = readdir(xldir)) != NULL)
+			while (errno = 0, (xlde = readdir(xldir)) != NULL)
 			{
 				/*
 				 * We ignore the timeline part of the XLOG segment identifiers
@@ -283,24 +272,32 @@ CustomizableCleanupPriorWALFiles(void)
 #endif
 
 					if (debug)
-						fprintf(stderr, "\nremoving \"%s\"", WALFilePath);
+						fprintf(stderr, "\nremoving file \"%s\"", WALFilePath);
 
 					rc = unlink(WALFilePath);
 					if (rc != 0)
 					{
-						fprintf(stderr, "\n%s: ERROR failed to remove \"%s\": %s",
+						fprintf(stderr, "\n%s: ERROR: could not remove file \"%s\": %s\n",
 								progname, WALFilePath, strerror(errno));
 						break;
 					}
 				}
 			}
+
+			if (errno)
+				fprintf(stderr, "%s: could not read archive location \"%s\": %s\n",
+						progname, archiveLocation, strerror(errno));
 			if (debug)
 				fprintf(stderr, "\n");
 		}
 		else
-			fprintf(stderr, "%s: archiveLocation \"%s\" open error\n", progname, archiveLocation);
+			fprintf(stderr, "%s: could not open archive location \"%s\": %s\n",
+					progname, archiveLocation, strerror(errno));
 
-		closedir(xldir);
+		if (closedir(xldir))
+			fprintf(stderr, "%s: could not close archive location \"%s\": %s\n",
+					progname, archiveLocation, strerror(errno));
+
 		fflush(stderr);
 	}
 }
@@ -344,7 +341,7 @@ SetWALFileNameForCleanup(void)
 	if (keepfiles > 0)
 	{
 		sscanf(nextWALFileName, "%08X%08X%08X", &tli, &log, &seg);
-		if (tli > 0 && log >= 0 && seg > 0)
+		if (tli > 0 && seg > 0)
 		{
 			log_diff = keepfiles / MaxSegmentsPerLogFile;
 			seg_diff = keepfiles % MaxSegmentsPerLogFile;
@@ -487,7 +484,7 @@ RestoreWALFileForRecovery(void)
 
 	if (debug)
 	{
-		fprintf(stderr, "running restore		:");
+		fprintf(stderr, "running restore:      ");
 		fflush(stderr);
 	}
 
@@ -498,7 +495,7 @@ RestoreWALFileForRecovery(void)
 		{
 			if (debug)
 			{
-				fprintf(stderr, " OK\n");
+				fprintf(stderr, "OK\n");
 				fflush(stderr);
 			}
 			return true;
@@ -520,25 +517,25 @@ usage(void)
 	printf("%s allows PostgreSQL warm standby servers to be configured.\n\n", progname);
 	printf("Usage:\n");
 	printf("  %s [OPTION]... ARCHIVELOCATION NEXTWALFILE XLOGFILEPATH [RESTARTWALFILE]\n", progname);
-	printf("\n"
-		"with main intended use as a restore_command in the recovery.conf:\n"
-		   "  restore_command = 'pg_standby [OPTION]... ARCHIVELOCATION %%f %%p %%r'\n"
-		   "e.g.\n"
-		   "  restore_command = 'pg_standby -l /mnt/server/archiverdir %%f %%p %%r'\n");
 	printf("\nOptions:\n");
-	printf("  -c                 copies file from archive (default)\n");
+	printf("  -c                 copy file from archive (default)\n");
 	printf("  -d                 generate lots of debugging output (testing only)\n");
-	printf("  -k NUMFILESTOKEEP  if RESTARTWALFILE not used, removes files prior to limit\n"
+	printf("  -k NUMFILESTOKEEP  if RESTARTWALFILE is not used, remove files prior to limit\n"
 		   "                     (0 keeps all)\n");
 	printf("  -l                 does nothing; use of link is now deprecated\n");
 	printf("  -r MAXRETRIES      max number of times to retry, with progressive wait\n"
 		   "                     (default=3)\n");
 	printf("  -s SLEEPTIME       seconds to wait between file checks (min=1, max=60,\n"
 		   "                     default=5)\n");
-	printf("  -t TRIGGERFILE     defines a trigger file to initiate failover (no default)\n");
+	printf("  -t TRIGGERFILE     trigger file to initiate failover (no default)\n");
+	printf("  -V, --version      output version information, then exit\n");
 	printf("  -w MAXWAITTIME     max seconds to wait for a file (0=no limit) (default=0)\n");
-	printf("  --help             show this help, then exit\n");
-	printf("  --version          output version information, then exit\n");
+	printf("  -?, --help         show this help, then exit\n");
+	printf("\n"
+		   "Main intended use as restore_command in recovery.conf:\n"
+		   "  restore_command = 'pg_standby [OPTION]... ARCHIVELOCATION %%f %%p %%r'\n"
+		   "e.g.\n"
+	"  restore_command = 'pg_standby /mnt/server/archiverdir %%f %%p %%r'\n");
 	printf("\nReport bugs to <pgsql-bugs@postgresql.org>.\n");
 }
 
@@ -553,7 +550,7 @@ sighandler(int sig)
 static void
 sigquit_handler(int sig)
 {
-	signal(SIGINT, SIG_DFL);
+	pqsignal(SIGINT, SIG_DFL);
 	kill(getpid(), SIGINT);
 }
 #endif
@@ -596,9 +593,9 @@ main(int argc, char **argv)
 	 *
 	 * There's no way to trigger failover via signal on Windows.
 	 */
-	(void) signal(SIGUSR1, sighandler);
-	(void) signal(SIGINT, sighandler);	/* deprecated, use SIGUSR1 */
-	(void) signal(SIGQUIT, sigquit_handler);
+	(void) pqsignal(SIGUSR1, sighandler);
+	(void) pqsignal(SIGINT, sighandler);		/* deprecated, use SIGUSR1 */
+	(void) pqsignal(SIGQUIT, sigquit_handler);
 #endif
 
 	while ((c = getopt(argc, argv, "cdk:lr:s:t:w:")) != -1)
@@ -647,7 +644,7 @@ main(int argc, char **argv)
 				}
 				break;
 			case 't':			/* Trigger file */
-				triggerPath = optarg;
+				triggerPath = strdup(optarg);
 				break;
 			case 'w':			/* Max wait time */
 				maxwaittime = atoi(optarg);
@@ -698,7 +695,7 @@ main(int argc, char **argv)
 	}
 	else
 	{
-		fprintf(stderr, "%s: use %%f to specify nextWALFileName\n", progname);
+		fprintf(stderr, "%s: must specify WAL file name as second non-option argument (use \"%%f\")\n", progname);
 		fprintf(stderr, "Try \"%s --help\" for more information.\n", progname);
 		exit(2);
 	}
@@ -710,7 +707,7 @@ main(int argc, char **argv)
 	}
 	else
 	{
-		fprintf(stderr, "%s: use %%p to specify xlogFilePath\n", progname);
+		fprintf(stderr, "%s: must specify xlog destination as third non-option argument (use \"%%p\")\n", progname);
 		fprintf(stderr, "Try \"%s --help\" for more information.\n", progname);
 		exit(2);
 	}
@@ -727,20 +724,20 @@ main(int argc, char **argv)
 
 	if (debug)
 	{
-		fprintf(stderr, "Trigger file 		: %s\n", triggerPath ? triggerPath : "<not set>");
-		fprintf(stderr, "Waiting for WAL file	: %s\n", nextWALFileName);
-		fprintf(stderr, "WAL file path		: %s\n", WALFilePath);
-		fprintf(stderr, "Restoring to		: %s\n", xlogFilePath);
-		fprintf(stderr, "Sleep interval		: %d second%s\n",
+		fprintf(stderr, "Trigger file:         %s\n", triggerPath ? triggerPath : "<not set>");
+		fprintf(stderr, "Waiting for WAL file: %s\n", nextWALFileName);
+		fprintf(stderr, "WAL file path:        %s\n", WALFilePath);
+		fprintf(stderr, "Restoring to:         %s\n", xlogFilePath);
+		fprintf(stderr, "Sleep interval:       %d second%s\n",
 				sleeptime, (sleeptime > 1 ? "s" : " "));
-		fprintf(stderr, "Max wait interval	: %d %s\n",
+		fprintf(stderr, "Max wait interval:    %d %s\n",
 				maxwaittime, (maxwaittime > 0 ? "seconds" : "forever"));
-		fprintf(stderr, "Command for restore	: %s\n", restoreCommand);
-		fprintf(stderr, "Keep archive history	: ");
+		fprintf(stderr, "Command for restore:  %s\n", restoreCommand);
+		fprintf(stderr, "Keep archive history: ");
 		if (need_cleanup)
 			fprintf(stderr, "%s and later\n", exclusiveCleanupFileName);
 		else
-			fprintf(stderr, "No cleanup required\n");
+			fprintf(stderr, "no cleanup required\n");
 		fflush(stderr);
 	}
 

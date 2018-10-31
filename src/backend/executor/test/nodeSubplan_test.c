@@ -37,10 +37,15 @@ cdbexplain_sendExecStats(QueryDesc *queryDesc)
 	mock();
 }
 
+void
+cdbdispatch_succeed(EState *estate)
+{
+	estate->dispatcherState = (CdbDispatcherState *) palloc(sizeof(CdbDispatcherState));
+}
 /* Function passed to testing framework
  * in order to force SetupInterconnect to fail */ 
 void
-_RETHROW( )
+setupinterconnect_fail(void)
 {
 	PG_RE_THROW();
 }
@@ -81,42 +86,34 @@ test__ExecSetParamPlan__Check_Dispatch_Results(void **state)
 	queryDesc->estate->es_sliceTable = (SliceTable *) palloc(sizeof(SliceTable));
 	
 	Gp_role = GP_ROLE_DISPATCH;
-	plan->planstate->plan->dispatch=DISPATCH_PARALLEL;
+	((SubPlan*)(plan->xprstate.expr))->initPlanParallel = true;
 
 	will_be_called(isCurrentDtxTwoPhase);
 
 	expect_any(CdbDispatchPlan,queryDesc);
 	expect_any(CdbDispatchPlan,planRequiresTxn);
 	expect_any(CdbDispatchPlan,cancelOnError);
-	expect_any(CdbDispatchPlan,ds);
-	will_be_called(CdbDispatchPlan);
+	will_be_called_with_sideeffect(CdbDispatchPlan, &cdbdispatch_succeed, queryDesc->estate);
 
 	expect_any(SetupInterconnect,estate);
 	/* Force SetupInterconnect to fail */
-	will_be_called_with_sideeffect(SetupInterconnect,&_RETHROW,NULL);
-
+	will_be_called_with_sideeffect(SetupInterconnect, &setupinterconnect_fail, NULL);
 
 	expect_any(cdbexplain_localExecStats,planstate);
 	expect_any(cdbexplain_localExecStats,showstatctx);
 	will_be_called(cdbexplain_localExecStats);
 
-	expect_any(CdbCheckDispatchResult,ds);
-	expect_any(CdbCheckDispatchResult,waitMode);
-	will_be_called(CdbCheckDispatchResult);
+	expect_any(cdbdisp_cancelDispatch,ds);
+	will_be_called(cdbdisp_cancelDispatch);
+
+	expect_any(CdbDispatchHandleError, ds);
+	will_be_called(CdbDispatchHandleError);
 
 	expect_any(cdbexplain_recvExecStats,planstate);
 	expect_any(cdbexplain_recvExecStats,dispatchResults);
 	expect_any(cdbexplain_recvExecStats,sliceIndex);
 	expect_any(cdbexplain_recvExecStats,showstatctx);
 	will_be_called(cdbexplain_recvExecStats);
-
-	will_be_called(TeardownSequenceServer);
-
-	expect_any(TeardownInterconnect,transportStates);
-	expect_any(TeardownInterconnect,mlStates);
-	expect_any(TeardownInterconnect,forceEOS);
-	expect_any(TeardownInterconnect,hasError);
-	will_be_called(TeardownInterconnect);
 
 	/* Catch PG_RE_THROW(); after cleaning with CdbCheckDispatchResult */
 	PG_TRY();

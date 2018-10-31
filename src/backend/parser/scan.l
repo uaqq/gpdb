@@ -1,4 +1,4 @@
-%{
+%top{
 /*-------------------------------------------------------------------------
  *
  * scan.l
@@ -6,7 +6,7 @@
  *
  * NOTE NOTE NOTE:
  *
- * The rules in this file must be kept in sync with psql's lexer!!!
+ * The rules in this file must be kept in sync with psql's psqlscan.l!
  *
  * The rules are designed so that the scanner never has to backtrack,
  * in the sense that there is always a rule that can match the input
@@ -17,14 +17,15 @@
  * for handling float numbers and continued string literals.  If you change
  * the lexical rules, verify that you haven't broken the no-backtrack
  * property by running flex with the "-b" option and checking that the
- * resulting "lex.backup" file says that no backing up is needed.
+ * resulting "lex.backup" file says that no backing up is needed.  (As of
+ * Postgres 9.2, this check is made automatically by the Makefile.)
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/scan.l,v 1.167 2010/05/30 18:10:41 tgl Exp $
+ *	  src/backend/parser/scan.l
  *
  *-------------------------------------------------------------------------
  */
@@ -33,11 +34,13 @@
 #include <ctype.h>
 #include <unistd.h>
 
+#include "parser/gramparse.h"
 #include "parser/parser.h"				/* only needed for GUC variables */
-#include "parser/scanner.h"
 #include "parser/scansup.h"
 #include "mb/pg_wchar.h"
+}
 
+%{
 #define unify_version(a,b,c) ((a<<16)+(b<<8)+c)
 #if unify_version(YY_FLEX_MAJOR_VERSION,YY_FLEX_MINOR_VERSION,YY_FLEX_SUBMINOR_VERSION) < unify_version(2,5,35)
 int base_yyget_lineno  (void);
@@ -111,6 +114,7 @@ static bool is_utf16_surrogate_first(pg_wchar c);
 static bool is_utf16_surrogate_second(pg_wchar c);
 static pg_wchar surrogate_pair_to_codepoint(pg_wchar first, pg_wchar second);
 static void addunicode(pg_wchar c, yyscan_t yyscanner);
+static bool check_uescapechar(unsigned char escape);
 
 #define yyerror(msg)  scanner_yyerror(msg, yyscanner)
 
@@ -164,8 +168,13 @@ extern void core_yyset_column(int column_no, yyscan_t yyscanner);
  *  <xe> extended quoted strings (support backslash escape sequences)
  *  <xdolq> $foo$ quoted strings
  *  <xui> quoted identifier with Unicode escapes
+ *  <xuiend> end of a quoted identifier with Unicode escapes, UESCAPE can follow
  *  <xus> quoted string with Unicode escapes
+ *  <xusend> end of a quoted string with Unicode escapes, UESCAPE can follow
  *  <xeu> Unicode surrogate pair in extended quoted string
+ *
+ * Remember to add an <<EOF>> case whenever you add a new exclusive state!
+ * The default one is probably not the right thing.
  */
 
 %x xb
@@ -176,7 +185,9 @@ extern void core_yyset_column(int column_no, yyscan_t yyscanner);
 %x xq
 %x xdolq
 %x xui
+%x xuiend
 %x xus
+%x xusend
 %x xeu
 
 /*
@@ -268,8 +279,8 @@ xqinside		[^']+
 
 /* $foo$ style quotes ("dollar quoting")
  * The quoted string starts with $foo$ where "foo" is an optional string
- * in the form of an identifier, except that it may not contain "$", 
- * and extends to the first occurrence of an identical string.  
+ * in the form of an identifier, except that it may not contain "$",
+ * and extends to the first occurrence of an identical string.
  * There is *no* processing of the quoted text.
  *
  * {dolqfailed} is an error rule to avoid scanner backup when {dolqdelim}
@@ -293,17 +304,17 @@ xdinside		[^"]+
 /* Unicode escapes */
 uescape			[uU][eE][sS][cC][aA][pP][eE]{whitespace}*{quote}[^']{quote}
 /* error rule to avoid backup */
-uescapefail		("-"|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*"-"|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*{quote}[^']|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*{quote}|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*|[uU][eE][sS][cC][aA][pP]|[uU][eE][sS][cC][aA]|[uU][eE][sS][cC]|[uU][eE][sS]|[uU][eE]|[uU])
+uescapefail		[uU][eE][sS][cC][aA][pP][eE]{whitespace}*"-"|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*{quote}[^']|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*{quote}|[uU][eE][sS][cC][aA][pP][eE]{whitespace}*|[uU][eE][sS][cC][aA][pP]|[uU][eE][sS][cC][aA]|[uU][eE][sS][cC]|[uU][eE][sS]|[uU][eE]|[uU]
 
 /* Quoted identifier with Unicode escapes */
 xuistart		[uU]&{dquote}
-xuistop1		{dquote}{whitespace}*{uescapefail}?
-xuistop2		{dquote}{whitespace}*{uescape}
 
 /* Quoted string with Unicode escapes */
 xusstart		[uU]&{quote}
-xusstop1		{quote}{whitespace}*{uescapefail}?
-xusstop2		{quote}{whitespace}*{uescape}
+
+/* Optional UESCAPE after a quoted string or identifier with Unicode escapes. */
+xustop1		{uescapefail}?
+xustop2		{uescape}
 
 /* error rule to avoid backup */
 xufailed		[uU]&
@@ -355,7 +366,7 @@ self			[,()\[\].;\:\+\-\*\/\%\^\<\>\=]
 op_chars		[\~\!\@\#\^\&\|\`\?\+\-\*\/\%\<\>\=]
 operator		{op_chars}+
 
-/* we no longer allow unary minus in numbers. 
+/* we no longer allow unary minus in numbers.
  * instead we pass it separately to parser. there it gets
  * coerced via doNegate() -- Leon aug 20 1999
  *
@@ -550,15 +561,32 @@ other			.
 					yylval->str = litbufdup(yyscanner);
 					return SCONST;
 				}
-<xus>{xusstop1} {
+<xus>{quotestop} |
+<xus>{quotefail} {
 					/* throw back all but the quote */
 					yyless(1);
+					/* xusend state looks for possible UESCAPE */
+					BEGIN(xusend);
+				}
+<xusend>{whitespace} { /* stay in xusend state over whitespace */ }
+<xusend>{other} |
+<xusend>{xustop1} |
+<xusend><<EOF>>	{
+					/* no UESCAPE after the quote, throw back everything */
+					yyless(0);
 					BEGIN(INITIAL);
 					yylval->str = litbuf_udeescape('\\', yyscanner);
 					return SCONST;
 				}
-<xus>{xusstop2} {
+<xusend>{xustop2} {
+					/* found UESCAPE after the end quote */
 					BEGIN(INITIAL);
+					if (!check_uescapechar(yytext[yyleng-2]))
+					{
+						SET_YYLLOC();
+						ADVANCE_YYLLOC(yyleng-2);
+						yyerror("invalid Unicode escape character");
+					}
 					yylval->str = litbuf_udeescape(yytext[yyleng-2], yyscanner);
 					return SCONST;
 				}
@@ -716,29 +744,49 @@ other			.
 					yylval->str = ident;
 					return IDENT;
 				}
-<xui>{xuistop1}	{
-					char		   *ident;
+<xui>{dquote} {
+					yyless(1);
+					/* xuiend state looks for possible UESCAPE */
+					BEGIN(xuiend);
+				}
+<xuiend>{whitespace} { /* stay in xuiend state over whitespace */ }
+<xuiend>{other} |
+<xuiend>{xustop1} |
+<xuiend><<EOF>>	{
+					/* no UESCAPE after the quote, throw back everything */
+					char	   *ident;
+					int			identlen;
+
+					yyless(0);
 
 					BEGIN(INITIAL);
 					if (yyextra->literallen == 0)
 						yyerror("zero-length delimited identifier");
 					ident = litbuf_udeescape('\\', yyscanner);
-					if (yyextra->literallen >= NAMEDATALEN)
-						truncate_identifier(ident, yyextra->literallen, true);
+					identlen = strlen(ident);
+					if (identlen >= NAMEDATALEN)
+						truncate_identifier(ident, identlen, true);
 					yylval->str = ident;
-					/* throw back all but the quote */
-					yyless(1);
 					return IDENT;
 				}
-<xui>{xuistop2}	{
-					char		   *ident;
+<xuiend>{xustop2}	{
+					/* found UESCAPE after the end quote */
+					char	   *ident;
+					int			identlen;
 
 					BEGIN(INITIAL);
 					if (yyextra->literallen == 0)
 						yyerror("zero-length delimited identifier");
+					if (!check_uescapechar(yytext[yyleng-2]))
+					{
+						SET_YYLLOC();
+						ADVANCE_YYLLOC(yyleng-2);
+						yyerror("invalid Unicode escape character");
+					}
 					ident = litbuf_udeescape(yytext[yyleng - 2], yyscanner);
-					if (yyextra->literallen >= NAMEDATALEN)
-						truncate_identifier(ident, yyextra->literallen, true);
+					identlen = strlen(ident);
+					if (identlen >= NAMEDATALEN)
+						truncate_identifier(ident, identlen, true);
 					yylval->str = ident;
 					return IDENT;
 				}
@@ -1217,22 +1265,29 @@ addunicode(pg_wchar c, core_yyscan_t yyscanner)
 	addlit(buf, pg_mblen(buf), yyscanner);
 }
 
-static char *
-litbuf_udeescape(unsigned char escape, core_yyscan_t yyscanner)
+/* is 'escape' acceptable as Unicode escape character (UESCAPE syntax) ? */
+static bool
+check_uescapechar(unsigned char escape)
 {
-	char *new;
-	char *litbuf, *in, *out;
-	pg_wchar pair_first = 0;
-
 	if (isxdigit(escape)
 		|| escape == '+'
 		|| escape == '\''
 		|| escape == '"'
 		|| scanner_isspace(escape))
 	{
-		ADVANCE_YYLLOC(yyextra->literallen + yyleng + 1);
-		yyerror("invalid Unicode escape character");
+		return false;
 	}
+	else
+		return true;
+}
+
+/* like litbufdup, but handle unicode escapes */
+static char *
+litbuf_udeescape(unsigned char escape, core_yyscan_t yyscanner)
+{
+	char *new;
+	char *litbuf, *in, *out;
+	pg_wchar pair_first = 0;
 
 	/* Make literalbuf null-terminated to simplify the scanning loop */
 	litbuf = yyextra->literalbuf;

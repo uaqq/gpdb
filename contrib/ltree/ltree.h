@@ -1,11 +1,11 @@
-/* $PostgreSQL: pgsql/contrib/ltree/ltree.h,v 1.22 2009/06/11 14:48:51 momjian Exp $ */
+/* contrib/ltree/ltree.h */
 
 #ifndef __LTREE_H__
 #define __LTREE_H__
 
-#include "postgres.h"
 #include "fmgr.h"
 #include "tsearch/ts_locale.h"
+#include "utils/memutils.h"
 
 typedef struct
 {
@@ -31,7 +31,7 @@ typedef struct
 
 typedef struct
 {
-	int4		val;
+	int32		val;
 	uint16		len;
 	uint8		flag;
 	char		name[1];
@@ -90,9 +90,9 @@ typedef struct
  */
 typedef struct ITEM
 {
-	int2		type;
-	int2		left;
-	int4		val;
+	int16		type;
+	int16		left;
+	int32		val;
 	uint8		flag;
 	/* user-friendly value */
 	uint8		length;
@@ -106,12 +106,14 @@ typedef struct ITEM
 typedef struct
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
-	int4		size;
+	int32		size;
 	char		data[1];
 } ltxtquery;
 
-#define HDRSIZEQT		MAXALIGN(VARHDRSZ + sizeof(int4))
+#define HDRSIZEQT		MAXALIGN(VARHDRSZ + sizeof(int32))
 #define COMPUTESIZE(size,lenofoperand)	( HDRSIZEQT + (size) * sizeof(ITEM) + (lenofoperand) )
+#define LTXTQUERY_TOO_BIG(size,lenofoperand) \
+	((size) > (MaxAllocSize - HDRSIZEQT - (lenofoperand)) / sizeof(ITEM))
 #define GETQUERY(x)  (ITEM*)( (char*)(x)+HDRSIZEQT )
 #define GETOPERAND(x)	( (char*)GETQUERY(x) + ((ltxtquery*)x)->size * sizeof(ITEM) )
 
@@ -174,7 +176,7 @@ int			ltree_strncasecmp(const char *a, const char *b, size_t s);
 
 #define BITBYTE 8
 #define SIGLENINT  2
-#define SIGLEN	( sizeof(int4)*SIGLENINT )
+#define SIGLEN	( sizeof(int32)*SIGLENINT )
 #define SIGLENBIT (SIGLEN*BITBYTE)
 typedef unsigned char BITVEC[SIGLEN];
 typedef unsigned char *BITVECP;
@@ -230,7 +232,7 @@ typedef struct
 /* GiST support for ltree[] */
 
 #define ASIGLENINT	(7)
-#define ASIGLEN		(sizeof(int4)*ASIGLENINT)
+#define ASIGLEN		(sizeof(int32)*ASIGLENINT)
 #define ASIGLENBIT (ASIGLEN*BITBYTE)
 typedef unsigned char ABITVEC[ASIGLEN];
 

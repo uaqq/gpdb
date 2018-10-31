@@ -22,12 +22,15 @@
 #include <math.h>
 #include <unistd.h>
 
+#include "libpq-fe.h"
 #include "pgstat.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_type.h"
 #include "cdb/memquota.h"
+#include "cdb/cdbdisp_query.h"
+#include "cdb/cdbdispatchresult.h"
 #include "cdb/cdbgang.h"
 #include "cdb/cdbvars.h"
 #include "cdb/ml_ipc.h"
@@ -37,6 +40,8 @@
 #include "executor/spi.h"
 #include "port/atomics.h"
 #include "parser/parse_expr.h"
+#include "storage/bufmgr.h"
+#include "storage/buf_internals.h"
 #include "libpq/auth.h"
 #include "libpq/hba.h"
 #include "utils/builtins.h"
@@ -44,6 +49,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/resource_manager.h"
+#include "utils/timestamp.h"
 
 /* table_functions test */
 extern Datum multiset_example(PG_FUNCTION_ARGS);
@@ -88,6 +94,18 @@ extern Datum check_auth_time_constraints(PG_FUNCTION_ARGS);
 
 /* XID wraparound */
 extern Datum test_consume_xids(PG_FUNCTION_ARGS);
+extern Datum gp_execute_on_server(PG_FUNCTION_ARGS);
+
+/* Check shared buffer cache for a database Oid */
+extern Datum check_shared_buffer_cache_for_dboid(PG_FUNCTION_ARGS);
+
+/* oid wraparound tests */
+extern Datum gp_set_next_oid(PG_FUNCTION_ARGS);
+extern Datum gp_get_next_oid(PG_FUNCTION_ARGS);
+
+/* Broken output function, for testing */
+extern Datum broken_int4out(PG_FUNCTION_ARGS);
+
 
 /* Triggers */
 
@@ -494,7 +512,7 @@ hasGangsExist(PG_FUNCTION_ARGS)
 {
 	if (Gp_role != GP_ROLE_DISPATCH)
 		elog(ERROR, "hasGangsExist can only be executed on master");
-	if (GangsExist())
+	if (cdbcomponent_qesExist())
 		PG_RETURN_BOOL(true);
 	PG_RETURN_BOOL(false);
 }
@@ -829,7 +847,8 @@ describe(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid invocation of describe");
 
 	fexpr = (FuncExpr*) PG_GETARG_POINTER(0);
-	Insist(IsA(fexpr, FuncExpr));   /* Assert we got what we expected */
+	if (!IsA(fexpr, FuncExpr))
+		ereport(ERROR, (errmsg("invalid parameters for describe")));
 
 	/* Build a result tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(3, false);
@@ -878,9 +897,12 @@ project(PG_FUNCTION_ARGS)
 	tuple       = AnyTable_GetNextTuple(scan);
 
 	/* Based on what the describe callback should have setup */
-	Insist(position > 0 && position <= in_tupdesc->natts);
-	Insist(out_tupdesc->natts == 1);
-	Insist(out_tupdesc->attrs[0]->atttypid == in_tupdesc->attrs[position-1]->atttypid);
+	if (position <= 0 || position > in_tupdesc->natts)
+		ereport(ERROR, (errmsg("invalid position provided")));
+	if (out_tupdesc->natts != 1)
+		ereport(ERROR, (errmsg("only one expected tuple is allowed")));
+	if (out_tupdesc->attrs[0]->atttypid != in_tupdesc->attrs[position-1]->atttypid)
+		ereport(ERROR, (errmsg("input and output types do not match")));
 
 	/* check for end of scan */
 	if (tuple == NULL)
@@ -933,7 +955,8 @@ project_describe(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid invocation of project_describe");
 
 	fexpr = (FuncExpr*) PG_GETARG_POINTER(0);
-	Insist(IsA(fexpr, FuncExpr));   /* Assert we got what we expected */
+	if (!IsA(fexpr, FuncExpr))
+		ereport(ERROR, (errmsg("invalid parameters for project_describe")));
 
 	/*
 	 * We should know the type information of the arguments of our calling
@@ -958,16 +981,22 @@ project_describe(PG_FUNCTION_ARGS)
 	 *   - second argument "text"
 	 * --------
 	 */
-	Insist(numargs == 2);
-	Insist(argtypes[0] == ANYTABLEOID);
-	Insist(argtypes[1] == INT4OID);
+	if (numargs != 2)
+		ereport(ERROR, (errmsg("invalid argument number"),
+				errdetail("Two arguments need to be provided to the function")));
+	if (argtypes[0] != ANYTABLEOID)
+		ereport(ERROR, (errmsg("first argument is not a table OID")));
+	if (argtypes[1] != INT4OID)
+		ereport(ERROR, (errmsg("second argument is not a integer OID")));
 
 	/* Now get the tuple descriptor for the ANYTABLE we received */
 	texpr = (TableValueExpr*) linitial(fargs);
-	Insist(IsA(texpr, TableValueExpr));  /* double check that cast */
+	if (!IsA(texpr, TableValueExpr))
+		ereport(ERROR, (errmsg("function argument is not a table")));
 
 	qexpr = (Query*) texpr->subquery;
-	Insist(IsA(qexpr, Query));
+	if (!IsA(qexpr, Query))
+		ereport(ERROR, (errmsg("subquery is not a Query object")));
 
 	tdesc = ExecCleanTypeFromTL(qexpr->targetList, false);
 
@@ -1072,7 +1101,8 @@ userdata_describe(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid invocation of userdata_describe");
 
 	fexpr = (FuncExpr*) PG_GETARG_POINTER(0);
-	Insist(IsA(fexpr, FuncExpr));   /* Assert we got what we expected */
+	if (!IsA(fexpr, FuncExpr))
+		ereport(ERROR, (errmsg("invalid parameters for userdata_describe")));
 
 	/* Build a result tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(1, false);
@@ -1113,8 +1143,6 @@ PG_FUNCTION_INFO_V1(hasBackendsExist);
 Datum
 hasBackendsExist(PG_FUNCTION_ARGS)
 {
-	const char *walreceiver = "walreceiver";
-
 	int beid;
 	int32 result;
 	int timeout = PG_GETARG_INT32(0);
@@ -1132,9 +1160,8 @@ hasBackendsExist(PG_FUNCTION_ARGS)
 		for (beid = 1; beid <= tot_backends; beid++)
 		{
 			PgBackendStatus *beentry = pgstat_fetch_stat_beentry(beid);
-			if (beentry && beentry->st_procpid >0 && beentry->st_procpid != pid
-					&& strncmp(walreceiver, beentry->st_appname, strlen(walreceiver)) /* exclude the WALREP process*/
-				)
+			if (beentry && beentry->st_procpid >0 && beentry->st_procpid != pid &&
+				beentry->st_session_id == gp_session_id)
 				result++;
 		}
 		if (result == 0 || timeout == 0)
@@ -1947,4 +1974,124 @@ test_consume_xids(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_VOID();
+}
+
+/*
+ * Function to execute a DML/DDL command on segment with specified content id.
+ * Returns true on success or error on failure.
+ */
+PG_FUNCTION_INFO_V1(gp_execute_on_server);
+Datum
+gp_execute_on_server(PG_FUNCTION_ARGS)
+{
+	int16	content = PG_GETARG_INT16(0);
+	char *query = PG_GETARG_CSTRING(1);
+	int ret;
+	int proc;
+	if (GpIdentity.segindex == content)
+	{
+		if ((ret = SPI_connect()) < 0)
+			/* internal error */
+			elog(ERROR, "SPI_connect returned %d", ret);
+
+		/* Retrieve the desired rows */
+		ret = SPI_execute(query, false, 0);
+		proc = SPI_processed;
+		if (ret != SPI_OK_SELECT || proc <= 0)
+		{
+			SPI_finish();
+			elog(ERROR, "SPI failed on segment %d, return code %d",
+				 GpIdentity.segindex, ret);
+		}
+		SPI_finish();
+		PG_RETURN_BOOL(true);
+	}
+	else if (IS_QUERY_DISPATCHER())
+	{
+		proc = 0;
+		CdbPgResults cdb_pgresults;
+		int i;
+		CdbDispatchCommand(query, DF_CANCEL_ON_ERROR | DF_WITH_SNAPSHOT, &cdb_pgresults);
+		for (i = 0; i < cdb_pgresults.numResults; i++)
+		{
+			struct pg_result *pgresult = cdb_pgresults.pg_results[i];
+
+			if (PQresultStatus(pgresult) != PGRES_TUPLES_OK &&
+				PQresultStatus(pgresult) != PGRES_COMMAND_OK)
+			{
+				cdbdisp_clearCdbPgResults(&cdb_pgresults);
+				elog(ERROR, "execution failed with status %d", PQresultStatus(pgresult));
+			}
+		}
+
+		cdbdisp_clearCdbPgResults(&cdb_pgresults);
+		PG_RETURN_BOOL(true);
+	}
+	else
+		PG_RETURN_BOOL(true);
+}
+
+/*
+ * Check if the shared buffer cache contains any pages that have the specified
+ * database OID in their buffer tag. Return true if an entry is found, else
+ * return false.
+ */
+PG_FUNCTION_INFO_V1(check_shared_buffer_cache_for_dboid);
+Datum
+check_shared_buffer_cache_for_dboid(PG_FUNCTION_ARGS)
+{
+	Oid databaseOid = PG_GETARG_OID(0);
+	int i;
+
+	for (i = 0; i < NBuffers; i++)
+	{
+		volatile BufferDesc *bufHdr = &BufferDescriptors[i];
+
+		if (bufHdr->tag.rnode.dbNode == databaseOid)
+			PG_RETURN_BOOL(true);
+	}
+
+	PG_RETURN_BOOL(false);
+}
+
+PG_FUNCTION_INFO_V1(gp_set_next_oid);
+Datum
+gp_set_next_oid(PG_FUNCTION_ARGS)
+{
+	Oid new_oid = PG_GETARG_OID(0);
+
+	LWLockAcquire(OidGenLock, LW_EXCLUSIVE);
+
+	ShmemVariableCache->nextOid = new_oid;
+
+	LWLockRelease(OidGenLock);
+
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(gp_get_next_oid);
+Datum
+gp_get_next_oid(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_OID(ShmemVariableCache->nextOid);
+}
+
+/*
+ * This is like int4out, but throws an error on '1234'.
+ *
+ * Used in the error handling test in 'gpcopy'.
+ */
+PG_FUNCTION_INFO_V1(broken_int4out);
+Datum
+broken_int4out(PG_FUNCTION_ARGS)
+{
+	int32		arg = PG_GETARG_INT32(0);
+
+	if (arg == 1234)
+		ereport(ERROR,
+				(errcode(ERRCODE_FAULT_INJECT),
+				 errmsg("testing failure in output function"),
+				 errdetail("The trigger value was 1234")));
+
+	return DirectFunctionCall1(int4out, Int32GetDatum(arg));
 }

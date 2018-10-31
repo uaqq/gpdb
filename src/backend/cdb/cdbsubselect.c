@@ -14,8 +14,10 @@
  */
 #include "postgres.h"
 
-#include "catalog/pg_type.h"	/* INT8OID */
+#include "access/htup_details.h"
+#include "access/skey.h"
 #include "catalog/pg_operator.h"
+#include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/subselect.h"	/* convert_testexpr() */
@@ -204,7 +206,7 @@ IsCorrelatedOpExpr(OpExpr *opexp, Expr **innerExpr)
  *	*eqOp and *sortOp - equality and < operators, to implement the condition as a mergejoin.
  */
 static bool
-IsCorrelatedEqualityOpExpr(OpExpr *opexp, Expr **innerExpr, Oid *eqOp, Oid *sortOp)
+IsCorrelatedEqualityOpExpr(OpExpr *opexp, Expr **innerExpr, Oid *eqOp, Oid *sortOp, bool *hashable)
 {
 	Oid			opfamily;
 	Oid			ltype;
@@ -221,7 +223,7 @@ IsCorrelatedEqualityOpExpr(OpExpr *opexp, Expr **innerExpr, Oid *eqOp, Oid *sort
 	 * If this is an expression of the form a = b, then we want to know about
 	 * the vars involved.
 	 */
-	if (!op_mergejoinable(opexp->opno))
+	if (!op_mergejoinable(opexp->opno, exprType(linitial(opexp->args))))
 		return false;
 
 	/*
@@ -249,6 +251,8 @@ IsCorrelatedEqualityOpExpr(OpExpr *opexp, Expr **innerExpr, Oid *eqOp, Oid *sort
 	if (!OidIsValid(*sortOp))	/* should not happen */
 		elog(ERROR, "could not find member %d(%u,%u) of opfamily %u",
 			 BTLessStrategyNumber, ltype, rtype, opfamily);
+
+	*hashable = op_hashjoinable(*eqOp, ltype);
 
 	if (!IsCorrelatedOpExpr(opexp, innerExpr))
 		return false;
@@ -405,10 +409,11 @@ SubqueryToJoinWalker(Node *node, ConvertSubqueryToJoinContext *context)
 		 */
 		Oid			eqOp = InvalidOid;
 		Oid			sortOp = InvalidOid;
+		bool		hashable = false;
 		Expr	   *innerExpr = NULL;
 		bool		considerOpExpr = false;
 
-		considerOpExpr = IsCorrelatedEqualityOpExpr(opexp, &innerExpr, &eqOp, &sortOp);
+		considerOpExpr = IsCorrelatedEqualityOpExpr(opexp, &innerExpr, &eqOp, &sortOp, &hashable);
 
 		if (considerOpExpr)
 		{
@@ -422,9 +427,11 @@ SubqueryToJoinWalker(Node *node, ConvertSubqueryToJoinContext *context)
 			{
 				SortGroupClause *gc = makeNode(SortGroupClause);
 
-				gc->sortop = sortOp;
-				gc->eqop = eqOp;
 				gc->tleSortGroupRef = list_length(context->groupClause) + 1;
+				gc->eqop = eqOp;
+				gc->sortop = sortOp;
+				gc->hashable = hashable;
+
 				context->groupClause = lappend(context->groupClause, gc);
 				tle->ressortgroupref = list_length(context->targetList) + 1;
 			}
@@ -625,6 +632,7 @@ convert_EXPR_to_join(PlannerInfo *root, OpExpr *opexp)
 											 subselectAggTLE->resno,
 											 exprType((Node *) subselectAggTLE->expr),
 											 exprTypmod((Node *) subselectAggTLE->expr),
+											 exprCollation((Node *) subselectAggTLE->expr),
 											 0);
 
 		list_nth_replace(opexp->args, 1, aggVar);
@@ -713,7 +721,7 @@ add_dummy_const(List *tlist)
 	Const	   *zconst;
 	int			resno;
 
-	zconst = makeConst(INT4OID, -1, sizeof(int32), (Datum) 0,
+	zconst = makeConst(INT4OID, -1, InvalidOid, sizeof(int32), (Datum) 0,
 					   false, true);	/* isnull, byval */
 	resno = list_length(tlist) + 1;
 	dummy = makeTargetEntry((Expr *) zconst,
@@ -779,10 +787,16 @@ add_notin_subquery_rte(Query *parse, Query *subselect)
 	RangeTblEntry *subq_rte;
 	int			subq_indx;
 
+	/*
+	 * Create a RTE entry in the parent query for the subquery.
+	 * It is marked as lateral, because any correlation quals will
+	 * refer to other RTEs in the parent query.
+	 */
 	subselect->targetList = mutate_targetlist(subselect->targetList);
 	subq_rte = addRangeTableEntryForSubquery(NULL,	/* pstate */
 											 subselect,
 											 makeAlias("NotIn_SUBQUERY", NIL),
+											 false, /* not lateral */
 											 false /* inFromClause */ );
 	parse->rtable = lappend(parse->rtable, subq_rte);
 
@@ -822,9 +836,15 @@ add_expr_subquery_rte(Query *parse, Query *subselect)
 		teNum++;
 	}
 
+	/*
+	 * Create a RTE entry in the parent query for the subquery.
+	 * It is marked as lateral, because any correlation quals will
+	 * refer to other RTEs in the parent query.
+	 */
 	subq_rte = addRangeTableEntryForSubquery(NULL,	/* pstate */
 											 subselect,
 											 makeAlias("Expr_SUBQUERY", NIL),
+											 true, /* lateral */
 											 false /* inFromClause */ );
 	parse->rtable = lappend(parse->rtable, subq_rte);
 
@@ -1186,8 +1206,11 @@ find_nonnullable_vars_walker(Node *node, NonNullableVarsContext *context)
  * This method simply determines if the targetlist i.e. (t1.x, t2.y) is nullable.
  * A targetlist is "nullable" if all entries in the targetlist
  * cannot be proven to be non-nullable.
+ *
+ * We don't use NULL for the 'dummy' column, because is_targetlist_nullable() 
+ * would then treat the target list as nullable
  */
-bool
+static bool
 is_targetlist_nullable(Query *subq)
 {
 	Assert(subq);
@@ -1236,8 +1259,10 @@ is_targetlist_nullable(Query *subq)
 			 */
 			Const	   *constant = (Const *) tle->expr;
 
-			if (strcmp(tle->resname, DUMMY_COLUMN_NAME) != 0
-				&& constant->constisnull == true)
+			/**
+			 *  Note: the 'dummy' column is not NULL, so we don't need any special handling for it 
+			 */	
+			if (constant->constisnull == true)
 			{
 				result = true;
 			}
@@ -1332,7 +1357,7 @@ has_correlation_in_funcexpr_rte(List *rtable)
 	{
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc_rte);
 
-		if (NULL != rte->funcexpr && contain_vars_of_level_or_above(rte->funcexpr, 1))
+		if (rte->functions  && contain_vars_of_level_or_above((Node *) rte->functions, 1))
 		{
 			return true;
 		}

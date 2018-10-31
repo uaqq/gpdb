@@ -3,12 +3,12 @@
  * ipci.c
  *	  POSTGRES inter-process communication initialization code.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/ipc/ipci.c,v 1.104 2010/02/16 22:34:50 tgl Exp $
+ *	  src/backend/storage/ipc/ipci.c
  *
  *-------------------------------------------------------------------------
  */
@@ -30,15 +30,19 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
+#include "postmaster/bgworker_internals.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
-#include "postmaster/seqserver.h"
+#include "replication/slot.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
 #include "storage/pmsignal.h"
+#include "storage/predicate.h"
+#include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
@@ -47,6 +51,7 @@
 #include "utils/resource_manager.h"
 #include "utils/faultinjector.h"
 #include "utils/sharedsnapshot.h"
+#include "utils/gpexpand.h"
 
 #include "libpq-fe.h"
 #include "libpq-int.h"
@@ -72,7 +77,7 @@ static bool addin_request_allowed = true;
  *		a loadable module.
  *
  * This is only useful if called from the _PG_init hook of a library that
- * is loaded into the postmaster via shared_preload_libraries.	Once
+ * is loaded into the postmaster via shared_preload_libraries.  Once
  * shared memory has been allocated, calls will be ignored.  (We could
  * raise an error, but it seems better to make it a no-op, so that
  * libraries containing such calls can be reloaded if needed.)
@@ -102,11 +107,13 @@ RequestAddinShmemSpace(Size size)
  * This is a bit code-wasteful and could be cleaned up.)
  *
  * If "makePrivate" is true then we only need private memory, not shared
- * memory.	This is true for a standalone backend, false for a postmaster.
+ * memory.  This is true for a standalone backend, false for a postmaster.
  */
 void
 CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 {
+	PGShmemHeader *shim = NULL;
+
 	if (!IsUnderPostmaster)
 	{
 		PGShmemHeader *seghdr;
@@ -123,10 +130,12 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		 * need to be so careful during the actual allocation phase.
 		 */
 		size = 150000;
+		size = add_size(size, SpinlockSemaSize());
 		size = add_size(size, hash_estimate_size(SHMEM_INDEX_SIZE,
 												 sizeof(ShmemIndexEnt)));
 		size = add_size(size, BufferShmemSize());
 		size = add_size(size, LockShmemSize());
+		size = add_size(size, PredicateLockShmemSize());
 		size = add_size(size, workfile_mgr_shmem_size());
 		if (Gp_role == GP_ROLE_DISPATCH)
 			size = add_size(size, AppendOnlyWriterShmemSize());
@@ -145,6 +154,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, CLOGShmemSize());
 		size = add_size(size, SUBTRANSShmemSize());
 		size = add_size(size, TwoPhaseShmemSize());
+		size = add_size(size, BackgroundWorkerShmemSize());
 		size = add_size(size, MultiXactShmemSize());
 		size = add_size(size, LWLockShmemSize());
 		size = add_size(size, ProcArrayShmemSize());
@@ -152,7 +162,9 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, SInvalShmemSize());
 		size = add_size(size, PMSignalShmemSize());
 		size = add_size(size, ProcSignalShmemSize());
+		size = add_size(size, CheckpointerShmemSize());
 		size = add_size(size, AutoVacuumShmemSize());
+		size = add_size(size, ReplicationSlotsShmemSize());
 		size = add_size(size, WalSndShmemSize());
 		size = add_size(size, WalRcvShmemSize());
 		size = add_size(size, BTreeShmemSize());
@@ -165,7 +177,6 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, SharedSnapshotShmemSize());
 		size = add_size(size, FtsShmemSize());
 		size = add_size(size, tmShmemSize());
-		size = add_size(size, SeqServerShmemSize());
 		size = add_size(size, CheckpointerShmemSize());
 		size = add_size(size, CancelBackendMsgShmemSize());
 
@@ -190,10 +201,15 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		/* size of Instrumentation slots */
 		size = add_size(size, InstrShmemSize());
 
+		/* size of expand version */
+		size = add_size(size, GpExpandVersionShmemSize());
+
+		elog(DEBUG3, "invoking IpcMemoryCreate(size=%zu)", size);
+
 		/*
 		 * Create the shmem segment
 		 */
-		seghdr = PGSharedMemoryCreate(size, makePrivate, port);
+		seghdr = PGSharedMemoryCreate(size, makePrivate, port, &shim);
 
 		InitShmemAccess(seghdr);
 
@@ -231,8 +247,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	 * Now initialize LWLocks, which do shared memory allocation and are
 	 * needed for InitShmemIndex.
 	 */
-	if (!IsUnderPostmaster)
-		CreateLWLocks();
+	CreateLWLocks();
 
 	/*
 	 * Set up shmem.c index hashtable
@@ -246,7 +261,6 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	CLOGShmemInit();
 	DistributedLog_ShmemInit();
 	SUBTRANSShmemInit();
-	TwoPhaseShmemInit();
 	MultiXactShmemInit();
     FtsShmemInit();
     tmShmemInit();
@@ -256,6 +270,11 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	 * Set up lock manager
 	 */
 	InitLocks();
+
+	/*
+	 * Set up predicate lock manager
+	 */
+	InitPredicateLocks();
 
 	/*
 	 * Set up append only writer
@@ -291,6 +310,8 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	 *		 know who we are.  
 	 */
 	CreateSharedSnapshotArray();
+	TwoPhaseShmemInit();
+	BackgroundWorkerShmemInit();
 
 	/*
 	 * Set up shared-inval messaging
@@ -303,10 +324,10 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	PMSignalShmemInit();
 	ProcSignalShmemInit();
 	CheckpointerShmemInit();
+	AutoVacuumShmemInit();
+	ReplicationSlotsShmemInit();
 	WalSndShmemInit();
 	WalRcvShmemInit();
-	AutoVacuumShmemInit();
-	SeqServerShmemInit();
 
 #ifdef FAULT_INJECTOR
 	FaultInjector_ShmemInit();
@@ -327,6 +348,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	if (!IsUnderPostmaster)
 		InstrShmemInit();
 
+	GpExpandVersionShmemInit();
 #ifdef EXEC_BACKEND
 
 	/*
@@ -338,6 +360,10 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 
 	if (gp_enable_resqueue_priority)
 		BackoffStateInit();
+
+	/* Initialize dynamic shared memory facilities. */
+	if (!IsUnderPostmaster)
+		dsm_postmaster_startup(shim);
 
 	/*
 	 * Now give loadable modules a chance to set up their shmem allocations

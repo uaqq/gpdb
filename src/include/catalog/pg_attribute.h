@@ -7,10 +7,10 @@
  *
  * Portions Copyright (c) 2006-2010, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_attribute.h,v 1.158 2010/01/22 16:40:19 rhaas Exp $
+ * src/include/catalog/pg_attribute.h
  *
  * NOTES
  *	  the genbki.pl script reads this file and generates .bki
@@ -56,13 +56,13 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS BKI_ROWTYPE_OID(75) BK
 	 * that no value has been explicitly set for this column, so ANALYZE
 	 * should use the default setting.
 	 */
-	int4		attstattarget;
+	int32		attstattarget;
 
 	/*
 	 * attlen is a copy of the typlen field from pg_type for this attribute.
 	 * See atttypid comments above.
 	 */
-	int2		attlen;
+	int16		attlen;
 
 	/*
 	 * attnum is the "attribute number" for the attribute:	A value that
@@ -77,13 +77,13 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS BKI_ROWTYPE_OID(75) BK
 	 *
 	 * Note that (attnum - 1) is often used as the index to an array.
 	 */
-	int2		attnum;
+	int16		attnum;
 
 	/*
 	 * attndims is the declared number of dimensions, if an array type,
 	 * otherwise zero.
 	 */
-	int4		attndims;
+	int32		attndims;
 
 	/*
 	 * fastgetattr() uses attcacheoff to cache byte offsets of attributes in
@@ -92,7 +92,7 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS BKI_ROWTYPE_OID(75) BK
 	 * descriptor, we may then update attcacheoff in the copies. This speeds
 	 * up the attribute walking process.
 	 */
-	int4		attcacheoff;
+	int32		attcacheoff;
 
 	/*
 	 * atttypmod records type-specific data supplied at table creation time
@@ -100,7 +100,7 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS BKI_ROWTYPE_OID(75) BK
 	 * type-specific input and output functions as the third argument. The
 	 * value will generally be -1 for types that do not need typmod.
 	 */
-	int4		atttypmod;
+	int32		atttypmod;
 
 	/*
 	 * attbyval is a copy of the typbyval field from pg_type for this
@@ -142,19 +142,23 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS BKI_ROWTYPE_OID(75) BK
 	bool		attislocal;
 
 	/* Number of times inherited from direct parent relation(s) */
-	int4		attinhcount;
+	int32		attinhcount;
 
-	/*
-	 * VARIABLE LENGTH FIELDS start here.  These fields may be NULL, too.
-	 *
-	 * NOTE: the following fields are not present in tuple descriptors!
-	 */
+	/* attribute's collation */
+	Oid			attcollation;
+
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	/* NOTE: The following fields are not present in tuple descriptors. */
 
 	/* Column-level access permissions */
 	aclitem		attacl[1];
 
 	/* Column-level options */
 	text		attoptions[1];
+
+	/* Column-level FDW options */
+	text		attfdwoptions[1];
+#endif
 } FormData_pg_attribute;
 
 /* GPDB added foreign key definitions for gpcheckcat. */
@@ -163,12 +167,12 @@ FOREIGN_KEY(atttypid REFERENCES pg_type(oid));
 
 /*
  * ATTRIBUTE_FIXED_PART_SIZE is the size of the fixed-layout,
- * guaranteed-not-null part of a pg_attribute row.	This is in fact as much
+ * guaranteed-not-null part of a pg_attribute row.  This is in fact as much
  * of the row as gets copied into tuple descriptors, so don't expect you
- * can access fields beyond attinhcount except in a real tuple!
+ * can access fields beyond attcollation except in a real tuple!
  */
 #define ATTRIBUTE_FIXED_PART_SIZE \
-	(offsetof(FormData_pg_attribute,attinhcount) + sizeof(int4))
+	(offsetof(FormData_pg_attribute,attcollation) + sizeof(Oid))
 
 /* ----------------
  *		Form_pg_attribute corresponds to a pointer to a tuple with
@@ -182,7 +186,7 @@ typedef FormData_pg_attribute *Form_pg_attribute;
  * ----------------
  */
 
-#define Natts_pg_attribute				19
+#define Natts_pg_attribute				21
 #define Anum_pg_attribute_attrelid		1
 #define Anum_pg_attribute_attname		2
 #define Anum_pg_attribute_atttypid		3
@@ -200,8 +204,10 @@ typedef FormData_pg_attribute *Form_pg_attribute;
 #define Anum_pg_attribute_attisdropped	15
 #define Anum_pg_attribute_attislocal	16
 #define Anum_pg_attribute_attinhcount	17
-#define Anum_pg_attribute_attacl		18
-#define Anum_pg_attribute_attoptions	19
+#define Anum_pg_attribute_attcollation	18
+#define Anum_pg_attribute_attacl		19
+#define Anum_pg_attribute_attoptions	20
+#define Anum_pg_attribute_attfdwoptions 21
 
 
 /* ----------------

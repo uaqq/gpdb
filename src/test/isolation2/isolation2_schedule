@@ -1,4 +1,25 @@
+# test update hash col under utility mode
+test: update_hash_col_utilitymode
+
+# Tests on global deadlock detector
+test: select_for_update
+test: gdd/prepare
+test: gdd/dist-deadlock-01 gdd/dist-deadlock-04 gdd/dist-deadlock-05 gdd/dist-deadlock-06 gdd/dist-deadlock-07 gdd/dist-deadlock-102 gdd/dist-deadlock-103 gdd/dist-deadlock-104 gdd/dist-deadlock-106 gdd/non-lock-105
+# until we can improve below flaky case please keep it disabled
+ignore: gdd/non-lock-107
+# keep this in a separate group
+test: gdd/avoid-qd-deadlock
+test: gdd/prepare-for-local
+test: gdd/local-deadlock-03
+
 test: pg_terminate_backend deadlock_under_entry_db_singleton starve_case pg_views_concurrent_drop alter_blocks_for_update_and_viceversa drop_rename reader_waits_for_lock resource_queue
+
+# this case contains fault injection, must be put in a separate test group
+test: terminate_in_gang_creation
+
+# below case will cause failures on catalog changes,
+# please keep it in a separate test group
+test: gpexpand_catalog_lock
 
 test: reindex
 test: reindex_gpfastsequence
@@ -6,9 +27,14 @@ test: commit_transaction_block_checkpoint
 test: instr_in_shmem_setup
 test: instr_in_shmem_terminate
 test: vacuum_recently_dead_tuple_due_to_distributed_snapshot
+test: invalidated_toast_index
+test: distributed_snapshot
+test: gp_collation
+test: ao_upgrade
 
 test: setup
 # Tests on Append-Optimized tables (row-oriented).
+test: concurrent_index_creation_should_not_deadlock
 test: uao/alter_while_vacuum_row uao/alter_while_vacuum2_row
 test: uao/compaction_full_stats_row
 test: uao/compaction_utility_row
@@ -52,6 +78,8 @@ test: uao/vacuum_self_serializable3_row
 test: uao/vacuum_while_insert_row
 test: uao/vacuum_while_vacuum_row
 test: uao/vacuum_cleanup_row
+test: uao/insert_should_not_use_awaiting_drop_row
+test: reorganize_after_ao_vacuum_skip_drop truncate_after_ao_vacuum_skip_drop mark_all_aoseg_await_drop
 
 # Tests on Append-Optimized tables (column-oriented).
 test: uao/alter_while_vacuum_column uao/alter_while_vacuum2_column
@@ -97,14 +125,17 @@ test: uao/vacuum_self_serializable3_column
 test: uao/vacuum_while_insert_column
 test: uao/vacuum_while_vacuum_column
 test: uao/vacuum_cleanup_column
+test: uao/insert_should_not_use_awaiting_drop_column
 test: add_column_after_vacuum_skip_drop_column
 test: vacuum_after_vacuum_skip_drop_column
 
 # Tests for FTS
+test: fts_errors
 test: segwalrep/commit_blocking
 test: segwalrep/fts_unblock_primary
 test: segwalrep/mirror_promotion
 test: segwalrep/cancel_commit_pending_replication
+test: segwalrep/twophase_tolerance_with_mirror_promotion
 
 # Tests for crash recovery
 test: crash_recovery
@@ -128,6 +159,9 @@ test: reindex/reindextable_while_reindex_idx_ao_bitmap reindex/reindextable_whil
 test: reindex/serializable_reindex_with_drop_column_ao_part reindex/serializable_reindex_with_drop_column_heap
 test: reindex/serializable_reindex_with_drop_column_part_heap
 test: reindex/serializable_reindex_with_drop_index_ao reindex/serializable_reindex_with_drop_index_heap
-test: reindex/serializable_reindex_with_insert_heap
-test: reindex/serializable_reindex_with_insert_part_heap reindex/vacuum_anal_while_reindex_ao_btree
+test: reindex/repeatable_read_reindex_with_insert_heap
+test: reindex/repeatable_read_reindex_with_insert_part_heap reindex/vacuum_anal_while_reindex_ao_btree
 test: reindex/vacuum_while_reindex_ao_bitmap reindex/vacuum_while_reindex_heap_btree reindex/vacuum_while_reindex_heap_btree_toast
+
+# Cancel test
+test: cancel_plpython

@@ -1,6 +1,8 @@
 /*
- * $PostgreSQL: pgsql/contrib/btree_gist/btree_interval.c,v 1.14 2010/02/26 02:00:31 momjian Exp $
+ * contrib/btree_gist/btree_interval.c
  */
+#include "postgres.h"
+
 #include "btree_gist.h"
 #include "btree_utils_num.h"
 #include "utils/timestamp.h"
@@ -20,16 +22,9 @@ PG_FUNCTION_INFO_V1(gbt_intv_decompress);
 PG_FUNCTION_INFO_V1(gbt_intv_union);
 PG_FUNCTION_INFO_V1(gbt_intv_picksplit);
 PG_FUNCTION_INFO_V1(gbt_intv_consistent);
+PG_FUNCTION_INFO_V1(gbt_intv_distance);
 PG_FUNCTION_INFO_V1(gbt_intv_penalty);
 PG_FUNCTION_INFO_V1(gbt_intv_same);
-
-Datum		gbt_intv_compress(PG_FUNCTION_ARGS);
-Datum		gbt_intv_decompress(PG_FUNCTION_ARGS);
-Datum		gbt_intv_union(PG_FUNCTION_ARGS);
-Datum		gbt_intv_picksplit(PG_FUNCTION_ARGS);
-Datum		gbt_intv_consistent(PG_FUNCTION_ARGS);
-Datum		gbt_intv_penalty(PG_FUNCTION_ARGS);
-Datum		gbt_intv_same(PG_FUNCTION_ARGS);
 
 
 static bool
@@ -65,8 +60,8 @@ gbt_intvlt(const void *a, const void *b)
 static int
 gbt_intvkey_cmp(const void *a, const void *b)
 {
-	intvKEY    *ia = (intvKEY *) (((Nsrt *) a)->t);
-	intvKEY    *ib = (intvKEY *) (((Nsrt *) b)->t);
+	intvKEY    *ia = (intvKEY *) (((const Nsrt *) a)->t);
+	intvKEY    *ib = (intvKEY *) (((const Nsrt *) b)->t);
 	int			res;
 
 	res = DatumGetInt32(DirectFunctionCall2(interval_cmp, IntervalPGetDatum(&ia->lower), IntervalPGetDatum(&ib->lower)));
@@ -83,10 +78,18 @@ intr2num(const Interval *i)
 	return INTERVAL_TO_SEC(i);
 }
 
+static float8
+gbt_intv_dist(const void *a, const void *b)
+{
+	return (float8) Abs(intr2num((const Interval *) a) - intr2num((const Interval *) b));
+}
+
 /*
  * INTERVALSIZE should be the actual size-on-disk of an Interval, as shown
- * in pg_type.	This might be less than sizeof(Interval) if the compiler
- * insists on adding alignment padding at the end of the struct.
+ * in pg_type.  This might be less than sizeof(Interval) if the compiler
+ * insists on adding alignment padding at the end of the struct.  (Note:
+ * this concern is obsolete with the current definition of Interval, but
+ * was real before a separate "day" field was added to it.)
  */
 #define INTERVALSIZE 16
 
@@ -94,13 +97,41 @@ static const gbtree_ninfo tinfo =
 {
 	gbt_t_intv,
 	sizeof(Interval),
+	32,							/* sizeof(gbtreekey32) */
 	gbt_intvgt,
 	gbt_intvge,
 	gbt_intveq,
 	gbt_intvle,
 	gbt_intvlt,
-	gbt_intvkey_cmp
+	gbt_intvkey_cmp,
+	gbt_intv_dist
 };
+
+
+Interval *
+abs_interval(Interval *a)
+{
+	static Interval zero = {0, 0, 0};
+
+	if (DatumGetBool(DirectFunctionCall2(interval_lt,
+										 IntervalPGetDatum(a),
+										 IntervalPGetDatum(&zero))))
+		a = DatumGetIntervalP(DirectFunctionCall1(interval_um,
+												  IntervalPGetDatum(a)));
+
+	return a;
+}
+
+PG_FUNCTION_INFO_V1(interval_dist);
+Datum
+interval_dist(PG_FUNCTION_ARGS)
+{
+	Datum		diff = DirectFunctionCall2(interval_mi,
+										   PG_GETARG_DATUM(0),
+										   PG_GETARG_DATUM(1));
+
+	PG_RETURN_INTERVAL_P(abs_interval(DatumGetIntervalP(diff)));
+}
 
 
 /**************************************************
@@ -186,6 +217,25 @@ gbt_intv_consistent(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(
 				   gbt_num_consistent(&key, (void *) query, &strategy, GIST_LEAF(entry), &tinfo)
+		);
+}
+
+
+Datum
+gbt_intv_distance(PG_FUNCTION_ARGS)
+{
+	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+	Interval   *query = PG_GETARG_INTERVAL_P(1);
+
+	/* Oid		subtype = PG_GETARG_OID(3); */
+	intvKEY    *kkk = (intvKEY *) DatumGetPointer(entry->key);
+	GBT_NUMKEY_R key;
+
+	key.lower = (GBT_NUMKEY *) &kkk->lower;
+	key.upper = (GBT_NUMKEY *) &kkk->upper;
+
+	PG_RETURN_FLOAT8(
+			 gbt_num_distance(&key, (void *) query, GIST_LEAF(entry), &tinfo)
 		);
 }
 

@@ -5,11 +5,11 @@
  * to contain some useful information. Mechanism differs wildly across
  * platforms.
  *
- * $PostgreSQL: pgsql/src/backend/utils/misc/ps_status.c,v 1.42 2010/07/06 19:18:59 momjian Exp $
+ * src/backend/utils/misc/ps_status.c
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Copyright (c) 2000-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  * various details abducted from various places
  *--------------------------------------------------------------------
  */
@@ -32,7 +32,7 @@
 #include "miscadmin.h"
 #include "utils/ps_status.h"
 
-#include "cdb/cdbvars.h"        /* Gp_role, Gp_segment, currentSliceId */
+#include "cdb/cdbvars.h"        /* Gp_role, GpIdentity.segindex, currentSliceId */
 
 extern char **environ;
 extern int PostPortNumber;
@@ -358,8 +358,8 @@ set_ps_display(const char *activity, bool force)
 
 	/* Which segment is accessed by this qExec? */
 	if (Gp_role == GP_ROLE_EXECUTE &&
-		Gp_segment >= -1 && ep - cp > 0)
-		cp += snprintf(cp, ep - cp, "seg%d ", Gp_segment);
+		GpIdentity.segindex >= -1 && ep - cp > 0)
+		cp += snprintf(cp, ep - cp, "seg%d ", GpIdentity.segindex);
 
 	/* Add count of commands received from client session. */
 	if (gp_command_count > 0 && ep - cp > 0)
@@ -461,7 +461,7 @@ get_ps_display_from_position(size_t pos, int *displen)
 
 /*
  * Returns what's currently in the ps display, in case someone needs
- * it.	Note that only the activity part is returned.  On some platforms
+ * it.  Note that only the activity part is returned.  On some platforms
  * the string will not be null-terminated, so return the effective
  * length into *displen.
  */

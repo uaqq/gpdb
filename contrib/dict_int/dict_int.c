@@ -3,17 +3,16 @@
  * dict_int.c
  *	  Text search dictionary for integers
  *
- * Copyright (c) 2007-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/contrib/dict_int/dict_int.c,v 1.6 2010/01/02 16:57:32 momjian Exp $
+ *	  contrib/dict_int/dict_int.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "commands/defrem.h"
-#include "fmgr.h"
 #include "tsearch/ts_public.h"
 
 PG_MODULE_MAGIC;
@@ -27,10 +26,7 @@ typedef struct
 
 
 PG_FUNCTION_INFO_V1(dintdict_init);
-Datum		dintdict_init(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(dintdict_lexize);
-Datum		dintdict_lexize(PG_FUNCTION_ARGS);
 
 Datum
 dintdict_init(PG_FUNCTION_ARGS)

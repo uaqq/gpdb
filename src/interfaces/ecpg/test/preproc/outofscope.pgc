@@ -111,13 +111,16 @@ main (void)
 
 	close_cur1();
 
+	free(myvar);
+	free(mynullvar);
+
 	strcpy(msg, "drop");
 	exec sql drop table a1;
 
 	strcpy(msg, "commit");
 	exec sql commit;
 
-	strcpy(msg, "disconnect"); 
+	strcpy(msg, "disconnect");
 	exec sql disconnect;
 
 	return (0);

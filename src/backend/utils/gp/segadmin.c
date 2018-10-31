@@ -18,7 +18,6 @@
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 
-#include "access/xlog.h"
 #include "catalog/gp_segment_config.h"
 #include "catalog/pg_proc.h"
 #include "catalog/indexing.h"
@@ -26,6 +25,7 @@
 #include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
 #include "cdb/cdbfts.h"
+#include "postmaster/startup.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 
@@ -104,7 +104,7 @@ get_maxdbid()
 	HeapTuple	tuple;
 	SysScanDesc sscan;
 
-	sscan = systable_beginscan(rel, InvalidOid, false, SnapshotNow, 0, NULL);
+	sscan = systable_beginscan(rel, InvalidOid, false, NULL, 0, NULL);
 	while ((tuple = systable_getnext(sscan)) != NULL)
 	{
 		dbid = Max(dbid,
@@ -145,7 +145,7 @@ get_availableDbId()
 	HeapTuple	tuple;
 	SysScanDesc sscan;
 
-	sscan = systable_beginscan(rel, InvalidOid, false, SnapshotNow, 0, NULL);
+	sscan = systable_beginscan(rel, InvalidOid, false, NULL, 0, NULL);
 	while ((tuple = systable_getnext(sscan)) != NULL)
 	{
 		int32		dbid = (int32) ((Form_gp_segment_configuration) GETSTRUCT(tuple))->dbid;
@@ -184,7 +184,7 @@ get_maxcontentid()
 	HeapTuple	tuple;
 	SysScanDesc sscan;
 
-	sscan = systable_beginscan(rel, InvalidOid, false, SnapshotNow, 0, NULL);
+	sscan = systable_beginscan(rel, InvalidOid, false, NULL, 0, NULL);
 	while ((tuple = systable_getnext(sscan)) != NULL)
 	{
 		contentid = Max(contentid,
@@ -207,7 +207,7 @@ mirroring_sanity_check(int flags, const char *func)
 		if (GpIdentity.dbid == UNINITIALIZED_GP_IDENTITY_VALUE)
 			elog(ERROR, "%s requires valid GpIdentity dbid", func);
 
-		if (GpIdentity.segindex != MASTER_CONTENT_ID)
+		if (!IS_QUERY_DISPATCHER())
 			elog(ERROR, "%s must be run on the master", func);
 	}
 
@@ -234,7 +234,7 @@ mirroring_sanity_check(int flags, const char *func)
 		if (GpIdentity.dbid == UNINITIALIZED_GP_IDENTITY_VALUE)
 			elog(ERROR, "%s requires valid GpIdentity dbid", func);
 
-		if (GpIdentity.segindex == MASTER_CONTENT_ID)
+		if (IS_QUERY_DISPATCHER())
 			elog(ERROR, "%s cannot be run on the master", func);
 	}
 
@@ -318,7 +318,7 @@ remove_segment_config(int16 dbid)
 				Int16GetDatum(dbid));
 
 	sscan = systable_beginscan(rel, GpSegmentConfigDbidIndexId, true,
-							   SnapshotNow, 1, &scankey);
+							   NULL, 1, &scankey);
 	while ((tuple = systable_getnext(sscan)) != NULL)
 	{
 		simple_heap_delete(rel, &tuple->t_self);
@@ -326,7 +326,7 @@ remove_segment_config(int16 dbid)
 	}
 	systable_endscan(sscan);
 
-	Insist(numDel > 0);
+	Assert(numDel > 0);
 
 	heap_close(rel, NoLock);
 }
@@ -737,7 +737,7 @@ segment_config_activate_standby(int16 standbydbid, int16 newdbid)
 				BTEqualStrategyNumber, F_INT2EQ,
 				Int16GetDatum(newdbid));
 	sscan = systable_beginscan(rel, GpSegmentConfigDbidIndexId, true,
-							   SnapshotNow, 1, &scankey);
+							   NULL, 1, &scankey);
 	while ((tuple = systable_getnext(sscan)) != NULL)
 	{
 		simple_heap_delete(rel, &tuple->t_self);
@@ -754,7 +754,7 @@ segment_config_activate_standby(int16 standbydbid, int16 newdbid)
 				BTEqualStrategyNumber, F_INT2EQ,
 				Int16GetDatum(standbydbid));
 	sscan = systable_beginscan(rel, GpSegmentConfigDbidIndexId, true,
-							   SnapshotNow, 1, &scankey);
+							   NULL, 1, &scankey);
 
 	tuple = systable_getnext(sscan);
 

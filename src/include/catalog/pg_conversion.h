@@ -5,10 +5,10 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_conversion.h,v 1.24 2010/01/05 01:06:56 tgl Exp $
+ * src/include/catalog/pg_conversion.h
  *
  * NOTES
  *	  the genbki.pl script reads this file and generates .bki
@@ -42,8 +42,8 @@ CATALOG(pg_conversion,2607)
 	NameData	conname;
 	Oid			connamespace;
 	Oid			conowner;
-	int4		conforencoding;
-	int4		contoencoding;
+	int32		conforencoding;
+	int32		contoencoding;
 	regproc		conproc;
 	bool		condefault;
 } FormData_pg_conversion;

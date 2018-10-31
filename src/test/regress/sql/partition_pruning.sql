@@ -124,6 +124,10 @@ PREPARE prep_prune AS select * from pt_lt_tab WHERE col2 = stabletestfunc();
 -- The plan should only scan one partition, where col2 = 10.
 EXPLAIN EXECUTE prep_prune;
 
+-- Also test that Params are const-evaluated.
+PREPARE prep_prune_param AS select * from pt_lt_tab WHERE col2 = $1;
+EXPLAIN EXECUTE prep_prune_param(10);
+
 
 -- @description B-tree single index key = non-partitioning key
 CREATE INDEX idx1 on pt_lt_tab(col1);
@@ -563,20 +567,6 @@ select * from ds_2 where month_id::int in (200808, 200801, 2008010) order by mon
 -- cleanup
 drop table ds_2;
 
-Create or replace function reverse(text) Returns text as $BODY$
-DECLARE
-   Original alias for $1;
-   Reverse_str text;
-   I int4;
-BEGIN
-   Reverse_str :='';
-   For I in reverse length(original)..1 LOOP
-   Reverse_str := reverse_str || substr(original,I,1);
-END LOOP;
-RETURN reverse_str;
-END;
-$BODY$ LANGUAGE plpgsql IMMUTABLE;
-
 drop table if exists dnsdata cascade;
 
 CREATE TABLE dnsdata(dnsname text) DISTRIBUTED RANDOMLY;
@@ -612,7 +602,6 @@ order by dnsname;
 
 -- cleanup
 drop table dnsdata cascade;
-drop function reverse(text) cascade;
 
 
 Create or replace function ZeroFunc(int) Returns int as $BODY$

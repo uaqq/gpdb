@@ -9,12 +9,12 @@
  *
  * Portions Copyright (c) 2005-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execProcnode.c,v 1.70 2010/01/02 16:57:41 momjian Exp $
+ *	  src/backend/executor/execProcnode.c
  *
  *-------------------------------------------------------------------------
  */
@@ -35,6 +35,7 @@
  *		the number of employees in that department.  So we have the query:
  *
  *				select DEPT.no_emps, EMP.age
+ *				from DEPT, EMP
  *				where EMP.name = DEPT.mgr and
  *					  DEPT.name = "shoe"
  *
@@ -54,11 +55,11 @@
  *	  * ExecInitNode() notices that it is looking at a nest loop and
  *		as the code below demonstrates, it calls ExecInitNestLoop().
  *		Eventually this calls ExecInitNode() on the right and left subplans
- *		and so forth until the entire plan is initialized.	The result
+ *		and so forth until the entire plan is initialized.  The result
  *		of ExecInitNode() is a plan state tree built with the same structure
  *		as the underlying plan tree.
  *
- *	  * Then when ExecRun() is called, it calls ExecutePlan() which calls
+ *	  * Then when ExecutorRun() is called, it calls ExecutePlan() which calls
  *		ExecProcNode() repeatedly on the top node of the plan state tree.
  *		Each time this happens, ExecProcNode() will end up calling
  *		ExecNestLoop(), which calls ExecProcNode() on its subplans.
@@ -68,7 +69,7 @@
  *		form the tuples it returns.
  *
  *	  * Eventually ExecSeqScan() stops returning tuples and the nest
- *		loop join ends.  Lastly, ExecEnd() calls ExecEndNode() which
+ *		loop join ends.  Lastly, ExecutorEnd() calls ExecEndNode() which
  *		calls ExecEndNestLoop() which in turn calls ExecEndNode() on
  *		its subplans which result in ExecEndSeqScan().
  *
@@ -80,7 +81,6 @@
 #include "postgres.h"
 
 #include "executor/executor.h"
-#include "executor/instrument.h"
 #include "executor/nodeAgg.h"
 #include "executor/nodeAppend.h"
 #include "executor/nodeBitmapAnd.h"
@@ -89,17 +89,21 @@
 #include "executor/nodeDynamicBitmapIndexscan.h"
 #include "executor/nodeBitmapOr.h"
 #include "executor/nodeCtescan.h"
+#include "executor/nodeForeignscan.h"
 #include "executor/nodeFunctionscan.h"
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
+#include "executor/nodeIndexonlyscan.h"
 #include "executor/nodeIndexscan.h"
 #include "executor/nodeLimit.h"
 #include "executor/nodeLockRows.h"
 #include "executor/nodeMaterial.h"
+#include "executor/nodeMergeAppend.h"
 #include "executor/nodeMergejoin.h"
 #include "executor/nodeModifyTable.h"
 #include "executor/nodeNestloop.h"
 #include "executor/nodeRecursiveunion.h"
+#include "executor/nodeReshuffle.h"
 #include "executor/nodeResult.h"
 #include "executor/nodeSetOp.h"
 #include "executor/nodeSort.h"
@@ -155,6 +159,54 @@ static CdbVisitOpt planstate_walk_kids(PlanState *planstate,
 				 CdbVisitOpt (*walker) (PlanState *planstate, void *context),
 					void *context,
 					int flags);
+
+/*
+ * saveExecutorMemoryAccount saves an operator specific memory account
+ * into the PlanState of that operator
+ */
+static inline void
+saveExecutorMemoryAccount(PlanState *execState,
+						  MemoryAccountIdType curMemoryAccountId)
+{
+	Assert(curMemoryAccountId != MEMORY_OWNER_TYPE_Undefined);
+	Assert(MEMORY_OWNER_TYPE_Undefined == execState->memoryAccountId);
+	execState->memoryAccountId = curMemoryAccountId;
+}
+
+
+/*
+ * CREATE_EXECUTOR_MEMORY_ACCOUNT is a convenience macro to create a new
+ * operator specific memory account *if* the operator will be executed in
+ * the current slice, i.e., it is not part of some other slice (alien
+ * plan node). We assign a shared AlienExecutorMemoryAccount for plan nodes
+ * that will not be executed in current slice
+ *
+ * If the operator is a child of an 'X_NestedExecutor' account, the operator
+ * is also assigned to the 'X_NestedExecutor' account, unless the
+ * explain_memory_verbosity guc is set to 'debug' or above.
+ */
+#define CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, planNode, NodeType)    \
+	MemoryAccounting_CreateExecutorAccountWithType(                            \
+		(isAlienPlanNode), (planNode), MEMORY_OWNER_TYPE_Exec_##NodeType)
+
+static inline MemoryAccountIdType
+MemoryAccounting_CreateExecutorAccountWithType(bool isAlienPlanNode,
+											   Plan *node,
+											   MemoryOwnerType ownerType)
+{
+	if (isAlienPlanNode)
+		return MEMORY_OWNER_TYPE_Exec_AlienShared;
+	else
+		if (MemoryAccounting_IsUnderNestedExecutor() &&
+			explain_memory_verbosity < EXPLAIN_MEMORY_VERBOSITY_DEBUG)
+			return MemoryAccounting_GetOrCreateNestedExecutorAccount();
+		else
+		{
+			long maxLimit =
+				node->operatorMemKB == 0 ? work_mem : node->operatorMemKB;
+			return MemoryAccounting_CreateAccount(maxLimit, ownerType);
+		}
+}
 
 /*
  * setSubplanSliceId
@@ -216,7 +268,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 	int			origSliceIdInPlan = estate->currentSliceIdInPlan;
 	int			origExecutingSliceId = estate->currentExecutingSliceId;
 
-	MemoryAccountIdType curMemoryAccountId = MEMORY_OWNER_TYPE_Undefined;
+	MemoryAccountIdType curMemoryAccountId;
 
 
 	int localMotionId = LocallyExecutingSliceIndex(estate);
@@ -244,7 +296,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 	 * gathering stats from all slices.
 	 */
 	bool isAlienPlanNode = !((localMotionId == parentMotionId) || (parentMotionId == UNSET_SLICE_ID) ||
-			(nodeTag(node) == T_Motion && ((Motion*)node)->motionID == localMotionId) || Gp_segment == -1);
+							 (nodeTag(node) == T_Motion && ((Motion*)node)->motionID == localMotionId) || IS_QUERY_DISPATCHER());
 
 	/* We cannot have alien nodes if we are eliminating aliens */
 	AssertImply(estate->eliminateAliens, !isAlienPlanNode);
@@ -317,6 +369,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			END_MEMORY_ACCOUNT();
 			break;
 
+		case T_MergeAppend:
+			result = (PlanState *) ExecInitMergeAppend((MergeAppend *) node,
+													   estate, eflags);
+			break;
+
 		case T_RecursiveUnion:
 			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, Sequence);
 
@@ -355,10 +412,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			 * scan nodes
 			 */
 		case T_SeqScan:
-		case T_AppendOnlyScan:
-		case T_AOCSScan:
-		case T_TableScan:
-			/* SeqScan, AppendOnlyScan and AOCSScan are defunct */
+			/* SeqScan is defunct */
 			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, TableScan);
 
 			START_MEMORY_ACCOUNT(curMemoryAccountId);
@@ -409,6 +463,17 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			{
 			result = (PlanState *) ExecInitDynamicIndexScan((DynamicIndexScan *) node,
 													estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
+			break;
+
+		case T_IndexOnlyScan:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, IndexOnlyScan);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
+			result = (PlanState *) ExecInitIndexOnlyScan((IndexOnlyScan *) node,
+														 estate, eflags);
 			}
 			END_MEMORY_ACCOUNT();
 			break;
@@ -541,6 +606,17 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			{
 			result = (PlanState *) ExecInitWorkTableScan((WorkTableScan *) node,
 														 estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
+			break;
+
+		case T_ForeignScan:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, ForeignScan);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
+			result = (PlanState *) ExecInitForeignScan((ForeignScan *) node,
+														estate, eflags);
 			}
 			END_MEMORY_ACCOUNT();
 			break;
@@ -767,6 +843,16 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			}
 			END_MEMORY_ACCOUNT();
 			break;
+		case T_Reshuffle:
+			curMemoryAccountId = CREATE_EXECUTOR_MEMORY_ACCOUNT(isAlienPlanNode, node, Reshuffle);
+
+			START_MEMORY_ACCOUNT(curMemoryAccountId);
+			{
+				result = (PlanState *) ExecInitReshuffle((Reshuffle *) node,
+														 estate, eflags);
+			}
+			END_MEMORY_ACCOUNT();
+			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(node));
 			result = NULL;		/* keep compiler quiet */
@@ -808,7 +894,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 	if (result != NULL)
 	{
-		SAVE_EXECUTOR_MEMORY_ACCOUNT(result, curMemoryAccountId);
+		saveExecutorMemoryAccount(result, curMemoryAccountId);
 	}
 	return result;
 }
@@ -867,7 +953,7 @@ ExecProcNode(PlanState *node)
 {
 	TupleTableSlot *result = NULL;
 
-	START_MEMORY_ACCOUNT(node->plan->memoryAccountId);
+	START_MEMORY_ACCOUNT(node->memoryAccountId);
 	{
 
 	CHECK_FOR_INTERRUPTS();
@@ -882,13 +968,13 @@ ExecProcNode(PlanState *node)
 		return NULL;
 
 	if (node->plan)
-		TRACE_POSTGRESQL_EXECPROCNODE_ENTER(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+		TRACE_POSTGRESQL_EXECPROCNODE_ENTER(GpIdentity.segindex, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
 	if (node->chgParam != NULL) /* something changed */
-		ExecReScan(node, NULL); /* let ReScan handle this */
+		ExecReScan(node);		/* let ReScan handle this */
 
 	if (node->instrument)
-		INSTR_START_NODE(node->instrument);
+		InstrStartNode(node->instrument);
 
 	if(!node->fHadSentGpmon)
 		CheckSendPlanStateGpmonPkt(node);
@@ -916,6 +1002,10 @@ ExecProcNode(PlanState *node)
 
 		case T_AppendState:
 			result = ExecAppend((AppendState *) node);
+			break;
+
+		case T_MergeAppendState:
+			result = ExecMergeAppend((MergeAppendState *) node);
 			break;
 
 		case T_RecursiveUnionState:
@@ -951,6 +1041,10 @@ ExecProcNode(PlanState *node)
 
 		case T_DynamicIndexScanState:
 			result = ExecDynamicIndexScan((DynamicIndexScanState *) node);
+			break;
+
+		case T_IndexOnlyScanState:
+			result = ExecIndexOnlyScan((IndexOnlyScanState *) node);
 			break;
 
 			/* BitmapIndexScanState does not yield tuples */
@@ -993,6 +1087,10 @@ ExecProcNode(PlanState *node)
 
 		case T_WorkTableScanState:
 			result = ExecWorkTableScan((WorkTableScanState *) node);
+			break;
+
+		case T_ForeignScanState:
+			result = ExecForeignScan((ForeignScanState *) node);
 			break;
 
 			/*
@@ -1081,6 +1179,10 @@ ExecProcNode(PlanState *node)
 			result = ExecPartitionSelector((PartitionSelectorState *) node);
 			break;
 
+		case T_ReshuffleState:
+			result = ExecReshuffle((ReshuffleState *) node);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(node));
 			result = NULL;
@@ -1094,10 +1196,10 @@ ExecProcNode(PlanState *node)
 	}
 
 	if (node->instrument)
-		INSTR_STOP_NODE(node->instrument, TupIsNull(result) ? 0 : 1);
+		InstrStopNode(node->instrument, TupIsNull(result) ? 0 : 1);
 
 	if (node->plan)
-		TRACE_POSTGRESQL_EXECPROCNODE_EXIT(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+		TRACE_POSTGRESQL_EXECPROCNODE_EXIT(GpIdentity.segindex, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
 	/*
 	 * Eager free and squelch the subplans, unless it's a nested subplan.
@@ -1151,12 +1253,12 @@ MultiExecProcNode(PlanState *node)
 
 	Assert(NULL != node->plan);
 
-	START_MEMORY_ACCOUNT(node->plan->memoryAccountId);
+	START_MEMORY_ACCOUNT(node->memoryAccountId);
 {
-	TRACE_POSTGRESQL_EXECPROCNODE_ENTER(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+	TRACE_POSTGRESQL_EXECPROCNODE_ENTER(GpIdentity.segindex, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
 	if (node->chgParam != NULL) /* something changed */
-		ExecReScan(node, NULL); /* let ReScan handle this */
+		ExecReScan(node);		/* let ReScan handle this */
 
 	switch (nodeTag(node))
 	{
@@ -1190,7 +1292,7 @@ MultiExecProcNode(PlanState *node)
 			break;
 	}
 
-	TRACE_POSTGRESQL_EXECPROCNODE_EXIT(Gp_segment, currentSliceId, nodeTag(node), node->plan->plan_node_id);
+	TRACE_POSTGRESQL_EXECPROCNODE_EXIT(GpIdentity.segindex, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 }
 	END_MEMORY_ACCOUNT();
 	return result;
@@ -1307,7 +1409,7 @@ ExecUpdateTransportState(PlanState *node, ChunkTransportState * state)
  *		at 'node'.
  *
  *		After this operation, the query plan will not be able to be
- *		processed any further.	This should be called only after
+ *		processed any further.  This should be called only after
  *		the query plan has been fully executed.
  * ----------------------------------------------------------------
  */
@@ -1361,6 +1463,10 @@ ExecEndNode(PlanState *node)
 			ExecEndAppend((AppendState *) node);
 			break;
 
+		case T_MergeAppendState:
+			ExecEndMergeAppend((MergeAppendState *) node);
+			break;
+
 		case T_RecursiveUnionState:
 			ExecEndRecursiveUnion((RecursiveUnionState *) node);
 			break;
@@ -1381,9 +1487,7 @@ ExecEndNode(PlanState *node)
 			 * scan nodes
 			 */
 		case T_SeqScanState:
-		case T_AppendOnlyScanState:
-		case T_AOCSScanState:
-			insist_log(false, "SeqScan/AppendOnlyScan/AOCSScan are defunct");
+			elog(ERROR, "SeqScan is defunct");
 			break;
 
 		case T_TableScanState:
@@ -1404,6 +1508,10 @@ ExecEndNode(PlanState *node)
 
 		case T_ExternalScanState:
 			ExecEndExternalScan((ExternalScanState *) node);
+			break;
+
+		case T_IndexOnlyScanState:
+			ExecEndIndexOnlyScan((IndexOnlyScanState *) node);
 			break;
 
 		case T_BitmapIndexScanState:
@@ -1452,6 +1560,10 @@ ExecEndNode(PlanState *node)
 
 		case T_WorkTableScanState:
 			ExecEndWorkTableScan((WorkTableScanState *) node);
+			break;
+
+		case T_ForeignScanState:
+			ExecEndForeignScan((ForeignScanState *) node);
 			break;
 
 			/*
@@ -1540,6 +1652,10 @@ ExecEndNode(PlanState *node)
 			break;
 		case T_PartitionSelectorState:
 			ExecEndPartitionSelector((PartitionSelectorState *) node);
+			break;
+
+		case T_ReshuffleState:
+			ExecEndReshuffle((ReshuffleState *) node);
 			break;
 
 		default:
@@ -1811,7 +1927,8 @@ planstate_walk_kids(PlanState *planstate,
 			SubPlanState *sps = (SubPlanState *) lfirst(lc);
 			PlanState  *ips = sps->planstate;
 
-			Assert(ips);
+			if (!ips)
+				elog(ERROR, "subplan has no planstate");
 			if (v1 == CdbVisit_Walk)
 			{
 				v1 = planstate_walk_node_extended(ips, walker, context, flags);

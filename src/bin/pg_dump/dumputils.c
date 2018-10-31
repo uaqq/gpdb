@@ -5,10 +5,10 @@
  *	Lately it's also being used by psql and bin/scripts/ ...
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/bin/pg_dump/dumputils.c,v 1.56 2010/03/03 20:10:48 heikki Exp $
+ * src/bin/pg_dump/dumputils.c
  *
  *-------------------------------------------------------------------------
  */
@@ -21,6 +21,10 @@
 #include "parser/keywords.h"
 
 
+/* Globals from keywords.c */
+extern const ScanKeyword FEScanKeywords[];
+extern const int NumFEScanKeywords;
+
 #define supports_grant_options(version) ((version) >= 70400)
 
 static bool parseAclItem(const char *item, const char *type,
@@ -30,53 +34,24 @@ static bool parseAclItem(const char *item, const char *type,
 static char *copyAclUserName(PQExpBuffer output, char *input);
 static void AddAcl(PQExpBuffer aclbuf, const char *keyword,
 	   const char *subname);
+static PQExpBuffer defaultGetLocalPQExpBuffer(void);
 
-#ifdef WIN32
-static bool parallel_init_done = false;
-static DWORD tls_index;
-#endif
-
-void
-init_parallel_dump_utils(void)
-{
-#ifdef WIN32
-	if (!parallel_init_done)
-	{
-		tls_index = TlsAlloc();
-		parallel_init_done = true;
-	}
-#endif
-}
+/* Globals exported by this file */
+int			quote_all_identifiers = 0;
+PQExpBuffer (*getLocalPQExpBuffer) (void) = defaultGetLocalPQExpBuffer;
 
 /*
- *	Quotes input string if it's not a legitimate SQL identifier as-is.
+ * Returns a temporary PQExpBuffer, valid until the next call to the function.
+ * This is used by fmtId and fmtQualifiedId.
  *
- *	Note that the returned string must be used before calling fmtId again,
- *	since we re-use the same return buffer each time.  Non-reentrant but
- *	reduces memory leakage. (On Windows the memory leakage will be one buffer
- *	per thread, which is at least better than one per call).
+ * Non-reentrant and non-thread-safe but reduces memory leakage. You can
+ * replace this with a custom version by setting the getLocalPQExpBuffer
+ * function pointer.
  */
-const char *
-fmtId(const char *rawid)
+static PQExpBuffer
+defaultGetLocalPQExpBuffer(void)
 {
-	/*
-	 * The Tls code goes awry if we use a static var, so we provide for both
-	 * static and auto, and omit any use of the static var when using Tls.
-	 */
-	static PQExpBuffer s_id_return = NULL;
-	PQExpBuffer id_return;
-
-	const char *cp;
-	bool		need_quotes = false;
-
-#ifdef WIN32
-	if (parallel_init_done)
-		id_return = (PQExpBuffer) TlsGetValue(tls_index);		/* 0 when not set */
-	else
-		id_return = s_id_return;
-#else
-	id_return = s_id_return;
-#endif
+	static PQExpBuffer id_return = NULL;
 
 	if (id_return)				/* first time through? */
 	{
@@ -87,23 +62,33 @@ fmtId(const char *rawid)
 	{
 		/* new buffer */
 		id_return = createPQExpBuffer();
-#ifdef WIN32
-		if (parallel_init_done)
-			TlsSetValue(tls_index, id_return);
-		else
-			s_id_return = id_return;
-#else
-		s_id_return = id_return;
-#endif
-
 	}
+
+	return id_return;
+}
+
+/*
+ *	Quotes input string if it's not a legitimate SQL identifier as-is.
+ *
+ *	Note that the returned string must be used before calling fmtId again,
+ *	since we re-use the same return buffer each time.
+ */
+const char *
+fmtId(const char *rawid)
+{
+	PQExpBuffer id_return = getLocalPQExpBuffer();
+
+	const char *cp;
+	bool		need_quotes = false;
 
 	/*
 	 * These checks need to match the identifier production in scan.l. Don't
 	 * use islower() etc.
 	 */
+	if (quote_all_identifiers)
+		need_quotes = true;
 	/* slightly different rules for first character */
-	if (!((rawid[0] >= 'a' && rawid[0] <= 'z') || (rawid[0] == '_')))
+	else if (!((rawid[0] >= 'a' && rawid[0] <= 'z') || rawid[0] == '_'))
 		need_quotes = true;
 	else
 	{
@@ -131,8 +116,8 @@ fmtId(const char *rawid)
 		 * that's fine, since we already know we have all-lower-case.
 		 */
 		const ScanKeyword *keyword = ScanKeywordLookup(rawid,
-													   ScanKeywords,
-													   NumScanKeywords);
+													   FEScanKeywords,
+													   NumFEScanKeywords);
 
 		if (keyword != NULL && keyword->category != UNRESERVED_KEYWORD)
 			need_quotes = true;
@@ -163,6 +148,35 @@ fmtId(const char *rawid)
 	return id_return->data;
 }
 
+/*
+ * fmtQualifiedId - convert a qualified name to the proper format for
+ * the source database.
+ *
+ * Like fmtId, use the result before calling again.
+ *
+ * Since we call fmtId and it also uses getThreadLocalPQExpBuffer() we cannot
+ * use it until we're finished with calling fmtId().
+ */
+const char *
+fmtQualifiedId(int remoteVersion, const char *schema, const char *id)
+{
+	PQExpBuffer id_return;
+	PQExpBuffer lcl_pqexp = createPQExpBuffer();
+
+	/* Suppress schema name if fetching from pre-7.3 DB */
+	if (remoteVersion >= 70300 && schema && *schema)
+	{
+		appendPQExpBuffer(lcl_pqexp, "%s.", fmtId(schema));
+	}
+	appendPQExpBufferStr(lcl_pqexp, fmtId(id));
+
+	id_return = getLocalPQExpBuffer();
+
+	appendPQExpBufferStr(id_return, lcl_pqexp->data);
+	destroyPQExpBuffer(lcl_pqexp);
+
+	return id_return->data;
+}
 
 /*
  * Convert a string value to an SQL string literal and append it to
@@ -170,7 +184,7 @@ fmtId(const char *rawid)
  * standard_conforming_strings settings.
  *
  * This is essentially equivalent to libpq's PQescapeStringInternal,
- * except for the output buffer structure.	We need it in situations
+ * except for the output buffer structure.  We need it in situations
  * where we do not have a PGconn available.  Where we do,
  * appendStringLiteralConn is a better choice.
  */
@@ -345,7 +359,7 @@ appendByteaLiteral(PQExpBuffer buf, const unsigned char *str, size_t length,
 	/*
 	 * This implementation is hard-wired to produce hex-format output. We do
 	 * not know the server version the output will be loaded into, so making
-	 * an intelligent format choice is impossible.	It might be better to
+	 * an intelligent format choice is impossible.  It might be better to
 	 * always use the old escaped format.
 	 */
 	if (!enlargePQExpBuffer(buf, 2 * length + 5))
@@ -375,34 +389,11 @@ appendByteaLiteral(PQExpBuffer buf, const unsigned char *str, size_t length,
 
 
 /*
- * Convert backend's version string into a number.
- */
-int
-parse_version(const char *versionString)
-{
-	int			cnt;
-	int			vmaj,
-				vmin,
-				vrev;
-
-	cnt = sscanf(versionString, "%d.%d.%d", &vmaj, &vmin, &vrev);
-
-	if (cnt < 2)
-		return -1;
-
-	if (cnt == 2)
-		vrev = 0;
-
-	return (100 * vmaj + vmin) * 100 + vrev;
-}
-
-
-/*
  * Deconstruct the text representation of a 1-dimensional Postgres array
  * into individual items.
  *
  * On success, returns true and sets *itemarray and *nitems to describe
- * an array of individual strings.	On parse failure, returns false;
+ * an array of individual strings.  On parse failure, returns false;
  * *itemarray may exist or be NULL.
  *
  * NOTE: free'ing itemarray is sufficient to deallocate the working storage.
@@ -542,7 +533,7 @@ buildACLCommands(const char *name, const char *subname,
 	/*
 	 * At the end, these two will be pasted together to form the result. But
 	 * the owner privileges need to go before the other ones to keep the
-	 * dependencies valid.	In recent versions this is normally the case, but
+	 * dependencies valid.  In recent versions this is normally the case, but
 	 * in old versions they come after the PUBLIC privileges and that results
 	 * in problems if we need to run REVOKE on the owner privileges.
 	 */
@@ -635,7 +626,7 @@ buildACLCommands(const char *name, const char *subname,
 					appendPQExpBuffer(secondsql, "%sGRANT %s ON %s %s TO ",
 									  prefix, privs->data, type, name);
 					if (grantee->len == 0)
-						appendPQExpBuffer(secondsql, "PUBLIC;\n");
+						appendPQExpBufferStr(secondsql, "PUBLIC;\n");
 					else if (strncmp(grantee->data, "group ",
 									 strlen("group ")) == 0)
 						appendPQExpBuffer(secondsql, "GROUP %s;\n",
@@ -648,19 +639,19 @@ buildACLCommands(const char *name, const char *subname,
 					appendPQExpBuffer(secondsql, "%sGRANT %s ON %s %s TO ",
 									  prefix, privswgo->data, type, name);
 					if (grantee->len == 0)
-						appendPQExpBuffer(secondsql, "PUBLIC");
+						appendPQExpBufferStr(secondsql, "PUBLIC");
 					else if (strncmp(grantee->data, "group ",
 									 strlen("group ")) == 0)
 						appendPQExpBuffer(secondsql, "GROUP %s",
 									fmtId(grantee->data + strlen("group ")));
 					else
-						appendPQExpBuffer(secondsql, "%s", fmtId(grantee->data));
-					appendPQExpBuffer(secondsql, " WITH GRANT OPTION;\n");
+						appendPQExpBufferStr(secondsql, fmtId(grantee->data));
+					appendPQExpBufferStr(secondsql, " WITH GRANT OPTION;\n");
 				}
 
 				if (grantor->len > 0
 					&& (!owner || strcmp(owner, grantor->data) != 0))
-					appendPQExpBuffer(secondsql, "RESET SESSION AUTHORIZATION;\n");
+					appendPQExpBufferStr(secondsql, "RESET SESSION AUTHORIZATION;\n");
 			}
 		}
 	}
@@ -716,7 +707,7 @@ buildDefaultACLCommands(const char *type, const char *nspname,
 
 	/*
 	 * We incorporate the target role directly into the command, rather than
-	 * playing around with SET ROLE or anything like that.	This is so that a
+	 * playing around with SET ROLE or anything like that.  This is so that a
 	 * permissions error leads to nothing happening, rather than changing
 	 * default privileges for the wrong user.
 	 */
@@ -744,7 +735,7 @@ buildDefaultACLCommands(const char *type, const char *nspname,
  *
  * The returned grantee string will be the dequoted username or groupname
  * (preceded with "group " in the latter case).  The returned grantor is
- * the dequoted grantor name or empty.	Privilege characters are decoded
+ * the dequoted grantor name or empty.  Privilege characters are decoded
  * and split between privileges with grant option (privswgo) and without
  * (privs).
  *
@@ -771,7 +762,10 @@ parseAclItem(const char *item, const char *type,
 	/* user or group name is string up to = */
 	eqpos = copyAclUserName(grantee, buf);
 	if (*eqpos != '=')
+	{
+		free(buf);
 		return false;
+	}
 
 	/* grantor may be listed after / */
 	slpos = strchr(eqpos + 1, '/');
@@ -861,10 +855,15 @@ do { \
 	}
 	else if (strcmp(type, "TABLESPACE") == 0)
 		CONVERT_PRIV('C', "CREATE");
+	else if (strcmp(type, "TYPE") == 0 ||
+			 strcmp(type, "TYPES") == 0)
+		CONVERT_PRIV('U', "USAGE");
 	else if (strcmp(type, "FOREIGN DATA WRAPPER") == 0)
 		CONVERT_PRIV('U', "USAGE");
 	else if (strcmp(type, "FOREIGN SERVER") == 0)
 		CONVERT_PRIV('U', "USAGE");
+	else if (strcmp(type, "FOREIGN TABLE") == 0)
+		CONVERT_PRIV('r', "SELECT");
 	else if (strcmp(type, "LARGE OBJECT") == 0)
 	{
 		CONVERT_PRIV('r', "SELECT");
@@ -949,7 +948,7 @@ AddAcl(PQExpBuffer aclbuf, const char *keyword, const char *subname)
 {
 	if (aclbuf->len > 0)
 		appendPQExpBufferChar(aclbuf, ',');
-	appendPQExpBuffer(aclbuf, "%s", keyword);
+	appendPQExpBufferStr(aclbuf, keyword);
 	if (subname)
 		appendPQExpBuffer(aclbuf, "(%s)", subname);
 }
@@ -975,7 +974,7 @@ AddAcl(PQExpBuffer aclbuf, const char *keyword, const char *subname)
  * namevar: name of query variable to match against an object-name pattern.
  * altnamevar: NULL, or name of an alternative variable to match against name.
  * visibilityrule: clause to use if we want to restrict to visible objects
- * (for example, "pg_catalog.pg_table_is_visible(p.oid)").	Can be NULL.
+ * (for example, "pg_catalog.pg_table_is_visible(p.oid)").  Can be NULL.
  *
  * Formatting note: the text already present in buf should end with a newline.
  * The appended text, if any, will end with one too.
@@ -1022,7 +1021,7 @@ processSQLNamePattern(PGconn *conn, PQExpBuffer buf, const char *pattern,
 	 * last alternatives which is not what we want.
 	 *
 	 * Note: the result of this pass is the actual regexp pattern(s) we want
-	 * to execute.	Quoting/escaping into SQL literal format will be done
+	 * to execute.  Quoting/escaping into SQL literal format will be done
 	 * below using appendStringLiteralConn().
 	 */
 	appendPQExpBufferStr(&namebuf, "^(");
@@ -1256,60 +1255,137 @@ escape_fmtopts_string(const char *src)
 char *
 custom_fmtopts_string(const char *src)
 {
-		int			len = src ? strlen(src) : 0;
-		char	   *result = calloc(1, len * 2 + 2);
-		char	   *srcdup = src ? strdup(src) : NULL;
-		char	   *srcdup_start = srcdup;
-		char       *find_res = NULL;
-		int        last = 0;
+	int len = src ? strlen(src) : 0;
+	char *result = calloc(1, len * 2 + 2);
+	char *srcdup = src ? strdup(src) : NULL;
+	char *srcdup_start = srcdup;
+	char *find_res = NULL;
+	int last = 0;
 
-		if (!srcdup || !result)
+	if (!srcdup || !result)
+	{
+		if (result)
+			free(result);
+		if (srcdup)
+			free(srcdup);
+		return NULL;
+	}
+
+	while (srcdup)
+	{
+		/* find first word (a) */
+		find_res = strchr(srcdup, ' ');
+		if (!find_res)
+			break;
+		strncat(result, srcdup, (find_res - srcdup));
+		/* skip space */
+		srcdup = find_res + 1;
+		/* remove E if E' */
+		if ((strlen(srcdup) > 2) && (srcdup[0] == 'E') && (srcdup[1] == '\''))
+			srcdup++;
+		/* add " = " */
+		strncat(result, " = ", 3);
+		/* find second word (b) until second '
+		   find \' combinations and ignore them */
+		find_res = strchr(srcdup + 1, '\'');
+		while (find_res && (*(find_res - 1) == '\\') /* ignore \' */)
 		{
-			if (result)
-				free(result);
-			if (srcdup)
-				free(srcdup);
-			return NULL;
+			find_res = strchr(find_res + 1, '\'');
 		}
-
-		while (srcdup)
+		if (!find_res)
+			break;
+		strncat(result, srcdup, (find_res - srcdup + 1));
+		srcdup = find_res + 1;
+		/* skip space and add ',' */
+		if (srcdup && srcdup[0] == ' ')
 		{
-			/* find first word (a) */
-			find_res = strchr(srcdup, ' ');
-			if (!find_res)
-				break;
-			strncat(result, srcdup, (find_res - srcdup));
-			/* skip space */
-			srcdup = find_res + 1;
-			/* remove E if E' */
-			if((strlen(srcdup) > 2) && (srcdup[0] == 'E') && (srcdup[1] == '\''))
-				srcdup++;
-			/* add " = " */
-			strncat(result, " = ", 3);
-			/* find second word (b) until second '
-			   find \' combinations and ignore them */
-			find_res = strchr(srcdup + 1, '\'');
-			while (find_res && (*(find_res - 1) == '\\') /* ignore \' */)
-			{
-				find_res = strchr(find_res + 1, '\'');
-			}
-			if (!find_res)
-				break;
-			strncat(result, srcdup, (find_res - srcdup + 1));
-			srcdup = find_res + 1;
-			/* skip space and add ',' */
-			if (srcdup && srcdup[0] == ' ')
-			{
-				srcdup++;
-				strncat(result, ",", 1);
-			}
+			srcdup++;
+			strncat(result, ",", 1);
 		}
+	}
 
-		/* fix string - remove trailing ',' or '=' */
-		last = strlen(result)-1;
-		if(result[last] == ',' || result[last] == '=')
-			result[last]='\0';
+	/* fix string - remove trailing ',' or '=' */
+	last = strlen(result) - 1;
+	if (result[last] == ',' || result[last] == '=')
+		result[last] = '\0';
 
-		free(srcdup_start);
-		return result;
+	free(srcdup_start);
+	return result;
+}
+
+/*
+ * buildShSecLabelQuery
+ *
+ * Build a query to retrieve security labels for a shared object.
+ */
+void
+buildShSecLabelQuery(PGconn *conn, const char *catalog_name, uint32 objectId,
+					 PQExpBuffer sql)
+{
+	appendPQExpBuffer(sql,
+					  "SELECT provider, label FROM pg_catalog.pg_shseclabel "
+					  "WHERE classoid = '%s'::pg_catalog.regclass AND "
+					  "objoid = %u", catalog_name, objectId);
+}
+
+/*
+ * emitShSecLabels
+ *
+ * Format security label data retrieved by the query generated in
+ * buildShSecLabelQuery.
+ */
+void
+emitShSecLabels(PGconn *conn, PGresult *res, PQExpBuffer buffer,
+				const char *target, const char *objname)
+{
+	int			i;
+
+	for (i = 0; i < PQntuples(res); i++)
+	{
+		char	   *provider = PQgetvalue(res, i, 0);
+		char	   *label = PQgetvalue(res, i, 1);
+
+		/* must use fmtId result before calling it again */
+		appendPQExpBuffer(buffer,
+						  "SECURITY LABEL FOR %s ON %s",
+						  fmtId(provider), target);
+		appendPQExpBuffer(buffer,
+						  " %s IS ",
+						  fmtId(objname));
+		appendStringLiteralConn(buffer, label, conn);
+		appendPQExpBufferStr(buffer, ";\n");
+	}
+}
+
+
+void
+simple_string_list_append(SimpleStringList *list, const char *val)
+{
+	SimpleStringListCell *cell;
+
+	/* this calculation correctly accounts for the null trailing byte */
+	cell = (SimpleStringListCell *)
+		pg_malloc(sizeof(SimpleStringListCell) + strlen(val));
+
+	cell->next = NULL;
+	strcpy(cell->val, val);
+
+	if (list->tail)
+		list->tail->next = cell;
+	else
+		list->head = cell;
+	list->tail = cell;
+}
+
+bool
+simple_string_list_member(SimpleStringList *list, const char *val)
+{
+	SimpleStringListCell *cell;
+
+	for (cell = list->head; cell; cell = cell->next)
+	{
+		if (strcmp(cell->val, val) == 0)
+			return true;
+	}
+	return false;
 }

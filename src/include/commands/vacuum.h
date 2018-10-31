@@ -4,10 +4,10 @@
  *	  header file for postgres vacuum cleaner and statistics analyzer
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/commands/vacuum.h,v 1.89 2010/02/09 21:43:30 tgl Exp $
+ * src/include/commands/vacuum.h
  *
  *-------------------------------------------------------------------------
  */
@@ -23,15 +23,14 @@
 #include "utils/relcache.h"
 #include "utils/tqual.h"
 
-
 /*----------
  * ANALYZE builds one of these structs for each attribute (column) that is
- * to be analyzed.	The struct and subsidiary data are in anl_context,
+ * to be analyzed.  The struct and subsidiary data are in anl_context,
  * so they live until the end of the ANALYZE operation.
  *
  * The type-specific typanalyze function is passed a pointer to this struct
  * and must return TRUE to continue analysis, FALSE to skip analysis of this
- * column.	In the TRUE case it must set the compute_stats and minrows fields,
+ * column.  In the TRUE case it must set the compute_stats and minrows fields,
  * and can optionally set extra_data to pass additional info to compute_stats.
  * minrows is its request for the minimum number of sample rows to be gathered
  * (but note this request might not be honored, eg if there are fewer rows
@@ -51,6 +50,10 @@
  * the information to be stored in a pg_statistic row for the column.  Be
  * careful to allocate any pointed-to data in anl_context, which will NOT
  * be CurrentMemoryContext when compute_stats is called.
+ *
+ * Note: for the moment, all comparisons done for statistical purposes
+ * should use the database's default collation (DEFAULT_COLLATION_OID).
+ * This might change in some future release.
  *----------
  */
 typedef struct VacAttrStats *VacAttrStatsP;
@@ -58,14 +61,27 @@ typedef struct VacAttrStats *VacAttrStatsP;
 typedef Datum (*AnalyzeAttrFetchFunc) (VacAttrStatsP stats, int rownum,
 												   bool *isNull);
 
+typedef void (*AnalyzeAttrComputeStatsFunc) (VacAttrStatsP stats,
+											  AnalyzeAttrFetchFunc fetchfunc,
+														 int samplerows,
+														 double totalrows);
+
 typedef struct VacAttrStats
 {
 	/*
 	 * These fields are set up by the main ANALYZE code before invoking the
 	 * type-specific typanalyze function.
+	 *
+	 * Note: do not assume that the data being analyzed has the same datatype
+	 * shown in attr, ie do not trust attr->atttypid, attlen, etc.  This is
+	 * because some index opclasses store a different type than the underlying
+	 * column/expression.  Instead use attrtypid, attrtypmod, and attrtype for
+	 * information about the datatype being fed to the typanalyze function.
 	 */
 	Form_pg_attribute attr;		/* copy of pg_attribute row for column */
-	Form_pg_type attrtype;		/* copy of pg_type row for column */
+	Oid			attrtypid;		/* type of data being analyzed */
+	int32		attrtypmod;		/* typmod of data being analyzed */
+	Form_pg_type attrtype;		/* copy of pg_type row for attrtypid */
 	char		relstorage;		/* pg_class.relstorage for table */
 	MemoryContext anl_context;	/* where to save long-lived data */
 
@@ -73,10 +89,7 @@ typedef struct VacAttrStats
 	 * These fields must be filled in by the typanalyze routine, unless it
 	 * returns FALSE.
 	 */
-	void		(*compute_stats) (VacAttrStatsP stats,
-											  AnalyzeAttrFetchFunc fetchfunc,
-											  int samplerows,
-											  double totalrows);
+	AnalyzeAttrComputeStatsFunc compute_stats;	/* function pointer */
 	int			minrows;		/* Minimum # of rows wanted for stats */
 	void	   *extra_data;		/* for extra type-specific data */
 
@@ -86,24 +99,25 @@ typedef struct VacAttrStats
 	 */
 	bool		stats_valid;
 	float4		stanullfrac;	/* fraction of entries that are NULL */
-	int4		stawidth;		/* average width of column values */
+	int32		stawidth;		/* average width of column values */
 	float4		stadistinct;	/* # distinct values */
-	int2		stakind[STATISTIC_NUM_SLOTS];
+	int16		stakind[STATISTIC_NUM_SLOTS];
 	Oid			staop[STATISTIC_NUM_SLOTS];
 	int			numnumbers[STATISTIC_NUM_SLOTS];
 	float4	   *stanumbers[STATISTIC_NUM_SLOTS];
 	int			numvalues[STATISTIC_NUM_SLOTS];
 	Datum	   *stavalues[STATISTIC_NUM_SLOTS];
 
+	bytea *stahll;			/* storing hyperloglog counter for sampled data */
+	bytea *stahll_full;			/* storing hyperloglog counter for entire table scan */
 	/*
 	 * These fields describe the stavalues[n] element types. They will be
-	 * initialized to be the same as the column's that's underlying the slot,
-	 * but a custom typanalyze function might want to store an array of
-	 * something other than the analyzed column's elements. It should then
-	 * overwrite these fields.
+	 * initialized to match attrtypid, but a custom typanalyze function might
+	 * want to store an array of something other than the analyzed column's
+	 * elements. It should then overwrite these fields.
 	 */
 	Oid			statypid[STATISTIC_NUM_SLOTS];
-	int2		statyplen[STATISTIC_NUM_SLOTS];
+	int16		statyplen[STATISTIC_NUM_SLOTS];
 	bool		statypbyval[STATISTIC_NUM_SLOTS];
 	char		statypalign[STATISTIC_NUM_SLOTS];
 
@@ -117,6 +131,7 @@ typedef struct VacAttrStats
 	Datum	   *exprvals;		/* access info for index fetch function */
 	bool	   *exprnulls;
 	int			rowstride;
+	bool		merge_stats;
 } VacAttrStats;
 
 /*
@@ -129,6 +144,7 @@ typedef struct VPgClassStats
 	Oid			relid;
 	BlockNumber rel_pages;
 	double		rel_tuples;
+	BlockNumber relallvisible;
 } VPgClassStats;
 
 /* GUC parameters */
@@ -137,6 +153,8 @@ extern PGDLLIMPORT int default_statistics_target;		/* PGDLLIMPORT for
 extern PGDLLIMPORT double analyze_relative_error;
 extern int	vacuum_freeze_min_age;
 extern int	vacuum_freeze_table_age;
+extern int	vacuum_multixact_freeze_min_age;
+extern int	vacuum_multixact_freeze_table_age;
 
 
 /* in commands/vacuum.c */
@@ -152,14 +170,20 @@ extern double vac_estimate_reltuples(Relation relation, bool is_analyze,
 extern void vac_update_relstats(Relation relation,
 					BlockNumber num_pages,
 					double num_tuples,
+					BlockNumber num_all_visible_pages,
 					bool hasindex,
 					TransactionId frozenxid,
+					MultiXactId minmulti,
 					bool isvacuum);
-extern void vacuum_set_xid_limits(int freeze_min_age, int freeze_table_age,
-					  bool sharedRel,
+extern void vacuum_set_xid_limits(Relation rel,
+					  int freeze_min_age, int freeze_table_age,
+					  int multixact_freeze_min_age,
+					  int multixact_freeze_table_age,
 					  TransactionId *oldestXmin,
 					  TransactionId *freezeLimit,
-					  TransactionId *freezeTableLimit);
+					  TransactionId *xidFullScanLimit,
+					  MultiXactId *multiXactCutoff,
+					  MultiXactId *mxactFullScanLimit);
 extern void vac_update_datfrozenxid(void);
 extern void vacuum_delay_point(void);
 
@@ -180,5 +204,10 @@ extern void analyze_rel(Oid relid, VacuumStmt *vacstmt,
 			BufferAccessStrategy bstrategy);
 extern void analyzeStatement(VacuumStmt *vacstmt, List *relids, BufferAccessStrategy start, bool isTopLevel);
 //extern void analyzeStmt(VacuumStmt *vacstmt, List *relids);
+
+extern bool std_typanalyze(VacAttrStats *stats);
+extern double anl_random_fract(void);
+extern double anl_init_selection_state(int n);
+extern double anl_get_next_S(double t, int n, double *stateptr);
 
 #endif   /* VACUUM_H */

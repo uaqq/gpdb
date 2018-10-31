@@ -35,15 +35,6 @@ TESTER= \
 DISCOVER=discover
 
 # cs-walrepl-multinode
-walrep_1:
-	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests/storage/walrepl \
-	-s gpactivatestandby \
-	-s gpinitstandby \
-	-s gpstart \
-	-s gpstate \
-	-s gpstop \
-	-s run
-
 walrep_2:
 	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests/storage/walrepl \
 	-s basebackup \
@@ -58,26 +49,6 @@ walrep_2:
 	-q "class!=DDLTestCase" \
 	-q "class!=DMLTestCase"
 
-test_pg_twophase:
-	$(TESTER) $(DISCOVER) \
-	-s tincrepo/mpp/gpdb/tests/storage/pg_twophase \
-	-p test_pg_twophase.py \
-	-p test_switch.py
-
-runaway_query:
-	$(TESTER) \
-		resource_management.runaway_query.runaway_query_scenario.test_runaway_query_scenario.RQTScenarioTestCase \
-		resource_management.runaway_query.runaway_detector.test_runaway_detector.RunawayDetectorTestCase \
-		resource_management.runaway_query.runaway_query_limits.test_runaway_query.RunawayQueryTestCase \
-		resource_management.runaway_query.runaway_query_multisession.test_runaway_multisession.RunawayMultiSessionTestCase \
-		resource_management.runaway_query.runaway_query_vmem_memoryaccounting.test_runaway_query_vmem_memoryaccounting.RQTMemoryAccountingTestCase \
-		resource_management.runaway_query.runaway_query_stress.test_runaway_query_stress.RunawayQueryStressTestCase
-
-memory_accounting:
-	$(TESTER) \
-		resource_management.memory_accounting.test_oom.OOMTestCase \
-		resource_management.memory_accounting.too_many_exec_accounts.test_exec_accounts
-
 # gpexpand test
 gpexpand_1:
 	$(TESTER) $(DISCOVER) \
@@ -88,9 +59,3 @@ gpexpand_2:
 	$(TESTER) $(DISCOVER) \
 	-s mpp/gpdb/tests/utilities/gpexpand \
 	-q tags=part2
-
-# mpp interconnect test
-mpp_interconnect:
-	make -C tincrepo/mpp/gpdb/tests/dispatch/interconnect/ickm all distribute
-	$(TESTER) $(DISCOVER) -t tincrepo/mpp/gpdb/tests \
-	-s dispatch/interconnect

@@ -4,10 +4,10 @@
  *	  Standard POSTGRES buffer page definitions.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/bufpage.h,v 1.87 2010/01/02 16:58:08 momjian Exp $
+ * src/include/storage/bufpage.h
  *
  *-------------------------------------------------------------------------
  */
@@ -16,9 +16,14 @@
 
 #include "access/xlogdefs.h"
 #include "storage/block.h"
-#include "storage/bufmgr.h"
 #include "storage/item.h"
 #include "storage/off.h"
+#include "miscadmin.h"
+
+#ifndef FRONTEND
+/* Needed by PageGetLSN(), only for asserts in backend code */
+#include "storage/bufmgr.h"
+#endif
 
 /*
  * A postgres disk page is an abstraction layered on top of a postgres
@@ -28,7 +33,7 @@
  * disk page is always a slotted page of the form:
  *
  * +----------------+---------------------------------+
- * | PageHeaderData | linp1 linp2 linp3 ...			  |
+ * | PageHeaderData | linp1 linp2 linp3 ...           |
  * +-----------+----+---------------------------------+
  * | ... linpN |									  |
  * +-----------+--------------------------------------+
@@ -36,7 +41,7 @@
  * |												  |
  * |			 v pd_upper							  |
  * +-------------+------------------------------------+
- * |			 | tupleN ...						  |
+ * |			 | tupleN ...                         |
  * +-------------+------------------+-----------------+
  * |	   ... tuple3 tuple2 tuple1 | "special space" |
  * +--------------------------------+-----------------+
@@ -67,7 +72,7 @@
  *
  * AM-specific per-page data (if any) is kept in the area marked "special
  * space"; each AM has an "opaque" structure defined somewhere that is
- * stored as the page trailer.	an access method should always
+ * stored as the page trailer.  an access method should always
  * initialize its pages with PageInit and then set its own opaque
  * fields.
  */
@@ -85,12 +90,27 @@ typedef uint16 LocationIndex;
 
 
 /*
+ * For historical reasons, the 64-bit LSN value is stored as two 32-bit
+ * values.
+ */
+typedef struct
+{
+	uint32		xlogid;			/* high bits */
+	uint32		xrecoff;		/* low bits */
+} PageXLogRecPtr;
+
+#define PageXLogRecPtrGet(val) \
+	((uint64) (val).xlogid << 32 | (val).xrecoff)
+#define PageXLogRecPtrSet(ptr, lsn) \
+	((ptr).xlogid = (uint32) ((lsn) >> 32), (ptr).xrecoff = (uint32) (lsn))
+
+/*
  * disk page organization
  *
  * space management information generic to any page
  *
  *		pd_lsn		- identifies xlog record for last change to this page.
- *		pd_checksum	- page checksum, if set.
+ *		pd_checksum - page checksum, if set.
  *		pd_flags	- flag bits.
  *		pd_lower	- offset to start of free space.
  *		pd_upper	- offset to end of free space.
@@ -114,7 +134,7 @@ typedef uint16 LocationIndex;
  * there are no flag bits relating to checksums.
  *
  * pd_prune_xid is a hint field that helps determine whether pruning will be
- * useful.	It is currently unused in index pages.
+ * useful.  It is currently unused in index pages.
  *
  * The page version number and page size are packed together into a single
  * uint16 field.  This is for historical reasons: before PostgreSQL 7.3,
@@ -129,10 +149,11 @@ typedef uint16 LocationIndex;
  * On the high end, we can only support pages up to 32KB because lp_off/lp_len
  * are 15 bits.
  */
+
 typedef struct PageHeaderData
 {
 	/* XXX LSN is member of *any* block, not only page-organized ones */
-	XLogRecPtr	pd_lsn;			/* LSN: next byte after last byte of xlog
+	PageXLogRecPtr pd_lsn;		/* LSN: next byte after last byte of xlog
 								 * record for last change to this page */
 	uint16		pd_checksum;	/* checksum */
 	uint16		pd_flags;		/* flag bits, see below */
@@ -184,6 +205,7 @@ typedef PageHeaderData *PageHeader;
  *		used 4 for the previous format.
  */
 #define PG_PAGE_LAYOUT_VERSION		14
+
 #define PG_DATA_CHECKSUM_VERSION	1
 
 /* ----------------------------------------------------------------
@@ -347,7 +369,7 @@ typedef PageHeaderData *PageHeader;
 static inline XLogRecPtr
 PageGetLSN(Page page)
 {
-#ifdef USE_ASSERT_CHECKING
+#if defined (USE_ASSERT_CHECKING) && !defined(FRONTEND)
 	extern PGDLLIMPORT char *BufferBlocks; /* duplicates bufmgr.h */
 	char *pagePtr = page;
 
@@ -362,17 +384,15 @@ PageGetLSN(Page page)
 		Assert(LWLockHeldByMe(hdr->content_lock));
 	}
 #endif
-
-	return ((PageHeader) page)->pd_lsn;
+	return PageXLogRecPtrGet(((PageHeader) (page))->pd_lsn);
 }
 
 /*
- * Additional macros for access to page headers
+ * Additional macros for access to page headers. (Beware multiple evaluation
+ * of the arguments!)
  */
 #define PageSetLSN(page, lsn) \
-	(((PageHeader) (page))->pd_lsn = (lsn))
-#define PageXLogRecPtrSet(ptr, lsn) \
-	((ptr).xlogid = (uint32) ((lsn) >> 32), (ptr).xrecoff = (uint32) (lsn))
+	PageXLogRecPtrSet(((PageHeader) (page))->pd_lsn, lsn)
 
 #define PageHasFreeLinePointers(page) \
 	(((PageHeader) (page))->pd_flags & PD_HAS_FREE_LINES)

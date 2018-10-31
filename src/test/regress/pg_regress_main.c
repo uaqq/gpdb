@@ -8,10 +8,10 @@
  *
  * This code is released under the terms of the PostgreSQL License.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/test/regress/pg_regress_main.c,v 1.9 2010/01/02 16:58:16 momjian Exp $
+ * src/test/regress/pg_regress_main.c
  *
  *-------------------------------------------------------------------------
  */
@@ -21,39 +21,22 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-static bool
-detect_answer_file(char *name,
-				   int namesize,
-				   const char *testname,
-				   const char *variant)
-{
-	snprintf(name, namesize, "%s/expected/%s%s.out",
-			 outputdir, testname, variant);
-
-	if (file_exists(name))
-		return true;
-
-	snprintf(name, namesize, "%s/expected/%s%s.out",
-			 inputdir, testname, variant);
-
-	return file_exists(name);
-}
-
 /*
  * start a psql test process for specified file (including redirection),
  * and return process ID
  */
 static PID_TYPE
 psql_start_test(const char *testname,
-				_stringlist ** resultfiles,
-				_stringlist ** expectfiles,
-				_stringlist ** tags)
+				_stringlist **resultfiles,
+				_stringlist **expectfiles,
+				_stringlist **tags)
 {
 	PID_TYPE	pid;
 	char		infile[MAXPGPATH];
 	char		outfile[MAXPGPATH];
 	char		expectfile[MAXPGPATH] = "";
 	char		psql_cmd[MAXPGPATH * 3];
+	size_t		offset = 0;
 	char		use_utility_mode = 0;
 	char	   *lastslash;
 
@@ -101,24 +84,21 @@ psql_start_test(const char *testname,
 		}
 	}
 
-	if      (optimizer_enabled && resgroup_enabled &&
-			 detect_answer_file(expectfile, sizeof(expectfile), testname, "_optimizer_resgroup")) ;
-	else if (optimizer_enabled &&
-			 detect_answer_file(expectfile, sizeof(expectfile), testname, "_optimizer")) ;
-	else if (resgroup_enabled &&
-			 detect_answer_file(expectfile, sizeof(expectfile), testname, "_resgroup")) ;
-	else if (detect_answer_file(expectfile, sizeof(expectfile), testname, "")) ;
-	else
-	{
-		fprintf(stderr, _("missing answer file for test \"%s\"\n"), testname);
-		exit_nicely(2);
-	}
+	snprintf(expectfile, sizeof(expectfile), "%s/expected/%s.out",
+			 outputdir, testname);
+	if (!file_exists(expectfile))
+		snprintf(expectfile, sizeof(expectfile), "%s/expected/%s.out",
+				 inputdir, testname);
 
 	add_stringlist_item(resultfiles, outfile);
 	add_stringlist_item(expectfiles, expectfile);
 
-	snprintf(psql_cmd, sizeof(psql_cmd),
-			 "%s " SYSTEMQUOTE "\"%s%spsql\" -X -a -q -d \"%s\" < \"%s\" > \"%s\" 2>&1" SYSTEMQUOTE,
+	if (launcher)
+		offset += snprintf(psql_cmd + offset, sizeof(psql_cmd) - offset,
+						   "%s ", launcher);
+
+	snprintf(psql_cmd + offset, sizeof(psql_cmd) - offset,
+			 "%s \"%s%spsql\" -X -a -q -d \"%s\" < \"%s\" > \"%s\" 2>&1",
 			 use_utility_mode ? "env PGOPTIONS='-c gp_session_role=utility'" : "",
 			 psqldir ? psqldir : "",
 			 psqldir ? "/" : "",
@@ -132,14 +112,14 @@ psql_start_test(const char *testname,
 	{
 		fprintf(stderr, _("could not start process for test %s\n"),
 				testname);
-		exit_nicely(2);
+		exit(2);
 	}
 
 	return pid;
 }
 
 static void
-psql_init(void)
+psql_init(int argc, char **argv)
 {
 	/* set default regression database name */
 	add_stringlist_item(&dblist, "regression");

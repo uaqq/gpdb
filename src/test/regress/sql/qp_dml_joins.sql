@@ -1,4 +1,20 @@
+-- start_matchsubs
+
+-- m/ERROR:  moving tuple from partition .* to partition .* not supported/
+-- s/ERROR:  moving tuple from partition .* to partition .* not supported/ERROR:  cross-partition or multi-update to a row/
+
+-- m/ERROR:  multiple updates to a row by the same query is not allowed/
+-- s/ERROR:  multiple updates to a row by the same query is not allowed/ERROR:  cross-partition or multi-update to a row/
+
+-- end_matchsubs
+
 -- First create a bunch of test tables
+
+-- start_matchsubs
+-- m/DETAIL:  Failing row contains \(.*\)/
+-- s/DETAIL:  Failing row contains \(.*\)/DETAIL:  Failing row contains (#####)/
+-- end_matchsubs
+SET statement_mem='250 MB';
 
 CREATE TABLE dml_ao_check_r (
 	a int default 100 CHECK( a between 1 and 105),
@@ -1336,6 +1352,16 @@ begin;
 SELECT SUM(a) FROM dml_heap_pt_r;
 SELECT SUM(b) FROM dml_heap_pt_r;
 ALTER TABLE dml_heap_pt_r ADD DEFAULT partition def;
+
+-- Temporary workaround to make the error reported by the following
+-- update statement deterministic.  Without the savepoint, a QE reader
+-- may continue performing its part of the plan even after its writer
+-- has finished aborting the transaction.  This would lead to
+-- occasional "relation not found for OID ..." errors because the
+-- default partition would have been dropped as part of writer's abort
+-- processing.
+SAVEPOINT sp1;
+
 UPDATE dml_heap_pt_r SET a = DEFAULT, b = DEFAULT;
 SELECT SUM(a) FROM dml_heap_pt_r;
 SELECT SUM(b) FROM dml_heap_pt_r;
@@ -1401,6 +1427,16 @@ SELECT COUNT(*) FROM dml_heap_pt_r WHERE b is NULL;
 SELECT dml_heap_pt_s.a + 10 FROM dml_heap_pt_r,dml_heap_pt_s WHERE dml_heap_pt_r.a = dml_heap_pt_s.a ORDER BY 1 LIMIT 1;
 SELECT * FROM dml_heap_pt_r WHERE a = 1;
 ALTER TABLE dml_heap_pt_r ADD DEFAULT partition def;
+
+-- Temporary workaround to make the error reported by the following
+-- update statement deterministic.  Without the savepoint, a QE reader
+-- may continue performing its part of the plan even after its writer
+-- has finished aborting the transaction.  This would lead to
+-- occasional "relation not found for OID ..." errors because the
+-- default partition would have been dropped as part of writer's abort
+-- processing.
+SAVEPOINT sp1;
+
 UPDATE dml_heap_pt_r SET a = dml_heap_pt_s.a + 10 ,b = NULL FROM dml_heap_pt_s WHERE dml_heap_pt_r.a + 2= dml_heap_pt_s.b;
 SELECT * FROM dml_heap_pt_r WHERE a = 11 ORDER BY 1,2;
 SELECT COUNT(*) FROM dml_heap_pt_r WHERE b is NULL;
@@ -1456,9 +1492,9 @@ rollback;
 --Update on table with composite distribution key
 -- This currently falls back to planner, even if ORCA is enabled. And planner can't
 -- produce plans that update distribution key columns.
-SELECT SUM(a) FROM dml_heap_pt_r;
-UPDATE dml_heap_pt_p SET a = dml_heap_pt_p.b % 2 FROM dml_heap_pt_r WHERE dml_heap_pt_p.b::int = dml_heap_pt_r.b::int and dml_heap_pt_p.a = dml_heap_pt_r.a;
-SELECT SUM(a) FROM dml_heap_pt_r;
+begin;
+UPDATE dml_heap_pt_p SET a = dml_heap_pt_p.b % 2 FROM dml_heap_pt_r WHERE dml_heap_pt_p.b::int = dml_heap_pt_r.b::int and dml_heap_pt_p.a = dml_heap_pt_r.a and dml_heap_pt_p.b = 63;
+rollback;
 
 --Update on table with composite distribution key
 begin;

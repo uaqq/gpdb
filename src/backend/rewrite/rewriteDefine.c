@@ -5,22 +5,28 @@
  *
  * Portions Copyright (c) 2006-2009, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteDefine.c,v 1.141 2010/02/14 18:42:15 rhaas Exp $
+ *	  src/backend/rewrite/rewriteDefine.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup_details.h"
+#include "access/multixact.h"
+#include "access/transam.h"
+#include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
+#include "catalog/heap.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/storage.h"
 #include "miscadmin.h"
@@ -34,6 +40,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -43,7 +50,7 @@
 
 
 static void checkRuleResultList(List *targetList, TupleDesc resultDesc,
-					bool isSelect);
+					bool isSelect, bool requireColumnNameMatch);
 static bool setRuleCheckAsUser_walker(Node *node, Oid *context);
 static void setRuleCheckAsUser_Query(Query *qry, Oid userid);
 
@@ -57,7 +64,6 @@ static Oid
 InsertRule(char *rulname,
 		   int evtype,
 		   Oid eventrel_oid,
-		   AttrNumber evslot_index,
 		   bool evinstead,
 		   Node *event_qual,
 		   List *action,
@@ -65,7 +71,6 @@ InsertRule(char *rulname,
 {
 	char	   *evqual = nodeToString(event_qual);
 	char	   *actiontree = nodeToString((Node *) action);
-	int			i;
 	Datum		values[Natts_pg_rewrite];
 	bool		nulls[Natts_pg_rewrite];
 	bool		replaces[Natts_pg_rewrite];
@@ -83,16 +88,14 @@ InsertRule(char *rulname,
 	 */
 	MemSet(nulls, false, sizeof(nulls));
 
-	i = 0;
 	namestrcpy(&rname, rulname);
-	values[i++] = NameGetDatum(&rname); /* rulename */
-	values[i++] = ObjectIdGetDatum(eventrel_oid);		/* ev_class */
-	values[i++] = Int16GetDatum(evslot_index);	/* ev_attr */
-	values[i++] = CharGetDatum(evtype + '0');	/* ev_type */
-	values[i++] = CharGetDatum(RULE_FIRES_ON_ORIGIN);	/* ev_enabled */
-	values[i++] = BoolGetDatum(evinstead);		/* is_instead */
-	values[i++] = CStringGetTextDatum(evqual);	/* ev_qual */
-	values[i++] = CStringGetTextDatum(actiontree);		/* ev_action */
+	values[Anum_pg_rewrite_rulename - 1] = NameGetDatum(&rname);
+	values[Anum_pg_rewrite_ev_class - 1] = ObjectIdGetDatum(eventrel_oid);
+	values[Anum_pg_rewrite_ev_type - 1] = CharGetDatum(evtype + '0');
+	values[Anum_pg_rewrite_ev_enabled - 1] = CharGetDatum(RULE_FIRES_ON_ORIGIN);
+	values[Anum_pg_rewrite_is_instead - 1] = BoolGetDatum(evinstead);
+	values[Anum_pg_rewrite_ev_qual - 1] = CStringGetTextDatum(evqual);
+	values[Anum_pg_rewrite_ev_action - 1] = CStringGetTextDatum(actiontree);
 
 	/*
 	 * Ready to store new pg_rewrite tuple
@@ -118,7 +121,6 @@ InsertRule(char *rulname,
 		 * When replacing, we don't need to replace every attribute
 		 */
 		MemSet(replaces, false, sizeof(replaces));
-		replaces[Anum_pg_rewrite_ev_attr - 1] = true;
 		replaces[Anum_pg_rewrite_ev_type - 1] = true;
 		replaces[Anum_pg_rewrite_is_instead - 1] = true;
 		replaces[Anum_pg_rewrite_ev_qual - 1] = true;
@@ -183,6 +185,9 @@ InsertRule(char *rulname,
 							   DEPENDENCY_NORMAL);
 	}
 
+	/* Post creation hook for new rule */
+	InvokeObjectPostCreateHook(RewriteRelationId, rewriteObjectId, 0);
+
 	heap_close(pg_rewrite_desc, RowExclusiveLock);
 
 	return rewriteObjectId;
@@ -192,27 +197,30 @@ InsertRule(char *rulname,
  * DefineRule
  *		Execute a CREATE RULE command.
  */
-void
+Oid
 DefineRule(RuleStmt *stmt, const char *queryString)
 {
 	List	   *actions;
 	Node	   *whereClause;
 	Oid			relId;
 
-	/* Parse analysis ... */
+	/* Parse analysis. */
 	transformRuleStmt(stmt, queryString, &actions, &whereClause);
 
-	/* ... find the relation ... */
-	relId = RangeVarGetRelid(stmt->relation, false);
+	/*
+	 * Find and lock the relation.  Lock level should match
+	 * DefineQueryRewrite.
+	 */
+	relId = RangeVarGetRelid(stmt->relation, AccessExclusiveLock, false);
 
 	/* ... and execute */
-	DefineQueryRewrite(stmt->rulename,
-					   relId,
-					   whereClause,
-					   stmt->event,
-					   stmt->instead,
-					   stmt->replace,
-					   actions);
+	return DefineQueryRewrite(stmt->rulename,
+							  relId,
+							  whereClause,
+							  stmt->event,
+							  stmt->instead,
+							  stmt->replace,
+							  actions);
 }
 
 
@@ -223,7 +231,7 @@ DefineRule(RuleStmt *stmt, const char *queryString)
  * This is essentially the same as DefineRule() except that the rule's
  * action and qual have already been passed through parse analysis.
  */
-void
+Oid
 DefineQueryRewrite(char *rulename,
 				   Oid event_relid,
 				   Node *event_qual,
@@ -233,32 +241,37 @@ DefineQueryRewrite(char *rulename,
 				   List *action)
 {
 	Relation	event_relation;
-	Oid			ruleId;
-	int			event_attno;
 	ListCell   *l;
 	Query	   *query;
 	bool		RelisBecomingView = false;
+	Oid			ruleId = InvalidOid;
 
 	/*
 	 * If we are installing an ON SELECT rule, we had better grab
 	 * AccessExclusiveLock to ensure no SELECTs are currently running on the
-	 * event relation.	For other types of rules, it might be sufficient to
-	 * grab ShareLock to lock out insert/update/delete actions.  But for now,
-	 * let's just grab AccessExclusiveLock all the time.
+	 * event relation. For other types of rules, it would be sufficient to
+	 * grab ShareRowExclusiveLock to lock out insert/update/delete actions and
+	 * to ensure that we lock out current CREATE RULE statements; but because
+	 * of race conditions in access to catalog entries, we can't do that yet.
+	 *
+	 * Note that this lock level should match the one used in DefineRule.
 	 */
 	event_relation = heap_open(event_relid, AccessExclusiveLock);
 
 	/*
 	 * Verify relation is of a type that rules can sensibly be applied to.
+	 * Internal callers can target materialized views, but transformRuleStmt()
+	 * blocks them for users.  Don't mention them in the error message.
 	 */
 	if (event_relation->rd_rel->relkind != RELKIND_RELATION &&
+		event_relation->rd_rel->relkind != RELKIND_MATVIEW &&
 		event_relation->rd_rel->relkind != RELKIND_VIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is not a table or view",
 						RelationGetRelationName(event_relation))));
 
-	if (!allowSystemTableModsDDL && IsSystemRelation(event_relation))
+	if (!allowSystemTableMods && IsSystemRelation(event_relation))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
@@ -321,11 +334,18 @@ DefineQueryRewrite(char *rulename,
 		query = (Query *) linitial(action);
 		if (!is_instead ||
 			query->commandType != CMD_SELECT ||
-			query->utilityStmt != NULL ||
-			query->intoClause != NULL)
+			query->utilityStmt != NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("rules on SELECT must have action INSTEAD SELECT")));
+
+		/*
+		 * ... it cannot contain data-modifying WITH ...
+		 */
+		if (query->hasModifyingCTE)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("rules on SELECT must not contain data-modifying statements in WITH")));
 
 		/*
 		 * ... there can be no rule qual, ...
@@ -341,7 +361,9 @@ DefineQueryRewrite(char *rulename,
 		 */
 		checkRuleResultList(query->targetList,
 							RelationGetDescr(event_relation),
-							true);
+							true,
+							event_relation->rd_rel->relkind !=
+							RELKIND_MATVIEW);
 
 		/*
 		 * ... there must not be another ON SELECT rule already ...
@@ -393,15 +415,17 @@ DefineQueryRewrite(char *rulename,
 		 *
 		 * If so, check that the relation is empty because the storage for the
 		 * relation is going to be deleted.  Also insist that the rel not have
-		 * any triggers, indexes, or child tables.	(Note: these tests are too
+		 * any triggers, indexes, or child tables.  (Note: these tests are too
 		 * strict, because they will reject relations that once had such but
 		 * don't anymore.  But we don't really care, because this whole
 		 * business of converting relations to views is just a kluge to allow
-		 * loading ancient pg_dump files.)
+		 * dump/reload of views that participate in circular dependencies.)
 		 */
-		if (event_relation->rd_rel->relkind != RELKIND_VIEW)
+		if (event_relation->rd_rel->relkind != RELKIND_VIEW &&
+			event_relation->rd_rel->relkind != RELKIND_MATVIEW)
 		{
 			HeapScanDesc scanDesc;
+			Snapshot	snapshot;
 
 			/* In GPDB, also forbid turning AO tables or external tables into views. */
 			if (!RelationIsHeap(event_relation))
@@ -409,14 +433,15 @@ DefineQueryRewrite(char *rulename,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("cannot convert non-heap table \"%s\" to a view",
 								RelationGetRelationName(event_relation))));
-
-			scanDesc = heap_beginscan(event_relation, SnapshotNow, 0, NULL);
+			snapshot = RegisterSnapshot(GetLatestSnapshot());
+			scanDesc = heap_beginscan(event_relation, snapshot, 0, NULL);
 			if (heap_getnext(scanDesc, ForwardScanDirection) != NULL)
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("could not convert table \"%s\" to a view because it is not empty",
 								RelationGetRelationName(event_relation))));
 			heap_endscan(scanDesc);
+			UnregisterSnapshot(snapshot);
 
 			if (event_relation->rd_rel->relhastriggers)
 				ereport(ERROR,
@@ -473,14 +498,13 @@ DefineQueryRewrite(char *rulename,
 						 errmsg("RETURNING lists are not supported in non-INSTEAD rules")));
 			checkRuleResultList(query->returningList,
 								RelationGetDescr(event_relation),
-								false);
+								false, false);
 		}
 	}
 
 	/*
 	 * This rule is allowed - prepare to install it.
 	 */
-	event_attno = -1;
 
 	/* discard rule if it's null action and not INSTEAD; it's a no-op */
 	if (action != NIL || is_instead)
@@ -488,35 +512,114 @@ DefineQueryRewrite(char *rulename,
 		ruleId = InsertRule(rulename,
 							event_type,
 							event_relid,
-							event_attno,
 							is_instead,
 							event_qual,
 							action,
 							replace);
 
 		/*
-		 * Set pg_class 'relhasrules' field TRUE for event relation. If
-		 * appropriate, also modify the 'relkind' field to show that the
-		 * relation is now a view.
+		 * Set pg_class 'relhasrules' field TRUE for event relation.
 		 *
 		 * Important side effect: an SI notice is broadcast to force all
 		 * backends (including me!) to update relcache entries with the new
 		 * rule.
 		 */
-		SetRelationRuleStatus(event_relid, true, RelisBecomingView);
+		SetRelationRuleStatus(event_relid, true);
 	}
 
-	/*
-	 * IF the relation is becoming a view, delete the storage files associated
-	 * with it.  NB: we had better have AccessExclusiveLock to do this ...
+	/* ---------------------------------------------------------------------
+	 * If the relation is becoming a view:
+	 * - delete the associated storage files
+	 * - get rid of any system attributes in pg_attribute; a view shouldn't
+	 *	 have any of those
+	 * - remove the toast table; there is no need for it anymore, and its
+	 *	 presence would make vacuum slightly more complicated
+	 * - set relkind to RELKIND_VIEW, and adjust other pg_class fields
+	 *	 to be appropriate for a view
 	 *
-	 * XXX what about getting rid of its TOAST table?  For now, we don't.
+	 * NB: we had better have AccessExclusiveLock to do this ...
+	 * ---------------------------------------------------------------------
 	 */
 	if (RelisBecomingView)
+	{
+		Relation	relationRelation;
+		Oid			toastrelid;
+		HeapTuple	classTup;
+		Form_pg_class classForm;
+
+		relationRelation = heap_open(RelationRelationId, RowExclusiveLock);
+		toastrelid = event_relation->rd_rel->reltoastrelid;
+
+		/* drop storage while table still looks like a table  */
 		RelationDropStorage(event_relation);
+		DeleteSystemAttributeTuples(event_relid);
+
+		/*
+		 * Drop the toast table if any.  (This won't take care of updating the
+		 * toast fields in the relation's own pg_class entry; we handle that
+		 * below.)
+		 */
+		if (OidIsValid(toastrelid))
+		{
+			ObjectAddress toastobject;
+
+			/*
+			 * Delete the dependency of the toast relation on the main
+			 * relation so we can drop the former without dropping the latter.
+			 */
+			deleteDependencyRecordsFor(RelationRelationId, toastrelid,
+									   false);
+
+			/* Make deletion of dependency record visible */
+			CommandCounterIncrement();
+
+			/* Now drop toast table, including its index */
+			toastobject.classId = RelationRelationId;
+			toastobject.objectId = toastrelid;
+			toastobject.objectSubId = 0;
+			performDeletion(&toastobject, DROP_RESTRICT,
+							PERFORM_DELETION_INTERNAL);
+		}
+
+		/*
+		 * SetRelationRuleStatus may have updated the pg_class row, so we must
+		 * advance the command counter before trying to update it again.
+		 */
+		CommandCounterIncrement();
+
+		/*
+		 * Fix pg_class entry to look like a normal view's, including setting
+		 * the correct relkind and removal of reltoastrelid of the toast table
+		 * we potentially removed above.
+		 */
+		classTup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(event_relid));
+		if (!HeapTupleIsValid(classTup))
+			elog(ERROR, "cache lookup failed for relation %u", event_relid);
+		classForm = (Form_pg_class) GETSTRUCT(classTup);
+
+		classForm->reltablespace = InvalidOid;
+		classForm->relpages = 0;
+		classForm->reltuples = 0;
+		classForm->relallvisible = 0;
+		classForm->reltoastrelid = InvalidOid;
+		classForm->relhasindex = false;
+		classForm->relkind = RELKIND_VIEW;
+		classForm->relhasoids = false;
+		classForm->relhaspkey = false;
+		classForm->relfrozenxid = InvalidTransactionId;
+		classForm->relminmxid = InvalidMultiXactId;
+
+		simple_heap_update(relationRelation, &classTup->t_self, classTup);
+		CatalogUpdateIndexes(relationRelation, classTup);
+
+		heap_freetuple(classTup);
+		heap_close(relationRelation, RowExclusiveLock);
+	}
 
 	/* Close rel, but keep lock till commit... */
 	heap_close(event_relation, NoLock);
+
+	return ruleId;
 }
 
 /*
@@ -524,14 +627,19 @@ DefineQueryRewrite(char *rulename,
  *		Verify that targetList produces output compatible with a tupledesc
  *
  * The targetList might be either a SELECT targetlist, or a RETURNING list;
- * isSelect tells which.  (This is mostly used for choosing error messages,
- * but also we don't enforce column name matching for RETURNING.)
+ * isSelect tells which.  This is used for choosing error messages.
+ *
+ * A SELECT targetlist may optionally require that column names match.
  */
 static void
-checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect)
+checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect,
+					bool requireColumnNameMatch)
 {
 	ListCell   *tllist;
 	int			i;
+
+	/* Only a SELECT may require a column name match. */
+	Assert(isSelect || !requireColumnNameMatch);
 
 	i = 0;
 	foreach(tllist, targetList)
@@ -568,7 +676,7 @@ checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot convert relation containing dropped columns to view")));
 
-		if (isSelect && strcmp(tle->resname, attname) != 0)
+		if (requireColumnNameMatch && strcmp(tle->resname, attname) != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("SELECT rule's target entry %d has different column name from \"%s\"", i, attname)));
@@ -616,7 +724,7 @@ checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect)
  * Note: for a view (ON SELECT rule), the checkAsUser field of the OLD
  * RTE entry will be overridden when the view rule is expanded, and the
  * checkAsUser field of the NEW entry is irrelevant because that entry's
- * requiredPerms bits will always be zero.	However, for other types of rules
+ * requiredPerms bits will always be zero.  However, for other types of rules
  * it's important to set these fields to match the rule owner.  So we just set
  * them always.
  */
@@ -725,6 +833,9 @@ EnableDisableRule(Relation rel, const char *rulename,
 		changed = true;
 	}
 
+	InvokeObjectPostAlterHook(RewriteRelationId,
+							  HeapTupleGetOid(ruletup), 0);
+
 	heap_freetuple(ruletup);
 	heap_close(pg_rewrite_desc, RowExclusiveLock);
 
@@ -739,37 +850,98 @@ EnableDisableRule(Relation rel, const char *rulename,
 
 
 /*
- * Rename an existing rewrite rule.
- *
- * This is unused code at the moment.  Note that it lacks a permissions check.
+ * Perform permissions and integrity checks before acquiring a relation lock.
  */
-#ifdef NOT_USED
-void
-RenameRewriteRule(Oid owningRel, const char *oldName,
+static void
+RangeVarCallbackForRenameRule(const RangeVar *rv, Oid relid, Oid oldrelid,
+							  void *arg)
+{
+	HeapTuple	tuple;
+	Form_pg_class form;
+
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tuple))
+		return;					/* concurrently dropped */
+	form = (Form_pg_class) GETSTRUCT(tuple);
+
+	/* only tables and views can have rules */
+	if (form->relkind != RELKIND_RELATION && form->relkind != RELKIND_VIEW)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a table or view", rv->relname)));
+
+	if (!allowSystemTableMods && IsSystemClass(relid, form))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied: \"%s\" is a system catalog",
+						rv->relname)));
+
+	/* you must own the table to rename one of its rules */
+	if (!pg_class_ownercheck(relid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS, rv->relname);
+
+	ReleaseSysCache(tuple);
+}
+
+/*
+ * Rename an existing rewrite rule.
+ */
+Oid
+RenameRewriteRule(RangeVar *relation, const char *oldName,
 				  const char *newName)
 {
+	Oid			relid;
+	Relation	targetrel;
 	Relation	pg_rewrite_desc;
 	HeapTuple	ruletup;
+	Form_pg_rewrite ruleform;
+	Oid			ruleOid;
 
+	/*
+	 * Look up name, check permissions, and acquire lock (which we will NOT
+	 * release until end of transaction).
+	 */
+	relid = RangeVarGetRelidExtended(relation, AccessExclusiveLock,
+									 false, false,
+									 RangeVarCallbackForRenameRule,
+									 NULL);
+
+	/* Have lock already, so just need to build relcache entry. */
+	targetrel = relation_open(relid, NoLock);
+
+	/* Prepare to modify pg_rewrite */
 	pg_rewrite_desc = heap_open(RewriteRelationId, RowExclusiveLock);
 
+	/* Fetch the rule's entry (it had better exist) */
 	ruletup = SearchSysCacheCopy2(RULERELNAME,
-								  ObjectIdGetDatum(owningRel),
+								  ObjectIdGetDatum(relid),
 								  PointerGetDatum(oldName));
 	if (!HeapTupleIsValid(ruletup))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("rule \"%s\" for relation \"%s\" does not exist",
-						oldName, get_rel_name(owningRel))));
+						oldName, RelationGetRelationName(targetrel))));
+	ruleform = (Form_pg_rewrite) GETSTRUCT(ruletup);
+	ruleOid = HeapTupleGetOid(ruletup);
 
-	/* should not already exist */
-	if (IsDefinedRewriteRule(owningRel, newName))
+	/* rule with the new name should not already exist */
+	if (IsDefinedRewriteRule(relid, newName))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
 				 errmsg("rule \"%s\" for relation \"%s\" already exists",
-						newName, get_rel_name(owningRel))));
+						newName, RelationGetRelationName(targetrel))));
 
-	namestrcpy(&(((Form_pg_rewrite) GETSTRUCT(ruletup))->rulename), newName);
+	/*
+	 * We disallow renaming ON SELECT rules, because they should always be
+	 * named "_RETURN".
+	 */
+	if (ruleform->ev_type == CMD_SELECT + '0')
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("renaming an ON SELECT rule is not allowed")));
+
+	/* OK, do the update */
+	namestrcpy(&(ruleform->rulename), newName);
 
 	simple_heap_update(pg_rewrite_desc, &ruletup->t_self, ruletup);
 
@@ -778,6 +950,18 @@ RenameRewriteRule(Oid owningRel, const char *oldName,
 
 	heap_freetuple(ruletup);
 	heap_close(pg_rewrite_desc, RowExclusiveLock);
-}
 
-#endif
+	/*
+	 * Invalidate relation's relcache entry so that other backends (and this
+	 * one too!) are sent SI message to make them rebuild relcache entries.
+	 * (Ideally this should happen automatically...)
+	 */
+	CacheInvalidateRelcache(targetrel);
+
+	/*
+	 * Close rel, but keep exclusive lock!
+	 */
+	relation_close(targetrel, NoLock);
+
+	return ruleOid;
+}

@@ -89,3 +89,48 @@ reset enable_hashjoin;
 reset enable_mergejoin;
 
 drop table l, ps;
+
+-- Test having a SRF in the targetlist, with an aggregate. GPDB used to not
+-- handle this, because the SRF-in-targetlist support was removed from Agg
+-- node, as an optimization. It's been put back since, so this works now.
+--
+-- We have this same test in the upstream 'aggregates' test, but with MAX().
+-- That's picked up by the MIN/MAX optimization, and turned into an
+-- LIMIT 1 query, however, and doesn't exercise from the SRF-in-targetlist
+-- support.
+select avg(unique2), generate_series(1,3) as g from tenk1 order by g desc;
+
+
+--
+-- "PREFUNC" is accepted as an alias for "COMBINEFUNC", for compatibility with
+-- GPDB 5 and below.
+--
+create function int8pl_with_notice(int8, int8) returns int8
+AS $$
+begin
+  raise notice 'combinefunc called';
+  return $1 + $2;
+end;
+$$ language plpgsql strict;
+create aggregate mysum_prefunc(int4) (
+  sfunc = int4_sum,
+  stype=bigint,
+  prefunc=int8pl_with_notice
+);
+select mysum_prefunc(a::int4) from aggtest;
+
+
+-- Test an aggregate with 'internal' transition type, and a combine function,
+-- but no serial/deserial functions. This is valid, but we have no use for
+-- the combine function in GPDB in that case.
+
+CREATE AGGREGATE my_numeric_avg(numeric) (
+  stype = internal,
+  sfunc = numeric_avg_accum,
+  finalfunc = numeric_avg,
+  combinefunc = numeric_avg_combine
+);
+
+create temp table numerictesttab as select g::numeric as n from generate_series(1,10) g;
+
+select my_numeric_avg(n) from numerictesttab;

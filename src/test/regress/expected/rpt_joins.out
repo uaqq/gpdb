@@ -1947,16 +1947,13 @@ on (x1 = xx1) where (xx2 is not null);
 -- to outside an IN
 --
 create table foo (unique1 int, unique2 int) distributed replicated;
-insert into foo vaules (1, 2), (2, 42);
-ERROR:  syntax error at or near "vaules"
-LINE 1: insert into foo vaules (1, 2), (2, 42);
-                        ^
+insert into foo values (1, 2), (2, 42);
 select count(*) from foo a where unique1 in
   (select unique1 from foo b join foo c using (unique1)
    where b.unique2 = 42);
  count 
 -------
-     0
+     1
 (1 row)
 
 drop table if exists foo;
@@ -2110,11 +2107,8 @@ from yy
 -- (as seen in early 8.2.x releases)
 --
 create temp table zt1 (f1 int primary key);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "zt1_pkey" for table "zt1"
 create temp table zt2 (f2 int primary key);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "zt2_pkey" for table "zt2"
 create temp table zt3 (f3 int primary key) distributed replicated;
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "zt3_pkey" for table "zt3"
 insert into zt1 values(53);
 insert into zt2 values(53);
 select * from
@@ -2134,6 +2128,29 @@ where f2 = 53;
  f2 | f3 | f1 | junk 
 ----+----+----+------
  53 |    |    | 
+(1 row)
+
+--
+-- regression test for nest loop join of rpt and entry
+--
+create temp table t_5628 (c1 int, c2 int) distributed replicated;
+insert into t_5628 values (1,1), (2,2);
+explain (costs off) select max(c1) from pg_class left join t_5628 on true;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Nested Loop Left Join
+         ->  Seq Scan on pg_class
+         ->  Materialize
+               ->  Gather Motion 1:1  (slice1; segments: 1)
+                     ->  Seq Scan on t_5628
+ Optimizer: legacy query optimizer
+(7 rows)
+
+select max(c1) from pg_class left join t_5628 on true;
+ max 
+-----
+   2
 (1 row)
 
 drop schema rpt_joins cascade;

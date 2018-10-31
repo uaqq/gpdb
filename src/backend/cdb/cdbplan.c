@@ -224,8 +224,19 @@ plan_tree_mutator(Node *node,
 				FLATCOPY(newappend, append, Append);
 				PLANMUTATE(newappend, append);
 				MUTATE(newappend->appendplans, append->appendplans, List *);
-				/* isTarget is scalar. */
 				return (Node *) newappend;
+			}
+			break;
+
+		case T_MergeAppend:
+			{
+				MergeAppend	   *merge = (MergeAppend *) node;
+				MergeAppend	   *newmerge;
+
+				FLATCOPY(newmerge, merge, MergeAppend);
+				PLANMUTATE(newmerge, merge);
+				MUTATE(newmerge->mergeplans, merge->mergeplans, List *);
+				return (Node *) newmerge;
 			}
 			break;
 
@@ -324,46 +335,6 @@ plan_tree_mutator(Node *node,
 			}
 			break;
 
-		case T_AppendOnlyScan:
-			{
-				AppendOnlyScan *appendonlyscan = (AppendOnlyScan *) node;
-				AppendOnlyScan *newappendonlyscan;
-
-				FLATCOPY(newappendonlyscan, appendonlyscan, AppendOnlyScan);
-				SCANMUTATE(newappendonlyscan, appendonlyscan);
-
-				/*
-				 * (for now) A AppendOnlyScan is really just a Scan, so we're
-				 * done.
-				 */
-				return (Node *) newappendonlyscan;
-			}
-			break;
-
-		case T_AOCSScan:
-			{
-				AOCSScan   *aocs = (AOCSScan *) node;
-				AOCSScan   *newaocs;
-
-				FLATCOPY(newaocs, aocs, AOCSScan);
-				SCANMUTATE(newaocs, aocs);
-				/* (for now) A AOCSScan is really just a Scan, so we're done. */
-				return (Node *) newaocs;
-			}
-			break;
-
-		case T_TableScan:
-			{
-				TableScan  *tableScan = (TableScan *) node;
-				TableScan  *newTableScan = NULL;
-
-				FLATCOPY(newTableScan, tableScan, TableScan);
-				SCANMUTATE(newTableScan, tableScan);
-
-				return (Node *) newTableScan;
-			}
-			break;
-
 		case T_DynamicTableScan:
 			{
 				DynamicTableScan *tableScan = (DynamicTableScan *) node;
@@ -386,7 +357,6 @@ plan_tree_mutator(Node *node,
 				SCANMUTATE(newextscan, extscan);
 
 				MUTATE(newextscan->uriList, extscan->uriList, List *);
-				MUTATE(newextscan->fmtOpts, extscan->fmtOpts, List *);
 				newextscan->fmtType = extscan->fmtType;
 				newextscan->isMasterOnly = extscan->isMasterOnly;
 
@@ -422,6 +392,22 @@ plan_tree_mutator(Node *node,
 				MUTATE(newidxscan->indexqualorig, idxscan->indexqualorig, List *);
 				/* indxorderdir  is  scalar */
 				return (Node *) newidxscan;
+			}
+			break;
+
+		case T_IndexOnlyScan:
+			{
+				IndexOnlyScan  *idxonlyscan = (IndexOnlyScan *) node;
+				IndexOnlyScan  *newidxonlyscan;
+
+				FLATCOPY(newidxonlyscan, idxonlyscan, IndexOnlyScan);
+				SCANMUTATE(newidxonlyscan, idxonlyscan);
+				newidxonlyscan->indexid = idxonlyscan->indexid;
+				/* MUTATE(newidxonlyscan->indexid, idxonlyscan->indexid, List *); */
+				MUTATE(newidxonlyscan->indexqual, idxonlyscan->indexqual, List *);
+				MUTATE(newidxonlyscan->indextlist, idxonlyscan->indextlist, List *);
+				/* indxorderdir  is  scalar */
+				return (Node *) newidxonlyscan;
 			}
 			break;
 
@@ -820,7 +806,6 @@ plan_tree_mutator(Node *node,
 				switch (rte->rtekind)
 				{
 					case RTE_RELATION:	/* ordinary relation reference */
-					case RTE_SPECIAL:	/* special rule relation (NEW or OLD) */
 					case RTE_VOID:	/* deleted entry */
 						/* No extras. */
 						break;
@@ -841,18 +826,13 @@ plan_tree_mutator(Node *node,
 						newrte->joinaliasvars = copyObject(rte->joinaliasvars);
 						break;
 
-					case RTE_FUNCTION:	/* function in FROM */
-						MUTATE(newrte->funcexpr, rte->funcexpr, Node *);
-
-						/*
-						 * TODO is this right? //newrte->coldeflist = (List *)
-						 * copyObject(rte->coldeflist);
-						 */
+					case RTE_FUNCTION:	/* functions in FROM */
+						MUTATE(newrte->functions, rte->functions, List *);
 						break;
 
 					case RTE_TABLEFUNCTION:
 						newrte->subquery = copyObject(rte->subquery);
-						MUTATE(newrte->funcexpr, rte->funcexpr, Node *);
+						MUTATE(newrte->functions, rte->functions, List *);
 						break;
 
 					case RTE_VALUES:
@@ -860,6 +840,59 @@ plan_tree_mutator(Node *node,
 						break;
 				}
 				return (Node *) newrte;
+			}
+			break;
+
+		case T_RangeTblFunction:
+			{
+				RangeTblFunction *rtfunc = (RangeTblFunction *) node;
+				RangeTblFunction *newrtfunc;
+
+				FLATCOPY(newrtfunc, rtfunc, RangeTblFunction);
+				MUTATE(newrtfunc->funcexpr, rtfunc->funcexpr, Node *);
+
+				/*
+				 * TODO is this right? //newrte->coldeflist = (List *)
+				 * copyObject(rte->coldeflist);
+				 */
+			}
+			break;
+
+		case T_ForeignScan:
+			{
+				ForeignScan *fdwscan = (ForeignScan *) node;
+				ForeignScan *newfdwscan;
+
+				FLATCOPY(newfdwscan, fdwscan, ForeignScan);
+				SCANMUTATE(newfdwscan, fdwscan);
+
+				MUTATE(newfdwscan->fdw_exprs, fdwscan->fdw_exprs, List *);
+				MUTATE(newfdwscan->fdw_private, fdwscan->fdw_private, List *);
+				newfdwscan->fsSystemCol = fdwscan->fsSystemCol;
+
+				return (Node *) newfdwscan;
+			}
+			break;
+
+		case T_SplitUpdate:
+			{
+				SplitUpdate	*splitUpdate = (SplitUpdate *) node;
+				SplitUpdate	*newSplitUpdate;
+
+				FLATCOPY(newSplitUpdate, splitUpdate, SplitUpdate);
+				PLANMUTATE(newSplitUpdate, splitUpdate);
+				return (Node *) newSplitUpdate;
+			}
+			break;
+
+		case T_Reshuffle:
+			{
+				Reshuffle	*reshuffle = (Reshuffle *) node;
+				Reshuffle	*newReshuffle;
+
+				FLATCOPY(newReshuffle, reshuffle, Reshuffle);
+				PLANMUTATE(newReshuffle, reshuffle);
+				return (Node *) newReshuffle;
 			}
 			break;
 
@@ -927,7 +960,8 @@ plan_tree_mutator(Node *node,
  * definition.
  *
  */
-void		mutate_plan_fields(Plan *newplan, Plan *oldplan, Node *(*mutator) (), void *context)
+static void
+mutate_plan_fields(Plan *newplan, Plan *oldplan, Node *(*mutator) (), void *context)
 {
 	/*
 	 * Scalar fields startup_cost total_cost plan_rows plan_width nParamExec
@@ -953,7 +987,8 @@ void		mutate_plan_fields(Plan *newplan, Plan *oldplan, Node *(*mutator) (), void
  * definition.
  *
  */
-void		mutate_join_fields(Join *newjoin, Join *oldjoin, Node *(*mutator) (), void *context)
+static void 
+mutate_join_fields(Join *newjoin, Join *oldjoin, Node *(*mutator) (), void *context)
 {
 	/* A Join node is a Plan node. */
 	mutate_plan_fields((Plan *) newjoin, (Plan *) oldjoin, mutator, context);
@@ -989,17 +1024,24 @@ void		mutate_join_fields(Join *newjoin, Join *oldjoin, Node *(*mutator) (), void
  * SubqueryScan node.
  */
 RangeTblEntry *
-package_plan_as_rte(Query *query, Plan *plan, Alias *eref, List *pathkeys)
+package_plan_as_rte(PlannerInfo *root, Query *query, Plan *plan, Alias *eref, List *pathkeys,
+					PlannerInfo **subroot_p)
 {
 	Query *subquery;
 	RangeTblEntry *rte;
-	
-	
+	PlannerInfo *subroot;
+
 	Assert( query != NULL );
 	Assert( plan != NULL );
 	Assert( eref != NULL );
 	Assert( plan->flow != NULL ); /* essential in a pre-planned RTE */
-	
+
+	subroot = makeNode(PlannerInfo);
+	/* shallow copy from root at first. */
+	memcpy(subroot, root, sizeof(PlannerInfo));
+	/* deep copy if needed. */
+	subroot->parse = copyObject(query);
+
 	/* Make a plausible subquery for the RTE we'll produce. */
 	subquery = makeNode(Query);
 	memcpy(subquery, query, sizeof(Query));
@@ -1007,7 +1049,6 @@ package_plan_as_rte(Query *query, Plan *plan, Alias *eref, List *pathkeys)
 	subquery->querySource = QSRC_PLANNER;
 	subquery->canSetTag = false;
 	subquery->resultRelation = 0;
-	subquery->intoClause = NULL;
 	
 	subquery->rtable = copyObject(subquery->rtable);
 
@@ -1030,6 +1071,7 @@ package_plan_as_rte(Query *query, Plan *plan, Alias *eref, List *pathkeys)
 	rte->subquery_rtable = subquery->rtable;
 	rte->subquery_pathkeys = pathkeys;
 
+	*subroot_p = subroot;
 	return rte;
 }
 

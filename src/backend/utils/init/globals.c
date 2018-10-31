@@ -3,12 +3,12 @@
  * globals.c
  *	  global variable declarations
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/init/globals.c,v 1.111 2010/01/02 16:57:56 momjian Exp $
+ *	  src/backend/utils/init/globals.c
  *
  * NOTES
  *	  Globals used all over the place should be declared here and not
@@ -18,7 +18,7 @@
  */
 #include "postgres.h"
 
-#include "pgtime.h"
+#include "libpq/libpq-be.h"
 #include "libpq/pqcomm.h"
 #include "miscadmin.h"
 #include "storage/backendid.h"
@@ -93,18 +93,16 @@ pid_t		PostmasterPid = 0;
 bool		IsPostmasterEnvironment = false;
 bool		IsUnderPostmaster = false;
 bool		IsBinaryUpgrade = false;
+bool		IsBackgroundWorker = false;
 
 bool		ExitOnAnyError = false;
 
 int			DateStyle = USE_ISO_DATES;
 int			DateOrder = DATEORDER_MDY;
 int			IntervalStyle = INTSTYLE_POSTGRES;
-bool		HasCTZSet = false;
-int			CTimeZone = 0;
 
 bool		enableFsync = true;
-bool		allowSystemTableModsDDL = false;
-bool		allowSystemTableModsDML = false;
+bool		allowSystemTableMods = false;
 int			planner_work_mem = 32768;
 int			work_mem = 32768;
 int			statement_mem = 256000;
@@ -117,13 +115,15 @@ int			gp_vmem_limit_per_query = 0;
 int			maintenance_work_mem = 65536;
 
 /*
- * Primary determinants of sizes of shared-memory structures.  MaxBackends is
- * MaxConnections + autovacuum_max_workers + 1 (it is computed by the GUC
- * assign hooks for those variables):
+ * Primary determinants of sizes of shared-memory structures.
+ *
+ * MaxBackends is computed by PostmasterMain after modules have had a chance to
+ * register background workers.
  */
 int			NBuffers = 4096;
-int			MaxBackends = 200;
 int			MaxConnections = 90;
+int			max_worker_processes = 8;
+int			MaxBackends = 0;
 
 int			gp_workfile_max_entries = 8192; /* Number of unique entries we can hold in the workfile directory */
 
@@ -133,10 +133,12 @@ int			VacuumCostPageDirty = 20;
 int			VacuumCostLimit = 200;
 int			VacuumCostDelay = 0;
 
+int			VacuumPageHit = 0;
+int			VacuumPageMiss = 0;
+int			VacuumPageDirty = 0;
+
 int			VacuumCostBalance = 0;		/* working state for vacuum */
 bool		VacuumCostActive = false;
-
-int			GinFuzzySearchLimit = 0;
 
 /* gpperfmon port number */
 int 	gpperfmon_port = 8888;
@@ -151,10 +153,5 @@ bool	pljava_classpath_insecure = false;
 
 
 /* Memory protection GUCs*/
-#ifdef __darwin__
-int gp_vmem_protect_limit = 0; 
-#else
 int gp_vmem_protect_limit = 8192;
-#endif
 int gp_vmem_protect_gang_cache_limit = 500;
-

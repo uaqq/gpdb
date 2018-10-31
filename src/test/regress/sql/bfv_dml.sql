@@ -55,7 +55,7 @@ set optimizer_enable_master_only_queries=on;
 
 -- create master-only table
 create table m();
-set allow_system_table_mods='DML';
+set allow_system_table_mods=true;
 delete from gp_distribution_policy where localoid='m'::regclass;
 reset allow_system_table_mods;
 alter table m add column a int;
@@ -132,7 +132,7 @@ set optimizer_trace_fallback = on;
 -- Subquery that returns a row rather than a single scalar isn't supported
 -- in ORCA currently, so we can use that to trigger fallback.
 update update_pk_test set a=1 where row(1,2) = (SELECT 1, 2);
-
+select * from update_pk_test order by 1,2;
 reset optimizer_trace_fallback;
 
 
@@ -187,7 +187,7 @@ drop table execinsert_test;
 -- to add a Motion node or something that hides the problem otherwise.
 
 CREATE TABLE execinsert_test (id int4, t text) DISTRIBUTED BY (id);
-set allow_system_table_mods='DML';
+set allow_system_table_mods=true;
 delete from gp_distribution_policy where localoid='execinsert_test'::regclass;
 reset allow_system_table_mods;
 

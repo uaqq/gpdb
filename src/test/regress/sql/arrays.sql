@@ -208,6 +208,14 @@ SELECT * FROM array_op_test WHERE i && '{17}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE i @> '{32,17}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE i && '{32,17}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE i <@ '{38,34,32,89}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i = '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i @> '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i && '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i <@ '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i = '{NULL}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i @> '{NULL}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i && '{NULL}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE i <@ '{NULL}' ORDER BY seqno;
 
 SELECT * FROM array_op_test WHERE t @> '{AAAAAAAA72908}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE t && '{AAAAAAAA72908}' ORDER BY seqno;
@@ -216,6 +224,10 @@ SELECT * FROM array_op_test WHERE t && '{AAAAAAAAAA646}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE t @> '{AAAAAAAA72908,AAAAAAAAAA646}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE t && '{AAAAAAAA72908,AAAAAAAAAA646}' ORDER BY seqno;
 SELECT * FROM array_op_test WHERE t <@ '{AAAAAAAA72908,AAAAAAAAAAAAAAAAAAA17075,AA88409,AAAAAAAAAAAAAAAAAA36842,AAAAAAA48038,AAAAAAAAAAAAAA10611}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE t = '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE t @> '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE t && '{}' ORDER BY seqno;
+SELECT * FROM array_op_test WHERE t <@ '{}' ORDER BY seqno;
 
 -- array casts
 SELECT ARRAY[1,2,3]::text[]::int[]::float8[] AS "{1,2,3}";
@@ -351,12 +363,12 @@ drop type _comptype;
 drop table comptable;
 drop type comptype;
 
-create or replace function unnest1(anyarray) 
+create or replace function unnest1(anyarray)
 returns setof anyelement as $$
 select $1[s] from generate_subscripts($1,1) g(s);
 $$ language sql immutable;
 
-create or replace function unnest2(anyarray) 
+create or replace function unnest2(anyarray)
 returns setof anyelement as $$
 select $1[s1][s2] from generate_subscripts($1,1) g1(s1),
                    generate_subscripts($1,2) g2(s2);
@@ -388,7 +400,21 @@ select string_to_array('1||2|3||', '||');
 select string_to_array('1|2|3', '');
 select string_to_array('', '|');
 select string_to_array('1|2|3', NULL);
-select string_to_array(NULL, '|');
+select string_to_array(NULL, '|') IS NULL;
+select string_to_array('abc', '');
+select string_to_array('abc', '', 'abc');
+select string_to_array('abc', ',');
+select string_to_array('abc', ',', 'abc');
+select string_to_array('1,2,3,4,,6', ',');
+select string_to_array('1,2,3,4,,6', ',', '');
+select string_to_array('1,2,3,4,*,6', ',', '*');
+
+select array_to_string(NULL::int4[], ',') IS NULL;
+select array_to_string('{}'::int4[], ',');
+select array_to_string(array[1,2,3,4,NULL,6], ',');
+select array_to_string(array[1,2,3,4,NULL,6], ',', '*');
+select array_to_string(array[1,2,3,4,NULL,6], NULL);
+select array_to_string(array[1,2,3,4,NULL,6], ',', NULL);
 
 select array_to_string(string_to_array('1|2|3', '|'), '|');
 
@@ -397,6 +423,14 @@ select array_length(array[[1,2,3], [4,5,6]], 0);
 select array_length(array[[1,2,3], [4,5,6]], 1);
 select array_length(array[[1,2,3], [4,5,6]], 2);
 select array_length(array[[1,2,3], [4,5,6]], 3);
+
+select cardinality(NULL::int[]);
+select cardinality('{}'::int[]);
+select cardinality(array[1,2,3]);
+select cardinality('[2:4]={5,6,7}'::int[]);
+select cardinality('{{1,2}}'::int[]);
+select cardinality('{{1,2},{3,4},{5,6}}'::int[]);
+select cardinality('{{{1,9},{5,6}},{{2,3},{3,4}}}'::int[]);
 
 select array_agg(unique1 order by unique1) from (select unique1 from tenk1 where unique1 < 15 order by unique1) ss;
 select array_agg(ten order by ten) from (select ten from tenk1 where unique1 < 15 order by unique1) ss;
@@ -409,6 +443,19 @@ select unnest(array[1,2,3,4.5]::float8[]);
 select unnest(array[1,2,3,4.5]::numeric[]);
 select unnest(array[1,2,3,null,4,null,null,5,6]);
 select unnest(array[1,2,3,null,4,null,null,5,6]::text[]);
+select abs(unnest(array[1,2,null,-3]));
+select array_remove(array[1,2,2,3], 2);
+select array_remove(array[1,2,2,3], 5);
+select array_remove(array[1,NULL,NULL,3], NULL);
+select array_remove(array['A','CC','D','C','RR'], 'RR');
+select array_remove('{{1,2,2},{1,4,3}}', 2); -- not allowed
+select array_remove(array['X','X','X'], 'X') = '{}';
+select array_replace(array[1,2,5,4],5,3);
+select array_replace(array[1,2,5,4],5,NULL);
+select array_replace(array[1,2,NULL,4,NULL],NULL,5);
+select array_replace(array['A','B','DD','B'],'B','CC');
+select array_replace(array[1,NULL,3],NULL,NULL);
+select array_replace(array['AB',NULL,'CDE'],NULL,'12');
 
 -- Insert/update on a column that is array of composite
 
@@ -417,6 +464,24 @@ insert into t1 (f1[5].q1) values(42);
 select f1 from t1;
 update t1 set f1[5].q2 = 43;
 select f1 from t1;
+
+-- Check that arrays of composites are safely detoasted when needed
+
+create temp table src (f1 text);
+insert into src
+  select string_agg(random()::text,'') from generate_series(1,10000);
+create type textandtext as (c1 text, c2 text);
+create temp table dest (f1 textandtext[]);
+insert into dest select array[row(f1,f1)::textandtext] from src;
+select length(md5((f1[1]).c2)) from dest;
+delete from src;
+select length(md5((f1[1]).c2)) from dest;
+truncate table src;
+drop table src;
+select length(md5((f1[1]).c2)) from dest;
+drop table dest;
+drop type textandtext;
+
 
 -- Suppress NOTICE messages when users/groups don't exist
 SET client_min_messages TO 'error';
@@ -497,6 +562,25 @@ FROM int_test_tbl1 l, int_test_tbl2 r
 WHERE l.id % r.id = 0
 GROUP BY l.id
 ORDER BY l.id;
+
+-- Array types are GPDB hashable
+CREATE TEMP TABLE text_array_table (t text[]) DISTRIBUTED BY ( t );
+INSERT INTO text_array_table VALUES ('{foo}');
+
+CREATE TEMP TABLE int2_array_table (f1 int2[]) DISTRIBUTED BY (f1);
+INSERT INTO int2_array_table VALUES ('{1,2,3}');
+
+CREATE TEMP TABLE int4_array_table (f1 int4[]) DISTRIBUTED BY (f1);
+INSERT INTO int4_array_table VALUES ('{1,2,3}');
+
+CREATE TEMP TABLE int8_array_table (f1 int8[]) DISTRIBUTED BY (f1);
+INSERT INTO int8_array_table VALUES ('{1,2,3}');
+
+CREATE TEMP TABLE float4_array_table (f1 float4[]) DISTRIBUTED BY (f1);
+INSERT INTO float4_array_table VALUES ('{1.1,2.1,3.1}');
+
+CREATE TEMP TABLE float8_array_table (f1 float8[]) DISTRIBUTED BY (f1);
+INSERT INTO float8_array_table VALUES ('{1.1,2.1,3.1}');
 
 -- clean up
 -- start_ignore

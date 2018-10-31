@@ -4,10 +4,10 @@
  *	  POSTGRES tuple descriptor definitions.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/tupdesc.h,v 1.55 2010/01/02 16:58:00 momjian Exp $
+ * src/include/access/tupdesc.h
  *
  *-------------------------------------------------------------------------
  */
@@ -29,6 +29,8 @@ typedef struct constrCheck
 {
 	char	   *ccname;
 	char	   *ccbin;			/* nodeToString representation of expr */
+	bool		ccvalid;
+	bool		ccnoinherit;	/* this is a non-inheritable constraint */
 } ConstrCheck;
 
 /* This structure contains constraints of a tuple */
@@ -53,7 +55,7 @@ typedef struct tupleConstr
  * TupleDesc; with the exception that tdhasoid indicates if OID is present.
  *
  * If the tupdesc is known to correspond to a named rowtype (such as a table's
- * rowtype) then tdtypeid identifies that type and tdtypmod is -1.	Otherwise
+ * rowtype) then tdtypeid identifies that type and tdtypmod is -1.  Otherwise
  * tdtypeid is RECORDOID, and tdtypmod can be either -1 for a fully anonymous
  * row type, or a value >= 0 to allow the rowtype to be looked up in the
  * typcache.c type cache.
@@ -132,8 +134,12 @@ extern void TupleDescInitEntry(TupleDesc desc,
 				   int32 typmod,
 				   int attdim);
 
+extern void TupleDescInitEntryCollation(TupleDesc desc,
+							AttrNumber attributeNumber,
+							Oid collationid);
+
 extern TupleDesc BuildDescForRelation(List *schema);
 
-extern TupleDesc BuildDescFromLists(List *names, List *types, List *typmods);
+extern TupleDesc BuildDescFromLists(List *names, List *types, List *typmods, List *collations);
 
 #endif   /* TUPDESC_H */

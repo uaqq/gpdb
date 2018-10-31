@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/drop_trigger.sgml,v 1.24 2010/04/03 07:23:01 petere Exp $
+doc/src/sgml/ref/drop_trigger.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPTRIGGER">
+ <indexterm zone="sql-droptrigger">
+  <primary>DROP TRIGGER</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP TRIGGER</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -12,16 +16,12 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>DROP TRIGGER</refname>
-  <refpurpose>remove a trigger</refpurpose> 
- </refnamediv>            
-
- <indexterm zone="sql-droptrigger">
-  <primary>DROP TRIGGER</primary>
- </indexterm>
+  <refpurpose>remove a trigger</refpurpose>
+ </refnamediv>
 
  <refsynopsisdiv>
 <synopsis>
-DROP TRIGGER [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> ON <replaceable class="PARAMETER">table</replaceable> [ CASCADE | RESTRICT ]
+DROP TRIGGER [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> ON <replaceable class="PARAMETER">table_name</replaceable> [ CASCADE | RESTRICT ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -44,7 +44,7 @@ DROP TRIGGER [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> ON 
     <term><literal>IF EXISTS</literal></term>
     <listitem>
      <para>
-      Do not throw an error if the trigger does not exist. A notice is issued 
+      Do not throw an error if the trigger does not exist. A notice is issued
       in this case.
      </para>
     </listitem>
@@ -60,7 +60,7 @@ DROP TRIGGER [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> ON 
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="PARAMETER">table</replaceable></term>
+    <term><replaceable class="PARAMETER">table_name</replaceable></term>
     <listitem>
      <para>
       The name (optionally schema-qualified) of the table for which
@@ -99,13 +99,12 @@ DROP TRIGGER [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> ON 
 
 <programlisting>
 DROP TRIGGER if_dist_exists ON films;
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
- 
+
  <refsect1 id="SQL-DROPTRIGGER-compatibility">
   <title>Compatibility</title>
-  
+
   <para>
    The <command>DROP TRIGGER</command> statement in
    <productname>PostgreSQL</productname> is incompatible with the SQL

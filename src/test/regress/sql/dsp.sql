@@ -164,6 +164,7 @@ select relid::regclass,compresslevel,compresstype,blocksize,checksum,columnstore
 	from pg_appendonly order by 1;
 select attrelid::regclass,attnum,attoptions
 	from pg_attribute_encoding order by 1,2;
+drop database if exists dsp3;
 create database dsp3;
 \c dsp3
 set gp_default_storage_options=
@@ -325,14 +326,11 @@ show gp_default_storage_options;
 create table ao8 with (compresstype=none) as select * from ao7
     distributed by (a);
 \d ao8
--- compresslevel only
+-- compresslevel only (should fail)
 create table ao9 with (compresslevel=0) as select * from ao8
     distributed by (a);
-\d ao9
-select * from ao9 limit 4 order by 1;
 create table ao10 with (compresslevel=0, compresstype=none)
-    as select * from ao9 distributed by (a);
-\d ao10
+    as select * from ao8 distributed by (a);
 
 -- MPP-14504: we need to allow compresstype=none with compresslevel>0
 create table ao11 (a int, b int) with (compresstype=none, compresslevel=2)
@@ -354,12 +352,14 @@ set gp_default_storage_options='appendonly=true';
 create external table ext_t1 (a int, b int)
     location ('file:///tmp/test.txt') format 'text';
 \d+ ext_t1
+create external table ext_error_logging_off (a int, b int)
+    location ('file:///tmp/test.txt') format 'text'
+    segment reject limit 100;
+\d+ ext_error_logging_off
 create external table ext_t2 (a int, b int)
     location ('file:///tmp/test.txt') format 'text'
     log errors segment reject limit 100;
 \d+ ext_t2
-drop external table ext_t1;
-drop external table ext_t2;
 
 -- Make sure gp_default_storage_options GUC value is set in newly created cdbgangs
 -- after previous idle cdbgang is stopped
@@ -420,9 +420,6 @@ RESET gp_default_storage_options;
 
 -- cleanup
 \c postgres
-drop database dsp1;
-drop database dsp2;
-drop database dsp3;
 
 -- start_matchsubs
 -- m/.*\[ERROR\]*/

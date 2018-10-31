@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/pgtypeslib/dt.h,v 1.44 2009/06/11 14:49:13 momjian Exp $ */
+/* src/interfaces/ecpg/pgtypeslib/dt.h */
 
 #ifndef DT_H
 #define DT_H
@@ -255,7 +255,7 @@ do { \
  *	DAYS_PER_MONTH is very imprecise.  The more accurate value is
  *	365.2425/12 = 30.436875, or '30 days 10:29:06'.  Right now we only
  *	return an integral number of days, but someday perhaps we should
- *	also return a 'time' value to be used as well.	ISO 8601 suggests
+ *	also return a 'time' value to be used as well.  ISO 8601 suggests
  *	30 days.
  */
 #define DAYS_PER_MONTH	30		/* assumes exactly 30 days per month */
@@ -339,12 +339,12 @@ do { \
 
 int			DecodeInterval(char **, int *, int, int *, struct tm *, fsec_t *);
 int			DecodeTime(char *, int *, struct tm *, fsec_t *);
-int			EncodeDateTime(struct tm *, fsec_t, int *, char **, int, char *, bool);
-int			EncodeInterval(struct tm *, fsec_t, int, char *);
+int			EncodeDateTime(struct tm * tm, fsec_t fsec, bool print_tz, int tz, const char *tzn, int style, char *str, bool EuroDates);
+int			EncodeInterval(struct tm * tm, fsec_t fsec, int style, char *str);
 int			tm2timestamp(struct tm *, fsec_t, int *, timestamp *);
 int			DecodeUnits(int field, char *lowtoken, int *val);
 bool		CheckDateTokenTables(void);
-int			EncodeDateOnly(struct tm *, int, char *, bool);
+int			EncodeDateOnly(struct tm * tm, int style, char *str, bool EuroDates);
 int			GetEpochTime(struct tm *);
 int			ParseDateTime(char *, char *, char **, int *, int *, char **);
 int			DecodeDateTime(char **, int *, int, int *, struct tm *, fsec_t *, bool);
@@ -353,6 +353,10 @@ void		GetCurrentDateTime(struct tm *);
 int			date2j(int, int, int);
 void		TrimTrailingZeros(char *);
 void		dt2time(double, int *, int *, int *, fsec_t *);
+int PGTYPEStimestamp_defmt_scan(char **str, char *fmt, timestamp * d,
+							int *year, int *month, int *day,
+							int *hour, int *minute, int *second,
+							int *tz);
 
 extern char *pgtypes_date_weekdays_short[];
 extern char *pgtypes_date_months[];

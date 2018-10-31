@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/ltree/_ltree_op.c,v 1.14 2010/02/24 18:02:24 tgl Exp $
+ * contrib/ltree/_ltree_op.c
  *
  *
  * op function for ltree[]
@@ -9,7 +9,6 @@
 
 #include <ctype.h>
 
-#include "utils/array.h"
 #include "ltree.h"
 
 PG_FUNCTION_INFO_V1(_ltree_isparent);
@@ -23,20 +22,12 @@ PG_FUNCTION_INFO_V1(_lt_q_rregex);
 PG_FUNCTION_INFO_V1(_ltxtq_exec);
 PG_FUNCTION_INFO_V1(_ltxtq_rexec);
 
-Datum		_ltree_r_isparent(PG_FUNCTION_ARGS);
-Datum		_ltree_r_risparent(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(_ltree_extract_isparent);
 PG_FUNCTION_INFO_V1(_ltree_extract_risparent);
 PG_FUNCTION_INFO_V1(_ltq_extract_regex);
 PG_FUNCTION_INFO_V1(_ltxtq_extract_exec);
-Datum		_ltree_extract_isparent(PG_FUNCTION_ARGS);
-Datum		_ltree_extract_risparent(PG_FUNCTION_ARGS);
-Datum		_ltq_extract_regex(PG_FUNCTION_ARGS);
-Datum		_ltxtq_extract_exec(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(_lca);
-Datum		_lca(PG_FUNCTION_ARGS);
 
 typedef Datum (*PGCALL2) (PG_FUNCTION_ARGS);
 
@@ -52,7 +43,7 @@ array_iterator(ArrayType *la, PGCALL2 callback, void *param, ltree **found)
 		ereport(ERROR,
 				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
 				 errmsg("array must be one-dimensional")));
-	if (ARR_HASNULL(la))
+	if (array_contains_nulls(la))
 		ereport(ERROR,
 				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				 errmsg("array must not contain nulls")));
@@ -152,7 +143,7 @@ _lt_q_regex(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
 				 errmsg("array must be one-dimensional")));
-	if (ARR_HASNULL(_query))
+	if (array_contains_nulls(_query))
 		ereport(ERROR,
 				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				 errmsg("array must not contain nulls")));
@@ -310,7 +301,7 @@ _lca(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
 				 errmsg("array must be one-dimensional")));
-	if (ARR_HASNULL(la))
+	if (array_contains_nulls(la))
 		ereport(ERROR,
 				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				 errmsg("array must not contain nulls")));

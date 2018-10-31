@@ -4,10 +4,10 @@
  *	  Definitions for hot standby mode.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/standby.h,v 1.11 2010/07/03 20:43:58 tgl Exp $
+ * src/include/storage/standby.h
  *
  *-------------------------------------------------------------------------
  */
@@ -29,13 +29,13 @@ extern void ShutdownRecoveryTransactionEnvironment(void);
 
 extern void ResolveRecoveryConflictWithSnapshot(TransactionId latestRemovedXid,
 									RelFileNode node);
-extern void ResolveRecoveryConflictWithRemovedTransactionId(void);
 extern void ResolveRecoveryConflictWithTablespace(Oid tsid);
 extern void ResolveRecoveryConflictWithDatabase(Oid dbid);
 
 extern void ResolveRecoveryConflictWithBufferPin(void);
-extern void SendRecoveryConflictWithBufferPin(ProcSignalReason reason);
-extern void CheckRecoveryConflictDeadlock(LWLockId partitionLock);
+extern void CheckRecoveryConflictDeadlock(void);
+extern void StandbyDeadLockHandler(void);
+extern void StandbyTimeoutHandler(void);
 
 /*
  * Standby Rmgr (RM_STANDBY_ID)
@@ -48,7 +48,7 @@ extern void StandbyAcquireAccessExclusiveLock(TransactionId xid, Oid dbOid, Oid 
 extern void StandbyReleaseLockTree(TransactionId xid,
 					   int nsubxids, TransactionId *subxids);
 extern void StandbyReleaseAllLocks(void);
-extern void StandbyReleaseOldLocks(TransactionId removeXid);
+extern void StandbyReleaseOldLocks(int nxids, TransactionId *xids);
 
 /*
  * XLOG message types
@@ -68,6 +68,7 @@ typedef struct xl_standby_locks
 typedef struct xl_running_xacts
 {
 	int			xcnt;			/* # of xact ids in xids[] */
+	int			subxcnt;		/* # of subxact ids in xids[] */
 	bool		subxid_overflow;	/* snapshot overflowed, subxids missing */
 	TransactionId nextXid;		/* copy of ShmemVariableCache->nextXid */
 	TransactionId oldestRunningXid;		/* *not* oldestXmin */
@@ -81,7 +82,7 @@ typedef struct xl_running_xacts
 
 /* Recovery handlers for the Standby Rmgr (RM_STANDBY_ID) */
 extern void standby_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record);
-extern void standby_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record);
+extern void standby_desc(StringInfo buf, XLogRecord *record);
 
 /*
  * Declarations for GetRunningTransactionData(). Similar to Snapshots, but
@@ -98,6 +99,7 @@ extern void standby_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record
 typedef struct RunningTransactionsData
 {
 	int			xcnt;			/* # of xact ids in xids[] */
+	int			subxcnt;		/* # of subxact ids in xids[] */
 	bool		subxid_overflow;	/* snapshot overflowed, subxids missing */
 	TransactionId nextXid;		/* copy of ShmemVariableCache->nextXid */
 	TransactionId oldestRunningXid;		/* *not* oldestXmin */
@@ -109,7 +111,8 @@ typedef struct RunningTransactionsData
 typedef RunningTransactionsData *RunningTransactions;
 
 extern void LogAccessExclusiveLock(Oid dbOid, Oid relOid);
+extern void LogAccessExclusiveLockPrepare(void);
 
-extern void LogStandbySnapshot(TransactionId *oldestActiveXid, TransactionId *nextXid);
+extern XLogRecPtr LogStandbySnapshot(void);
 
 #endif   /* STANDBY_H */

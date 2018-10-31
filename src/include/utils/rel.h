@@ -6,10 +6,10 @@
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc.
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/rel.h,v 1.124 2010/02/26 02:01:29 momjian Exp $
+ * src/include/utils/rel.h
  *
  *-------------------------------------------------------------------------
  */
@@ -27,6 +27,7 @@
 #include "storage/block.h"
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
+#include "utils/reltrigger.h"
 
 
 /*
@@ -47,59 +48,10 @@ typedef struct LockInfoData
 
 typedef LockInfoData *LockInfo;
 
-/*
- * Likewise, this struct really belongs to trigger.h, but for convenience
- * we put it here.
- */
-typedef struct Trigger
-{
-	Oid			tgoid;			/* OID of trigger (pg_trigger row) */
-	/* Remaining fields are copied from pg_trigger, see pg_trigger.h */
-	char	   *tgname;
-	Oid			tgfoid;
-	int16		tgtype;
-	char		tgenabled;
-	bool		tgisinternal;
-	Oid			tgconstrrelid;
-	Oid			tgconstrindid;
-	Oid			tgconstraint;
-	bool		tgdeferrable;
-	bool		tginitdeferred;
-	int16		tgnargs;
-	int16		tgnattr;
-	int16	   *tgattr;
-	char	  **tgargs;
-	char	   *tgqual;
-} Trigger;
-
-typedef struct TriggerDesc
-{
-	/*
-	 * Index data to identify which triggers are which.  Since each trigger
-	 * can appear in more than one class, for each class we provide a list of
-	 * integer indexes into the triggers array.  The class codes are defined
-	 * by TRIGGER_EVENT_xxx macros in commands/trigger.h.
-	 */
-#define TRIGGER_NUM_EVENT_CLASSES  4
-
-	uint16		n_before_statement[TRIGGER_NUM_EVENT_CLASSES];
-	uint16		n_before_row[TRIGGER_NUM_EVENT_CLASSES];
-	uint16		n_after_row[TRIGGER_NUM_EVENT_CLASSES];
-	uint16		n_after_statement[TRIGGER_NUM_EVENT_CLASSES];
-	int		   *tg_before_statement[TRIGGER_NUM_EVENT_CLASSES];
-	int		   *tg_before_row[TRIGGER_NUM_EVENT_CLASSES];
-	int		   *tg_after_row[TRIGGER_NUM_EVENT_CLASSES];
-	int		   *tg_after_statement[TRIGGER_NUM_EVENT_CLASSES];
-
-	/* The actual array of triggers is here */
-	Trigger    *triggers;
-	int			numtriggers;
-} TriggerDesc;
-
 
 /*
- * Cached lookup information for the index access method functions defined
- * by the pg_am row associated with an index relation.
+ * Cached lookup information for the frequently used index access method
+ * functions, defined by the pg_am row associated with an index relation.
  */
 typedef struct RelationAmInfo
 {
@@ -111,11 +63,7 @@ typedef struct RelationAmInfo
 	FmgrInfo	amendscan;
 	FmgrInfo	ammarkpos;
 	FmgrInfo	amrestrpos;
-	FmgrInfo	ambuild;
-	FmgrInfo	ambulkdelete;
-	FmgrInfo	amvacuumcleanup;
-	FmgrInfo	amcostestimate;
-	FmgrInfo	amoptions;
+	FmgrInfo	amcanreturn;
 } RelationAmInfo;
 
 
@@ -129,9 +77,8 @@ typedef struct RelationData
 	/* use "struct" here to avoid needing to include smgr.h: */
 	struct SMgrRelationData *rd_smgr;	/* cached file handle, or NULL */
 	int			rd_refcnt;		/* reference count */
-	bool		rd_istemp;		/* CDB: true => skip locking, logging, fsync */
+	BackendId	rd_backend;		/* owning backend id, if temporary relation */
 	bool		rd_islocaltemp; /* rel is a temp rel of this session */
-	bool		rd_issyscat;	/* GP: true => system catalog table (has "pg_" prefix) */
 	bool		rd_isnailed;	/* rel is nailed in cache */
 	bool		rd_isvalid;		/* relcache entry is valid */
 	char		rd_indexvalid;	/* state of rd_indexlist: 0 = not valid, 1 =
@@ -140,11 +87,15 @@ typedef struct RelationData
 	/*
 	 * rd_createSubid is the ID of the highest subtransaction the rel has
 	 * survived into; or zero if the rel was not created in the current top
-	 * transaction.  This should be relied on only for optimization purposes;
-	 * it is possible for new-ness to be "forgotten" (eg, after CLUSTER).
-	 * Likewise, rd_newRelfilenodeSubid is the ID of the highest
-	 * subtransaction the relfilenode change has survived into, or zero if not
-	 * changed in the current transaction (or we have forgotten changing it).
+	 * transaction.  This can be now be relied on, whereas previously it could
+	 * be "forgotten" in earlier releases. Likewise, rd_newRelfilenodeSubid is
+	 * the ID of the highest subtransaction the relfilenode change has
+	 * survived into, or zero if not changed in the current transaction (or we
+	 * have forgotten changing it). rd_newRelfilenodeSubid can be forgotten
+	 * when a relation has multiple new relfilenodes within a single
+	 * transaction, with one of them occuring in a subsequently aborted
+	 * subtransaction, e.g. BEGIN; TRUNCATE t; SAVEPOINT save; TRUNCATE t;
+	 * ROLLBACK TO save; -- rd_newRelfilenode is now forgotten
 	 */
 	SubTransactionId rd_createSubid;	/* rel was created in current xact */
 	SubTransactionId rd_newRelfilenodeSubid;	/* new relfilenode assigned in
@@ -153,16 +104,22 @@ typedef struct RelationData
 	Form_pg_class rd_rel;		/* RELATION tuple */
 	TupleDesc	rd_att;			/* tuple descriptor */
 	Oid			rd_id;			/* relation's object id */
-	List	   *rd_indexlist;	/* list of OIDs of indexes on relation */
-	Bitmapset  *rd_indexattr;	/* identifies columns used in indexes */
-	Oid			rd_oidindex;	/* OID of unique index on OID, if any */
 	LockInfoData rd_lockInfo;	/* lock mgr's info for locking relation */
 	RuleLock   *rd_rules;		/* rewrite rules */
 	MemoryContext rd_rulescxt;	/* private memory cxt for rd_rules, if any */
 	TriggerDesc *trigdesc;		/* Trigger info, or NULL if rel has none */
     struct GpPolicy *rd_cdbpolicy; /* Partitioning info if distributed rel */
     bool        rd_cdbDefaultStatsWarningIssued;
-	bool		rd_isLocalBuf;  /* CDB: true => rel uses the local buffer mgr */
+
+	/* data managed by RelationGetIndexList: */
+	List	   *rd_indexlist;	/* list of OIDs of indexes on relation */
+	Oid			rd_oidindex;	/* OID of unique index on OID, if any */
+	Oid			rd_replidindex; /* OID of replica identity index, if any */
+
+	/* data managed by RelationGetIndexAttrBitmap: */
+	Bitmapset  *rd_indexattr;	/* identifies columns used in indexes */
+	Bitmapset  *rd_keyattr;		/* cols that can be ref'd by foreign keys */
+	Bitmapset  *rd_idattr;		/* included in replica identity index */
 
 	/*
 	 * rd_options is set whenever rd_rel is loaded into the relcache entry.
@@ -180,15 +137,15 @@ typedef struct RelationData
 	/*
 	 * index access support info (used only for an index relation)
 	 *
-	 * Note: only default operators and support procs for each opclass are
-	 * cached, namely those with lefttype and righttype equal to the opclass's
-	 * opcintype.  The arrays are indexed by strategy or support number, which
-	 * is a sufficient identifier given that restriction.
+	 * Note: only default support procs for each opclass are cached, namely
+	 * those with lefttype and righttype equal to the opclass's opcintype. The
+	 * arrays are indexed by support function number, which is a sufficient
+	 * identifier given that restriction.
 	 *
 	 * Note: rd_amcache is available for index AMs to cache private data about
 	 * an index.  This must be just a cache since it may get reset at any time
 	 * (in particular, it will get reset by a relcache inval message for the
-	 * index).	If used, it must point to a single memory chunk palloc'd in
+	 * index).  If used, it must point to a single memory chunk palloc'd in
 	 * rd_indexcxt.  A relcache reset will include freeing that chunk and
 	 * setting rd_amcache = NULL.
 	 */
@@ -196,7 +153,6 @@ typedef struct RelationData
 	RelationAmInfo *rd_aminfo;	/* lookup info for funcs found in pg_am */
 	Oid		   *rd_opfamily;	/* OIDs of op families for each index col */
 	Oid		   *rd_opcintype;	/* OIDs of opclass declared input data types */
-	Oid		   *rd_operator;	/* OIDs of index operators */
 	RegProcedure *rd_support;	/* OIDs of support procedures */
 	FmgrInfo   *rd_supportinfo; /* lookup info for support procedures */
 	int16	   *rd_indoption;	/* per-column AM-specific flags */
@@ -206,6 +162,18 @@ typedef struct RelationData
 	Oid		   *rd_exclprocs;	/* OIDs of exclusion ops' procs, if any */
 	uint16	   *rd_exclstrats;	/* exclusion ops' strategy numbers, if any */
 	void	   *rd_amcache;		/* available for use by index AM */
+	Oid		   *rd_indcollation;	/* OIDs of index collations */
+
+	/*
+	 * foreign-table support
+	 *
+	 * rd_fdwroutine must point to a single memory chunk palloc'd in
+	 * CacheMemoryContext.  It will be freed and reset to NULL on a relcache
+	 * reset.
+	 */
+
+	/* use "struct" here to avoid needing to include fdwapi.h: */
+	struct FdwRoutine *rd_fdwroutine;	/* cached function pointers, or NULL */
 
 	/*
 	 * Hack for CLUSTER, rewriting ALTER TABLE, etc: when writing a new
@@ -213,7 +181,8 @@ typedef struct RelationData
 	 * have the existing toast table's OID, not the OID of the transient toast
 	 * table.  If rd_toastoid isn't InvalidOid, it is the OID to place in
 	 * toast pointers inserted into this rel.  (Note it's set on the new
-	 * version of the main heap, not the toast table itself.)
+	 * version of the main heap, not the toast table itself.)  This also
+	 * causes toast_save_datum() to try to preserve toast value OIDs.
 	 */
 	Oid			rd_toastoid;	/* Real TOAST table's OID, or InvalidOid */
 
@@ -246,6 +215,9 @@ typedef struct AutoVacOpts
 	int			freeze_min_age;
 	int			freeze_max_age;
 	int			freeze_table_age;
+	int			multixact_freeze_min_age;
+	int			multixact_freeze_max_age;
+	int			multixact_freeze_table_age;
 	float8		vacuum_scale_factor;
 	float8		analyze_scale_factor;
 } AutoVacOpts;
@@ -259,10 +231,14 @@ typedef struct StdRdOptions
 	bool		appendonly;		/* is this an appendonly relation? */
 	int			blocksize;		/* max varblock size (AO rels only) */
 	int			compresslevel;  /* compression level (AO rels only) */
-	char	   *compresstype;	/* compression type (AO rels only) */
+	char		compresstype[NAMEDATALEN]; /* compression type (AO rels only) */
 	bool		checksum;		/* checksum (AO rels only) */
 	bool 		columnstore;	/* columnstore (AO only) */
-	char	   *orientation;	/* orientation (AO only) */
+	char		orientation[NAMEDATALEN]; /* orientation (AO only) */
+	bool		security_barrier;		/* for views */
+	int			check_option_offset;	/* for views */
+	bool		user_catalog_table;		/* use as an additional catalog
+										 * relation */
 } StdRdOptions;
 
 #define HEAP_MIN_FILLFACTOR			10
@@ -289,6 +265,56 @@ typedef struct StdRdOptions
  */
 #define RelationGetTargetPageFreeSpace(relation, defaultff) \
 	(BLCKSZ * (100 - RelationGetFillFactor(relation, defaultff)) / 100)
+
+/*
+ * RelationIsSecurityView
+ *		Returns whether the relation is security view, or not
+ */
+#define RelationIsSecurityView(relation)	\
+	((relation)->rd_options ?				\
+	 ((StdRdOptions *) (relation)->rd_options)->security_barrier : false)
+
+/*
+ * RelationHasCheckOption
+ *		Returns true if the relation is a view defined with either the local
+ *		or the cascaded check option.
+ */
+#define RelationHasCheckOption(relation)									\
+	((relation)->rd_options &&												\
+	 ((StdRdOptions *) (relation)->rd_options)->check_option_offset != 0)
+
+/*
+ * RelationHasLocalCheckOption
+ *		Returns true if the relation is a view defined with the local check
+ *		option.
+ */
+#define RelationHasLocalCheckOption(relation)								\
+	((relation)->rd_options &&												\
+	 ((StdRdOptions *) (relation)->rd_options)->check_option_offset != 0 ?	\
+	 strcmp((char *) (relation)->rd_options +								\
+			((StdRdOptions *) (relation)->rd_options)->check_option_offset, \
+			"local") == 0 : false)
+
+/*
+ * RelationHasCascadedCheckOption
+ *		Returns true if the relation is a view defined with the cascaded check
+ *		option.
+ */
+#define RelationHasCascadedCheckOption(relation)							\
+	((relation)->rd_options &&												\
+	 ((StdRdOptions *) (relation)->rd_options)->check_option_offset != 0 ?	\
+	 strcmp((char *) (relation)->rd_options +								\
+			((StdRdOptions *) (relation)->rd_options)->check_option_offset, \
+			"cascaded") == 0 : false)
+
+/*
+ * RelationIsUsedAsCatalogTable
+ *		Returns whether the relation should be treated as a catalog table
+ *		from the pov of logical decoding.
+ */
+#define RelationIsUsedAsCatalogTable(relation)	\
+	((relation)->rd_options ?				\
+	 ((StdRdOptions *) (relation)->rd_options)->user_catalog_table : false)
 
 /*
  * RelationIsValid
@@ -325,6 +351,13 @@ typedef struct StdRdOptions
  */
 #define RelationIsAoCols(relation) \
 	((bool)(((relation)->rd_rel->relstorage == RELSTORAGE_AOCOLS)))
+
+/*
+ * RelationIsAppendOptimized
+ * 		True iff relation has append only storage (can be row or column orientation)
+ */
+#define RelationIsAppendOptimized(relation) \
+	(RelationIsAoRows(relation) || RelationIsAoCols(relation))
 
 /*
  * RelationIsForeign
@@ -410,7 +443,7 @@ typedef struct StdRdOptions
 #define RelationOpenSmgr(relation) \
 	do { \
 		if ((relation)->rd_smgr == NULL) \
-			smgrsetowner(&((relation)->rd_smgr), smgropen((relation)->rd_node)); \
+			smgrsetowner(&((relation)->rd_smgr), smgropen((relation)->rd_node, (relation)->rd_backend)); \
 	} while (0)
 
 /*
@@ -432,7 +465,7 @@ typedef struct StdRdOptions
  * RelationGetTargetBlock
  *		Fetch relation's current insertion target block.
  *
- * Returns InvalidBlockNumber if there is no current target block.	Note
+ * Returns InvalidBlockNumber if there is no current target block.  Note
  * that the target block status is discarded on any smgr-level invalidation.
  */
 #define RelationGetTargetBlock(relation) \
@@ -449,9 +482,34 @@ typedef struct StdRdOptions
 	} while (0)
 
 /*
+ * RelationNeedsWAL
+ *		True if relation needs WAL.
+ */
+#define RelationNeedsWAL(relation) \
+	((relation)->rd_rel->relpersistence == RELPERSISTENCE_PERMANENT)
+
+/*
+ * RelationUsesLocalBuffers
+ *		True if relation's pages are stored in local buffers.
+ *
+ * In GPDB, we do not use local buffers for temp tables because segmates need
+ * to share temp table contents.  Currently, there is no other reason to use
+ * local buffers.
+ */
+#define RelationUsesLocalBuffers(relation) false
+
+/*
+ * RelationUsesTempNamespace
+ *		True if relation's catalog entries live in a private namespace.
+ */
+#define RelationUsesTempNamespace(relation) \
+	((relation)->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
+
+/*
  * RELATION_IS_LOCAL
  *		If a rel is either temp or newly created in the current transaction,
- *		it can be assumed to be visible only to the current backend.
+ *		it can be assumed to be accessible only to the current backend.
+ *		This is typically used to decide that we can skip acquiring locks.
  *
  * Beware of multiple eval of argument
  */
@@ -466,7 +524,51 @@ typedef struct StdRdOptions
  * Beware of multiple eval of argument
  */
 #define RELATION_IS_OTHER_TEMP(relation) \
-	((relation)->rd_istemp && !(relation)->rd_islocaltemp)
+	((relation)->rd_rel->relpersistence == RELPERSISTENCE_TEMP && \
+	 !(relation)->rd_islocaltemp)
+
+
+/*
+ * RelationIsScannable
+ *		Currently can only be false for a materialized view which has not been
+ *		populated by its query.  This is likely to get more complicated later,
+ *		so use a macro which looks like a function.
+ */
+#define RelationIsScannable(relation) ((relation)->rd_rel->relispopulated)
+
+/*
+ * RelationIsPopulated
+ *		Currently, we don't physically distinguish the "populated" and
+ *		"scannable" properties of matviews, but that may change later.
+ *		Hence, use the appropriate one of these macros in code tests.
+ */
+#define RelationIsPopulated(relation) ((relation)->rd_rel->relispopulated)
+
+/*
+ * RelationIsAccessibleInLogicalDecoding
+ *		True if we need to log enough information to have access via
+ *		decoding snapshot.
+ */
+#define RelationIsAccessibleInLogicalDecoding(relation) \
+	(XLogLogicalInfoActive() && \
+	 RelationNeedsWAL(relation) && \
+	 (IsCatalogRelation(relation) || RelationIsUsedAsCatalogTable(relation)))
+
+/*
+ * RelationIsLogicallyLogged
+ *		True if we need to log enough information to extract the data from the
+ *		WAL stream.
+ *
+ * We don't log information for unlogged tables (since they don't WAL log
+ * anyway) and for system tables (their content is hard to make sense of, and
+ * it would complicate decoding slightly for little gain). Note that we *do*
+ * log information for user defined catalog tables since they presumably are
+ * interesting to the user...
+ */
+#define RelationIsLogicallyLogged(relation) \
+	(XLogLogicalInfoActive() && \
+	 RelationNeedsWAL(relation) && \
+	 !IsCatalogRelation(relation))
 
 /* routines in utils/cache/relcache.c */
 extern void RelationIncrementReferenceCount(Relation rel);

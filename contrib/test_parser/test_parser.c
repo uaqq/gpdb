@@ -3,10 +3,10 @@
  * test_parser.c
  *	  Simple example of a text search parser
  *
- * Copyright (c) 2007-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/contrib/test_parser/test_parser.c,v 1.7 2010/01/02 16:57:32 momjian Exp $
+ *	  contrib/test_parser/test_parser.c
  *
  *-------------------------------------------------------------------------
  */
@@ -38,23 +38,13 @@ typedef struct
 } LexDescr;
 
 /*
- * prototypes
- */
-PG_FUNCTION_INFO_V1(testprs_start);
-Datum		testprs_start(PG_FUNCTION_ARGS);
-
-PG_FUNCTION_INFO_V1(testprs_getlexeme);
-Datum		testprs_getlexeme(PG_FUNCTION_ARGS);
-
-PG_FUNCTION_INFO_V1(testprs_end);
-Datum		testprs_end(PG_FUNCTION_ARGS);
-
-PG_FUNCTION_INFO_V1(testprs_lextype);
-Datum		testprs_lextype(PG_FUNCTION_ARGS);
-
-/*
  * functions
  */
+PG_FUNCTION_INFO_V1(testprs_start);
+PG_FUNCTION_INFO_V1(testprs_getlexeme);
+PG_FUNCTION_INFO_V1(testprs_end);
+PG_FUNCTION_INFO_V1(testprs_lextype);
+
 Datum
 testprs_start(PG_FUNCTION_ARGS)
 {

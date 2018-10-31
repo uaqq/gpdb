@@ -12,12 +12,12 @@
  * Note that other approaches to parameters are possible using the parser
  * hooks defined in ParseState.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/parse_param.c,v 2.4 2010/02/26 02:00:52 momjian Exp $
+ *	  src/backend/parser/parse_param.c
  *
  *-------------------------------------------------------------------------
  */
@@ -30,6 +30,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_param.h"
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 
 
 typedef struct FixedParamState
@@ -56,6 +57,7 @@ static Node *variable_coerce_param_hook(ParseState *pstate, Param *param,
 						   Oid targetTypeId, int32 targetTypeMod,
 						   int location);
 static bool check_parameter_resolution_walker(Node *node, ParseState *pstate);
+static bool query_contains_extern_params_walker(Node *node, void *context);
 
 
 /*
@@ -113,6 +115,7 @@ fixed_paramref_hook(ParseState *pstate, ParamRef *pref)
 	param->paramid = paramno;
 	param->paramtype = parstate->paramTypes[paramno - 1];
 	param->paramtypmod = -1;
+	param->paramcollid = get_typcollation(param->paramtype);
 	param->location = pref->location;
 
 	return (Node *) param;
@@ -165,6 +168,7 @@ variable_paramref_hook(ParseState *pstate, ParamRef *pref)
 	param->paramid = paramno;
 	param->paramtype = *pptype;
 	param->paramtypmod = -1;
+	param->paramcollid = get_typcollation(param->paramtype);
 	param->location = pref->location;
 
 	return (Node *) param;
@@ -228,6 +232,13 @@ variable_coerce_param_hook(ParseState *pstate, Param *param,
 		 */
 		param->paramtypmod = -1;
 
+		/*
+		 * This module always sets a Param's collation to be the default for
+		 * its datatype.  If that's not what you want, you should be using the
+		 * more general parser substitution hooks.
+		 */
+		param->paramcollid = get_typcollation(param->paramtype);
+
 		/* Use the leftmost of the param's and coercion's locations */
 		if (location >= 0 &&
 			(param->location < 0 || location < param->location))
@@ -245,7 +256,7 @@ variable_coerce_param_hook(ParseState *pstate, Param *param,
  * of parsing with parse_variable_parameters.
  *
  * Note: this code intentionally does not check that all parameter positions
- * were used, nor that all got non-UNKNOWN types assigned.	Caller of parser
+ * were used, nor that all got non-UNKNOWN types assigned.  Caller of parser
  * should enforce that if it's important.
  */
 void
@@ -305,4 +316,39 @@ check_parameter_resolution_walker(Node *node, ParseState *pstate)
 	}
 	return expression_tree_walker(node, check_parameter_resolution_walker,
 								  (void *) pstate);
+}
+
+/*
+ * Check to see if a fully-parsed query tree contains any PARAM_EXTERN Params.
+ */
+bool
+query_contains_extern_params(Query *query)
+{
+	return query_tree_walker(query,
+							 query_contains_extern_params_walker,
+							 NULL, 0);
+}
+
+static bool
+query_contains_extern_params_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Param))
+	{
+		Param	   *param = (Param *) node;
+
+		if (param->paramkind == PARAM_EXTERN)
+			return true;
+		return false;
+	}
+	if (IsA(node, Query))
+	{
+		/* Recurse into RTE subquery or not-yet-planned sublink subquery */
+		return query_tree_walker((Query *) node,
+								 query_contains_extern_params_walker,
+								 context, 0);
+	}
+	return expression_tree_walker(node, query_contains_extern_params_walker,
+								  context);
 }

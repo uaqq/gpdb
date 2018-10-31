@@ -2,7 +2,7 @@
  * lexical analyzer
  * This file is #included by regcomp.c.
  *
- * Copyright (c) 1998, 1999 Henry Spencer.	All rights reserved.
+ * Copyright (c) 1998, 1999 Henry Spencer.  All rights reserved.
  *
  * Development of this software was funded, in part, by Cray Research Inc.,
  * UUNET Communications Services Inc., Sun Microsystems Inc., and Scriptics
@@ -28,7 +28,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $PostgreSQL: pgsql/src/backend/regex/regc_lex.c,v 1.9 2009/06/11 14:49:01 momjian Exp $
+ * src/backend/regex/regc_lex.c
  *
  */
 
@@ -716,10 +716,10 @@ static int						/* not actually used, but convenient for RETV */
 lexescape(struct vars * v)
 {
 	chr			c;
-	static chr	alert[] = {
+	static const chr alert[] = {
 		CHR('a'), CHR('l'), CHR('e'), CHR('r'), CHR('t')
 	};
-	static chr	esc[] = {
+	static const chr esc[] = {
 		CHR('E'), CHR('S'), CHR('C')
 	};
 	const chr  *save;
@@ -846,7 +846,7 @@ lexescape(struct vars * v)
 			if (ISERR())
 				FAILW(REG_EESCAPE);
 			/* ugly heuristic (first test is "exactly 1 digit?") */
-			if (v->now - save == 0 || ((int) c > 0 && (int) c <= v->nsubexp))
+			if (v->now == save || ((int) c > 0 && (int) c <= v->nsubexp))
 			{
 				NOTE(REG_UBACKREF);
 				RETV(BACKREF, (chr) c);

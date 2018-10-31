@@ -11,22 +11,22 @@
  * log can be broken into relatively small, independent segments.
  *
  * XLOG interactions: this module generates an XLOG record whenever a new
- * CLOG page is initialized to zeroes.	Other writes of CLOG come from
+ * CLOG page is initialized to zeroes.  Other writes of CLOG come from
  * recording of transaction commit or abort in xact.c, which generates its
  * own XLOG records for these events and will re-perform the status update
- * on redo; so we need make no additional XLOG entry here.	For synchronous
+ * on redo; so we need make no additional XLOG entry here.  For synchronous
  * transaction commits, the XLOG is guaranteed flushed through the XLOG commit
  * record before we are called to log a commit, so the WAL rule "write xlog
  * before data" is satisfied automatically.  However, for async commits we
  * must track the latest LSN affecting each CLOG page, so that we can flush
- * XLOG that far and satisfy the WAL rule.	We don't have to worry about this
+ * XLOG that far and satisfy the WAL rule.  We don't have to worry about this
  * for aborts (whether sync or async), since the post-crash assumption would
  * be that such transactions failed anyway.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/backend/access/transam/clog.c,v 1.55 2010/01/02 16:57:35 momjian Exp $
+ * src/backend/access/transam/clog.c
  *
  *-------------------------------------------------------------------------
  */
@@ -35,8 +35,8 @@
 #include "access/clog.h"
 #include "access/slru.h"
 #include "access/transam.h"
+#include "miscadmin.h"
 #include "pg_trace.h"
-#include "postmaster/bgwriter.h"
 
 /*
  * Defines for CLOG page sizes.  A page is the same BLCKSZ as is used
@@ -44,9 +44,10 @@
  *
  * Note: because TransactionIds are 32 bits and wrap around at 0xFFFFFFFF,
  * CLOG page numbering also wraps around at 0xFFFFFFFF/CLOG_XACTS_PER_PAGE,
- * and CLOG segment numbering at 0xFFFFFFFF/CLOG_XACTS_PER_SEGMENT.  We need
- * take no explicit notice of that fact in this module, except when comparing
- * segment and page numbers in TruncateCLOG (see CLOGPagePrecedes).
+ * and CLOG segment numbering at
+ * 0xFFFFFFFF/CLOG_XACTS_PER_PAGE/SLRU_PAGES_PER_SEGMENT.  We need take no
+ * explicit notice of that fact in this module, except when comparing segment
+ * and page numbers in TruncateCLOG (see CLOGPagePrecedes).
  */
 
 /* We need two bits per xact, so four xacts fit in a byte */
@@ -104,7 +105,7 @@ static void set_status_by_pages(int nsubxids, TransactionId *subxids,
  * in the tree of xid. In various cases nsubxids may be zero.
  *
  * lsn must be the WAL location of the commit record when recording an async
- * commit.	For a synchronous commit it can be InvalidXLogRecPtr, since the
+ * commit.  For a synchronous commit it can be InvalidXLogRecPtr, since the
  * caller guarantees the commit record is already flushed in that case.  It
  * should be InvalidXLogRecPtr for abort cases, too.
  *
@@ -364,7 +365,7 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 	{
 		int			lsnindex = GetLSNIndex(slotno, xid);
 
-		if (XLByteLT(ClogCtl->shared->group_lsn[lsnindex], lsn))
+		if (ClogCtl->shared->group_lsn[lsnindex] < lsn)
 			ClogCtl->shared->group_lsn[lsnindex] = lsn;
 	}
 }
@@ -452,7 +453,7 @@ CLOGScanForPrevStatus(
 		/*
 		 * Peek to see if page exists.
 		 */
-		if (!SimpleLruPageExists(ClogCtl, pageno))
+		if (!SimpleLruDoesPhysicalPageExist(ClogCtl, pageno))
 		{
 			LWLockRelease(CLogControlLock);
 
@@ -517,7 +518,36 @@ CLOGTransactionIsOld(TransactionId xid)
 	 * Declare the transaction old if it is in the bottom older half of the hot CLOG cache window, or
 	 * before the window.
 	 */
-	return (pagesBack > NUM_CLOG_BUFFERS/2);
+	return (pagesBack > CLOGShmemBuffers()/2);
+}
+
+/*
+ * Number of shared CLOG buffers.
+ *
+ * Testing during the PostgreSQL 9.2 development cycle revealed that on a
+ * large multi-processor system, it was possible to have more CLOG page
+ * requests in flight at one time than the numebr of CLOG buffers which existed
+ * at that time, which was hardcoded to 8.  Further testing revealed that
+ * performance dropped off with more than 32 CLOG buffers, possibly because
+ * the linear buffer search algorithm doesn't scale well.
+ *
+ * Unconditionally increasing the number of CLOG buffers to 32 did not seem
+ * like a good idea, because it would increase the minimum amount of shared
+ * memory required to start, which could be a problem for people running very
+ * small configurations.  The following formula seems to represent a reasonable
+ * compromise: people with very low values for shared_buffers will get fewer
+ * CLOG buffers as well, and everyone else will get 32.
+ *
+ * It is likely that some further work will be needed here in future releases;
+ * for example, on a 64-core server, the maximum number of CLOG requests that
+ * can be simultaneously in flight will be even larger.  But that will
+ * apparently require more than just changing the formula, so for now we take
+ * the easy way out.
+ */
+Size
+CLOGShmemBuffers(void)
+{
+	return Min(32, Max(4, NBuffers / 512));
 }
 
 /*
@@ -526,22 +556,22 @@ CLOGTransactionIsOld(TransactionId xid)
 Size
 CLOGShmemSize(void)
 {
-	return SimpleLruShmemSize(NUM_CLOG_BUFFERS, CLOG_LSNS_PER_PAGE);
+	return SimpleLruShmemSize(CLOGShmemBuffers(), CLOG_LSNS_PER_PAGE);
 }
 
 void
 CLOGShmemInit(void)
 {
 	ClogCtl->PagePrecedes = CLOGPagePrecedes;
-	SimpleLruInit(ClogCtl, "CLOG Ctl", NUM_CLOG_BUFFERS, CLOG_LSNS_PER_PAGE,
+	SimpleLruInit(ClogCtl, "CLOG Ctl", CLOGShmemBuffers(), CLOG_LSNS_PER_PAGE,
 				  CLogControlLock, "pg_clog");
 }
 
 /*
  * This func must be called ONCE on system install.  It creates
  * the initial CLOG segment.  (The CLOG directory is assumed to
- * have been created by the initdb shell script, and CLOGShmemInit
- * must have been called already.)
+ * have been created by initdb, and CLOGShmemInit must have been
+ * called already.)
  */
 void
 BootStrapCLOG(void)
@@ -554,7 +584,7 @@ BootStrapCLOG(void)
 	slotno = ZeroCLOGPage(0, false);
 
 	/* Make sure it's written out */
-	SimpleLruWritePage(ClogCtl, slotno, NULL);
+	SimpleLruWritePage(ClogCtl, slotno);
 	Assert(!ClogCtl->shared->page_dirty[slotno]);
 
 	LWLockRelease(CLogControlLock);
@@ -596,6 +626,25 @@ StartupCLOG(void)
 
 	/*
 	 * Initialize our idea of the latest page number.
+	 */
+	ClogCtl->shared->latest_page_number = pageno;
+
+	LWLockRelease(CLogControlLock);
+}
+
+/*
+ * This must be called ONCE at the end of startup/recovery.
+ */
+void
+TrimCLOG(void)
+{
+	TransactionId xid = ShmemVariableCache->nextXid;
+	int			pageno = TransactionIdToPage(xid);
+
+	LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
+
+	/*
+	 * Re-Initialize our idea of the latest page number.
 	 */
 	ClogCtl->shared->latest_page_number = pageno;
 
@@ -683,7 +732,7 @@ ExtendCLOG(TransactionId newestXact)
 	LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
 
 	/* Zero the page and make an XLOG entry about it */
-	ZeroCLOGPage(pageno, !InRecovery);
+	ZeroCLOGPage(pageno, true);
 
 	LWLockRelease(CLogControlLock);
 }
@@ -716,7 +765,7 @@ TruncateCLOG(TransactionId oldestXact)
 	cutoffPage = TransactionIdToPage(oldestXact);
 
 	/* Check to see if there's any files that could be removed */
-	if (!SlruScanDirectory(ClogCtl, cutoffPage, false))
+	if (!SlruScanDirectory(ClogCtl, SlruScanDirCbReportPresence, &cutoffPage))
 		return;					/* nothing to remove */
 
 	/* Write XLOG record and flush XLOG to disk */
@@ -807,7 +856,7 @@ clog_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
 		LWLockAcquire(CLogControlLock, LW_EXCLUSIVE);
 
 		slotno = ZeroCLOGPage(pageno, false);
-		SimpleLruWritePage(ClogCtl, slotno, NULL);
+		SimpleLruWritePage(ClogCtl, slotno);
 		Assert(!ClogCtl->shared->page_dirty[slotno]);
 
 		LWLockRelease(CLogControlLock);
@@ -828,28 +877,4 @@ clog_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
 	}
 	else
 		elog(PANIC, "clog_redo: unknown op code %u", info);
-}
-
-void
-clog_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record)
-{
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
-	char		*rec = XLogRecGetData(record);
-
-	if (info == CLOG_ZEROPAGE)
-	{
-		int			pageno;
-
-		memcpy(&pageno, rec, sizeof(int));
-		appendStringInfo(buf, "zeropage: %d", pageno);
-	}
-	else if (info == CLOG_TRUNCATE)
-	{
-		int			pageno;
-
-		memcpy(&pageno, rec, sizeof(int));
-		appendStringInfo(buf, "truncate before: %d", pageno);
-	}
-	else
-		appendStringInfo(buf, "UNKNOWN");
 }

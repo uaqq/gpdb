@@ -1,4 +1,4 @@
-$PostgreSQL: pgsql/src/backend/utils/mmgr/README,v 1.15 2008/04/09 01:00:46 momjian Exp $
+src/backend/utils/mmgr/README
 
 Notes About Memory Allocation Redesign
 ======================================
@@ -6,9 +6,9 @@ Notes About Memory Allocation Redesign
 Up through version 7.0, Postgres had serious problems with memory leakage
 during large queries that process a lot of pass-by-reference data.  There
 was no provision for recycling memory until end of query.  This needed to be
-fixed, even more so with the advent of TOAST which will allowed very large
-chunks of data to be passed around in the system.  This document describes
-the new memory management system implemented in 7.1.
+fixed, even more so with the advent of TOAST which allows very large chunks
+of data to be passed around in the system.  This document describes the new
+memory management system implemented in 7.1.
 
 
 Background
@@ -386,7 +386,7 @@ constraining context-type designers very much.)
 
 Given this, the pfree routine will look something like
 
-    StandardChunkHeader * header = 
+    StandardChunkHeader * header =
         (StandardChunkHeader *) ((char *) p - sizeof(StandardChunkHeader));
 
     (*header->mycontext->methods->free_p) (p);

@@ -42,12 +42,11 @@ AppendOnlyVisimapEntry_Finish(
 
 /*
  * Inits the visimap entry data structure.
- ;
+ *
  * Assumes a zero-allocated visimap entry data structure.
  *
  * Until appendonly_visimap_copyout or appendonly_visimap_clear is called,
- * the data structure
- * is not usable for visibility checks or updates.
+ * the data structure is not usable for visibility checks or updates.
  */
 void
 AppendOnlyVisimapEntry_Init(
@@ -147,7 +146,7 @@ AppendOnlyVisiMapEnty_ReadData(
 
 	if (BitmapDecompress_HasError(&decompressState))
 	{
-		elog(ERROR, "error occured during visimap bitmap decompression");
+		elog(ERROR, "error occurred during visimap bitmap decompression");
 	}
 
 	bms_free(visiMapEntry->bitmap);

@@ -4,10 +4,10 @@
  *	  postgres transaction access method support code
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/transam.h,v 1.72 2010/01/02 16:58:00 momjian Exp $
+ * src/include/access/transam.h
  *
  *-------------------------------------------------------------------------
  */
@@ -59,6 +59,16 @@
 		(dest)--; \
 	} while ((dest) < FirstNormalTransactionId)
 
+/* compare two XIDs already known to be normal; this is a macro for speed */
+#define NormalTransactionIdPrecedes(id1, id2) \
+	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
+	(int32) ((id1) - (id2)) < 0)
+
+/* compare two XIDs already known to be normal; this is a macro for speed */
+#define NormalTransactionIdFollows(id1, id2) \
+	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
+	(int32) ((id1) - (id2)) > 0)
+
 /*
  * VariableCache is a data structure in shared memory that is used to track
  * OID and XID assignment state.  For largely historical reasons, there is
@@ -100,6 +110,8 @@ typedef struct VariableCacheData
 	 */
 	TransactionId latestCompletedXid;	/* newest XID that has committed or
 										 * aborted */
+	TransactionId latestCompletedDxid;	/* newest distributed XID that has
+										   committed or aborted */
 } VariableCacheData;
 
 typedef VariableCacheData *VariableCache;
@@ -119,12 +131,12 @@ extern PGDLLIMPORT VariableCache ShmemVariableCache;
 extern int xid_stop_limit;
 extern int xid_warn_limit;
 
-
 /*
  * prototypes for functions in transam/transam.c
  */
 extern bool TransactionIdDidCommit(TransactionId transactionId);
 extern bool TransactionIdDidAbort(TransactionId transactionId);
+extern bool TransactionIdDidAbortForReader(TransactionId transactionId);
 extern bool TransactionIdIsKnownCompleted(TransactionId transactionId);
 extern void TransactionIdAbort(TransactionId transactionId);
 extern void TransactionIdCommitTree(TransactionId xid, int nxids, TransactionId *xids);
@@ -148,6 +160,8 @@ extern bool ForceTransactionIdLimitUpdate(void);
 extern Oid	GetNewObjectId(void);
 extern void AdvanceObjectId(Oid newOid);
 extern Oid	GetNewSegRelfilenode(void);
-extern Oid	GetNewSequenceRelationObjectId(void);
+extern bool OidFollowsNextOid(Oid id);
 
 #endif   /* TRAMSAM_H */
+
+

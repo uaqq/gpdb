@@ -1338,7 +1338,7 @@ insert into qp_misc_jiras.tbl7404_t1 select ('foo'|| i::text) from generate_seri
 insert into qp_misc_jiras.tbl7404_t2 select x from qp_misc_jiras.tbl7404_t1;
 
 --Setting to modify system catalog
-set allow_system_table_mods=dml;
+set allow_system_table_mods=true;
 
 --
 -- Case 1: make t1 and t2 appear really big
@@ -1366,23 +1366,23 @@ create table qp_misc_jiras.tbl7616_test (a int, b text) with (appendonly=true, o
 insert into qp_misc_jiras.tbl7616_test select generate_series(1,1000), generate_series(1,1000);
 select count(a.*) from qp_misc_jiras.tbl7616_test a inner join qp_misc_jiras.tbl7616_test b using (a);
 select count(a.b) from qp_misc_jiras.tbl7616_test a inner join qp_misc_jiras.tbl7616_test b using (a);
--- start_ignore
 drop table qp_misc_jiras.tbl7616_test;
-create table qp_misc_jiras.tbl6874 ( a int, b text);
+
+create table qp_misc_jiras.tbl6874 (a int, b text) distributed by (a);
 \d+ qp_misc_jiras.tbl6874
-insert into qp_misc_jiras.tbl6874 values ( generate_series(1,1000),'test_1');
-create index qp_misc_jiras.tbl6874_a on qp_misc_jiras.tbl6874 using bitmap(a);
+insert into qp_misc_jiras.tbl6874 values (generate_series(1,10),'test_1');
+create index tbl6874_a on qp_misc_jiras.tbl6874 using bitmap(a);
 \d+ qp_misc_jiras.tbl6874
 drop index qp_misc_jiras.tbl6874_a;
 \d+ qp_misc_jiras.tbl6874
-drop table qp_misc_jiras.tbl6874 ;
+drop table qp_misc_jiras.tbl6874;
 CREATE TABLE qp_misc_jiras.tbl7740_rank (id int, gender char(1), count char(1) )
             DISTRIBUTED BY (id)
             PARTITION BY LIST (gender,count)
             ( PARTITION girls VALUES (('F','1')),
               PARTITION boys VALUES (('M','1')),
               DEFAULT PARTITION other );
--- end_ignore
+
 insert into qp_misc_jiras.tbl7740_rank values(1,'F','1');
 insert into qp_misc_jiras.tbl7740_rank values(1,'F','0');
 insert into qp_misc_jiras.tbl7740_rank values(1,'M','1');
@@ -2212,32 +2212,6 @@ else 'Unidentify' end
 ;
 DROP TABLE qp_misc_jiras.ir_voice_sms_and_data;
 
-create table qp_misc_jiras.x (a int, b int) distributed by (a);
-
-
---create index xi on x(a);
-
-insert into qp_misc_jiras.x values (1,2), (2,3), (3,4);
-
-select count(*) from qp_misc_jiras.x;
-
-set gp_setwith_alter_storage to true;
-
-alter table qp_misc_jiras.x set with (appendonly=true) distributed by (b);
-
-insert into qp_misc_jiras.x values (4,5), (5,6);
-
-select count(*) from qp_misc_jiras.x;
-
-
-alter table qp_misc_jiras.x set with (appendonly=false) distributed by (a);
-
-insert into qp_misc_jiras.x values (6,7), (7,8);
-
-select count(*) from qp_misc_jiras.x;
-
-drop table if exists qp_misc_jiras.x cascade;
-
 create table qp_misc_jiras.r
     (a int, b int, c int)
     with (appendonly = true)
@@ -2588,6 +2562,25 @@ select test();
 select test();
 select test();
 select test();
+
+
+--
+-- Test gp_enable_relsize_collection's effect on ORCA plan generation
+--
+create table tbl_z(x int) distributed by (x);
+set optimizer_metadata_caching to off;
+insert into tbl_z select i from generate_series(1,100) i;
+
+-- plan with no relsize collection
+explain select 1 as t1 where 1 <= ALL (select x from tbl_z);
+set gp_enable_relsize_collection = on;
+-- plan with relsize collection
+explain select 1 as t1 where 1 <= ALL (select x from tbl_z);
+
+drop table if exists tbl_z;
+reset optimizer_metadata_caching;
+reset gp_enable_relsize_collection;
+
 -- start_ignore
 drop schema qp_misc_jiras cascade;
 -- end_ignore

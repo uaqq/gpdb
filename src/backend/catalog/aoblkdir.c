@@ -21,9 +21,10 @@
 #include "catalog/aocatalog.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "utils/faultinjector.h"
 
 void
-AlterTableCreateAoBlkdirTable(Oid relOid, bool is_part_child)
+AlterTableCreateAoBlkdirTable(Oid relOid, bool is_part_child, bool is_part_parent)
 {
 	Relation	rel;
 	TupleDesc	tupdesc;
@@ -31,6 +32,8 @@ AlterTableCreateAoBlkdirTable(Oid relOid, bool is_part_child)
 	Oid			classObjectId[3];
 	int16		coloptions[3];
 	List	   *indexColNames;
+
+	SIMPLE_FAULT_INJECTOR(BeforeAcquireLockDuringCreateAoBlkdirTable);
 
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release
@@ -42,7 +45,8 @@ AlterTableCreateAoBlkdirTable(Oid relOid, bool is_part_child)
 	else
 		rel = heap_open(relOid, AccessExclusiveLock);
 
-	if (!RelationIsAoRows(rel) && !RelationIsAoCols(rel)) {
+	if (!RelationIsAppendOptimized(rel))
+	{
 		heap_close(rel, NoLock);
 		return;
 	}
@@ -104,7 +108,7 @@ AlterTableCreateAoBlkdirTable(Oid relOid, bool is_part_child)
 								  tupdesc,
 								  indexInfo, indexColNames,
 								  classObjectId,
-								  coloptions);
+								  coloptions, is_part_parent);
 
 	heap_close(rel, NoLock);
 }

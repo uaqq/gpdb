@@ -8,7 +8,7 @@ TODO: docs!
 """
 import os, pickle, base64, time
 
-import re
+import re, socket
 
 from gppylib.gplog import *
 from gppylib.db import dbconn
@@ -53,23 +53,6 @@ def getPostmasterPID(hostname, datadir):
         return int(sout.split()[1])
     except:
         return -1
-
-#-----------------------------------------------
-class PySync(Command):
-    def __init__(self,name,srcDir,dstHost,dstDir,ctxt=LOCAL,remoteHost=None, options=None):
-        psync_executable=GPHOME + "/bin/lib/pysync.py"
-
-        # MPP-13617
-        if ':' in dstHost and not ']' in dstHost:
-            dstHost = '[' + dstHost + ']'
-
-        self.cmdStr="%s %s %s %s:%s" % (psync_executable,
-                                        options if options else "",
-                                        srcDir,
-                                        dstHost,
-                                        dstDir)
-        Command.__init__(self,name,self.cmdStr,ctxt,remoteHost)
-
 
 #-----------------------------------------------
 
@@ -147,9 +130,9 @@ class PgCtlBackendOptions(CmdArgs):
 
     >>> str(PgCtlBackendOptions(5432, 1, 2))
     '-p 5432 --gp_dbid=1 --gp_num_contents_in_cluster=2 --silent-mode=true'
-    >>> str(PgCtlBackendOptions(5432, 1, 2).set_master(False))
-    '-p 5432 --gp_dbid=1 --gp_num_contents_in_cluster=2 --silent-mode=true -i --gp_contentid=-1'
     >>> str(PgCtlBackendOptions(5432, 1, 2).set_master(True))
+    '-p 5432 --gp_dbid=1 --gp_num_contents_in_cluster=2 --silent-mode=true -i --gp_contentid=-1'
+    >>> str(PgCtlBackendOptions(5432, 1, 2).set_master(False))
     '-p 5432 --gp_dbid=1 --gp_num_contents_in_cluster=2 --silent-mode=true -i --gp_contentid=-1 -E'
     >>> str(PgCtlBackendOptions(5432, 1, 2).set_segment(1))
     '-p 5432 --gp_dbid=1 --gp_num_contents_in_cluster=2 --silent-mode=true -i --gp_contentid=1'
@@ -177,19 +160,18 @@ class PgCtlBackendOptions(CmdArgs):
             "-p", str(port),
             "--gp_dbid="+ str(dbid),
             "--gp_num_contents_in_cluster="+ str(numcids),
-            "--silent-mode=true"
         ])
 
     #
     # master/segment-specific options
     #
 
-    def set_master(self, seqserver):
+    def set_master(self, is_utility_mode):
         """
-        @param seqserver: start with seqserver?
+        @param is_utility_mode: start with is_utility_mode?
         """
         self.append("--gp_contentid=-1")
-        if seqserver: self.append("-E")
+        if not is_utility_mode: self.append("-E")
         return self
 
     def set_segment(self, content):
@@ -309,7 +291,7 @@ class MasterStart(Command):
 
         # build backend options
         b = PgCtlBackendOptions(port, dbid, numContentsInCluster)
-        b.set_master(seqserver=not utilityMode)
+        b.set_master(is_utility_mode=utilityMode)
         b.set_utility(utilityMode)
         b.set_special(specialMode)
         b.set_restricted(restrictedMode, max_connections)
@@ -629,28 +611,6 @@ class GpSegStartCmd(Command):
         Command.__init__(self,name,cmdStr,ctxt,remoteHost)
 
 
-class GpSegChangeMirrorModeCmd(Command):
-    def __init__(self, name, gphome, gpversion, dbs, targetMode,
-                 pickledParams, verbose=False, ctxt=LOCAL, remoteHost=None):
-        self.gphome=gphome
-        self.dblist=dbs
-        self.dirlist=[]
-        for db in dbs:
-            datadir = db.getSegmentDataDirectory()
-            port = db.getSegmentPort()
-            self.dirlist.append(datadir + ':' + str(port))
-
-        dirstr=" -D ".join(self.dirlist)
-        if verbose:
-            setverbose=" -v "
-        else:
-            setverbose=""
-
-        cmdStr="$GPHOME/sbin/gpsegtoprimaryormirror.py %s -D %s -M %s -p %s -V '%s'" % \
-                (setverbose,dirstr,targetMode,pickledParams,gpversion)
-
-        Command.__init__(self,name,cmdStr,ctxt,remoteHost)
-
 #-----------------------------------------------
 class GpSegStopCmd(Command):
     def __init__(self, name, gphome, version,mode,dbs,timeout=SEGMENT_STOP_TIMEOUT_DEFAULT,
@@ -723,22 +683,6 @@ class GpStandbyStart(MasterStart, object):
         return cmd
 
 #-----------------------------------------------
-class GpInitSystem(Command):
-    def __init__(self,name,configFile,hostsFile, ctxt=LOCAL, remoteHost=None):
-        self.configFile=configFile
-        self.hostsFile=hostsFile
-        self.cmdStr="$GPHOME/bin/gpinitsystem -a -c %s -h %s" % (configFile,hostsFile)
-        Command.__init__(self, name, self.cmdStr, ctxt, remoteHost)
-
-#-----------------------------------------------
-class GpDeleteSystem(Command):
-    def __init__(self,name,datadir, ctxt=LOCAL, remoteHost=None):
-        self.datadir=datadir
-        self.input="y\ny\n"
-        self.cmdStr="$GPHOME/bin/gpdeletesystem -d %s -f " % (datadir)
-        Command.__init__(self, name, self.cmdStr, ctxt, remoteHost,stdin=self.input)
-
-#-----------------------------------------------
 class GpStart(Command):
     def __init__(self, name, masterOnly=False, restricted=False, verbose=False,ctxt=LOCAL, remoteHost=None):
         self.cmdStr="$GPHOME/bin/gpstart -a"
@@ -804,7 +748,7 @@ class NewGpStop(Command):
 
 #-----------------------------------------------
 class GpStop(Command):
-    def __init__(self, name, masterOnly=False, verbose=False, quiet=False, restart=False, fast=False, force=False, datadir=None, ctxt=LOCAL, remoteHost=None, logfileDirectory=False):
+    def __init__(self, name, masterOnly=False, verbose=False, quiet=False, restart=False, fast=False, force=False, datadir=None, ctxt=LOCAL, remoteHost=None, logfileDirectory=False, reload=False):
         self.cmdStr="$GPHOME/bin/gpstop -a"
         if masterOnly:
             self.cmdStr += " -m"
@@ -822,46 +766,15 @@ class GpStop(Command):
             self.cmdStr += " -q"
         if logfileDirectory:
             self.cmdStr += " -l '" + logfileDirectory + "'"
+        if reload:
+            self.cmdStr += " -u"
         Command.__init__(self,name,self.cmdStr,ctxt,remoteHost)
 
     @staticmethod
-    def local(name,masterOnly=False, verbose=False, quiet=False,restart=False, fast=False, force=False, datadir=None):
-        cmd=GpStop(name,masterOnly,verbose,quiet,restart,fast,force,datadir)
+    def local(name,masterOnly=False, verbose=False, quiet=False,restart=False, fast=False, force=False, datadir=None, reload=False):
+        cmd=GpStop(name,masterOnly,verbose,quiet,restart,fast,force,datadir,reload=reload)
         cmd.run(validateAfter=True)
         return cmd
-
-#-----------------------------------------------
-class GpRecoverseg(Command):
-    def __init__(self, name, ctxt=LOCAL, remoteHost=None):
-        self.cmdStr = "$GPHOME/bin/gprecoverseg -a"
-        Command.__init__(self, name, self.cmdStr, ctxt, remoteHost)
-
-#-----------------------------------------------
-class Psql(Command):
-    def __init__(self, name, query=None, filename=None, database='template1', port=None, utilityMode=False, ctxt=LOCAL, remoteHost=None):
-        env = ''
-        if utilityMode:
-            env = 'PGOPTIONS="-c gp_session_role=utility"'
-        cmdStr = '%s $GPHOME/bin/psql ' % env
-        if port is not None:
-            cmdStr += '-p %d ' % port
-        if query is not None and filename is not None:
-            raise Exception('Psql can accept only a query or a filename, not both.')
-        elif query is not None:
-            cmdStr += '-c "%s" ' % query
-        elif filename is not None:
-            cmdStr += '-f %s ' % filename
-        else:
-            raise Exception('Psql must be passed a query or a filename.')
-
-        # shell escape and force double quote of database in case of any funny chars
-        cmdStr += '"%s" ' % shellEscape(database)
-
-        # Need to escape " for REMOTE or it'll interfere with ssh
-        if ctxt == REMOTE:
-             cmdStr = cmdStr.replace('"', '\\"')
-        self.cmdStr=cmdStr
-        Command.__init__(self, name, self.cmdStr, ctxt, remoteHost)
 
 #-----------------------------------------------
 class ModifyPostgresqlConfSetting(Command):
@@ -915,7 +828,8 @@ class ConfigureNewSegment(Command):
     """
 
     def __init__(self, name, confinfo, newSegments=False, tarFile=None,
-                 batchSize=None, verbose=False,ctxt=LOCAL, remoteHost=None, validationOnly=False, writeGpIdFileOnly=False):
+                 batchSize=None, verbose=False,ctxt=LOCAL, remoteHost=None, validationOnly=False, writeGpIdFileOnly=False,
+                 forceoverwrite=False):
         cmdStr = '$GPHOME/bin/lib/gpconfigurenewsegment -c \"%s\"' % (confinfo)
         if newSegments:
             cmdStr += ' -n'
@@ -929,6 +843,8 @@ class ConfigureNewSegment(Command):
             cmdStr += " --validation-only"
         if writeGpIdFileOnly:
             cmdStr += " --write-gpid-file-only"
+        if forceoverwrite:
+            cmdStr += " --force-overwrite"
 
         Command.__init__(self, name, cmdStr, ctxt, remoteHost)
 
@@ -1082,7 +998,6 @@ class GpAppendGucToFile(Command):
         cmdStr = 'echo "%s=%s" >> %s' %  (guc, finalText, file)
         Command.__init__(self,name,cmdStr,ctxt,remoteHost)
 
-
 #-----------------------------------------------
 class GpLogFilter(Command):
     def __init__(self, name, filename, start=None, end=None, duration=None,
@@ -1111,7 +1026,6 @@ class GpLogFilter(Command):
         if trouble:
             cmdfrags.append('-t')
         cmdfrags.append(filename)
-
         self.cmdStr = "$GPHOME/bin/gplogfilter %s" % ' '.join(cmdfrags)
         Command.__init__(self, name, self.cmdStr, ctxt,remoteHost)
 
@@ -1132,7 +1046,7 @@ def distribute_tarball(queue,list,tarball):
             hostname = db.getSegmentHostName()
             datadir = db.getSegmentDataDirectory()
             (head,tail)=os.path.split(datadir)
-            scp_cmd=RemoteCopy("copy master",tarball,hostname,head)
+            scp_cmd=Scp(name="copy master",srcFile=tarball,dstHost=hostname,dstFile=head)
             queue.addCommand(scp_cmd)
         queue.join()
         queue.check_results()
@@ -1144,13 +1058,6 @@ def distribute_tarball(queue,list,tarball):
 class GpError(Exception): pass
 
 ######
-def get_user():
-    username = os.environ.get('LOGNAME') or os.environ.get('USER')
-    if not username:
-        raise GpError('Environment Variable LOGNAME or USER not set')
-    return username
-
-
 def get_gphome():
     gphome=os.getenv('GPHOME',None)
     if not gphome:
@@ -1198,10 +1105,6 @@ def start_standbymaster(host, datadir, port, dbid, ncontents, era=None,
 
     if res:
         logger.warning("Unable to cleanup previously started standby: '%s'" % res)
-
-    #create a pg_log directory if necessary
-    CreateDirIfNecessary.remote('create standby logdir if needed', host, datadir + "/pg_log")
-
 
     cmd = GpStandbyStart.remote('start standby master',
                                 host, datadir, port, ncontents, dbid, era=era,
@@ -1448,63 +1351,6 @@ def read_postmaster_pidfile(datadir, host=None):
     return pid
 
 
-def pausePg(db):
-    """
-    This function will pause an instance of postgres which is part of a GPDB
-
-    1) pause the postmaster (this prevents new connections from being made)
-    2) get list of processes that are descendent from postmaster process
-    3) pause all descendent processes and ignore any failures (a process may have died betwen getting pid list and doing the pauses)
-    4) again, get list of processes that are descendent from postmaster process
-    5) pause all descendent processes and ignore any failures (do not ignore errors, errors are failures, no pids can die between being paused the first time and getting the pid list)
-    """
-
-    datadir = db.getSegmentDataDirectory()
-    content = db.getSegmentContentId()
-    postmasterPID = read_postmaster_pidfile(datadir)
-    if postmasterPID == 0:
-        raise Exception, 'print "could not locate postmasterPID during pause'
-
-    Kill.local(name="pausep "+str(content), pid=postmasterPID, signal="STOP")
-
-    decsendentProcessPids = getDescendentProcesses(postmasterPID)
-
-    for killpid in decsendentProcessPids:
-
-        try:
-            Kill.local(name="pausep "+str(killpid), pid=killpid, signal="STOP")
-        except:
-            pass
-
-    decsendentProcessPids = getDescendentProcesses(postmasterPID)
-
-    for killpid in decsendentProcessPids:
-
-        Kill.local(name="pausep "+str(killpid), pid=killpid, signal="STOP")
-
-
-def resumePg(db):
-    """
-    1) resume the processes descendent from the postmaster process
-    2) resume the postmaster process
-    """
-
-    datadir = db.getSegmentDataDirectory()
-    content = db.getSegmentContentId()
-    postmasterPID = read_postmaster_pidfile(datadir)
-    if postmasterPID == 0:
-        raise Exception, 'print "could not locate postmasterPID during resume'
-
-    decsendentProcessPids = getDescendentProcesses(postmasterPID)
-
-    for killpid in decsendentProcessPids:
-
-        Kill.local(name="pausep "+str(killpid), pid=killpid, signal="CONT")
-
-
-    Kill.local(name="pausep "+str(content), pid=postmasterPID, signal="CONT")
-
-
 def createTempDirectoryName(masterDataDirectory, tempDirPrefix):
     return '%s/%s_%s_%d' % (os.sep.join(os.path.normpath(masterDataDirectory).split(os.sep)[:-1]),
                                 tempDirPrefix,
@@ -1557,8 +1403,7 @@ class GpRecoverSeg(Command):
        Command.__init__(self,name,cmdStr,ctxt,remoteHost)
 
 class GpReadConfig(Command):
-    def __init__(self, name, host, seg, guc_name, ctxt=LOCAL, remote_host=None):
-        self.host = host
+    def __init__(self, name, seg, guc_name):
         self.seg_db_id = seg.getSegmentDbId()
         self.seg_content_id = seg.getSegmentContentId()
         self.guc_name = guc_name
@@ -1566,6 +1411,11 @@ class GpReadConfig(Command):
         cat_path = findCmdInPath('cat')
 
         cmdStr = "%s %s/postgresql.conf" % (cat_path, seg.getSegmentDataDirectory())
+        ctxt = LOCAL
+        remote_host = None
+        if seg.hostname != socket.gethostname():
+            ctxt = REMOTE
+            remote_host = seg.hostname
         Command.__init__(self, name, cmdStr, ctxt, remote_host)
 
     def get_guc_value(self):

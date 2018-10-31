@@ -1,28 +1,43 @@
 /*
- * $PostgreSQL: pgsql/contrib/pg_trgm/trgm.h,v 1.11 2009/06/11 14:48:51 momjian Exp $
+ * contrib/pg_trgm/trgm.h
  */
 #ifndef __TRGM_H__
 #define __TRGM_H__
 
-#include "postgres.h"
-
 #include "access/gist.h"
 #include "access/itup.h"
-#include "utils/builtins.h"
 #include "storage/bufpage.h"
 
-/* options */
+/*
+ * Options ... but note that trgm_regexp.c effectively assumes these values
+ * of LPADDING and RPADDING.
+ */
 #define LPADDING		2
 #define RPADDING		1
 #define KEEPONLYALNUM
+/*
+ * Caution: IGNORECASE macro means that trigrams are case-insensitive.
+ * If this macro is disabled, the ~* and ~~* operators must be removed from
+ * the operator classes, because we can't handle case-insensitive wildcard
+ * search with case-sensitive trigrams.  Failure to do this will result in
+ * "cannot handle ~*(~~*) with case-sensitive trigrams" errors.
+ */
 #define IGNORECASE
 #define DIVUNION
+
+/* operator strategy numbers */
+#define SimilarityStrategyNumber	1
+#define DistanceStrategyNumber		2
+#define LikeStrategyNumber			3
+#define ILikeStrategyNumber			4
+#define RegExpStrategyNumber		5
+#define RegExpICaseStrategyNumber	6
 
 
 typedef char trgm[3];
 
 #define CMPCHAR(a,b) ( ((a)==(b)) ? 0 : ( ((a)<(b)) ? -1 : 1 ) )
-#define CMPPCHAR(a,b,i)  CMPCHAR( *(((char*)(a))+i), *(((char*)(b))+i) )
+#define CMPPCHAR(a,b,i)  CMPCHAR( *(((const char*)(a))+i), *(((const char*)(b))+i) )
 #define CMPTRGM(a,b) ( CMPPCHAR(a,b,0) ? CMPPCHAR(a,b,0) : ( CMPPCHAR(a,b,1) ? CMPPCHAR(a,b,1) : CMPPCHAR(a,b,2) ) )
 
 #define CPTRGM(a,b) do {				\
@@ -31,14 +46,18 @@ typedef char trgm[3];
 	*(((char*)(a))+2) = *(((char*)(b))+2);	\
 } while(0);
 
-uint32		trgm2int(trgm *ptr);
-
 #ifdef KEEPONLYALNUM
+#define ISWORDCHR(c)	(t_isalpha(c) || t_isdigit(c))
 #define ISPRINTABLECHAR(a)	( isascii( *(unsigned char*)(a) ) && (isalnum( *(unsigned char*)(a) ) || *(unsigned char*)(a)==' ') )
 #else
+#define ISWORDCHR(c)	(!t_isspace(c))
 #define ISPRINTABLECHAR(a)	( isascii( *(unsigned char*)(a) ) && isprint( *(unsigned char*)(a) ) )
 #endif
-#define ISPRINTABLETRGM(t)	( ISPRINTABLECHAR( ((char*)t) ) && ISPRINTABLECHAR( ((char*)t)+1 ) && ISPRINTABLECHAR( ((char*)t)+2 ) )
+#define ISPRINTABLETRGM(t)	( ISPRINTABLECHAR( ((char*)(t)) ) && ISPRINTABLECHAR( ((char*)(t))+1 ) && ISPRINTABLECHAR( ((char*)(t))+2 ) )
+
+#define ISESCAPECHAR(x) (*(x) == '\\')	/* Wildcard escape character */
+#define ISWILDCARDCHAR(x) (*(x) == '_' || *(x) == '%')	/* Wildcard
+														 * meta-character */
 
 typedef struct
 {
@@ -63,7 +82,7 @@ typedef char *BITVECP;
 			for(i=0;i<SIGLEN;i++)
 
 #define GETBYTE(x,i) ( *( (BITVECP)(x) + (int)( (i) / BITBYTE ) ) )
-#define GETBITBYTE(x,i) ( ((char)(x)) >> i & 0x01 )
+#define GETBITBYTE(x,i) ( (((char)(x)) >> (i)) & 0x01 )
 #define CLRBIT(x,i)   GETBYTE(x,i) &= ~( 0x01 << ( (i) % BITBYTE ) )
 #define SETBIT(x,i)   GETBYTE(x,i) |=  ( 0x01 << ( (i) % BITBYTE ) )
 #define GETBIT(x,i) ( (GETBYTE(x,i) >> ( (i) % BITBYTE )) & 0x01 )
@@ -84,9 +103,19 @@ typedef char *BITVECP;
 #define GETARR(x)		( (trgm*)( (char*)x+TRGMHDRSIZE ) )
 #define ARRNELEM(x) ( ( VARSIZE(x) - TRGMHDRSIZE )/sizeof(trgm) )
 
+typedef struct TrgmPackedGraph TrgmPackedGraph;
+
 extern float4 trgm_limit;
 
-TRGM	   *generate_trgm(char *str, int slen);
-float4		cnt_sml(TRGM *trg1, TRGM *trg2);
+extern uint32 trgm2int(trgm *ptr);
+extern void compact_trigram(trgm *tptr, char *str, int bytelen);
+extern TRGM *generate_trgm(char *str, int slen);
+extern TRGM *generate_wildcard_trgm(const char *str, int slen);
+extern float4 cnt_sml(TRGM *trg1, TRGM *trg2);
+extern bool trgm_contained_by(TRGM *trg1, TRGM *trg2);
+extern bool *trgm_presence_map(TRGM *query, TRGM *key);
+extern TRGM *createTrgmNFA(text *text_re, Oid collation,
+			  TrgmPackedGraph **graph, MemoryContext rcontext);
+extern bool trigramsMatchGraph(TrgmPackedGraph *graph, bool *check);
 
-#endif
+#endif   /* __TRGM_H__ */

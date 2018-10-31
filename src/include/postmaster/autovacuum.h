@@ -4,28 +4,29 @@
  *	  header file for integrated autovacuum daemon
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/postmaster/autovacuum.h,v 1.18 2010/02/26 02:01:27 momjian Exp $
+ * src/include/postmaster/autovacuum.h
  *
  *-------------------------------------------------------------------------
  */
 #ifndef AUTOVACUUM_H
 #define AUTOVACUUM_H
 
-#include "storage/lock.h"
 #include "tcop/utility.h"
 
 /* GUC variables */
 extern bool autovacuum_start_daemon;
 extern int	autovacuum_max_workers;
+extern int	autovacuum_work_mem;
 extern int	autovacuum_naptime;
 extern int	autovacuum_vac_thresh;
 extern double autovacuum_vac_scale;
 extern int	autovacuum_anl_thresh;
 extern double autovacuum_anl_scale;
 extern int	autovacuum_freeze_max_age;
+extern int	autovacuum_multixact_freeze_max_age;
 extern int	autovacuum_vac_cost_delay;
 extern int	autovacuum_vac_cost_limit;
 
@@ -56,10 +57,8 @@ extern void AutoVacWorkerFailed(void);
 extern void AutoVacuumUpdateDelay(void);
 
 #ifdef EXEC_BACKEND
-extern void AutoVacMain(int argc, char *argv[]); // OLD interface
-extern void AutovacuumIAm(void);
-extern void AutoVacLauncherMain(int argc, char *argv[]);
-extern void AutoVacWorkerMain(int argc, char *argv[]);
+extern void AutoVacLauncherMain(int argc, char *argv[]) __attribute__((noreturn));
+extern void AutoVacWorkerMain(int argc, char *argv[]) __attribute__((noreturn));
 extern void AutovacuumWorkerIAm(void);
 extern void AutovacuumLauncherIAm(void);
 #endif

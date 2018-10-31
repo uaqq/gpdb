@@ -79,7 +79,7 @@ comptype_to_name(char *comptype)
 			 "of %d bytes", comptype, NAMEDATALEN - 1);
 
 	len = strlen(comptype);
-	dct = str_tolower(comptype, len);
+	dct = asc_tolower(comptype, len);
 	len = strlen(dct);
 	
 	memcpy(&(NameStr(compname)), dct, len);
@@ -135,7 +135,7 @@ GetCompressionImplementation(char *comptype)
 				NameGetDatum(&compname));
 
 	scan = systable_beginscan(comprel, CompressionCompnameIndexId, true,
-							  SnapshotNow, 1, &scankey);
+							  NULL, 1, &scankey);
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
@@ -485,7 +485,7 @@ default_column_encoding_clause(void)
 {
 	const StdRdOptions *ao_opts = currentAOStorageOptions();
 	DefElem *e1, *e2, *e3;
-	if (ao_opts->compresstype)
+	if (ao_opts->compresstype[0])
 	{
 		e1 = makeDefElem("compresstype",
 						 (Node *)makeString(pstrdup(ao_opts->compresstype)));

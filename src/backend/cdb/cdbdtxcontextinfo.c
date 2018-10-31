@@ -12,6 +12,7 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
+
 #include "cdb/cdbdistributedsnapshot.h"
 #include "cdb/cdblocaldistribxact.h"
 #include "cdb/cdbdtxcontextinfo.h"
@@ -20,6 +21,7 @@
 #include "cdb/cdbvars.h"
 #include "cdb/cdbtm.h"
 #include "access/xact.h"
+#include "utils/guc.h"
 #include "utils/tqual.h"
 
 /*

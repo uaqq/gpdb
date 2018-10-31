@@ -3,10 +3,10 @@
  * array_userfuncs.c
  *	  Misc user-visible array support functions
  *
- * Copyright (c) 2003-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2003-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/array_userfuncs.c,v 1.35 2010/02/26 02:01:06 momjian Exp $
+ *	  src/backend/utils/adt/array_userfuncs.c
  *
  *-------------------------------------------------------------------------
  */
@@ -408,9 +408,11 @@ ArrayType *
 create_singleton_array(FunctionCallInfo fcinfo,
 					   Oid element_type,
 					   Datum element,
+					   bool isNull,
 					   int ndims)
 {
 	Datum		dvalues[1];
+	bool		nulls[1];
 	int16		typlen;
 	bool		typbyval;
 	char		typalign;
@@ -430,6 +432,7 @@ create_singleton_array(FunctionCallInfo fcinfo,
 						ndims, MAXDIM)));
 
 	dvalues[0] = element;
+	nulls[0] = isNull;
 
 	for (i = 0; i < ndims; i++)
 	{
@@ -463,7 +466,7 @@ create_singleton_array(FunctionCallInfo fcinfo,
 	typbyval = my_extra->typbyval;
 	typalign = my_extra->typalign;
 
-	return construct_md_array(dvalues, NULL, ndims, dims, lbs, element_type,
+	return construct_md_array(dvalues, nulls, ndims, dims, lbs, element_type,
 							  typlen, typbyval, typalign);
 }
 
@@ -500,7 +503,7 @@ array_agg_transfn(PG_FUNCTION_ARGS)
 
 	/*
 	 * The transition type for array_agg() is declared to be "internal", which
-	 * is a pass-by-value type the same size as a pointer.	So we can safely
+	 * is a pass-by-value type the same size as a pointer.  So we can safely
 	 * pass the ArrayBuildState pointer through nodeAgg.c's machinations.
 	 */
 	PG_RETURN_POINTER(state);
@@ -515,7 +518,7 @@ array_agg_finalfn(PG_FUNCTION_ARGS)
 	int			lbs[1];
 
 	/*
-	 * Test for null before Asserting we are in right context.	This is to
+	 * Test for null before Asserting we are in right context.  This is to
 	 * avoid possible Assert failure in 8.4beta installations, where it is
 	 * possible for users to create NULL constants of type internal.
 	 */

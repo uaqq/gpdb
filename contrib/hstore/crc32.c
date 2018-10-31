@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/hstore/crc32.c,v 1.4 2009/06/11 14:48:51 momjian Exp $
+ * contrib/hstore/crc32.c
  *
  * Both POSIX and CRC32 checksums */
 
@@ -13,7 +13,7 @@
  * This code implements the AUTODIN II polynomial
  * The variable corresponding to the macro argument "crc" should
  * be an unsigned long.
- * Oroginal code  by Spencer Garrett <srg@quick.com>
+ * Original code  by Spencer Garrett <srg@quick.com>
  */
 
 #define _CRC32_(crc, ch)	 (crc = (crc >> 8) ^ crc32tab[(crc ^ (ch)) & 0xff])

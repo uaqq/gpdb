@@ -1,6 +1,8 @@
 /*
- * $PostgreSQL: pgsql/contrib/btree_gist/btree_gist.c,v 1.13 2009/06/11 14:48:50 momjian Exp $
+ * contrib/btree_gist/btree_gist.c
  */
+#include "postgres.h"
+
 #include "btree_gist.h"
 
 PG_MODULE_MAGIC;
@@ -8,8 +10,6 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(gbt_decompress);
 PG_FUNCTION_INFO_V1(gbtreekey_in);
 PG_FUNCTION_INFO_V1(gbtreekey_out);
-
-Datum		gbt_decompress(PG_FUNCTION_ARGS);
 
 /**************************************************
  * In/Out for keys

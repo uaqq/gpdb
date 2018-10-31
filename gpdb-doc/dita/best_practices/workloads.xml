@@ -4,6 +4,7 @@
   <title>Memory and Resource Management with Resource Queues</title>
   <shortdesc>Avoid memory errors and manage Greenplum Database resources.</shortdesc>
   <body>
+    <note>Resource groups are a newer resource management scheme that enforces memory, CPU, and concurrent transaction limits in Greenplum Database. The <xref href="../admin_guide/wlmgmt.xml" format="dita" type="topic" scope="peer" >Managing Resources</xref> topic provides a comparison of the resource queue and the resource group management schemes. Refer to <xref href="../admin_guide/workload_mgmt_resgroups.xml" format="dita" type="topic" scope="peer">Using Resource Groups</xref> for configuration and usage information for this resource management scheme.</note>
     <p>Memory management has a significant impact on performance in a Greenplum Database cluster.
       The default settings are suitable for most environments. Do not change the default settings
       until you understand the memory characteristics and usage on your system. </p>
@@ -12,10 +13,10 @@
         <xref href="#topic_hhc_z5w_r4/section_jqw_qbl_zt" format="dita"/>
       </li>
       <li>
-        <xref href="#topic_hhc_z5w_r4/section_r52_rbl_zt" format="dita"/>
+        <xref href="#topic_hhc_z5w_r4/section113x" format="dita"/>
       </li>
       <li>
-        <xref href="#topic_hhc_z5w_r4/section_upm_rbl_zt" format="dita"/>
+        <xref href="#topic_hhc_z5w_r4/section_r52_rbl_zt" format="dita"/>
       </li>
       <li>
         <xref href="#topic_hhc_z5w_r4/configuring_rq" format="dita"/>
@@ -55,6 +56,15 @@ VM Protect failed to allocate 4096 bytes, 0 MB available</codeblock></p>
         and it is set when the query is invoked. However, if adding more hosts allows decreasing the
         number of segments per host, then the amount of memory allocated in
           <codeph>gp_vmem_protect_limit</codeph> can be raised.</p>
+    </section>
+    <section id="section113x" xml:lang="en">
+      <title>Low Memory Queries</title>
+        <p>A low <codeph>statement_mem</codeph> setting (for example, in the
+          1-3MB range) has been shown
+          to increase the performance of queries with low memory requirements. Use
+          the <codeph>statement_mem</codeph> server configuration parameter to
+          override the setting on a per-query basis. For example:
+          <codeblock>SET statement_mem='2MB';</codeblock></p>
     </section>
     <section id="section_r52_rbl_zt">
       <title>Configuring Memory for Greenplum Database</title>
@@ -145,35 +155,6 @@ VM Protect failed to allocate 4096 bytes, 0 MB available</codeblock></p>
             operations. </p>
         </li>
       </ul>
-    </section>
-    <section id="section_upm_rbl_zt">
-      <title>Example Memory Configuration Calculations</title>
-      <ul id="ul_q4x_g1g_zt">
-        <li>Total RAM = 256GB </li>
-        <li>SWAP = 64GB </li>
-        <li>8 primary segments and 8 mirror segments per host, in blocks of 4 hosts</li>
-        <li>Maximum number of primaries per host during failure is 11</li>
-      </ul>
-      <p>
-        <b>vm.overcommit_ratio calculation</b>
-        <codeblock>
-gp_vmem = ((SWAP + RAM) – (7.5GB + 0.05 * RAM)) / 1.7
-        = ((64 + 256) - (7.5 + 0.05 * 256)) / 1.7 
-        = 176
-
-vm.overcommit_ratio = (RAM - (0.026 * gp_vmem)) / RAM 
-                    = (256 - (0.026 * 176)) / 256 
-                    = .982</codeblock>
-        Set <codeph>vm.overcommit_ratio</codeph> to 98. </p>
-      <p>
-        <b>gp_vmem_protect_limit calculation</b>
-        <codeblock>
-gp_vmem_protect_limit = gp_vmem / maximum_acting_primary_segments
-                      = 176 / 11 
-                      = 16GB
-                      = 16384MB
-</codeblock>
-      </p>
     </section>
     <section id="configuring_rq">
       <title>Configuring Resource Queues</title>

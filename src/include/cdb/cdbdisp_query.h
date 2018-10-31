@@ -37,6 +37,7 @@
 struct QueryDesc;
 struct CdbDispatcherState;
 struct CdbPgResults;
+struct CdbCopy;
 
 /* Compose and dispatch the MPPEXEC commands corresponding to a plan tree
  * within a complete parallel plan.
@@ -58,8 +59,7 @@ struct CdbPgResults;
 void
 CdbDispatchPlan(struct QueryDesc *queryDesc,
 					 bool planRequiresTxn,
-					 bool cancelOnError,
-					 struct CdbDispatcherState *ds);
+					 bool cancelOnError);
 
 /*
  * Special for sending SET commands that change GUC variables, so they go to all
@@ -106,6 +106,8 @@ CdbDispatchUtilityStatement(struct Node *stmt,
 							List *oid_assignments,
 							struct CdbPgResults* cdb_pgresults);
 
+extern void CdbDispatchCopyStart(struct CdbCopy *cdbCopy, Node *stmt, int flags);
+extern void CdbDispatchCopyEnd(struct CdbCopy *cdbCopy);
 
 extern ParamListInfo deserializeParamListInfo(const char *str, int slen);
 

@@ -11,12 +11,12 @@
  * is that we have to work harder to clean up after ourselves when we modify
  * the query, since the derived data structures have to be updated too.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/analyzejoins.c,v 1.3 2010/07/06 19:18:56 momjian Exp $
+ *	  src/backend/optimizer/plan/analyzejoins.c
  *
  *-------------------------------------------------------------------------
  */
@@ -31,7 +31,7 @@
 /* local functions */
 static bool join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo);
 static void remove_rel_from_query(PlannerInfo *root, int relid,
-								  Relids joinrelids);
+					  Relids joinrelids);
 static List *remove_rel_from_joinlist(List *joinlist, int relid, int *nremoved);
 
 
@@ -40,7 +40,7 @@ static List *remove_rel_from_joinlist(List *joinlist, int relid, int *nremoved);
  *		Check for relations that don't actually need to be joined at all,
  *		and remove them from the query.
  *
- * We are passed the current joinlist and return the updated list.	Other
+ * We are passed the current joinlist and return the updated list.  Other
  * data structures that have to be updated are accessible via "root".
  */
 List *
@@ -90,7 +90,7 @@ restart:
 		 * Restart the scan.  This is necessary to ensure we find all
 		 * removable joins independently of ordering of the join_info_list
 		 * (note that removal of attr_needed bits may make a join appear
-		 * removable that did not before).	Also, since we just deleted the
+		 * removable that did not before).  Also, since we just deleted the
 		 * current list cell, we'd have to have some kluge to continue the
 		 * list scan anyway.
 		 */
@@ -107,7 +107,7 @@ restart:
  * We already know that the clause is a binary opclause referencing only the
  * rels in the current join.  The point here is to check whether it has the
  * form "outerrel_expr op innerrel_expr" or "innerrel_expr op outerrel_expr",
- * rather than mixing outer and inner vars on either side.	If it matches,
+ * rather than mixing outer and inner vars on either side.  If it matches,
  * we set the transient flag outer_is_left to identify which side is which.
  */
 static inline bool
@@ -154,7 +154,7 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 
 	/*
 	 * Currently, we only know how to remove left joins to a baserel with
-	 * unique indexes.	We can check most of these criteria pretty trivially
+	 * unique indexes.  We can check most of these criteria pretty trivially
 	 * to avoid doing useless extra work.  But checking whether any of the
 	 * indexes are unique would require iterating over the indexlist, so for
 	 * now we just make sure there are indexes of some sort or other.  If none
@@ -202,7 +202,9 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 	 * that will be used above the join.  We only need to fail if such a PHV
 	 * actually references some inner-rel attributes; but the correct check
 	 * for that is relatively expensive, so we first check against ph_eval_at,
-	 * which must mention the inner rel if the PHV uses any inner-rel attrs.
+	 * which must mention the inner rel if the PHV uses any inner-rel attrs as
+	 * non-lateral references.  Note that if the PHV's syntactic scope is just
+	 * the inner rel, we can't drop the rel even if the PHV is variable-free.
 	 */
 	foreach(l, root->placeholder_list)
 	{
@@ -210,9 +212,13 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 
 		if (bms_is_subset(phinfo->ph_needed, joinrelids))
 			continue;			/* PHV is not used above the join */
+		if (bms_overlap(phinfo->ph_lateral, innerrel->relids))
+			return false;		/* it references innerrel laterally */
 		if (!bms_overlap(phinfo->ph_eval_at, innerrel->relids))
 			continue;			/* it definitely doesn't reference innerrel */
-		if (bms_overlap(pull_varnos((Node *) phinfo->ph_var),
+		if (bms_is_subset(phinfo->ph_eval_at, innerrel->relids))
+			return false;		/* there isn't any other place to eval PHV */
+		if (bms_overlap(pull_varnos((Node *) phinfo->ph_var->phexpr),
 						innerrel->relids))
 			return false;		/* it does reference innerrel */
 	}
@@ -238,10 +244,10 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 			!bms_equal(restrictinfo->required_relids, joinrelids))
 		{
 			/*
-			 * If such a clause actually references the inner rel then
-			 * join removal has to be disallowed.  We have to check this
-			 * despite the previous attr_needed checks because of the
-			 * possibility of pushed-down clauses referencing the rel.
+			 * If such a clause actually references the inner rel then join
+			 * removal has to be disallowed.  We have to check this despite
+			 * the previous attr_needed checks because of the possibility of
+			 * pushed-down clauses referencing the rel.
 			 */
 			if (bms_is_member(innerrelid, restrictinfo->clause_relids))
 				return false;
@@ -264,42 +270,13 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 		clause_list = lappend(clause_list, restrictinfo);
 	}
 
-	/* Now examine the rel's restriction clauses for var = const clauses */
-	foreach(l, innerrel->baserestrictinfo)
-	{
-		RestrictInfo *restrictinfo = (RestrictInfo *) lfirst(l);
-
-		/*
-		 * Note: can_join won't be set for a restriction clause, but
-		 * mergeopfamilies will be if it has a mergejoinable operator and
-		 * doesn't contain volatile functions.
-		 */
-		if (restrictinfo->mergeopfamilies == NIL)
-			continue;			/* not mergejoinable */
-
-		/*
-		 * The clause certainly doesn't refer to anything but the given rel.
-		 * If either side is pseudoconstant then we can use it.
-		 */
-		if (bms_is_empty(restrictinfo->left_relids))
-		{
-			/* righthand side is inner */
-			restrictinfo->outer_is_left = true;
-		}
-		else if (bms_is_empty(restrictinfo->right_relids))
-		{
-			/* lefthand side is inner */
-			restrictinfo->outer_is_left = false;
-		}
-		else
-			continue;
-
-		/* OK, add to list */
-		clause_list = lappend(clause_list, restrictinfo);
-	}
+	/*
+	 * relation_has_unique_index_for automatically adds any usable restriction
+	 * clauses for the innerrel, so we needn't do that here.
+	 */
 
 	/* Now examine the indexes to see if we have a matching unique index */
-	if (relation_has_unique_index_for(root, innerrel, clause_list))
+	if (relation_has_unique_index_for(root, innerrel, clause_list, NIL, NIL))
 		return true;
 
 	/*
@@ -327,6 +304,7 @@ remove_rel_from_query(PlannerInfo *root, int relid, Relids joinrelids)
 	List	   *joininfos;
 	Index		rti;
 	ListCell   *l;
+	ListCell   *nextl;
 
 	/*
 	 * Mark the rel as "dead" to show it is no longer part of the join tree.
@@ -365,8 +343,8 @@ remove_rel_from_query(PlannerInfo *root, int relid, Relids joinrelids)
 	 * Likewise remove references from SpecialJoinInfo data structures.
 	 *
 	 * This is relevant in case the outer join we're deleting is nested inside
-	 * other outer joins: the upper joins' relid sets have to be adjusted.
-	 * The RHS of the target outer join will be made empty here, but that's OK
+	 * other outer joins: the upper joins' relid sets have to be adjusted. The
+	 * RHS of the target outer join will be made empty here, but that's OK
 	 * since caller will delete that SpecialJoinInfo entirely.
 	 */
 	foreach(l, root->join_info_list)
@@ -380,24 +358,40 @@ remove_rel_from_query(PlannerInfo *root, int relid, Relids joinrelids)
 	}
 
 	/*
-	 * Likewise remove references from PlaceHolderVar data structures.
+	 * Likewise remove references from LateralJoinInfo data structures.
 	 *
-	 * Here we have a special case: if a PHV's eval_at set is just the target
-	 * relid, we want to leave it that way instead of reducing it to the empty
-	 * set.  An empty eval_at set would confuse later processing since it
-	 * would match every possible eval placement.
+	 * If we are deleting a LATERAL subquery, we can forget its
+	 * LateralJoinInfos altogether.  Otherwise, make sure the target is not
+	 * included in any lateral_lhs set.  (It probably can't be, since that
+	 * should have precluded deciding to remove it; but let's cope anyway.)
+	 */
+	for (l = list_head(root->lateral_info_list); l != NULL; l = nextl)
+	{
+		LateralJoinInfo *ljinfo = (LateralJoinInfo *) lfirst(l);
+
+		nextl = lnext(l);
+		ljinfo->lateral_rhs = bms_del_member(ljinfo->lateral_rhs, relid);
+		if (bms_is_empty(ljinfo->lateral_rhs))
+			root->lateral_info_list = list_delete_ptr(root->lateral_info_list,
+													  ljinfo);
+		else
+		{
+			ljinfo->lateral_lhs = bms_del_member(ljinfo->lateral_lhs, relid);
+			Assert(!bms_is_empty(ljinfo->lateral_lhs));
+		}
+	}
+
+	/*
+	 * Likewise remove references from PlaceHolderVar data structures.
 	 */
 	foreach(l, root->placeholder_list)
 	{
 		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(l);
 
 		phinfo->ph_eval_at = bms_del_member(phinfo->ph_eval_at, relid);
-		if (bms_is_empty(phinfo->ph_eval_at))	/* oops, belay that */
-			phinfo->ph_eval_at = bms_add_member(phinfo->ph_eval_at, relid);
-
+		Assert(!bms_is_empty(phinfo->ph_eval_at));
+		Assert(!bms_is_member(relid, phinfo->ph_lateral));
 		phinfo->ph_needed = bms_del_member(phinfo->ph_needed, relid);
-		/* ph_may_need probably isn't used after this, but fix it anyway */
-		phinfo->ph_may_need = bms_del_member(phinfo->ph_may_need, relid);
 	}
 
 	/*
@@ -426,43 +420,7 @@ remove_rel_from_query(PlannerInfo *root, int relid, Relids joinrelids)
 		{
 			/* Recheck that qual doesn't actually reference the target rel */
 			Assert(!bms_is_member(relid, rinfo->clause_relids));
-			/*
-			 * The required_relids probably aren't shared with anything else,
-			 * but let's copy them just to be sure.
-			 */
-			rinfo->required_relids = bms_copy(rinfo->required_relids);
-			rinfo->required_relids = bms_del_member(rinfo->required_relids,
-													relid);
-			distribute_restrictinfo_to_rels(root, rinfo);
-		}
-	}
 
-	/*
-	 * Remove any joinquals referencing the rel from the joininfo lists.
-	 *
-	 * In some cases, a joinqual has to be put back after deleting its
-	 * reference to the target rel.  This can occur for pseudoconstant and
-	 * outerjoin-delayed quals, which can get marked as requiring the rel in
-	 * order to force them to be evaluated at or above the join.  We can't
-	 * just discard them, though.  Only quals that logically belonged to the
-	 * outer join being discarded should be removed from the query.
-	 *
-	 * We must make a copy of the rel's old joininfo list before starting the
-	 * loop, because otherwise remove_join_clause_from_rels would destroy the
-	 * list while we're scanning it.
-	 */
-	joininfos = list_copy(rel->joininfo);
-	foreach(l, joininfos)
-	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
-
-		remove_join_clause_from_rels(root, rinfo, rinfo->required_relids);
-
-		if (rinfo->is_pushed_down ||
-			!bms_equal(rinfo->required_relids, joinrelids))
-		{
-			/* Recheck that qual doesn't actually reference the target rel */
-			Assert(!bms_is_member(relid, rinfo->clause_relids));
 			/*
 			 * The required_relids probably aren't shared with anything else,
 			 * but let's copy them just to be sure.

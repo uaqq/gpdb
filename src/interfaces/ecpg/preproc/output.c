@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/output.c,v 1.26 2009/12/16 10:15:06 meskes Exp $ */
+/* src/interfaces/ecpg/preproc/output.c */
 
 #include "postgres_fe.h"
 
@@ -95,9 +95,22 @@ hashline_number(void)
 #endif
 		)
 	{
-		char	   *line = mm_alloc(strlen("\n#line %d \"%s\"\n") + sizeof(int) * CHAR_BIT * 10 / 3 + strlen(input_filename));
+		/* "* 2" here is for escaping '\' and '"' below */
+		char	   *line = mm_alloc(strlen("\n#line %d \"%s\"\n") + sizeof(int) * CHAR_BIT * 10 / 3 + strlen(input_filename) *2);
+		char	   *src,
+				   *dest;
 
-		sprintf(line, "\n#line %d \"%s\"\n", yylineno, input_filename);
+		sprintf(line, "\n#line %d \"", yylineno);
+		src = input_filename;
+		dest = line + strlen(line);
+		while (*src)
+		{
+			if (*src == '\\' || *src == '"')
+				*dest++ = '\\';
+			*dest++ = *src++;
+		}
+		*dest = '\0';
+		strcat(dest, "\"\n");
 
 		return line;
 	}
@@ -163,7 +176,7 @@ output_deallocate_prepare_statement(char *name)
 {
 	const char *con = connection ? connection : "NULL";
 
-	if (strcmp(name, "all"))
+	if (strcmp(name, "all") != 0)
 	{
 		fprintf(yyout, "{ ECPGdeallocate(__LINE__, %d, %s, ", compat, con);
 		output_escaped_str(name, true);

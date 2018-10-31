@@ -8,9 +8,9 @@ insert into nhtest values(300000.19);
 explain select * from nhtest a join nhtest b using (i);
                                  QUERY PLAN                                  
 -----------------------------------------------------------------------------
- Gather Motion 2:1  (slice1; segments: 2)  (cost=1.02..2.07 rows=2 width=11)
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=1.02..2.07 rows=2 width=11)
    ->  Hash Join  (cost=1.02..2.07 rows=2 width=11)
-         Hash Cond: a.i = b.i
+         Hash Cond: (a.i = b.i)
          ->  Seq Scan on nhtest a  (cost=0.00..1.01 rows=1 width=11)
          ->  Hash  (cost=1.01..1.01 rows=1 width=11)
                ->  Seq Scan on nhtest b  (cost=0.00..1.01 rows=1 width=11)
@@ -96,15 +96,15 @@ explain select count(*) from t1,t2 where t1.x = 100 and t1.x = t2.x;
                                                 QUERY PLAN                                                
 ----------------------------------------------------------------------------------------------------------
  Aggregate  (cost=6.60..6.61 rows=1 width=8)
-   ->  Gather Motion 2:1  (slice2; segments: 2)  (cost=6.54..6.58 rows=1 width=8)
+   ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=6.54..6.58 rows=1 width=8)
          ->  Aggregate  (cost=6.54..6.55 rows=1 width=8)
                ->  Nested Loop  (cost=0.00..6.53 rows=2 width=0)
-                     ->  Redistribute Motion 2:2  (slice1; segments: 2)  (cost=0.00..3.27 rows=1 width=4)
+                     ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..3.27 rows=1 width=4)
                            Hash Key: t1.x
                            ->  Seq Scan on t1  (cost=0.00..3.25 rows=1 width=4)
-                                 Filter: x = 100
+                                 Filter: (x = 100)
                      ->  Seq Scan on t2  (cost=0.00..3.25 rows=1 width=4)
-                           Filter: x = 100
+                           Filter: (x = 100)
  Settings:  enable_hashjoin=on; enable_mergejoin=off; enable_nestloop=off
 (11 rows)
 
@@ -120,15 +120,15 @@ select count(*) from t1,t2 where t1.x = 100 and t1.x = t2.x;
 explain select * from t1,t2 where t1.x = 100 and t2.x >= t1.x;
                                             QUERY PLAN                                            
 --------------------------------------------------------------------------------------------------
- Gather Motion 2:1  (slice2; segments: 2)  (cost=3.28..6.58 rows=2 width=24)
+ Gather Motion 3:1  (slice2; segments: 3)  (cost=3.28..6.58 rows=2 width=24)
    ->  Nested Loop  (cost=3.28..6.58 rows=2 width=24)
-         Join Filter: t2.x >= t1.x
+         Join Filter: (t2.x >= t1.x)
          ->  Seq Scan on t1  (cost=0.00..3.25 rows=1 width=12)
-               Filter: x = 100
+               Filter: (x = 100)
          ->  Materialize  (cost=3.28..3.30 rows=1 width=12)
-               ->  Broadcast Motion 2:2  (slice1; segments: 2)  (cost=0.00..3.28 rows=1 width=12)
+               ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..3.28 rows=1 width=12)
                      ->  Seq Scan on t2  (cost=0.00..3.25 rows=1 width=12)
-                           Filter: x >= 100
+                           Filter: (x >= 100)
  Settings:  enable_hashjoin=on; enable_mergejoin=off; enable_nestloop=off
 (10 rows)
 
@@ -147,13 +147,13 @@ explain select * from t1,t2 where t1.x = 100 and t1.x = t2.y and t1.x <= t2.x;
 --------------------------------------------------------------------------------------------------
  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..9.14 rows=4 width=24)
    ->  Nested Loop  (cost=0.00..9.14 rows=2 width=24)
-         Join Filter: t1.x <= t2.x
+         Join Filter: (t1.x <= t2.x)
          ->  Seq Scan on t1  (cost=0.00..4.25 rows=1 width=12)
                Filter: x = 100
          ->  Materialize  (cost=0.00..4.85 rows=1 width=12)
                ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..4.79 rows=1 width=12)
                      ->  Seq Scan on t2  (cost=0.00..4.75 rows=1 width=12)
-                           Filter: 100 <= x AND y <= x AND y = 100
+                           Filter: ((100 <= x) AND (y <= x) AND (y = 100))
  Settings:  optimizer=off; optimizer_segments=2
  Optimizer status: legacy query optimizer
 (11 rows)
@@ -339,36 +339,6 @@ select * from foo where a not in (select c from bar where c <= 5);
 set enable_nestloop to off;
 set enable_hashjoin to on;
 set enable_mergejoin to off;
-CREATE TABLE R(a varchar(20), b int) DISTRIBUTED BY (a);
-CREATE TABLE S(a varchar(20), b int) DISTRIBUTED BY (a);
--- Make sure there is no motion to redistribute or broadcast any table,
--- because the join keys are also the distribution key of the 2 tables.
-EXPLAIN SELECT * FROM R, S WHERE R.a = S.a;
-                                        QUERY PLAN
--------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=898.75..171576.25 rows=1260250 width=124)
-   ->  Hash Join  (cost=898.75..171576.25 rows=420084 width=124)
-         Hash Cond: r.a::text = s.a::text
-         ->  Seq Scan on r  (cost=0.00..455.00 rows=11834 width=62)
-         ->  Hash  (cost=455.00..455.00 rows=11834 width=62)
-               ->  Seq Scan on s  (cost=0.00..455.00 rows=11834 width=62)
- Settings:  enable_hashjoin=on; enable_mergejoin=off; enable_nestloop=off; optimizer=off
- Optimizer status: legacy query optimizer
-(8 rows)
-
-EXPLAIN SELECT * FROM R LEFT OUTER JOIN S ON R.a = S.a;
-                                        QUERY PLAN                                         
--------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=898.75..171576.25 rows=1260250 width=124)
-   ->  Hash Left Join  (cost=898.75..171576.25 rows=420084 width=124)
-         Hash Cond: r.a::text = s.a::text
-         ->  Seq Scan on r  (cost=0.00..455.00 rows=11834 width=62)
-         ->  Hash  (cost=455.00..455.00 rows=11834 width=62)
-               ->  Seq Scan on s  (cost=0.00..455.00 rows=11834 width=62)
- Settings:  enable_hashjoin=on; enable_mergejoin=off; enable_nestloop=off; optimizer=off
- Optimizer status: legacy query optimizer
-(8 rows)
-
 create table dept
 (
 	id int,
@@ -438,6 +408,127 @@ SELECT count(*) FROM subdept;
     48
 (1 row)
 
+-- MPP-29458
+-- When we join on a clause with two different types. If one table distribute by one type, the query plan
+-- will redistribute data on another type. But the has values of two types would not be equal. The data will
+-- redistribute to wrong segments.
+create table test_timestamp_t1 (id  numeric(10,0) ,field_dt date) distributed by (id);
+create table test_timestamp_t2 (id numeric(10,0),field_tms timestamp without time zone) distributed by (id,field_tms);
+insert into test_timestamp_t1 values(10 ,'2018-1-10');
+insert into test_timestamp_t1 values(11 ,'2018-1-11');
+insert into test_timestamp_t2 values(10 ,'2018-1-10'::timestamp);
+insert into test_timestamp_t2 values(11 ,'2018-1-11'::timestamp);
+-- Test nest loop redistribute keys
+set enable_nestloop to on;
+set enable_hashjoin to on;
+set enable_mergejoin to on;
+select count(*) from test_timestamp_t1 t1 ,test_timestamp_t2 t2 where T1.id = T2.id and T1.field_dt = t2.field_tms;
+ count 
+-------
+     2
+(1 row)
+
+-- Test hash join redistribute keys
+set enable_nestloop to off;
+set enable_hashjoin to on;
+set enable_mergejoin to on;
+select count(*) from test_timestamp_t1 t1 ,test_timestamp_t2 t2 where T1.id = T2.id and T1.field_dt = t2.field_tms;
+ count 
+-------
+     2
+(1 row)
+
+drop table test_timestamp_t1;
+drop table test_timestamp_t2;
+-- Test merge join redistribute keys
+create table test_timestamp_t1 (id  numeric(10,0) ,field_dt date) distributed randomly;
+create table test_timestamp_t2 (id numeric(10,0),field_tms timestamp without time zone) distributed by (field_tms);
+insert into test_timestamp_t1 values(10 ,'2018-1-10');
+insert into test_timestamp_t1 values(11 ,'2018-1-11');
+insert into test_timestamp_t2 values(10 ,'2018-1-10'::timestamp);
+insert into test_timestamp_t2 values(11 ,'2018-1-11'::timestamp);
+select * from test_timestamp_t1 t1 full outer join test_timestamp_t2 t2 on T1.id = T2.id and T1.field_dt = t2.field_tms;
+ id |  field_dt  | id |        field_tms         
+----+------------+----+--------------------------
+ 10 | 01-10-2018 | 10 | Wed Jan 10 00:00:00 2018
+ 11 | 01-11-2018 | 11 | Thu Jan 11 00:00:00 2018
+(2 rows)
+
+-- test float type
+set enable_nestloop to off;
+set enable_hashjoin to on;
+set enable_mergejoin to on;
+create table test_float1(id int, data float4)  DISTRIBUTED BY (data);
+create table test_float2(id int, data float8)  DISTRIBUTED BY (data);
+insert into test_float1 values(1, 10), (2, 20);
+insert into test_float2 values(3, 10), (4, 20);
+select t1.id, t1.data, t2.id, t2.data from test_float1 t1, test_float2 t2 where t1.data = t2.data;
+ id | data | id | data 
+----+------+----+------
+  2 |   20 |  4 |   20
+  1 |   10 |  3 |   10
+(2 rows)
+
+-- test int type
+create table test_int1(id int, data int4)  DISTRIBUTED BY (data);
+create table test_int2(id int, data int8)  DISTRIBUTED BY (data);
+insert into test_int1 values(1, 10), (2, 20);
+insert into test_int2 values(3, 10), (4, 20);
+select t1.id, t1.data, t2.id, t2.data from test_int1 t1, test_int2 t2 where t1.data = t2.data;
+ id | data | id | data 
+----+------+----+------
+  1 |   10 |  3 |   10
+  2 |   20 |  4 |   20
+(2 rows)
+
+-- Test to ensure that for full outer join on varchar columns, planner is successful in finding a sort operator in the catalog
+create table input_table(a varchar(30), b varchar(30)) distributed by (a);
+set enable_hashjoin = off;
+explain (costs off) select X.a from input_table X full join (select a from input_table) Y ON X.a = Y.a;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)
+   ->  Merge Full Join
+         Merge Cond: ((x.a)::text = (input_table.a)::text)
+         ->  Sort
+               Sort Key: x.a
+               ->  Seq Scan on input_table x
+         ->  Sort
+               Sort Key: input_table.a
+               ->  Seq Scan on input_table
+ Optimizer: legacy query optimizer
+(10 rows)
+
 -- Cleanup
+reset enable_hashjoin;
 set client_min_messages='warning'; -- silence drop-cascade NOTICEs
 drop schema pred cascade;
+reset search_path;
+-- github issue 5370 cases
+drop table if exists t5370;
+NOTICE:  table "t5370" does not exist, skipping
+drop table if exists t5370_2;
+NOTICE:  table "t5370_2" does not exist, skipping
+create table t5370(id int,name text) distributed by(id);
+insert into t5370 select i,i from  generate_series(1,1000) i;
+create table t5370_2 as select * from t5370 distributed by (id);
+analyze t5370_2;
+analyze t5370;
+explain select * from t5370 a , t5370_2 b where a.name=b.name;
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice3; segments: 3)  (cost=45.50..92.25 rows=1000 width=14)
+   ->  Hash Join  (cost=45.50..92.25 rows=334 width=14)
+         Hash Cond: (a.name = b.name)
+         ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..33.00 rows=334 width=7)
+               Hash Key: a.name
+               ->  Seq Scan on t5370 a  (cost=0.00..13.00 rows=334 width=7)
+         ->  Hash  (cost=33.00..33.00 rows=334 width=7)
+               ->  Redistribute Motion 3:3  (slice2; segments: 3)  (cost=0.00..33.00 rows=334 width=7)
+                     Hash Key: b.name
+                     ->  Seq Scan on t5370_2 b  (cost=0.00..13.00 rows=334 width=7)
+ Optimizer: legacy query optimizer
+(11 rows)
+
+drop table t5370;
+drop table t5370_2;

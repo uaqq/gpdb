@@ -1,9 +1,9 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/bin/psql/large_obj.c,v 1.56 2010/02/26 02:01:19 momjian Exp $
+ * src/bin/psql/large_obj.c
  */
 #include "postgres_fe.h"
 #include "large_obj.h"
@@ -14,7 +14,7 @@
 
 static void
 print_lo_result(const char *fmt,...)
-__attribute__((format(printf, 1, 2)));
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
 
 static void
 print_lo_result(const char *fmt,...)
@@ -47,7 +47,7 @@ print_lo_result(const char *fmt,...)
 
 
 /*
- * Prepare to do a large-object operation.	We *must* be inside a transaction
+ * Prepare to do a large-object operation.  We *must* be inside a transaction
  * block for all these operations, so start one if needed.
  *
  * Returns TRUE if okay, FALSE if failed.  *own_transaction is set to indicate
@@ -155,7 +155,7 @@ do_lo_export(const char *loid_arg, const char *filename_arg)
 	/* of course this status is documented nowhere :( */
 	if (status != 1)
 	{
-		fputs(PQerrorMessage(pset.db), stderr);
+		psql_error("%s", PQerrorMessage(pset.db));
 		return fail_lo_xact("\\lo_export", own_transaction);
 	}
 
@@ -190,7 +190,7 @@ do_lo_import(const char *filename_arg, const char *comment_arg)
 
 	if (loid == InvalidOid)
 	{
-		fputs(PQerrorMessage(pset.db), stderr);
+		psql_error("%s", PQerrorMessage(pset.db));
 		return fail_lo_xact("\\lo_import", own_transaction);
 	}
 
@@ -252,7 +252,7 @@ do_lo_unlink(const char *loid_arg)
 
 	if (status == -1)
 	{
-		fputs(PQerrorMessage(pset.db), stderr);
+		psql_error("%s", PQerrorMessage(pset.db));
 		return fail_lo_xact("\\lo_unlink", own_transaction);
 	}
 

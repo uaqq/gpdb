@@ -4,12 +4,12 @@
  *
  *	  Routines for operator manipulation commands
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/operatorcmds.c,v 1.47 2010/07/06 19:18:56 momjian Exp $
+ *	  src/backend/commands/operatorcmds.c
  *
  * DESCRIPTION
  *	  The "DefineFoo" routines take the parse tree and pick out the
@@ -35,9 +35,9 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
-#include "catalog/namespace.h"
 #include "catalog/oid_dispatch.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
@@ -47,15 +47,13 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
-#include "utils/acl.h"
+#include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
 #include "cdb/cdbvars.h"
 #include "cdb/cdbdisp_query.h"
-
-static void AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerId);
 
 /*
  * DefineOperator
@@ -65,7 +63,7 @@ static void AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerI
  *
  * 'parameters' is a list of DefElem
  */
-void
+Oid
 DefineOperator(List *names, List *parameters)
 {
 	char	   *oprName;
@@ -78,6 +76,7 @@ DefineOperator(List *names, List *parameters)
 	TypeName   *typeName2 = NULL;		/* second type name */
 	Oid			typeId1 = InvalidOid;	/* types converted to OID */
 	Oid			typeId2 = InvalidOid;
+	Oid			rettype;
 	List	   *commutatorName = NIL;	/* optional commutator operator name */
 	List	   *negatorName = NIL;		/* optional negator operator name */
 	List	   *restrictionName = NIL;	/* optional restrict. sel. procedure */
@@ -173,14 +172,28 @@ DefineOperator(List *names, List *parameters)
 
 	/* Transform type names to type OIDs */
 	if (typeName1)
-		typeId1 = typenameTypeId(NULL, typeName1, NULL);
+		typeId1 = typenameTypeId(NULL, typeName1);
 	if (typeName2)
-		typeId2 = typenameTypeId(NULL, typeName2, NULL);
+		typeId2 = typenameTypeId(NULL, typeName2);
 
 	if (!OidIsValid(typeId1) && !OidIsValid(typeId2))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
 		   errmsg("at least one of leftarg or rightarg must be specified")));
+
+	if (typeName1)
+	{
+		aclresult = pg_type_aclcheck(typeId1, GetUserId(), ACL_USAGE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error_type(aclresult, typeId1);
+	}
+
+	if (typeName2)
+	{
+		aclresult = pg_type_aclcheck(typeId2, GetUserId(), ACL_USAGE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error_type(aclresult, typeId2);
+	}
 
 	/*
 	 * Look up the operator's underlying function.
@@ -204,7 +217,7 @@ DefineOperator(List *names, List *parameters)
 	functionOid = LookupFuncName(functionName, nargs, typeId, false);
 
 	/*
-	 * We require EXECUTE rights for the function.	This isn't strictly
+	 * We require EXECUTE rights for the function.  This isn't strictly
 	 * necessary, since EXECUTE will be checked at any attempted use of the
 	 * operator, but it seems like a good idea anyway.
 	 */
@@ -212,6 +225,11 @@ DefineOperator(List *names, List *parameters)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
 					   NameListToString(functionName));
+
+	rettype = get_func_rettype(functionOid);
+	aclresult = pg_type_aclcheck(rettype, GetUserId(), ACL_USAGE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error_type(aclresult, rettype);
 
 	/*
 	 * Look up restriction estimator if specified
@@ -283,17 +301,18 @@ DefineOperator(List *names, List *parameters)
 	/*
 	 * now have OperatorCreate do all the work..
 	 */
-	OperatorCreate(oprName,		/* operator name */
-				   oprNamespace,	/* namespace */
-				   typeId1,		/* left type id */
-				   typeId2,		/* right type id */
-				   functionOid, /* function for operator */
-				   commutatorName,		/* optional commutator operator name */
-				   negatorName, /* optional negator operator name */
-				   restrictionOid,		/* optional restrict. sel. procedure */
-				   joinOid,		/* optional join sel. procedure name */
-				   canMerge,	/* operator merges */
-				   canHash);	/* operator hashes */
+	Oid oprOid =
+		OperatorCreate(oprName, /* operator name */
+					   oprNamespace,	/* namespace */
+					   typeId1, /* left type id */
+					   typeId2, /* right type id */
+					   functionOid,		/* function for operator */
+					   commutatorName,	/* optional commutator operator name */
+					   negatorName,		/* optional negator operator name */
+					   restrictionOid,	/* optional restrict. sel. procedure */
+					   joinOid, /* optional join sel. procedure name */
+					   canMerge,	/* operator merges */
+					   canHash);	/* operator hashes */
 
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
@@ -310,67 +329,7 @@ DefineOperator(List *names, List *parameters)
 									GetAssignedOidsForDispatch(),
 									NULL);
 	}
-}
-
-
-/*
- * RemoveOperator
- *		Deletes an operator.
- */
-void
-RemoveOperator(RemoveFuncStmt *stmt)
-{
-	List	   *operatorName = stmt->name;
-	TypeName   *typeName1 = (TypeName *) linitial(stmt->args);
-	TypeName   *typeName2 = (TypeName *) lsecond(stmt->args);
-	Oid			operOid;
-	HeapTuple	tup;
-	ObjectAddress object;
-
-	Assert(list_length(stmt->args) == 2);
-	operOid = LookupOperNameTypeNames(NULL, operatorName,
-									  typeName1, typeName2,
-									  stmt->missing_ok, -1);
-
-	if (stmt->missing_ok && !OidIsValid(operOid))
-	{
-		ereport(NOTICE,
-				(errmsg("operator %s does not exist, skipping",
-						NameListToString(operatorName))));
-		return;
-	}
-
-	tup = SearchSysCache1(OPEROID, ObjectIdGetDatum(operOid));
-	if (!HeapTupleIsValid(tup)) /* should not happen */
-		elog(ERROR, "cache lookup failed for operator %u", operOid);
-
-	/* Permission check: must own operator or its namespace */
-	if (!pg_oper_ownercheck(operOid, GetUserId()) &&
-		!pg_namespace_ownercheck(((Form_pg_operator) GETSTRUCT(tup))->oprnamespace,
-								 GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-					   NameListToString(operatorName));
-
-	ReleaseSysCache(tup);
-
-	/*
-	 * Do the deletion
-	 */
-	object.classId = OperatorRelationId;
-	object.objectId = operOid;
-	object.objectSubId = 0;
-
-	performDeletion(&object, stmt->behavior);
-	
-	if (Gp_role == GP_ROLE_DISPATCH)
-	{
-		CdbDispatchUtilityStatement((Node *) stmt,
-									DF_CANCEL_ON_ERROR|
-									DF_WITH_SNAPSHOT|
-									DF_NEED_TWO_PHASE,
-									NIL,
-									NULL);
-	}
+	return oprOid;
 }
 
 /*
@@ -393,147 +352,4 @@ RemoveOperatorById(Oid operOid)
 	ReleaseSysCache(tup);
 
 	heap_close(relation, RowExclusiveLock);
-}
-
-void
-AlterOperatorOwner_oid(Oid operOid, Oid newOwnerId)
-{
-	Relation	rel;
-
-	rel = heap_open(OperatorRelationId, RowExclusiveLock);
-
-	AlterOperatorOwner_internal(rel, operOid, newOwnerId);
-
-	heap_close(rel, NoLock);
-}
-
-/*
- * change operator owner
- */
-void
-AlterOperatorOwner(List *name, TypeName *typeName1, TypeName *typeName2,
-				   Oid newOwnerId)
-{
-	Oid			operOid;
-	Relation	rel;
-
-	rel = heap_open(OperatorRelationId, RowExclusiveLock);
-
-	operOid = LookupOperNameTypeNames(NULL, name,
-									  typeName1, typeName2,
-									  false, -1);
-
-	AlterOperatorOwner_internal(rel, operOid, newOwnerId);
-
-	heap_close(rel, NoLock);
-}
-
-static void
-AlterOperatorOwner_internal(Relation rel, Oid operOid, Oid newOwnerId)
-{
-	HeapTuple	tup;
-	AclResult	aclresult;
-	Form_pg_operator oprForm;
-
-	Assert(RelationGetRelid(rel) == OperatorRelationId);
-
-	tup = SearchSysCacheCopy1(OPEROID, ObjectIdGetDatum(operOid));
-	if (!HeapTupleIsValid(tup)) /* should not happen */
-		elog(ERROR, "cache lookup failed for operator %u", operOid);
-
-	oprForm = (Form_pg_operator) GETSTRUCT(tup);
-
-	/*
-	 * If the new owner is the same as the existing owner, consider the
-	 * command to have succeeded.  This is for dump restoration purposes.
-	 */
-	if (oprForm->oprowner != newOwnerId)
-	{
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/* Otherwise, must be owner of the existing object */
-			if (!pg_oper_ownercheck(operOid, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_OPER,
-							   NameStr(oprForm->oprname));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-
-			/* New owner must have CREATE privilege on namespace */
-			aclresult = pg_namespace_aclcheck(oprForm->oprnamespace,
-											  newOwnerId,
-											  ACL_CREATE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-							   get_namespace_name(oprForm->oprnamespace));
-		}
-
-		/*
-		 * Modify the owner --- okay to scribble on tup because it's a copy
-		 */
-		oprForm->oprowner = newOwnerId;
-
-		simple_heap_update(rel, &tup->t_self, tup);
-
-		CatalogUpdateIndexes(rel, tup);
-
-		/* Update owner dependency reference */
-		changeDependencyOnOwner(OperatorRelationId, operOid, newOwnerId);
-	}
-
-	heap_freetuple(tup);
-}
-
-/*
- * Execute ALTER OPERATOR SET SCHEMA
- */
-void
-AlterOperatorNamespace(List *names, List *argtypes, const char *newschema)
-{
-	List	   *operatorName = names;
-	TypeName   *typeName1 = (TypeName *) linitial(argtypes);
-	TypeName   *typeName2 = (TypeName *) lsecond(argtypes);
-	Oid			operOid,
-				nspOid;
-	Relation	rel;
-
-	rel = heap_open(OperatorRelationId, RowExclusiveLock);
-
-	Assert(list_length(argtypes) == 2);
-	operOid = LookupOperNameTypeNames(NULL, operatorName,
-									  typeName1, typeName2,
-									  false, -1);
-
-	/* get schema OID */
-	nspOid = LookupCreationNamespace(newschema);
-
-	AlterObjectNamespace(rel, OPEROID, -1,
-						 operOid, nspOid,
-						 Anum_pg_operator_oprname,
-						 Anum_pg_operator_oprnamespace,
-						 Anum_pg_operator_oprowner,
-						 ACL_KIND_OPER);
-
-	heap_close(rel, RowExclusiveLock);
-}
-
-Oid
-AlterOperatorNamespace_oid(Oid operOid, Oid newNspOid)
-{
-	Oid			oldNspOid;
-	Relation	rel;
-
-	rel = heap_open(OperatorRelationId, RowExclusiveLock);
-
-	oldNspOid = AlterObjectNamespace(rel, OPEROID, -1,
-									 operOid, newNspOid,
-									 Anum_pg_operator_oprname,
-									 Anum_pg_operator_oprnamespace,
-									 Anum_pg_operator_oprowner,
-									 ACL_KIND_OPER);
-
-	heap_close(rel, RowExclusiveLock);
-
-	return oldNspOid;
 }

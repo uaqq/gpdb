@@ -3,29 +3,30 @@
  * pg_conversion.c
  *	  routines to support manipulation of the pg_conversion relation
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_conversion.c,v 1.50 2010/02/14 18:42:13 rhaas Exp $
+ *	  src/backend/catalog/pg_conversion.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_conversion_fn.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "mb/pg_wchar.h"
-#include "miscadmin.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -133,6 +134,9 @@ ConversionCreate(const char *conname, Oid connamespace,
 	/* dependency on extension */
 	recordDependencyOnCurrentExtension(&myself, false);
 
+	/* Post creation hook for new conversion */
+	InvokeObjectPostCreateHook(ConversionRelationId, HeapTupleGetOid(tup), 0);
+
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 
@@ -161,8 +165,7 @@ RemoveConversionById(Oid conversionOid)
 	/* open pg_conversion */
 	rel = heap_open(ConversionRelationId, RowExclusiveLock);
 
-	scan = heap_beginscan(rel, SnapshotNow,
-						  1, &scanKeyData);
+	scan = heap_beginscan_catalog(rel, 1, &scanKeyData);
 
 	/* search for the target tuple */
 	if (HeapTupleIsValid(tuple = heap_getnext(scan, ForwardScanDirection)))

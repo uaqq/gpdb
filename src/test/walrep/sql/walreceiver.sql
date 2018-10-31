@@ -4,7 +4,7 @@ SELECT test_send();
 SELECT test_disconnect();
 
 -- Wait until number of replication sessions drop to 0 or timeout
--- occurs. Returns false if timeout occured.
+-- occurs. Returns false if timeout occurred.
 create function check_and_wait_for_replication(
    timeout int)
 returns boolean as
@@ -29,21 +29,21 @@ end;
 $$ language plpgsql;
 
 -- Test connection
-SELECT test_connect('', pg_current_xlog_location());
+SELECT test_connect('');
 -- Should report 1 replication
 SELECT count(*) FROM pg_stat_replication;
 SELECT test_disconnect();
 SELECT check_and_wait_for_replication(10);
 
 -- Test connection passing hostname
-SELECT test_connect('host=localhost', pg_current_xlog_location());
+SELECT test_connect('host=localhost');
 SELECT count(*) FROM pg_stat_replication;
 SELECT test_disconnect();
 SELECT check_and_wait_for_replication(10);
 
 -- create table and store current_xlog_location.
-create TEMP table tmp(startpoint text);
-CREATE FUNCTION select_tmp() RETURNS text AS $$
+create TEMP table tmp(startpoint pg_lsn) distributed randomly;
+CREATE FUNCTION select_tmp() RETURNS pg_lsn AS $$
 select startpoint from tmp;
 $$ LANGUAGE SQL;
 insert into tmp select pg_current_xlog_location();
@@ -54,7 +54,7 @@ insert into testwalreceiver select * from generate_series(0, 9);
 
 -- Connect and receive the xlogs, validate everything was received from start to
 -- end
-SELECT test_connect('', select_tmp());
+SELECT test_connect('');
 SELECT test_receive_and_verify(select_tmp(), pg_current_xlog_location());
 SELECT test_send();
 SELECT test_receive();

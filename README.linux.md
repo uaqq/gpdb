@@ -9,7 +9,7 @@
 - If you want to link cmake3 to cmake, run:
 
   ```bash
-    sudo ln -sf ../../bin/cmake3 /usr/local/bin/cmake
+    sudo ln -sf /usr/bin/cmake3 /usr/local/bin/cmake
   ```
 
 - Make sure that you add `/usr/local/lib` and `/usr/local/lib64` to
@@ -57,7 +57,9 @@ Use dependency script for CentOS.
 ## Common Platform Tasks:
 
 Make sure that you add `/usr/local/lib` to `/etc/ld.so.conf`,
-then run command `ldconfig`.
+then run command `ldconfig`. After building the optimizer, run
+`ldconfig` again to make sure necessary links and cache have
+been created for these shared libraries.
 
 1. ORCA requires [CMake](https://cmake.org) 3.x; make sure you have it installed.
    Installation instructions vary, please check the CMake website.
@@ -77,7 +79,7 @@ then run command `ldconfig`.
    
    ```
    ssh-keygen
-   cp ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+   cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
    chmod 600 ~/.ssh/authorized_keys
    ```
 
@@ -95,7 +97,7 @@ then run command `ldconfig`.
   kernel.shmmax = 500000000
   kernel.shmmni = 4096
   kernel.shmall = 4000000000
-  kernel.sem = 250 512000 100 2048
+  kernel.sem = 500 1024000 200 4096
   kernel.sysrq = 1
   kernel.core_uses_pid = 1
   kernel.msgmnb = 65536

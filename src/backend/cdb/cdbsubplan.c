@@ -123,7 +123,6 @@ preprocess_initplans(QueryDesc *queryDesc)
 			if (subplan->qDispSliceId > 0)
 			{
 				sps->planstate->plan->nMotionNodes = queryDesc->plannedstmt->nMotionNodes;
-				sps->planstate->plan->dispatch = DISPATCH_PARALLEL;
 
 				/*
 				 * Adjust for the slice to execute on the QD.
@@ -199,9 +198,7 @@ addRemoteExecParamsToParamList(PlannedStmt *stmt, ParamListInfo extPrm, ParamExe
 	ParamWalkerContext context;
 	int			i;
 	int			nParams;
-	ListCell   *lc;
 	Plan	   *plan = stmt->planTree;
-	List	   *rtable = stmt->rtable;
 	int			nIntPrm = stmt->nParamExec;
 
 	if (nIntPrm == 0)
@@ -235,26 +232,6 @@ addRemoteExecParamsToParamList(PlannedStmt *stmt, ParamListInfo extPrm, ParamExe
 	param_walker((Node *) plan, &context);
 
 	/*
-	 * This code, unfortunately, duplicates code in the param_walker case for
-	 * T_SubPlan.  That code checks for Param nodes in Function RTEs in the
-	 * range table.  The outer range table is in the parsetree, though, so we
-	 * check it specially here.
-	 */
-	foreach(lc, rtable)
-	{
-		RangeTblEntry *rte = lfirst(lc);
-
-		if (rte->rtekind == RTE_FUNCTION || rte->rtekind == RTE_TABLEFUNCTION)
-		{
-			FuncExpr   *fexpr = (FuncExpr *) rte->funcexpr;
-
-			param_walker((Node *) fexpr, &context);
-		}
-		else if (rte->rtekind == RTE_VALUES)
-			param_walker((Node *) rte->values_lists, &context);
-	}
-
-	/*
 	 * mpp-25490: subplanX may is within subplan Y, try to param_walker the
 	 * subplans list
 	 */
@@ -268,21 +245,6 @@ addRemoteExecParamsToParamList(PlannedStmt *stmt, ParamListInfo extPrm, ParamExe
 
 			param_walker((Node *) subplan, &context);
 		}
-	}
-
-	if (context.params == NIL &&
-		bms_num_members(context.wtParams) + bms_num_members(context.epqParams) < nIntPrm)
-	{
-		/*
-		 * We apparently have an initplan with no corresponding parameter.
-		 * This shouldn't happen, but we had a bug once (MPP-239) because we
-		 * weren't looking for parameters in Function RTEs.  So we still
-		 * better check.  The old correct, but unhelpful to ENG, message was
-		 * "Subquery datatype information unavailable."
-		 */
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("no parameter found for initplan subquery")));
 	}
 
 	/*

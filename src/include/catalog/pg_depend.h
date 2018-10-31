@@ -5,10 +5,10 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_depend.h,v 1.13 2010/01/05 01:06:56 tgl Exp $
+ * src/include/catalog/pg_depend.h
  *
  * NOTES
  *	  the genbki.pl script reads this file and generates .bki
@@ -37,14 +37,14 @@ CATALOG(pg_depend,2608) BKI_WITHOUT_OIDS
 	 */
 	Oid			classid;		/* OID of table containing object */
 	Oid			objid;			/* OID of object itself */
-	int4		objsubid;		/* column number, or 0 if not used */
+	int32		objsubid;		/* column number, or 0 if not used */
 
 	/*
 	 * Identification of the independent (referenced) object.
 	 */
 	Oid			refclassid;		/* OID of table containing object */
 	Oid			refobjid;		/* OID of object itself */
-	int4		refobjsubid;	/* column number, or 0 if not used */
+	int32		refobjsubid;	/* column number, or 0 if not used */
 
 	/*
 	 * Precise semantics of the relationship are specified by the deptype

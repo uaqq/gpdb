@@ -8,7 +8,7 @@ set optimizer_enable_dml_constraints = off;
 explain insert into constr_tab values (1,2,3);
                    QUERY PLAN                   
 ------------------------------------------------
- Insert (cost=0.00..0.01 rows=1 width=0)
+ Insert on constr_tab  (cost=0.00..0.01 rows=1 width=0)
    ->  Result  (cost=0.00..0.01 rows=1 width=0)
  Optimizer status: legacy query optimizer
 (3 rows)
@@ -17,7 +17,7 @@ set optimizer_enable_dml_constraints=on;
 explain insert into constr_tab values (1,2,3);
                    QUERY PLAN                   
 ------------------------------------------------
- Insert (cost=0.00..0.01 rows=1 width=0)
+ Insert on constr_tab  (cost=0.00..0.01 rows=1 width=0)
    ->  Result  (cost=0.00..0.01 rows=1 width=0)
  Optimizer status: legacy query optimizer
 (3 rows)
@@ -26,11 +26,20 @@ explain insert into constr_tab values (1,2,3);
 INSERT INTO constr_tab VALUES(1,5,3,4);
 set optimizer_enable_dml_constraints=off;
 explain update constr_tab set a = 10;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Update on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+   ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..1.01 rows=1 width=22)
+         Hash Key: a
+         ->  Split  (cost=0.00..1.01 rows=1 width=22)
+               ->  Seq Scan on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+ Optimizer: legacy query optimizer
+(6 rows)
+
 explain update constr_tab set b = 10;
                            QUERY PLAN                            
 -----------------------------------------------------------------
- Update (slice0; segments: 3)  (rows=1 width=22)
+ Update on constr_tab  (cost=0.00..1.01 rows=1 width=22)
    ->  Seq Scan on constr_tab  (cost=0.00..1.01 rows=1 width=22)
  Optimizer status: legacy query optimizer
 (3 rows)
@@ -39,7 +48,7 @@ set optimizer_enable_dml_constraints=on;
 explain update constr_tab set b = 10;
                            QUERY PLAN                            
 -----------------------------------------------------------------
- Update (slice0; segments: 3)  (rows=1 width=22)
+ Update on constr_tab  (cost=0.00..1.01 rows=1 width=22)
    ->  Seq Scan on constr_tab  (cost=0.00..1.01 rows=1 width=22)
  Optimizer status: legacy query optimizer
 (3 rows)
@@ -50,21 +59,48 @@ CREATE TABLE constr_tab ( a int NOT NULL, b int, c int, d int, CHECK (a+b>5)) DI
 INSERT INTO constr_tab VALUES(1,5,3,4);
 set optimizer_enable_dml_constraints=off;
 explain update constr_tab set a = 10;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Update on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+   ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..1.01 rows=1 width=22)
+         Hash Key: a
+         ->  Split  (cost=0.00..1.01 rows=1 width=22)
+               ->  Seq Scan on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+ Optimizer: legacy query optimizer
+(6 rows)
+
 DROP TABLE IF EXISTS constr_tab;
 CREATE TABLE constr_tab ( a int NOT NULL, b int NOT NULL, c int NOT NULL, d int NOT NULL) DISTRIBUTED BY (a,b);
 INSERT INTO constr_tab VALUES(1,5,3,4);
 INSERT INTO constr_tab VALUES(1,5,3,4);
 set optimizer_enable_dml_constraints=off;
 explain update constr_tab set b = 10;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Update on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+   ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..1.01 rows=1 width=22)
+         Hash Key: a, b
+         ->  Split  (cost=0.00..1.01 rows=1 width=22)
+               ->  Seq Scan on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+ Optimizer: legacy query optimizer
+(6 rows)
+
 DROP TABLE IF EXISTS constr_tab;
 CREATE TABLE constr_tab ( a int, b int, c int, d int) DISTRIBUTED BY (a);
 INSERT INTO constr_tab VALUES(1,5,3,4);
 INSERT INTO constr_tab VALUES(1,5,3,4);
 set optimizer_enable_dml_constraints=off;
 explain update constr_tab set a = 10;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Update on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+   ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..1.01 rows=1 width=22)
+         Hash Key: a
+         ->  Split  (cost=0.00..1.01 rows=1 width=22)
+               ->  Seq Scan on constr_tab  (cost=0.00..1.01 rows=1 width=22)
+ Optimizer: legacy query optimizer
+(6 rows)
+
 -- Test ORCA fallback on "FROM ONLY"
 CREATE TABLE homer (a int, b int, c int)
 DISTRIBUTED BY (a)
@@ -104,4 +140,35 @@ SELECT * FROM homer;
  3 | 2 | 41
  4 | 3 | 44
 (4 rows)
+
+-- ORCA should not fallback just because external tables are in FROM clause
+-- start_ignore
+CREATE TABLE heap_t1 (a int, b int) DISTRIBUTED BY (b);
+CREATE EXTERNAL TABLE ext_table_no_fallback (a int, b int) LOCATION ('gpfdist://myhost:8080/test.csv') FORMAT 'CSV';
+-- end_ignore
+EXPLAIN SELECT * FROM ext_table_no_fallback;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..11000.00 rows=1000000 width=8)
+   ->  External Scan on ext_table_no_fallback  (cost=0.00..11000.00 rows=333334 width=8)
+ Optimizer: legacy query optimizer
+(3 rows)
+
+EXPLAIN SELECT * FROM ONLY ext_table_no_fallback;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..11000.00 rows=1000000 width=8)
+   ->  External Scan on ext_table_no_fallback  (cost=0.00..11000.00 rows=333334 width=8)
+ Optimizer: legacy query optimizer
+(3 rows)
+
+EXPLAIN INSERT INTO heap_t1 SELECT * FROM ONLY ext_table_no_fallback;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Insert on heap_t1  (cost=0.00..11000.00 rows=333334 width=8)
+   ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..11000.00 rows=333334 width=8)
+         Hash Key: ext_table_no_fallback.b
+         ->  External Scan on ext_table_no_fallback  (cost=0.00..11000.00 rows=333334 width=8)
+ Optimizer: legacy query optimizer
+(5 rows)
 

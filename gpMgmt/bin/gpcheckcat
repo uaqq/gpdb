@@ -461,7 +461,7 @@ def checkDistribPolicy():
       join pg_class rel on (pk.conrelid = rel.oid)
       join pg_namespace n on (rel.relnamespace = n.oid)
       join gp_distribution_policy d on (rel.oid = d.localoid)
-    where pk.contype in('p', 'u') and d.attrnums is null
+    where pk.contype in('p', 'u') and d.policytype = 'p' and d.attrnums is null
     '''
 
     db = connect2(GV.cfg[1])
@@ -502,7 +502,7 @@ def checkDistribPolicy():
       join  pg_class rel on (pk.conrelid = rel.oid)
       join  pg_namespace n on (rel.relnamespace = n.oid)
       join  gp_distribution_policy d on (rel.oid = d.localoid)
-    where pk.contype in ('p', 'u') and
+    where pk.contype in ('p', 'u') and d.policytype = 'p' and
           (d.attrnums is null or not
            d.attrnums operator(pg_catalog.<@) pk.conkey)
     '''
@@ -1854,8 +1854,7 @@ def checkPGClass():
     logger.info('-----------------------------------')
     logger.info('Checking pg_class ...')
     qry = '''
-    SELECT relname, relkind, tc.oid as oid,
-           reltoastrelid, reltoastidxid
+    SELECT relname, relkind, tc.oid as oid
     FROM   pg_class tc left outer join
            pg_attribute ta on (tc.oid = ta.attrelid)
     WHERE  ta.attrelid is NULL
@@ -2204,9 +2203,7 @@ def checkOwners():
       left join pg_appendonly ao on (c.oid = ao.segrelid or
                                      c.oid = ao.blkdirrelid or
                                      c.oid = ao.blkdiridxid)
-      left join pg_class t on (t.reltoastidxid = c.oid)
       left join pg_class o on (o.oid = ao.relid or
-                               o.reltoastrelid = t.oid or
                                o.reltoastrelid = c.oid)
       join pg_authid a on (a.oid = r.relowner)
       join pg_authid m on (m.oid = coalesce(o.relowner, c.relowner))
@@ -3114,10 +3111,7 @@ def runAllChecks():
         logger.debug('Building catalog repair scripts')
         # build a script to run these files
         script = ''
-        # set allow_system_table_mods GUC for gpdb >= 4.2
-        catmod_guc = ""
-        if GV.version >= "4.2":
-            catmod_guc = "-c allow_system_table_mods=dml"
+        catmod_guc = "-c allow_system_table_mods=true"
 
         # don't remove anything if ReSync possible --
         # comment out the delete statements from the repair scripts

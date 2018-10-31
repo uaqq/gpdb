@@ -1,17 +1,24 @@
 --
 -- Unicode handling
 --
+-- Note: this test case is known to fail if the database encoding is
+-- EUC_CN, EUC_JP, EUC_KR, or EUC_TW, for lack of any equivalent to
+-- U+00A0 (no-break space) in those encodings.  However, testing with
+-- plain ASCII data would be rather useless, so we must live with that.
+--
+
+SET client_encoding TO UTF8;
 
 CREATE TABLE unicode_test (
 	testvalue  text NOT NULL
 );
 
 CREATE FUNCTION unicode_return() RETURNS text AS E'
-return u"\\x80"
+return u"\\xA0"
 ' LANGUAGE plpythonu;
 
 CREATE FUNCTION unicode_trigger() RETURNS trigger AS E'
-TD["new"]["testvalue"] = u"\\x80"
+TD["new"]["testvalue"] = u"\\xA0"
 return "MODIFY"
 ' LANGUAGE plpythonu;
 
@@ -20,7 +27,7 @@ CREATE TRIGGER unicode_test_bi BEFORE INSERT ON unicode_test
 
 CREATE FUNCTION unicode_plan1() RETURNS text AS E'
 plan = plpy.prepare("SELECT $1 AS testvalue", ["text"])
-rv = plpy.execute(plan, [u"\\x80"], 1)
+rv = plpy.execute(plan, [u"\\xA0"], 1)
 return rv[0]["testvalue"]
 ' LANGUAGE plpythonu;
 

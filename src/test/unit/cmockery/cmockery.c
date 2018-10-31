@@ -22,6 +22,7 @@
 #include <setjmp.h>
 #ifndef _WIN32
 #include <signal.h>
+#include <unistd.h>
 #endif // !_WIN32
 #include <stdarg.h>
 #include <stddef.h>
@@ -986,6 +987,7 @@ static void expect_set(
 	assert_true(number_of_values);
 	memcpy(set, values, number_of_values * sizeof(values[0]));
 	check_integer_set->set = set;
+	check_integer_set->size_of_set = number_of_values;
 	_expect_check(
 			function, parameter, file, line, check_function,
 			check_data.value, &check_integer_set->event, count);
@@ -1400,7 +1402,16 @@ void _assert_true(const LargestIntegralType result,
 		const char * const expression,
 		const char * const file, const int line) {
 	if (!result) {
-		print_error(OUTPUT_PADDING "%s\n", expression);
+		print_error(OUTPUT_PADDING "expected '%s' to be true\n", expression);
+		_fail(file, line);
+	}
+}
+
+void _assert_false(const LargestIntegralType result,
+		const char * const expression,
+		const char * const file, const int line) {
+	if (!result) {
+		print_error(OUTPUT_PADDING "expected '%s' to be false\n", expression);
 		_fail(file, line);
 	}
 }

@@ -33,7 +33,7 @@ COPY {table [(<varname>column</varname> [, ...])] | (<varname>query</varname>)} 
         [NULL [ AS ] 'null string']
         [ESCAPE [ AS ] '<varname>escape</varname>' | 'OFF']
         [CSV [QUOTE [ AS ] 'quote'] 
-             [FORCE QUOTE column [, ...]] ]
+             [FORCE QUOTE column [, ...]] | * ]
       [IGNORE EXTERNAL PARTITIONS ]</codeblock>
     </section>
     <section id="section3">
@@ -58,6 +58,11 @@ COPY {table [(<varname>column</varname> [, ...])] | (<varname>query</varname>)} 
         either the absolute path or the <codeph>&lt;SEG_DATA_DIR></codeph> string literal. When the
           <codeph>COPY</codeph> operation is run, the segment IDs and the paths of the segment data
         directories are substituted for the string literal values. </p>
+      <p>Using <codeph>COPY TO</codeph> with a replicated table (<codeph>DISTRIBUTED
+          REPLICATED</codeph>) as source creates a file with rows from a single segment so that the
+        target file contains no duplicate rows. Using <codeph>COPY TO</codeph> with the <codeph>ON
+          SEGMENT</codeph> clause with a replicated table as source creates target files on segment
+        hosts containing all table rows.</p>
       <p>The <codeph>ON SEGMENT</codeph> clause allows you to copy table data to files on segment
         hosts for use in operations such as migrating data between clusters or performing a backup.
         Segment data created by the <codeph>ON SEGMENT</codeph> clause can be restored by tools such
@@ -275,8 +280,9 @@ COPY {table [(<varname>column</varname> [, ...])] | (<varname>query</varname>)} 
         <plentry>
           <pt>FORCE QUOTE</pt>
           <pd>In <codeph>CSV COPY TO</codeph> mode, forces quoting to be used for all
-              non-<codeph>NULL</codeph> values in each specified column. <codeph>NULL</codeph>
-            output is never quoted.</pd>
+              non-<codeph>NULL</codeph> values in each specified column. If <codeph>*</codeph>
+              is specified then non-<codeph>NULL</codeph> values will be quoted in all columns.
+              <codeph>NULL</codeph> output is never quoted. </pd>
         </plentry>
         <plentry>
           <pt>FORCE NOT NULL</pt>

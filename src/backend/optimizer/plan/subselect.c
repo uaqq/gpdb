@@ -5,16 +5,17 @@
  *
  * Portions Copyright (c) 2005-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/subselect.c,v 1.162 2010/04/19 00:55:25 rhaas Exp $
+ *	  src/backend/optimizer/plan/subselect.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "catalog/catalog.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
@@ -43,8 +44,6 @@
 #include "cdb/cdbsubselect.h"
 #include "cdb/cdbvars.h"
 
-extern bool is_simple_subquery(PlannerInfo *root, Query *subquery);
-
 typedef struct convert_testexpr_context
 {
 	PlannerInfo *root;
@@ -64,8 +63,8 @@ typedef struct finalize_primnode_context
 } finalize_primnode_context;
 
 
-static Node *build_subplan(PlannerInfo *root, Plan *plan,
-			  List *rtable, List *rowmarks,
+static Node *build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
+			  List *plan_params,
 			  SubLinkType subLinkType, Node *testexpr,
 			  bool adjust_testexpr, bool unknownEqFalse);
 static List *generate_subquery_params(PlannerInfo *root, List *tlist,
@@ -90,6 +89,58 @@ static bool finalize_primnode(Node *node, finalize_primnode_context *context);
 extern	double global_work_mem(PlannerInfo *root);
 
 /*
+ * Select a PARAM_EXEC number to identify the given Var as a parameter for
+ * the current subquery, or for a nestloop's inner scan.
+ * If the Var already has a param in the current context, return that one.
+ */
+static int
+assign_param_for_var(PlannerInfo *root, Var *var)
+{
+	ListCell   *ppl;
+	PlannerParamItem *pitem;
+	Index		levelsup;
+
+	/* Find the query level the Var belongs to */
+	for (levelsup = var->varlevelsup; levelsup > 0; levelsup--)
+		root = root->parent_root;
+
+	/* If there's already a matching PlannerParamItem there, just use it */
+	foreach(ppl, root->plan_params)
+	{
+		pitem = (PlannerParamItem *) lfirst(ppl);
+		if (IsA(pitem->item, Var))
+		{
+			Var		   *pvar = (Var *) pitem->item;
+
+			/*
+			 * This comparison must match _equalVar(), except for ignoring
+			 * varlevelsup.  Note that _equalVar() ignores the location.
+			 */
+			if (pvar->varno == var->varno &&
+				pvar->varattno == var->varattno &&
+				pvar->vartype == var->vartype &&
+				pvar->vartypmod == var->vartypmod &&
+				pvar->varcollid == var->varcollid &&
+				pvar->varnoold == var->varnoold &&
+				pvar->varoattno == var->varoattno)
+				return pitem->paramId;
+		}
+	}
+
+	/* Nope, so make a new one */
+	var = (Var *) copyObject(var);
+	var->varlevelsup = 0;
+
+	pitem = makeNode(PlannerParamItem);
+	pitem->item = (Node *) var;
+	pitem->paramId = root->glob->nParamExec++;
+
+	root->plan_params = lappend(root->plan_params, pitem);
+
+	return pitem->paramId;
+}
+
+/*
  * Generate a Param node to replace the given Var,
  * which is expected to have varlevelsup > 0 (ie, it is not local).
  */
@@ -97,62 +148,99 @@ static Param *
 replace_outer_var(PlannerInfo *root, Var *var)
 {
 	Param	   *retval;
-	ListCell   *ppl;
-	PlannerParamItem *pitem;
-	Index		abslevel;
 	int			i;
 
 	Assert(var->varlevelsup > 0 && var->varlevelsup < root->query_level);
-	abslevel = root->query_level - var->varlevelsup;
 
-	/*
-	 * If there's already a paramlist entry for this same Var, just use it.
-	 * NOTE: in sufficiently complex querytrees, it is possible for the same
-	 * varno/abslevel to refer to different RTEs in different parts of the
-	 * parsetree, so that different fields might end up sharing the same Param
-	 * number.	As long as we check the vartype/typmod as well, I believe that
-	 * this sort of aliasing will cause no trouble.  The correct field should
-	 * get stored into the Param slot at execution in each part of the tree.
-	 */
-	i = 0;
-	foreach(ppl, root->glob->paramlist)
-	{
-		pitem = (PlannerParamItem *) lfirst(ppl);
-		if (pitem->abslevel == abslevel && IsA(pitem->item, Var))
-		{
-			Var		   *pvar = (Var *) pitem->item;
-
-			if (pvar->varno == var->varno &&
-				pvar->varattno == var->varattno &&
-				pvar->vartype == var->vartype &&
-				pvar->vartypmod == var->vartypmod)
-				break;
-		}
-		i++;
-	}
-
-	if (!ppl)
-	{
-		/* Nope, so make a new one */
-		var = (Var *) copyObject(var);
-		var->varlevelsup = 0;
-
-		pitem = makeNode(PlannerParamItem);
-		pitem->item = (Node *) var;
-		pitem->abslevel = abslevel;
-
-		root->glob->paramlist = lappend(root->glob->paramlist, pitem);
-		/* i is already the correct index for the new item */
-	}
+	/* Find the Var in the appropriate plan_params, or add it if not present */
+	i = assign_param_for_var(root, var);
 
 	retval = makeNode(Param);
 	retval->paramkind = PARAM_EXEC;
 	retval->paramid = i;
 	retval->paramtype = var->vartype;
 	retval->paramtypmod = var->vartypmod;
+	retval->paramcollid = var->varcollid;
 	retval->location = var->location;
 
 	return retval;
+}
+
+/*
+ * Generate a Param node to replace the given Var, which will be supplied
+ * from an upper NestLoop join node.
+ *
+ * This is effectively the same as replace_outer_var, except that we expect
+ * the Var to be local to the current query level.
+ */
+Param *
+assign_nestloop_param_var(PlannerInfo *root, Var *var)
+{
+	Param	   *retval;
+	int			i;
+
+	Assert(var->varlevelsup == 0);
+
+	i = assign_param_for_var(root, var);
+
+	retval = makeNode(Param);
+	retval->paramkind = PARAM_EXEC;
+	retval->paramid = i;
+	retval->paramtype = var->vartype;
+	retval->paramtypmod = var->vartypmod;
+	retval->paramcollid = var->varcollid;
+	retval->location = var->location;
+
+	return retval;
+}
+
+/*
+ * Select a PARAM_EXEC number to identify the given PlaceHolderVar as a
+ * parameter for the current subquery, or for a nestloop's inner scan.
+ * If the PHV already has a param in the current context, return that one.
+ *
+ * This is just like assign_param_for_var, except for PlaceHolderVars.
+ */
+static int
+assign_param_for_placeholdervar(PlannerInfo *root, PlaceHolderVar *phv)
+{
+	ListCell   *ppl;
+	PlannerParamItem *pitem;
+	Index		levelsup;
+
+	/* Find the query level the PHV belongs to */
+	for (levelsup = phv->phlevelsup; levelsup > 0; levelsup--)
+		root = root->parent_root;
+
+	/* If there's already a matching PlannerParamItem there, just use it */
+	foreach(ppl, root->plan_params)
+	{
+		pitem = (PlannerParamItem *) lfirst(ppl);
+		if (IsA(pitem->item, PlaceHolderVar))
+		{
+			PlaceHolderVar *pphv = (PlaceHolderVar *) pitem->item;
+
+			/* We assume comparing the PHIDs is sufficient */
+			if (pphv->phid == phv->phid)
+				return pitem->paramId;
+		}
+	}
+
+	/* Nope, so make a new one */
+	phv = (PlaceHolderVar *) copyObject(phv);
+	if (phv->phlevelsup != 0)
+	{
+		IncrementVarSublevelsUp((Node *) phv, -((int) phv->phlevelsup), 0);
+		Assert(phv->phlevelsup == 0);
+	}
+
+	pitem = makeNode(PlannerParamItem);
+	pitem->item = (Node *) phv;
+	pitem->paramId = root->glob->nParamExec++;
+
+	root->plan_params = lappend(root->plan_params, pitem);
+
+	return pitem->paramId;
 }
 
 /*
@@ -165,50 +253,46 @@ static Param *
 replace_outer_placeholdervar(PlannerInfo *root, PlaceHolderVar *phv)
 {
 	Param	   *retval;
-	ListCell   *ppl;
-	PlannerParamItem *pitem;
-	Index		abslevel;
 	int			i;
 
 	Assert(phv->phlevelsup > 0 && phv->phlevelsup < root->query_level);
-	abslevel = root->query_level - phv->phlevelsup;
 
-	/* If there's already a paramlist entry for this same PHV, just use it */
-	i = 0;
-	foreach(ppl, root->glob->paramlist)
-	{
-		pitem = (PlannerParamItem *) lfirst(ppl);
-		if (pitem->abslevel == abslevel && IsA(pitem->item, PlaceHolderVar))
-		{
-			PlaceHolderVar *pphv = (PlaceHolderVar *) pitem->item;
-
-			/* We assume comparing the PHIDs is sufficient */
-			if (pphv->phid == phv->phid)
-				break;
-		}
-		i++;
-	}
-
-	if (!ppl)
-	{
-		/* Nope, so make a new one */
-		phv = (PlaceHolderVar *) copyObject(phv);
-		IncrementVarSublevelsUp((Node *) phv, -((int) phv->phlevelsup), 0);
-		Assert(phv->phlevelsup == 0);
-
-		pitem = makeNode(PlannerParamItem);
-		pitem->item = (Node *) phv;
-		pitem->abslevel = abslevel;
-
-		root->glob->paramlist = lappend(root->glob->paramlist, pitem);
-		/* i is already the correct index for the new item */
-	}
+	/* Find the PHV in the appropriate plan_params, or add it if not present */
+	i = assign_param_for_placeholdervar(root, phv);
 
 	retval = makeNode(Param);
 	retval->paramkind = PARAM_EXEC;
 	retval->paramid = i;
 	retval->paramtype = exprType((Node *) phv->phexpr);
 	retval->paramtypmod = exprTypmod((Node *) phv->phexpr);
+	retval->paramcollid = exprCollation((Node *) phv->phexpr);
+	retval->location = -1;
+
+	return retval;
+}
+
+/*
+ * Generate a Param node to replace the given PlaceHolderVar, which will be
+ * supplied from an upper NestLoop join node.
+ *
+ * This is just like assign_nestloop_param_var, except for PlaceHolderVars.
+ */
+Param *
+assign_nestloop_param_placeholdervar(PlannerInfo *root, PlaceHolderVar *phv)
+{
+	Param	   *retval;
+	int			i;
+
+	Assert(phv->phlevelsup == 0);
+
+	i = assign_param_for_placeholdervar(root, phv);
+
+	retval = makeNode(Param);
+	retval->paramkind = PARAM_EXEC;
+	retval->paramid = i;
+	retval->paramtype = exprType((Node *) phv->phexpr);
+	retval->paramtypmod = exprTypmod((Node *) phv->phexpr);
+	retval->paramcollid = exprCollation((Node *) phv->phexpr);
 	retval->location = -1;
 
 	return retval;
@@ -223,11 +307,13 @@ replace_outer_agg(PlannerInfo *root, Aggref *agg)
 {
 	Param	   *retval;
 	PlannerParamItem *pitem;
-	Index		abslevel;
-	int			i;
+	Index		levelsup;
 
 	Assert(agg->agglevelsup > 0 && agg->agglevelsup < root->query_level);
-	abslevel = root->query_level - agg->agglevelsup;
+
+	/* Find the query level the Aggref belongs to */
+	for (levelsup = agg->agglevelsup; levelsup > 0; levelsup--)
+		root = root->parent_root;
 
 	/*
 	 * It does not seem worthwhile to try to match duplicate outer aggs. Just
@@ -239,17 +325,17 @@ replace_outer_agg(PlannerInfo *root, Aggref *agg)
 
 	pitem = makeNode(PlannerParamItem);
 	pitem->item = (Node *) agg;
-	pitem->abslevel = abslevel;
+	pitem->paramId = root->glob->nParamExec++;
 
-	root->glob->paramlist = lappend(root->glob->paramlist, pitem);
-	i = list_length(root->glob->paramlist) - 1;
+	root->plan_params = lappend(root->plan_params, pitem);
 
 	retval = makeNode(Param);
 	retval->paramkind = PARAM_EXEC;
-	retval->paramid = i;
+	retval->paramid = pitem->paramId;
 	retval->paramtype = agg->aggtype;
 	retval->paramtypmod = -1;
-	retval->location = -1;
+	retval->paramcollid = agg->aggcollid;
+	retval->location = agg->location;
 
 	return retval;
 }
@@ -257,26 +343,23 @@ replace_outer_agg(PlannerInfo *root, Aggref *agg)
 /*
  * Generate a new Param node that will not conflict with any other.
  *
- * This is used to allocate PARAM_EXEC slots for subplan outputs.
+ * This is used to create Params representing subplan outputs.
+ * We don't need to build a PlannerParamItem for such a Param, but we do
+ * need to record the PARAM_EXEC slot number as being allocated.
  */
 static Param *
-generate_new_param(PlannerInfo *root, Oid paramtype, int32 paramtypmod)
+generate_new_param(PlannerInfo *root, Oid paramtype, int32 paramtypmod,
+				   Oid paramcollation)
 {
 	Param	   *retval;
-	PlannerParamItem *pitem;
 
 	retval = makeNode(Param);
 	retval->paramkind = PARAM_EXEC;
-	retval->paramid = list_length(root->glob->paramlist);
+	retval->paramid = root->glob->nParamExec++;
 	retval->paramtype = paramtype;
 	retval->paramtypmod = paramtypmod;
+	retval->paramcollid = paramcollation;
 	retval->location = -1;
-
-	pitem = makeNode(PlannerParamItem);
-	pitem->item = (Node *) retval;
-	pitem->abslevel = root->query_level;
-
-	root->glob->paramlist = lappend(root->glob->paramlist, pitem);
 
 	return retval;
 }
@@ -287,29 +370,27 @@ generate_new_param(PlannerInfo *root, Oid paramtype, int32 paramtypmod)
  * is not actually used to carry a value at runtime).  Such parameters are
  * used for special runtime signaling purposes, such as connecting a
  * recursive union node to its worktable scan node or forcing plan
- * re-evaluation within the EvalPlanQual mechanism.
+ * re-evaluation within the EvalPlanQual mechanism.  No actual Param node
+ * exists with this ID, however.
  */
 int
 SS_assign_special_param(PlannerInfo *root)
 {
-	Param	   *param;
-
-	/* We generate a Param of datatype INTERNAL */
-	param = generate_new_param(root, INTERNALOID, -1);
-	/* ... but the caller only cares about its ID */
-	return param->paramid;
+	return root->glob->nParamExec++;
 }
 
 /*
- * Get the datatype of the first column of the plan's output.
+ * Get the datatype/typmod/collation of the first column of the plan's output.
  *
- * This is stored for ARRAY_SUBLINK execution and for exprType()/exprTypmod(),
- * which have no way to get at the plan associated with a SubPlan node.
- * We really only need the info for EXPR_SUBLINK and ARRAY_SUBLINK subplans,
- * but for consistency we save it always.
+ * This information is stored for ARRAY_SUBLINK execution and for
+ * exprType()/exprTypmod()/exprCollation(), which have no way to get at the
+ * plan associated with a SubPlan node.  We really only need the info for
+ * EXPR_SUBLINK and ARRAY_SUBLINK subplans, but for consistency we save it
+ * always.
  */
 static void
-get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod)
+get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod,
+				   Oid *colcollation)
 {
 	/* In cases such as EXISTS, tlist might be empty; arbitrarily use VOID */
 	if (plan->targetlist)
@@ -321,11 +402,13 @@ get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod)
 		{
 			*coltype = exprType((Node *) tent->expr);
 			*coltypmod = exprTypmod((Node *) tent->expr);
+			*colcollation = exprCollation((Node *) tent->expr);
 			return;
 		}
 	}
 	*coltype = VOIDOID;
 	*coltypmod = -1;
+	*colcollation = InvalidOid;
 }
 
 /**
@@ -342,7 +425,7 @@ static bool QueryHasDistributedRelation(Query *q)
 		if (rte->relid != InvalidOid
 				&& rte->rtekind == RTE_RELATION)
 		{
-			GpPolicy *policy = GpPolicyFetch(CurrentMemoryContext, rte->relid);
+			GpPolicy *policy = GpPolicyFetch(rte->relid);
 			if (GpPolicyIsPartitioned(policy))
 			{
 				pfree(policy);
@@ -441,10 +524,11 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 	double		tuple_fraction = 1.0;
 	Plan	   *plan;
 	PlannerInfo *subroot;
+	List	   *plan_params;
 	Node	   *result;
 
 	/*
-	 * Copy the source Query node.	This is a quick and dirty kluge to resolve
+	 * Copy the source Query node.  This is a quick and dirty kluge to resolve
 	 * the fact that the parser can generate trees with multiple links to the
 	 * same sub-Query node, but the planner wants to scribble on the Query.
 	 * Try to clean this up when we do querytree redesign...
@@ -469,7 +553,7 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 	 * path/costsize.c.
 	 *
 	 * XXX If an ANY subplan is uncorrelated, build_subplan may decide to hash
-	 * its output.	In that case it would've been better to specify full
+	 * its output.  In that case it would've been better to specify full
 	 * retrieval.  At present, however, we can only check hashability after
 	 * we've made the subplan :-(.  (Determining whether it'll fit in work_mem
 	 * is the really hard part.)  Therefore, we don't want to be too
@@ -483,6 +567,9 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 		tuple_fraction = 0.5;	/* 50% */
 	else
 		tuple_fraction = 0.0;	/* default behavior */
+
+	/* plan_params should not be in use in current query level */
+	Assert(root->plan_params == NIL);
 
 	PlannerConfig *config = CopyPlannerConfig(root->config);
 
@@ -504,6 +591,14 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 		 */
 		config->gp_enable_direct_dispatch = false;
 		config->gp_enable_multiphase_agg = false;
+
+		/*
+		 * The MIN/MAX optimization works by inserting a subplan with LIMIT 1.
+		 * That effectively turns a correlated subquery into a multi-level
+		 * correlated subquery, which we don't currently support. (See check
+		 * above.)
+		 */
+		config->gp_enable_minmax_optimization = false;
 
 		/*
 		 * Only create subplans with sequential scans
@@ -541,15 +636,18 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 							&subroot,
 							config);
 
+	/* Isolate the params needed by this specific subplan */
+	plan_params = root->plan_params;
+	root->plan_params = NIL;
+
 	/* And convert to SubPlan or InitPlan format. */
-	result = build_subplan(root, plan,
-						   subroot->parse->rtable, subroot->rowMarks,
+	result = build_subplan(root, plan, subroot, plan_params,
 						   subLinkType, testexpr, true, isTopQual);
 
 	/*
 	 * If it's a correlated EXISTS with an unimportant targetlist, we might be
 	 * able to transform it to the equivalent of an IN and then implement it
-	 * by hashing.	We don't have enough information yet to tell which way is
+	 * by hashing.  We don't have enough information yet to tell which way is
 	 * likely to be better (it depends on the expected number of executions of
 	 * the EXISTS qual, and we are much too early in planning the outer query
 	 * to be able to guess that).  So we generate both plans, if possible, and
@@ -578,6 +676,10 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 									&subroot,
 									config);
 
+			/* Isolate the params needed by this specific subplan */
+			plan_params = root->plan_params;
+			root->plan_params = NIL;
+
 			/* Now we can check if it'll fit in work_mem */
 			if (subplan_is_hashable(root, plan))
 			{
@@ -585,9 +687,8 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 				AlternativeSubPlan *asplan;
 
 				/* OK, convert to SubPlan format. */
-				hashplan = (SubPlan *) build_subplan(root, plan,
-													 subroot->parse->rtable,
-													 subroot->rowMarks,
+				hashplan = (SubPlan *) build_subplan(root, plan, subroot,
+													 plan_params,
 													 ANY_SUBLINK, newtestexpr,
 													 false, true);
 				/* Check we got what we expected */
@@ -615,14 +716,14 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
  * as explained in the comments for make_subplan.
  */
 static Node *
-build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
+build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
+			  List *plan_params,
 			  SubLinkType subLinkType, Node *testexpr,
 			  bool adjust_testexpr, bool unknownEqFalse)
 {
 	Node	   *result;
 	SubPlan    *splan;
-	Bitmapset  *tmpset;
-	int			paramid;
+	ListCell   *lc;
 
 	/*
 	 * Initialize the SubPlan node.  Note plan_id, plan_name, and cost fields
@@ -633,12 +734,14 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
     splan->qDispSliceId = 0;             /*CDB*/
 	splan->testexpr = NULL;
 	splan->paramIds = NIL;
-	get_first_col_type(plan, &splan->firstColType, &splan->firstColTypmod);
+	get_first_col_type(plan, &splan->firstColType, &splan->firstColTypmod,
+					   &splan->firstColCollation);
 	splan->useHashTable = false;
 	splan->unknownEqFalse = unknownEqFalse;
 	splan->is_initplan = false;
 	splan->is_multirow = false;
 	splan->is_parallelized = false;
+	splan->initPlanParallel = false;
 	splan->setParam = NIL;
 	splan->parParam = NIL;
 	splan->args = NIL;
@@ -647,39 +750,26 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 	 * Make parParam and args lists of param IDs and expressions that current
 	 * query level will pass to this child plan.
 	 */
-	tmpset = bms_copy(plan->extParam);
-	while ((paramid = bms_first_member(tmpset)) >= 0)
+	foreach(lc, plan_params)
 	{
-		PlannerParamItem *pitem = list_nth(root->glob->paramlist, paramid);
+		PlannerParamItem *pitem = (PlannerParamItem *) lfirst(lc);
+		Node	   *arg = pitem->item;
 
-		if (pitem->abslevel == root->query_level)
-		{
-			splan->parParam = lappend_int(splan->parParam, paramid);
+		/*
+		 * The Var, PlaceHolderVar, or Aggref has already been adjusted to
+		 * have the correct varlevelsup, phlevelsup, or agglevelsup.
+		 *
+		 * If it's a PlaceHolderVar or Aggref, its arguments might contain
+		 * SubLinks, which have not yet been processed (see the comments for
+		 * SS_replace_correlation_vars).  Do that now.
+		 */
+		if (IsA(arg, PlaceHolderVar) ||
+			IsA(arg, Aggref))
+			arg = SS_process_sublinks(root, arg, false);
 
-			Node	   *arg;
-
-			/*
-			 * The Var, PlaceHolderVar, or Aggref has already been adjusted to
-			 * have the correct varlevelsup, phlevelsup, or agglevelsup.  We
-			 * probably don't even need to copy it again, but be safe.
-			 */
-			arg = copyObject(pitem->item);
-
-			/*
-			 * If it's a PlaceHolderVar or Aggref, its arguments might contain
-			 * SubLinks, which have not yet been processed (see the comments
-			 * for SS_replace_correlation_vars).  Do that now.
-			 */
-			if (IsA(arg, PlaceHolderVar) ||
-				IsA(arg, Aggref))
-				arg = SS_process_sublinks(root, arg, false);
-
-			splan->args = lappend(splan->args, arg);
-		}
-		else if (pitem->abslevel < root->query_level)
-			splan->extParam = lappend_int(splan->extParam, paramid);
+		splan->parParam = lappend_int(splan->parParam, pitem->paramId);
+		splan->args = lappend(splan->args, arg);
 	}
-	bms_free(tmpset);
 
 	/*
 	 * Un-correlated or undirect correlated plans of EXISTS, EXPR, ARRAY, or
@@ -694,7 +784,7 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 		Param	   *prm;
 
 		Assert(testexpr == NULL);
-		prm = generate_new_param(root, BOOLOID, -1);
+		prm = generate_new_param(root, BOOLOID, -1, InvalidOid);
 		splan->setParam = list_make1_int(prm->paramid);
 		splan->is_initplan = true;
 		result = (Node *) prm;
@@ -708,7 +798,8 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 		Assert(testexpr == NULL);
 		prm = generate_new_param(root,
 								 exprType((Node *) te->expr),
-								 exprTypmod((Node *) te->expr));
+								 exprTypmod((Node *) te->expr),
+								 exprCollation((Node *) te->expr));
 		splan->setParam = list_make1_int(prm->paramid);
 		splan->is_initplan = true;
 		result = (Node *) prm;
@@ -727,7 +818,8 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 				 format_type_be(exprType((Node *) te->expr)));
 		prm = generate_new_param(root,
 								 arraytype,
-								 exprTypmod((Node *) te->expr));
+								 exprTypmod((Node *) te->expr),
+								 exprCollation((Node *) te->expr));
 		splan->setParam = list_make1_int(prm->paramid);
 		splan->is_initplan = true;
 		result = (Node *) prm;
@@ -794,7 +886,7 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 		 * Otherwise, we have the option to tack a Material node onto the top
 		 * of the subplan, to reduce the cost of reading it repeatedly.  This
 		 * is pointless for a direct-correlated subplan, since we'd have to
-		 * recompute its results each time anyway.	For uncorrelated/undirect
+		 * recompute its results each time anyway.  For uncorrelated/undirect
 		 * correlated subplans, we add Material unless the subplan's top plan
 		 * node would materialize its output anyway.  Also, if enable_material
 		 * is false, then the user does not want us to materialize anything
@@ -817,11 +909,10 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 	AssertEquivalent(splan->is_initplan, !splan->is_multirow && splan->parParam == NIL);
 
 	/*
-	 * Add the subplan and its rtable to the global lists.
+	 * Add the subplan and its PlannerInfo to the global lists.
 	 */
 	root->glob->subplans = lappend(root->glob->subplans, plan);
-	root->glob->subrtables = lappend(root->glob->subrtables, rtable);
-	root->glob->subrowmarks = lappend(root->glob->subrowmarks, rowmarks);
+	root->glob->subroots = lappend(root->glob->subroots, subroot);
 	splan->plan_id = list_length(root->glob->subplans);
 
 	if (splan->is_initplan)
@@ -829,10 +920,10 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 
 	/*
 	 * A parameterless subplan (not initplan) should be prepared to handle
-	 * REWIND efficiently.	If it has direct parameters then there's no point
+	 * REWIND efficiently.  If it has direct parameters then there's no point
 	 * since it'll be reset on each scan anyway; and if it's an initplan then
 	 * there's no point since it won't get re-run without parameter changes
-	 * anyway.	The input of a hashed subplan doesn't need REWIND either.
+	 * anyway.  The input of a hashed subplan doesn't need REWIND either.
 	 */
 	if (splan->parParam == NIL && !splan->is_initplan && !splan->useHashTable)
 		root->glob->rewindPlanIDs = bms_add_member(root->glob->rewindPlanIDs,
@@ -860,10 +951,7 @@ build_subplan(PlannerInfo *root, Plan *plan, List *rtable, List *rowmarks,
 		buf = NULL;
 	}
 	else
-	{
-		splan->plan_name = palloc(32);
-		sprintf(splan->plan_name, "SubPlan %d", splan->plan_id);
-	}
+		splan->plan_name = psprintf("SubPlan %d", splan->plan_id);
 
 	/* Lastly, fill in the cost estimates for use later */
 	cost_subplan(root, splan, plan);
@@ -895,7 +983,8 @@ generate_subquery_params(PlannerInfo *root, List *tlist, List **paramIds)
 
 		param = generate_new_param(root,
 								   exprType((Node *) tent->expr),
-								   exprTypmod((Node *) tent->expr));
+								   exprTypmod((Node *) tent->expr),
+								   exprCollation((Node *) tent->expr));
 		result = lappend(result, param);
 		ids = lappend_int(ids, param->paramid);
 	}
@@ -924,11 +1013,7 @@ generate_subquery_vars(PlannerInfo *root, List *tlist, Index varno)
 		if (tent->resjunk)
 			continue;
 
-		var = makeVar(varno,
-					  tent->resno,
-					  exprType((Node *) tent->expr),
-					  exprTypmod((Node *) tent->expr),
-					  0);
+		var = makeVarFromTargetEntry(varno, tent);
 		result = lappend(result, var);
 	}
 
@@ -938,7 +1023,7 @@ generate_subquery_vars(PlannerInfo *root, List *tlist, Index varno)
 /*
  * convert_testexpr: convert the testexpr given by the parser into
  * actually executable form.  This entails replacing PARAM_SUBLINK Params
- * with Params or Vars representing the results of the sub-select.	The
+ * with Params or Vars representing the results of the sub-select.  The
  * nodes to be substituted are passed in as the List result from
  * generate_subquery_params or generate_subquery_vars.
  */
@@ -1040,7 +1125,7 @@ testexpr_is_hashable(Node *testexpr)
 	 *
 	 * The combining operators must be hashable and strict. The need for
 	 * hashability is obvious, since we want to use hashing. Without
-	 * strictness, behavior in the presence of nulls is too unpredictable.	We
+	 * strictness, behavior in the presence of nulls is too unpredictable.  We
 	 * actually must assume even more than plain strictness: they can't yield
 	 * NULL for non-null inputs, either (see nodeSubplan.c).  However, hash
 	 * indexes and hash joins assume that too.
@@ -1069,28 +1154,46 @@ testexpr_is_hashable(Node *testexpr)
 	return false;
 }
 
+/*
+ * Check expression is hashable + strict
+ *
+ * We could use op_hashjoinable() and op_strict(), but do it like this to
+ * avoid a redundant cache lookup.
+ */
 static bool
 hash_ok_operator(OpExpr *expr)
 {
 	Oid			opid = expr->opno;
-	HeapTuple	tup;
-	Form_pg_operator optup;
 
 	/* quick out if not a binary operator */
 	if (list_length(expr->args) != 2)
 		return false;
-	/* else must look up the operator properties */
-	tup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opid));
-	if (!HeapTupleIsValid(tup))
-		elog(ERROR, "cache lookup failed for operator %u", opid);
-	optup = (Form_pg_operator) GETSTRUCT(tup);
-	if (!optup->oprcanhash || !func_strict(optup->oprcode))
+	if (opid == ARRAY_EQ_OP)
 	{
-		ReleaseSysCache(tup);
-		return false;
+		/* array_eq is strict, but must check input type to ensure hashable */
+		/* XXX record_eq will need same treatment when it becomes hashable */
+		Node	   *leftarg = linitial(expr->args);
+
+		return op_hashjoinable(opid, exprType(leftarg));
 	}
-	ReleaseSysCache(tup);
-	return true;
+	else
+	{
+		/* else must look up the operator properties */
+		HeapTuple	tup;
+		Form_pg_operator optup;
+
+		tup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opid));
+		if (!HeapTupleIsValid(tup))
+			elog(ERROR, "cache lookup failed for operator %u", opid);
+		optup = (Form_pg_operator) GETSTRUCT(tup);
+		if (!optup->oprcanhash || !func_strict(optup->oprcode))
+		{
+			ReleaseSysCache(tup);
+			return false;
+		}
+		ReleaseSysCache(tup);
+		return true;
+	}
 }
 
 
@@ -1112,18 +1215,17 @@ SS_process_ctes(PlannerInfo *root)
 	foreach(lc, root->parse->cteList)
 	{
 		CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+		CmdType		cmdType = ((Query *) cte->ctequery)->commandType;
 		Query	   *subquery;
 		Plan	   *plan;
 		PlannerInfo *subroot;
 		SubPlan    *splan;
-		Bitmapset  *tmpset;
 		int			paramid;
-		Param	   *prm;
 
 		/*
-		 * Ignore CTEs that are not actually referenced anywhere.
+		 * Ignore SELECT CTEs that are not actually referenced anywhere.
 		 */
-		if (cte->cterefcount == 0)
+		if (cte->cterefcount == 0 && cmdType == CMD_SELECT)
 		{
 			/* Make a dummy entry in cte_plan_ids */
 			root->cte_plan_ids = lappend_int(root->cte_plan_ids, -1);
@@ -1131,10 +1233,13 @@ SS_process_ctes(PlannerInfo *root)
 		}
 
 		/*
-		 * Copy the source Query node.	Probably not necessary, but let's keep
+		 * Copy the source Query node.  Probably not necessary, but let's keep
 		 * this similar to make_subplan.
 		 */
 		subquery = (Query *) copyObject(cte->ctequery);
+
+		/* plan_params should not be in use in current query level */
+		Assert(root->plan_params == NIL);
 
 		/*
 		 * Generate the plan for the CTE query.  Always plan for full
@@ -1147,7 +1252,15 @@ SS_process_ctes(PlannerInfo *root)
 								root->config);
 
 		/*
-		 * Make a SubPlan node for it.	This is just enough unlike
+		 * Since the current query level doesn't yet contain any RTEs, it
+		 * should not be possible for the CTE to have requested parameters of
+		 * this level.
+		 */
+		if (root->plan_params)
+			elog(ERROR, "unexpected outer reference in CTE query");
+
+		/*
+		 * Make a SubPlan node for it.  This is just enough unlike
 		 * build_subplan that we can't share code.
 		 *
 		 * Note plan_id, plan_name, and cost fields are set further down.
@@ -1156,7 +1269,8 @@ SS_process_ctes(PlannerInfo *root)
 		splan->subLinkType = CTE_SUBLINK;
 		splan->testexpr = NULL;
 		splan->paramIds = NIL;
-		get_first_col_type(plan, &splan->firstColType, &splan->firstColTypmod);
+		get_first_col_type(plan, &splan->firstColType, &splan->firstColTypmod,
+						   &splan->firstColCollation);
 		splan->useHashTable = false;
 		splan->unknownEqFalse = false;
 		splan->setParam = NIL;
@@ -1164,44 +1278,28 @@ SS_process_ctes(PlannerInfo *root)
 		splan->args = NIL;
 
 		/*
-		 * Make parParam and args lists of param IDs and expressions that
-		 * current query level will pass to this child plan.  Even though this
-		 * is an initplan, there could be side-references to earlier
-		 * initplan's outputs, specifically their CTE output parameters.
+		 * The node can't have any inputs (since it's an initplan), so the
+		 * parParam and args lists remain empty.  (It could contain references
+		 * to earlier CTEs' output param IDs, but CTE outputs are not
+		 * propagated via the args list.)
 		 */
-		tmpset = bms_copy(plan->extParam);
-		while ((paramid = bms_first_member(tmpset)) >= 0)
-		{
-			PlannerParamItem *pitem = list_nth(root->glob->paramlist, paramid);
-
-			if (pitem->abslevel == root->query_level)
-			{
-				prm = (Param *) pitem->item;
-				if (!IsA(prm, Param) ||
-					prm->paramtype != INTERNALOID)
-					elog(ERROR, "bogus local parameter passed to WITH query");
-
-				splan->parParam = lappend_int(splan->parParam, paramid);
-				splan->args = lappend(splan->args, copyObject(prm));
-			}
-		}
-		bms_free(tmpset);
 
 		/*
-		 * Assign a param to represent the query output.  We only really care
-		 * about reserving a parameter ID number.
+		 * Assign a param ID to represent the CTE's output.  No ordinary
+		 * "evaluation" of this param slot ever happens, but we use the param
+		 * ID for setParam/chgParam signaling just as if the CTE plan were
+		 * returning a simple scalar output.  (Also, the executor abuses the
+		 * ParamExecData slot for this param ID for communication among
+		 * multiple CteScan nodes that might be scanning this CTE.)
 		 */
-		prm = generate_new_param(root, INTERNALOID, -1);
-		splan->setParam = list_make1_int(prm->paramid);
+		paramid = SS_assign_special_param(root);
+		splan->setParam = list_make1_int(paramid);
 
 		/*
-		 * Add the subplan and its rtable to the global lists.
+		 * Add the subplan and its PlannerInfo to the global lists.
 		 */
 		root->glob->subplans = lappend(root->glob->subplans, plan);
-		root->glob->subrtables = lappend(root->glob->subrtables,
-										 subroot->parse->rtable);
-		root->glob->subrowmarks = lappend(root->glob->subrowmarks,
-										  subroot->rowMarks);
+		root->glob->subroots = lappend(root->glob->subroots, subroot);
 		splan->plan_id = list_length(root->glob->subplans);
 
 		root->init_plans = lappend(root->init_plans, splan);
@@ -1209,8 +1307,7 @@ SS_process_ctes(PlannerInfo *root)
 		root->cte_plan_ids = lappend_int(root->cte_plan_ids, splan->plan_id);
 
 		/* Label the subplan for EXPLAIN purposes */
-		splan->plan_name = palloc(4 + strlen(cte->ctename) + 1);
-		sprintf(splan->plan_name, "CTE %s", cte->ctename);
+		splan->plan_name = psprintf("CTE %s", cte->ctename);
 
 		/* Lastly, fill in the cost estimates for use later */
 		cost_subplan(root, splan, plan);
@@ -1272,6 +1369,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	cdbsubselect_drop_orderby(subselect);
 	cdbsubselect_drop_distinct(subselect);
 
+
 	/*
 	 * If subquery returns a set-returning function (SRF) in the targetlist, we
 	 * do not attempt to convert the IN to a join.
@@ -1305,7 +1403,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 		/*
 		 * Under certain conditions, we cannot pull up the subquery as a join.
 		 */
-		if (!is_simple_subquery(root, subselect))
+		if (!is_simple_subquery(root, subselect, NULL, NULL))
 			return NULL;
 
 		/*
@@ -1347,10 +1445,14 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * to the inner (necessarily true, other than the Vars that we build
 	 * below). Therefore this is a lot easier than what pull_up_subqueries has
 	 * to go through.
+	 *
+	 * If the subquery is correlated, i.e. it refers to any Vars of the
+	 * parent query, mark it as lateral.
 	 */
 	rte = addRangeTableEntryForSubquery(NULL,
 										subselect,
 										makeAlias("ANY_subquery", NIL),
+										correlated,	/* lateral */
 										false);
 	parse->rtable = lappend(parse->rtable, rte);
 	rtindex = list_length(parse->rtable);
@@ -1384,106 +1486,6 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	result->rtindex = 0;
 
 	return result;
-}
-
-/*
- * simplify_EXISTS_query: remove any useless stuff in an EXISTS's subquery
- *
- * The only thing that matters about an EXISTS query is whether it returns
- * zero or more than zero rows.  Therefore, we can remove certain SQL features
- * that won't affect that.  The only part that is really likely to matter in
- * typical usage is simplifying the targetlist: it's a common habit to write
- * "SELECT * FROM" even though there is no need to evaluate any columns.
- *
- * Note: by suppressing the targetlist we could cause an observable behavioral
- * change, namely that any errors that might occur in evaluating the tlist
- * won't occur, nor will other side-effects of volatile functions.  This seems
- * unlikely to bother anyone in practice.
- *
- * Returns TRUE if was able to discard the targetlist, else FALSE.
- */
-static bool
-simplify_EXISTS_query(PlannerInfo *root, Query *query)
-{
-	/*
-	 * PostgreSQL:
-	 *
-	 * We don't try to simplify at all if the query uses set operations,
-	 * aggregates, HAVING, LIMIT/OFFSET, or FOR UPDATE/SHARE; none of these
-	 * seem likely in normal usage and their possible effects are complex.
-	 *
-	 * In GPDB, we try a bit harder: Try to demote HAVING to WHERE, in case
-	 * there are no aggregates. If that fails, only then give up. Also, just
-	 * discard any window functions; they shouldn't affect the number of
-	 * rows returned.
-	 *
-	 * GPDB_84_MERGE_FIXME: What about "LIMIT 0"? We can't just ignore it.
-	 * Furthermore, the rule used here, for when it's safe to demote a HAVING
-	 * to WHERE, is different from the one in subquery_planner(). Notably,
-	 * what if there are volatile functions or subplans?
-	 */
-	if (query->commandType != CMD_SELECT ||
-		query->intoClause ||
-		query->setOperations ||
-#if 0
-		query->hasAggs ||
-		query->hasWindowFuncs ||
-		query->havingQual ||
-#endif
-		query->limitOffset ||
-#if 0
-		query->limitCount ||
-#endif
-		query->rowMarks)
-		return false;
-
-	/*
-	 * Mustn't throw away the targetlist if it contains set-returning
-	 * functions; those could affect whether zero rows are returned!
-	 */
-	if (expression_returns_set((Node *) query->targetList))
-		return false;
-
-	if (query->havingQual)
-	{
-		/* If HAVING has no aggregates, demote it to WHERE. */
-		if (!query->hasAggs)
-		{
-			query->jointree->quals = make_and_qual(query->jointree->quals,
-												   query->havingQual);
-			query->havingQual = NULL;
-			query->hasAggs = false;
-		}
-		else
-			return false;
-	}
-
-	/*
-	 * Otherwise, we can throw away the targetlist, as well as any GROUP,
-	 * WINDOW, DISTINCT, and ORDER BY clauses; none of those clauses will
-	 * change a nonzero-rows result to zero rows or vice versa.  (Furthermore,
-	 * since our parsetree representation of these clauses depends on the
-	 * targetlist, we'd better throw them away if we drop the targetlist.)
-	 */
-	query->targetList = NIL;
-	/*
-	 * Delete GROUP BY if no aggregates.
-	 *
-	 * Note: It's important that we don't clear hasAggs, even though we
-	 * removed any possible aggregates from the targetList! If you have a
-	 * subquery like "SELECT SUM(foo) ...", we don't need to compute the sum,
-	 * but we must still aggregate all the rows, and return a single row,
-	 * regardless of how many input rows there are. (In particular, even
-	 * if there are no input rows).
-	 */
-	if (!query->hasAggs)
-		query->groupClause = NIL;
-	query->windowClause = NIL;
-	query->distinctClause = NIL;
-	query->sortClause = NIL;
-	query->hasDistinctOn = false;
-
-	return true;
 }
 
 /*
@@ -1525,6 +1527,12 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	if (subselect->cteList)
 		return NULL;
 
+	/*
+	 * Copy the subquery so we can modify it safely (see comments in
+	 * make_subplan).
+	 */
+	subselect = (Query *) copyObject(subselect);
+
 
 	if (has_correlation_in_funcexpr_rte(subselect->rtable))
 		return NULL;
@@ -1544,7 +1552,8 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	{
 		rnode = copyObject(subselect->limitCount);
 		IncrementVarSublevelsUp(rnode, -1, 1);
-		lnode = (Node *) makeConst(INT8OID, -1, sizeof(int64), Int64GetDatum(0),
+		lnode = (Node *) makeConst(INT8OID, -1, InvalidOid,
+								   sizeof(int64), Int64GetDatum(0),
 								   false, true);
 		limitqual = (Node *) make_op(NULL, list_make1(makeString("<")),
 									 lnode, rnode, -1);
@@ -1570,7 +1579,8 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 		{
 			lnode = copyObject(subselect->limitOffset);
 			IncrementVarSublevelsUp(lnode, -1, 1);
-			rnode = (Node *) makeConst(INT8OID, -1, sizeof(int64), Int64GetDatum(1),
+			rnode = (Node *) makeConst(INT8OID, -1, InvalidOid,
+									   sizeof(int64), Int64GetDatum(1),
 									   false, true);
 			node = (Node *) make_op(NULL, list_make1(makeString("<")),
 									lnode, rnode, -1);
@@ -1594,8 +1604,9 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 */
 	if (!contain_vars_of_level_or_above(sublink->subselect, 1))
 	{
-		subselect->limitCount = (Node *) makeConst(INT8OID, -1, sizeof(int64), Int64GetDatum(1),
-												   false, true);
+		((Query*)sublink->subselect)->limitCount = (Node *) makeConst(INT8OID, -1, InvalidOid,
+																      sizeof(int64), Int64GetDatum(1),
+																      false, true);
 		node = make_and_qual(limitqual, (Node *) sublink);
 		if (under_not)
 			return (Node *) make_notclause((Expr *)node);
@@ -1604,7 +1615,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 
 	/*
 	 * See if the subquery can be simplified based on the knowledge that it's
-	 * being used in EXISTS().	If we aren't able to get rid of its
+	 * being used in EXISTS().  If we aren't able to get rid of its
 	 * targetlist, we have to fail, because the pullup operation leaves us
 	 * with noplace to evaluate the targetlist.
 	 */
@@ -1653,9 +1664,9 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * what pull_up_subqueries has to go through.
 	 *
 	 * In fact, it's even easier than what convert_ANY_sublink_to_join has to
-	 * do.	The machinations of simplify_EXISTS_query ensured that there is
+	 * do.  The machinations of simplify_EXISTS_query ensured that there is
 	 * nothing interesting in the subquery except an rtable and jointree, and
-	 * even the jointree FromExpr no longer has quals.	So we can just append
+	 * even the jointree FromExpr no longer has quals.  So we can just append
 	 * the rtable to our own and use the FromExpr in our jointree. But first,
 	 * adjust all level-zero varnos in the subquery to account for the rtable
 	 * merger.
@@ -1719,6 +1730,109 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 }
 
 /*
+ * simplify_EXISTS_query: remove any useless stuff in an EXISTS's subquery
+ *
+ * The only thing that matters about an EXISTS query is whether it returns
+ * zero or more than zero rows.  Therefore, we can remove certain SQL features
+ * that won't affect that.  The only part that is really likely to matter in
+ * typical usage is simplifying the targetlist: it's a common habit to write
+ * "SELECT * FROM" even though there is no need to evaluate any columns.
+ *
+ * Note: by suppressing the targetlist we could cause an observable behavioral
+ * change, namely that any errors that might occur in evaluating the tlist
+ * won't occur, nor will other side-effects of volatile functions.  This seems
+ * unlikely to bother anyone in practice.
+ *
+ * Returns TRUE if was able to discard the targetlist, else FALSE.
+ */
+static bool
+simplify_EXISTS_query(PlannerInfo *root, Query *query)
+{
+	/*
+	 * PostgreSQL:
+	 *
+	 * We don't try to simplify at all if the query uses set operations,
+	 * aggregates, HAVING, LIMIT/OFFSET, or FOR UPDATE/SHARE; none of these
+	 * seem likely in normal usage and their possible effects are complex.
+	 *
+	 * In GPDB, we try a bit harder: Try to demote HAVING to WHERE, in case
+	 * there are no aggregates or volatile functions. If that fails, only
+	 * then give up. Also, just discard any window functions; they
+	 * shouldn't affect the number of rows returned. If subquery contains
+	 * LIMIT, it is already handled in convert_EXISTS_sublink_to_join()
+	 * before we reach here.
+	 */
+	if (query->commandType != CMD_SELECT ||
+		query->setOperations ||
+#if 0
+		query->hasAggs ||
+		query->hasWindowFuncs ||
+		query->havingQual ||
+#endif
+		query->limitOffset ||
+#if 0
+		query->limitCount ||
+#endif
+		query->rowMarks)
+		return false;
+
+	/*
+	 * Mustn't throw away the targetlist if it contains set-returning
+	 * functions; those could affect whether zero rows are returned!
+	 */
+	if (expression_returns_set((Node *) query->targetList))
+		return false;
+
+	if (query->havingQual)
+	{
+		/*
+		 * If HAVING has no aggregates and volatile functions, demote
+		 * it to WHERE.
+		 * Note: In addition to these rules, subquery_planner() also
+		 * checks if HAVING has subplans, which is not relevant here as
+		 * there are not going to be any subplans at this stage.
+		 */
+		if (!contain_aggs_of_level(query->havingQual, 0) &&
+		    !contain_volatile_functions(query->havingQual))
+		{
+			query->jointree->quals = make_and_qual(query->jointree->quals,
+												   query->havingQual);
+			query->havingQual = NULL;
+			query->hasAggs = false;
+		}
+		else
+			return false;
+	}
+
+	/*
+	 * Otherwise, we can throw away the targetlist, as well as any GROUP,
+	 * WINDOW, DISTINCT, and ORDER BY clauses; none of those clauses will
+	 * change a nonzero-rows result to zero rows or vice versa.  (Furthermore,
+	 * since our parsetree representation of these clauses depends on the
+	 * targetlist, we'd better throw them away if we drop the targetlist.)
+	 */
+	query->targetList = NIL;
+	/*
+	 * Delete GROUP BY if no aggregates.
+	 *
+	 * Note: It's important that we don't clear hasAggs, even though we
+	 * removed any possible aggregates from the targetList! If you have a
+	 * subquery like "SELECT SUM(foo) ...", we don't need to compute the sum,
+	 * but we must still aggregate all the rows, and return a single row,
+	 * regardless of how many input rows there are. (In particular, even
+	 * if there are no input rows).
+	 */
+	if (!query->hasAggs)
+		query->groupClause = NIL;
+	query->windowClause = NIL;
+	query->distinctClause = NIL;
+	query->sortClause = NIL;
+	query->hasDistinctOn = false;
+
+	return true;
+}
+
+/*
  * convert_EXISTS_to_ANY: try to convert EXISTS to a hashable ANY sublink
  *
  * The subselect is expected to be a fresh copy that we can munge up,
@@ -1726,7 +1840,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
  *
  * On success, the modified subselect is returned, and we store a suitable
  * upper-level test expression at *testexpr, plus a list of the subselect's
- * output Params at *paramIds.	(The test expression is already Param-ified
+ * output Params at *paramIds.  (The test expression is already Param-ified
  * and hence need not go through convert_testexpr, which is why we have to
  * deal with the Param IDs specially.)
  *
@@ -1740,13 +1854,15 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 	List	   *leftargs,
 			   *rightargs,
 			   *opids,
+			   *opcollations,
 			   *newWhere,
 			   *tlist,
 			   *testlist,
 			   *paramids;
 	ListCell   *lc,
 			   *rc,
-			   *oc;
+			   *oc,
+			   *cc;
 	AttrNumber	resno;
 
 	/*
@@ -1810,7 +1926,7 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 	 * we aren't trying hard yet to ensure that we have only outer or only
 	 * inner on each side; we'll check that if we get to the end.
 	 */
-	leftargs = rightargs = opids = newWhere = NIL;
+	leftargs = rightargs = opids = opcollations = newWhere = NIL;
 	foreach(lc, (List *) whereClause)
 	{
 		OpExpr	   *expr = (OpExpr *) lfirst(lc);
@@ -1826,6 +1942,7 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 				leftargs = lappend(leftargs, leftarg);
 				rightargs = lappend(rightargs, rightarg);
 				opids = lappend_oid(opids, expr->opno);
+				opcollations = lappend_oid(opcollations, expr->inputcollid);
 				continue;
 			}
 			if (contain_vars_of_level(rightarg, 1))
@@ -1842,6 +1959,7 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 					leftargs = lappend(leftargs, rightarg);
 					rightargs = lappend(rightargs, leftarg);
 					opids = lappend_oid(opids, expr->opno);
+					opcollations = lappend_oid(opcollations, expr->inputcollid);
 					continue;
 				}
 				/* If no commutator, no chance to optimize the WHERE clause */
@@ -1885,7 +2003,7 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 		return NULL;
 
 	/*
-	 * Also reject sublinks in the stuff we intend to pull up.	(It might be
+	 * Also reject sublinks in the stuff we intend to pull up.  (It might be
 	 * possible to support this, but doesn't seem worth the complication.)
 	 */
 	if (contain_subplans((Node *) leftargs))
@@ -1910,19 +2028,21 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 	 */
 	tlist = testlist = paramids = NIL;
 	resno = 1;
-	/* there's no "for3" so we have to chase one of the lists manually */
-	oc = list_head(opids);
-	forboth(lc, leftargs, rc, rightargs)
+	/* there's no "forfour" so we have to chase one of the lists manually */
+	cc = list_head(opcollations);
+	forthree(lc, leftargs, rc, rightargs, oc, opids)
 	{
 		Node	   *leftarg = (Node *) lfirst(lc);
 		Node	   *rightarg = (Node *) lfirst(rc);
 		Oid			opid = lfirst_oid(oc);
+		Oid			opcollation = lfirst_oid(cc);
 		Param	   *param;
 
-		oc = lnext(oc);
+		cc = lnext(cc);
 		param = generate_new_param(root,
 								   exprType(rightarg),
-								   exprTypmod(rightarg));
+								   exprTypmod(rightarg),
+								   exprCollation(rightarg));
 		tlist = lappend(tlist,
 						makeTargetEntry((Expr *) rightarg,
 										resno++,
@@ -1930,7 +2050,8 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 										false));
 		testlist = lappend(testlist,
 						   make_opclause(opid, BOOLOID, false,
-										 (Expr *) leftarg, (Expr *) param));
+										 (Expr *) leftarg, (Expr *) param,
+										 InvalidOid, opcollation));
 		paramids = lappend_int(paramids, param->paramid);
 	}
 
@@ -1949,21 +2070,22 @@ convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
  * Uplevel PlaceHolderVars and aggregates are replaced, too.
  *
  * Note: it is critical that this runs immediately after SS_process_sublinks.
- * Since we do not recurse into the arguments of uplevel aggregates, they will
- * get copied to the appropriate subplan args list in the parent query with
- * uplevel vars not replaced by Params, but only adjusted in level (see
- * replace_outer_agg).	That's exactly what we want for the vars of the parent
- * level --- but if an aggregate's argument contains any further-up variables,
- * they have to be replaced with Params in their turn.	That will happen when
- * the parent level runs SS_replace_correlation_vars.  Therefore it must do
- * so after expanding its sublinks to subplans.  And we don't want any steps
- * in between, else those steps would never get applied to the aggregate
- * argument expressions, either in the parent or the child level.
+ * Since we do not recurse into the arguments of uplevel PHVs and aggregates,
+ * they will get copied to the appropriate subplan args list in the parent
+ * query with uplevel vars not replaced by Params, but only adjusted in level
+ * (see replace_outer_placeholdervar and replace_outer_agg).  That's exactly
+ * what we want for the vars of the parent level --- but if a PHV's or
+ * aggregate's argument contains any further-up variables, they have to be
+ * replaced with Params in their turn. That will happen when the parent level
+ * runs SS_replace_correlation_vars.  Therefore it must do so after expanding
+ * its sublinks to subplans.  And we don't want any steps in between, else
+ * those steps would never get applied to the argument expressions, either in
+ * the parent or the child level.
  *
  * Another fairly tricky thing going on here is the handling of SubLinks in
- * the arguments of uplevel aggregates.  Those are not touched inside the
- * intermediate query level, either.  Instead, SS_process_sublinks recurses
- * on them after copying the Aggref expression into the parent plan level
+ * the arguments of uplevel PHVs/aggregates.  Those are not touched inside the
+ * intermediate query level, either.  Instead, SS_process_sublinks recurses on
+ * them after copying the PHV or Aggref expression into the parent plan level
  * (this is actually taken care of in build_subplan).
  */
 Node *
@@ -2048,8 +2170,8 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 	}
 
 	/*
-	 * Don't recurse into the arguments of an outer PHV or aggregate here.
-	 * Any SubLinks in the arguments have to be dealt with at the outer query
+	 * Don't recurse into the arguments of an outer PHV or aggregate here. Any
+	 * SubLinks in the arguments have to be dealt with at the outer query
 	 * level; they'll be handled when build_subplan collects the PHV or Aggref
 	 * into the arguments to be passed down to the current subplan.
 	 */
@@ -2083,7 +2205,7 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 	 * is needed for a bare List.)
 	 *
 	 * Anywhere within the top-level AND/OR clause structure, we can tell
-	 * make_subplan() that NULL and FALSE are interchangeable.	So isTopQual
+	 * make_subplan() that NULL and FALSE are interchangeable.  So isTopQual
 	 * propagates down in both cases.  (Note that this is unlike the meaning
 	 * of "top level qual" used in most other places in Postgres.)
 	 */
@@ -2163,7 +2285,7 @@ SS_finalize_plan(PlannerInfo *root, Plan *plan, bool attach_initplans)
 			   *initExtParam,
 			   *initSetParam;
 	Cost		initplan_cost;
-	int			paramid;
+	PlannerInfo *proot;
 	ListCell   *l;
 
 	/*
@@ -2195,30 +2317,36 @@ SS_finalize_plan(PlannerInfo *root, Plan *plan, bool attach_initplans)
 	/*
 	 * Now determine the set of params that are validly referenceable in this
 	 * query level; to wit, those available from outer query levels plus the
-	 * output parameters of any initPlans.	(We do not include output
-	 * parameters of regular subplans.	Those should only appear within the
+	 * output parameters of any local initPlans.  (We do not include output
+	 * parameters of regular subplans.  Those should only appear within the
 	 * testexpr of SubPlan nodes, and are taken care of locally within
 	 * finalize_primnode.  Likewise, special parameters that are generated by
 	 * nodes such as ModifyTable are handled within finalize_plan.)
-	 *
-	 * Note: this is a bit overly generous since some parameters of upper
-	 * query levels might belong to query subtrees that don't include this
-	 * query.  However, valid_params is only a debugging crosscheck, so it
-	 * doesn't seem worth expending lots of cycles to try to be exact.
 	 */
 	valid_params = bms_copy(initSetParam);
-	paramid = 0;
-	foreach(l, root->glob->paramlist)
+	for (proot = root->parent_root; proot != NULL; proot = proot->parent_root)
 	{
-		PlannerParamItem *pitem = (PlannerParamItem *) lfirst(l);
-
-		if (pitem->abslevel < root->query_level)
+		/* Include ordinary Var/PHV/Aggref params */
+		foreach(l, proot->plan_params)
 		{
-			/* valid outer-level parameter */
-			valid_params = bms_add_member(valid_params, paramid);
-		}
+			PlannerParamItem *pitem = (PlannerParamItem *) lfirst(l);
 
-		paramid++;
+			valid_params = bms_add_member(valid_params, pitem->paramId);
+		}
+		/* Include any outputs of outer-level initPlans */
+		foreach(l, proot->init_plans)
+		{
+			SubPlan    *initsubplan = (SubPlan *) lfirst(l);
+			ListCell   *l2;
+
+			foreach(l2, initsubplan->setParam)
+			{
+				valid_params = bms_add_member(valid_params, lfirst_int(l2));
+			}
+		}
+		/* Include worktable ID, if a recursive query is being planned */
+		if (proot->wt_param_id >= 0)
+			valid_params = bms_add_member(valid_params, proot->wt_param_id);
 	}
 
 	/*
@@ -2293,6 +2421,8 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 {
 	finalize_primnode_context context;
 	int			locally_added_param;
+	Bitmapset  *nestloop_params;
+	Bitmapset  *child_params;
 
 	if (plan == NULL)
 		return NULL;
@@ -2300,6 +2430,7 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 	context.root = root;
 	context.paramids = NULL;	/* initialize set to empty */
 	locally_added_param = -1;	/* there isn't one */
+	nestloop_params = NULL;		/* there aren't any */
 
 	/*
 	 * When we call finalize_primnode, context.paramids sets are automatically
@@ -2327,10 +2458,25 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 		case T_IndexScan:
 			finalize_primnode((Node *) ((IndexScan *) plan)->indexqual,
 							  &context);
+			finalize_primnode((Node *) ((IndexScan *) plan)->indexorderby,
+							  &context);
 
 			/*
 			 * we need not look at indexqualorig, since it will have the same
-			 * param references as indexqual.
+			 * param references as indexqual.  Likewise, we can ignore
+			 * indexorderbyorig.
+			 */
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
+		case T_IndexOnlyScan:
+			finalize_primnode((Node *) ((IndexOnlyScan *) plan)->indexqual,
+							  &context);
+			finalize_primnode((Node *) ((IndexOnlyScan *) plan)->indexorderby,
+							  &context);
+
+			/*
+			 * we need not look at indextlist, since it cannot contain Params.
 			 */
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
@@ -2385,11 +2531,19 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 		case T_TableFunctionScan:
 			{
 				RangeTblEntry *rte;
+				RangeTblFunction *rtfunc;
 
 				rte = rt_fetch(((TableFunctionScan *) plan)->scan.scanrelid,
 							   root->parse->rtable);
 				Assert(rte->rtekind == RTE_TABLEFUNCTION);
-				finalize_primnode(rte->funcexpr, &context);
+				Assert(list_length(rte->functions) == 1);
+				rtfunc = (RangeTblFunction *) linitial(rte->functions);
+				finalize_primnode(rtfunc->funcexpr, &context);
+
+				/*
+				 * GPDB_94_MERGE_FIXME: should we do something about params in
+				 * the function expressions, like for FunctionScan nodes below?
+				 */
 			}
 			/* TableFunctionScan's lefttree is like SubqueryScan's subplan. */
 			context.paramids = bms_add_members(context.paramids,
@@ -2397,9 +2551,37 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			break;
 
 		case T_FunctionScan:
-			finalize_primnode(((FunctionScan *) plan)->funcexpr,
-							  &context);
-			context.paramids = bms_add_members(context.paramids, scan_params);
+			{
+				FunctionScan *fscan = (FunctionScan *) plan;
+				ListCell   *lc;
+
+				/*
+				 * Call finalize_primnode independently on each function
+				 * expression, so that we can record which params are
+				 * referenced in each, in order to decide which need
+				 * re-evaluating during rescan.
+				 */
+				foreach(lc, fscan->functions)
+				{
+					RangeTblFunction *rtfunc = (RangeTblFunction *) lfirst(lc);
+					finalize_primnode_context funccontext;
+
+					funccontext = context;
+					funccontext.paramids = NULL;
+
+					finalize_primnode(rtfunc->funcexpr, &funccontext);
+
+					/* remember results for execution */
+					rtfunc->funcparams = funccontext.paramids;
+
+					/* add the function's params to the overall set */
+					context.paramids = bms_add_members(context.paramids,
+													   funccontext.paramids);
+				}
+
+				context.paramids = bms_add_members(context.paramids,
+												   scan_params);
+			}
 			break;
 
 		case T_ValuesScan:
@@ -2450,6 +2632,12 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 
+		case T_ForeignScan:
+			finalize_primnode((Node *) ((ForeignScan *) plan)->fdw_exprs,
+							  &context);
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
 		case T_ModifyTable:
 			{
 				ModifyTable *mtplan = (ModifyTable *) plan;
@@ -2480,6 +2668,22 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 				ListCell   *l;
 
 				foreach(l, ((Append *) plan)->appendplans)
+				{
+					context.paramids =
+						bms_add_members(context.paramids,
+										finalize_plan(root,
+													  (Plan *) lfirst(l),
+													  valid_params,
+													  scan_params));
+				}
+			}
+			break;
+
+		case T_MergeAppend:
+			{
+				ListCell   *l;
+
+				foreach(l, ((MergeAppend *) plan)->mergeplans)
 				{
 					context.paramids =
 						bms_add_members(context.paramids,
@@ -2524,8 +2728,20 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			break;
 
 		case T_NestLoop:
-			finalize_primnode((Node *) ((Join *) plan)->joinqual,
-							  &context);
+			{
+				ListCell   *l;
+
+				finalize_primnode((Node *) ((Join *) plan)->joinqual,
+								  &context);
+				/* collect set of params that will be passed to right child */
+				foreach(l, ((NestLoop *) plan)->nestParams)
+				{
+					NestLoopParam *nlp = (NestLoopParam *) lfirst(l);
+
+					nestloop_params = bms_add_member(nestloop_params,
+													 nlp->paramno);
+				}
+			}
 			break;
 
 		case T_MergeJoin:
@@ -2598,8 +2814,6 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 
 		case T_Hash:
 		case T_Agg:
-		case T_AppendOnlyScan:
-		case T_AOCSScan:
 		case T_ExternalScan:
 		case T_Material:
 		case T_Sort:
@@ -2607,6 +2821,8 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 		case T_Unique:
 		case T_SetOp:
 		case T_Repeat:
+		case T_SplitUpdate:
+		case T_Reshuffle:
 			break;
 
 		default:
@@ -2621,17 +2837,34 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 	 * inner invocation of subquery_planner(). So skip that.
 	 */
 	if (!IsA(plan, TableFunctionScan))
-		context.paramids = bms_add_members(context.paramids,
-									   finalize_plan(root,
-													 plan->lefttree,
-													 valid_params,
-													 scan_params));
+	{
+		child_params = finalize_plan(root,
+									 plan->lefttree,
+									 valid_params,
+									 scan_params);
+		context.paramids = bms_add_members(context.paramids, child_params);
+	}
 
-	context.paramids = bms_add_members(context.paramids,
-									   finalize_plan(root,
-													 plan->righttree,
-													 valid_params,
-													 scan_params));
+	if (nestloop_params)
+	{
+		/* right child can reference nestloop_params as well as valid_params */
+		child_params = finalize_plan(root,
+									 plan->righttree,
+									 bms_union(nestloop_params, valid_params),
+									 scan_params);
+		/* ... and they don't count as parameters used at my level */
+		child_params = bms_difference(child_params, nestloop_params);
+		bms_free(nestloop_params);
+	}
+	else
+	{
+		/* easy case */
+		child_params = finalize_plan(root,
+									 plan->righttree,
+									 valid_params,
+									 scan_params);
+	}
+	context.paramids = bms_add_members(context.paramids, child_params);
 
 	/*
 	 * Any locally generated parameter doesn't count towards its generating
@@ -2704,7 +2937,7 @@ finalize_primnode(Node *node, finalize_primnode_context *context)
 
 		/*
 		 * Remove any param IDs of output parameters of the subplan that were
-		 * referenced in the testexpr.	These are not interesting for
+		 * referenced in the testexpr.  These are not interesting for
 		 * parameter change signaling since we always re-evaluate the subplan.
 		 * Note that this wouldn't work too well if there might be uses of the
 		 * same param IDs elsewhere in the plan, but that can't happen because
@@ -2739,7 +2972,7 @@ finalize_primnode(Node *node, finalize_primnode_context *context)
 /*
  * SS_make_initplan_from_plan - given a plan tree, make it an InitPlan
  *
- * The plan is expected to return a scalar value of the indicated type.
+ * The plan is expected to return a scalar value of the given type/collation.
  * We build an EXPR_SUBLINK SubPlan node and put it into the initplan
  * list for the current query level.  A Param that represents the initplan's
  * output is returned.
@@ -2750,7 +2983,8 @@ finalize_primnode(Node *node, finalize_primnode_context *context)
  */
 Param *
 SS_make_initplan_from_plan(PlannerInfo *root, Plan *plan,
-						   Oid resulttype, int32 resulttypmod)
+						   Oid resulttype, int32 resulttypmod,
+						   Oid resultcollation)
 {
 	SubPlan    *node;
 	Param	   *prm;
@@ -2770,14 +3004,10 @@ SS_make_initplan_from_plan(PlannerInfo *root, Plan *plan,
 	SS_finalize_plan(root, plan, false);
 
 	/*
-	 * Add the subplan and its rtable to the global lists.
+	 * Add the subplan and its PlannerInfo to the global lists.
 	 */
-	root->glob->subplans = lappend(root->glob->subplans,
-								   plan);
-	root->glob->subrtables = lappend(root->glob->subrtables,
-									 root->parse->rtable);
-	root->glob->subrowmarks = lappend(root->glob->subrowmarks,
-									  root->rowMarks);
+	root->glob->subplans = lappend(root->glob->subplans, plan);
+	root->glob->subroots = lappend(root->glob->subroots, root);
 
 	/*
 	 * Create a SubPlan node and add it to the outer list of InitPlans. Note
@@ -2786,7 +3016,8 @@ SS_make_initplan_from_plan(PlannerInfo *root, Plan *plan,
 	 */
 	node = makeNode(SubPlan);
 	node->subLinkType = EXPR_SUBLINK;
-	get_first_col_type(plan, &node->firstColType, &node->firstColTypmod);
+	get_first_col_type(plan, &node->firstColType, &node->firstColTypmod,
+					   &node->firstColCollation);
     node->qDispSliceId = 0;             /*CDB*/
 	node->plan_id = list_length(root->glob->subplans);
 	node->is_initplan = true;
@@ -2802,13 +3033,12 @@ SS_make_initplan_from_plan(PlannerInfo *root, Plan *plan,
 	/*
 	 * Make a Param that will be the subplan's output.
 	 */
-	prm = generate_new_param(root, resulttype, resulttypmod);
+	prm = generate_new_param(root, resulttype, resulttypmod, resultcollation);
 	node->setParam = list_make1_int(prm->paramid);
 
 	/* Label the subplan for EXPLAIN purposes */
-	node->plan_name = palloc(64);
-	sprintf(node->plan_name, "InitPlan %d (returns $%d)",
-			node->plan_id, prm->paramid);
+	node->plan_name = psprintf("InitPlan %d (returns $%d)",
+							   node->plan_id, prm->paramid);
 
 	return prm;
 }

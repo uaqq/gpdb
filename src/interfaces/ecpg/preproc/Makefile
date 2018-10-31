@@ -2,9 +2,9 @@
 #
 # Makefile for src/interfaces/ecpg/preproc
 #
-# Copyright (c) 1998-2010, PostgreSQL Global Development Group
+# Copyright (c) 1998-2014, PostgreSQL Global Development Group
 #
-# $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/Makefile,v 1.150 2010/07/05 18:54:38 tgl Exp $
+# src/interfaces/ecpg/preproc/Makefile
 #
 #-------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
 MAJOR_VERSION= 4
-MINOR_VERSION= 6
+MINOR_VERSION= 10
 PATCHLEVEL=0
 
 # The frontend doesn't need everything that's in LIBS, some are backend only
@@ -34,39 +34,32 @@ override CFLAGS +=  $(PTHREAD_CFLAGS) -DECPG_COMPILE -Wno-unused-label -Wno-erro
 endif
 override CFLAGS += $(PTHREAD_CFLAGS) -DECPG_COMPILE
 
-OBJS=	preproc.o type.o ecpg.o output.o parser.o \
+OBJS=	preproc.o pgc.o type.o ecpg.o output.o parser.o \
 	keywords.o c_keywords.o ecpg_keywords.o kwlookup.o ../ecpglib/typename.o descriptor.o variable.o \
 	$(WIN32RES)
 
-all: submake-libpgport ecpg
+# Suppress parallel build to avoid a bug in GNU make 3.82
+# (see comments in ../Makefile)
+ifeq ($(MAKE_VERSION),3.82)
+.NOTPARALLEL:
+endif
 
-ecpg: $(OBJS)
+all: ecpg
+
+ecpg: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_EX) $^ $(LIBS) $(PTHREAD_LIBS) -o $@$(X)
 
-# pgc is compiled as part of preproc
-preproc.o: pgc.c
+../ecpglib/typename.o: ../ecpglib/typename.c
+	$(MAKE) -C $(dir $@) $(notdir $@)
 
 preproc.h: preproc.c ;
-
-preproc.c: preproc.y
-ifdef BISON
-	$(BISON) -d $(BISONFLAGS) -o $@ $<
-else
-	@$(missing) bison $< $@
-endif
-
-pgc.c: pgc.l
-ifdef FLEX
-	$(FLEX) $(FLEXFLAGS) -o'$@' $<
-else
-	@$(missing) flex $< $@
-endif
+preproc.c: BISONFLAGS += -d
 
 preproc.y: ../../../backend/parser/gram.y parse.pl ecpg.addons ecpg.header ecpg.tokens ecpg.trailer ecpg.type
-	$(PERL) $(srcdir)/parse.pl $(srcdir) < $< > $@ 
+	$(PERL) $(srcdir)/parse.pl $(srcdir) < $< > $@
 	$(PERL) $(srcdir)/check_rules.pl $(srcdir) $<
 
-ecpg_keywords.o c_keywords.o keywords.o preproc.o parser.o: preproc.h
+ecpg_keywords.o c_keywords.o keywords.o preproc.o pgc.o parser.o: preproc.h
 
 kwlookup.c: % : $(top_srcdir)/src/backend/parser/%
 	rm -f $@ && $(LN_S) $< .

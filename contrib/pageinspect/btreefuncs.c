@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/pageinspect/btreefuncs.c,v 1.10 2009/06/11 14:48:51 momjian Exp $
+ * contrib/pageinspect/btreefuncs.c
  *
  *
  * btreefuncs.c
@@ -27,19 +27,13 @@
 
 #include "postgres.h"
 
-#include "access/heapam.h"
 #include "access/nbtree.h"
 #include "catalog/namespace.h"
-#include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
-#include "storage/bufmgr.h"
 #include "utils/builtins.h"
+#include "utils/rel.h"
 
-
-extern Datum bt_metap(PG_FUNCTION_ARGS);
-extern Datum bt_page_items(PG_FUNCTION_ARGS);
-extern Datum bt_page_stats(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(bt_metap);
 PG_FUNCTION_INFO_V1(bt_page_items);
@@ -222,31 +216,17 @@ bt_page_stats(PG_FUNCTION_ARGS)
 		elog(ERROR, "return type must be a row type");
 
 	j = 0;
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.blkno);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%c", stat.type);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.live_items);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.dead_items);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.avg_item_size);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.page_size);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.free_size);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.btpo_prev);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.btpo_next);
-	values[j] = palloc(32);
-	if (stat.type == 'd')
-		snprintf(values[j++], 32, "%d", stat.btpo.xact);
-	else
-		snprintf(values[j++], 32, "%d", stat.btpo.level);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", stat.btpo_flags);
+	values[j++] = psprintf("%d", stat.blkno);
+	values[j++] = psprintf("%c", stat.type);
+	values[j++] = psprintf("%d", stat.live_items);
+	values[j++] = psprintf("%d", stat.dead_items);
+	values[j++] = psprintf("%d", stat.avg_item_size);
+	values[j++] = psprintf("%d", stat.page_size);
+	values[j++] = psprintf("%d", stat.free_size);
+	values[j++] = psprintf("%d", stat.btpo_prev);
+	values[j++] = psprintf("%d", stat.btpo_next);
+	values[j++] = psprintf("%d", (stat.type == 'd') ? stat.btpo.xact : stat.btpo.level);
+	values[j++] = psprintf("%d", stat.btpo_flags);
 
 	tuple = BuildTupleFromCStrings(TupleDescGetAttInMetadata(tupleDesc),
 								   values);
@@ -382,18 +362,13 @@ bt_page_items(PG_FUNCTION_ARGS)
 		itup = (IndexTuple) PageGetItem(uargs->page, id);
 
 		j = 0;
-		values[j] = palloc(32);
-		snprintf(values[j++], 32, "%d", uargs->offset);
-		values[j] = palloc(32);
-		snprintf(values[j++], 32, "(%u,%u)",
-				 BlockIdGetBlockNumber(&(itup->t_tid.ip_blkid)),
-				 itup->t_tid.ip_posid);
-		values[j] = palloc(32);
-		snprintf(values[j++], 32, "%d", (int) IndexTupleSize(itup));
-		values[j] = palloc(32);
-		snprintf(values[j++], 32, "%c", IndexTupleHasNulls(itup) ? 't' : 'f');
-		values[j] = palloc(32);
-		snprintf(values[j++], 32, "%c", IndexTupleHasVarwidths(itup) ? 't' : 'f');
+		values[j++] = psprintf("%d", uargs->offset);
+		values[j++] = psprintf("(%u,%u)",
+							   BlockIdGetBlockNumber(&(itup->t_tid.ip_blkid)),
+							   itup->t_tid.ip_posid);
+		values[j++] = psprintf("%d", (int) IndexTupleSize(itup));
+		values[j++] = psprintf("%c", IndexTupleHasNulls(itup) ? 't' : 'f');
+		values[j++] = psprintf("%c", IndexTupleHasVarwidths(itup) ? 't' : 'f');
 
 		ptr = (char *) itup + IndexInfoFindDataOffset(itup->t_info);
 		dlen = IndexTupleSize(itup) - IndexInfoFindDataOffset(itup->t_info);
@@ -479,18 +454,12 @@ bt_metap(PG_FUNCTION_ARGS)
 		elog(ERROR, "return type must be a row type");
 
 	j = 0;
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", metad->btm_magic);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", metad->btm_version);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", metad->btm_root);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", metad->btm_level);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", metad->btm_fastroot);
-	values[j] = palloc(32);
-	snprintf(values[j++], 32, "%d", metad->btm_fastlevel);
+	values[j++] = psprintf("%d", metad->btm_magic);
+	values[j++] = psprintf("%d", metad->btm_version);
+	values[j++] = psprintf("%d", metad->btm_root);
+	values[j++] = psprintf("%d", metad->btm_level);
+	values[j++] = psprintf("%d", metad->btm_fastroot);
+	values[j++] = psprintf("%d", metad->btm_fastlevel);
 
 	tuple = BuildTupleFromCStrings(TupleDescGetAttInMetadata(tupleDesc),
 								   values);

@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/create_tsparser.sgml,v 1.3 2010/04/03 07:23:00 petere Exp $
+doc/src/sgml/ref/create_tsparser.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-CREATETSPARSER">
+ <indexterm zone="sql-createtsparser">
+  <primary>CREATE TEXT SEARCH PARSER</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>CREATE TEXT SEARCH PARSER</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>CREATE TEXT SEARCH PARSER</refname>
   <refpurpose>define a new text search parser</refpurpose>
  </refnamediv>
-
- <indexterm zone="sql-createtsparser">
-  <primary>CREATE TEXT SEARCH PARSER</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
@@ -58,7 +58,7 @@ CREATE TEXT SEARCH PARSER <replaceable class="parameter">name</replaceable> (
    Refer to <xref linkend="textsearch"> for further information.
   </para>
  </refsect1>
-  
+
  <refsect1>
   <title>Parameters</title>
 
@@ -131,7 +131,7 @@ CREATE TEXT SEARCH PARSER <replaceable class="parameter">name</replaceable> (
    The arguments can appear in any order, not only the one shown above.
   </para>
  </refsect1>
- 
+
  <refsect1>
   <title>Compatibility</title>
 

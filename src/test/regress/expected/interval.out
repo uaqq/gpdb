@@ -128,7 +128,7 @@ SELECT '' AS one, * FROM INTERVAL_TBL
      | 34 years
 (1 row)
 
-SELECT '' AS five, * FROM INTERVAL_TBL 
+SELECT '' AS five, * FROM INTERVAL_TBL
    WHERE INTERVAL_TBL.f1 >= interval '@ 1 month';
  five |       f1        
 ------+-----------------
@@ -208,11 +208,11 @@ SELECT '' AS fortyfive, r1.*, r2.*
 (45 rows)
 
 -- Test multiplication and division with intervals.
--- Floating point arithmetic rounding errors can lead to unexpected results, 
--- though the code attempts to do the right thing and round up to days and 
--- minutes to avoid results such as '3 days 24:00 hours' or '14:20:60'. 
--- Note that it is expected for some day components to be greater than 29 and 
--- some time components be greater than 23:59:59 due to how intervals are 
+-- Floating point arithmetic rounding errors can lead to unexpected results,
+-- though the code attempts to do the right thing and round up to days and
+-- minutes to avoid results such as '3 days 24:00 hours' or '14:20:60'.
+-- Note that it is expected for some day components to be greater than 29 and
+-- some time components be greater than 23:59:59 due to how intervals are
 -- stored internally.
 CREATE TABLE INTERVAL_MULDIV_TBL (span interval);
 COPY INTERVAL_MULDIV_TBL FROM STDIN;
@@ -307,10 +307,13 @@ select '4 millenniums 5 centuries 4 decades 1 year 4 months 4 days 17 minutes 31
 (1 row)
 
 -- test long interval output
-select '100000000y 10mon -1000000000d -1000000000h -10min -10.000001s ago'::interval;
-                                         interval                                          
--------------------------------------------------------------------------------------------
- @ 100000000 years 10 mons -1000000000 days -1000000000 hours -10 mins -10.000001 secs ago
+-- Note: the actual maximum length of the interval output is longer,
+-- but we need the test to work for both integer and floating-point
+-- timestamps.
+select '100000000y 10mon -1000000000d -100000h -10min -10.000001s ago'::interval;
+                                       interval                                        
+---------------------------------------------------------------------------------------
+ @ 100000000 years 10 mons -1000000000 days -100000 hours -10 mins -10.000001 secs ago
 (1 row)
 
 -- test justify_hours() and justify_days()
@@ -552,6 +555,30 @@ SELECT interval '1 2:03:04' minute to second;
  1 day 02:03:04
 (1 row)
 
+SELECT interval '1 +2:03' minute to second;
+    interval    
+----------------
+ 1 day 00:02:03
+(1 row)
+
+SELECT interval '1 +2:03:04' minute to second;
+    interval    
+----------------
+ 1 day 02:03:04
+(1 row)
+
+SELECT interval '1 -2:03' minute to second;
+    interval     
+-----------------
+ 1 day -00:02:03
+(1 row)
+
+SELECT interval '1 -2:03:04' minute to second;
+    interval     
+-----------------
+ 1 day -02:03:04
+(1 row)
+
 SELECT interval '123 11' day to hour; -- ok
      interval      
 -------------------
@@ -565,6 +592,10 @@ LINE 1: SELECT interval '123 11' day;
 SELECT interval '123 11'; -- not ok, too ambiguous
 ERROR:  invalid input syntax for type interval: "123 11"
 LINE 1: SELECT interval '123 11';
+                        ^
+SELECT interval '123 2:03 -2:04'; -- not ok, redundant hh:mm fields
+ERROR:  invalid input syntax for type interval: "123 2:03 -2:04"
+LINE 1: SELECT interval '123 2:03 -2:04';
                         ^
 -- test syntaxes for restricted precision
 SELECT interval(0) '1 day 01:23:45.6789';
@@ -760,7 +791,7 @@ select interval '1 year 2 mons 3 days 04:05:06.699999';
  @ 1 year 2 mons 3 days 4 hours 5 mins 6.699999 secs
 (1 row)
 
-select interval '0:0:0.7', interval '@ 0.70 secs', interval '0.7 seconds'; 
+select interval '0:0:0.7', interval '@ 0.70 secs', interval '0.7 seconds';
   interval  |  interval  |  interval  
 ------------+------------+------------
  @ 0.7 secs | @ 0.7 secs | @ 0.7 secs
@@ -777,5 +808,50 @@ select interval_hash('30 days'::interval) = interval_hash('1 month'::interval) a
  t 
 ---
  t
+(1 row)
+
+-- numeric constructor
+select make_interval(years := 2);
+ make_interval 
+---------------
+ @ 2 years
+(1 row)
+
+select make_interval(years := 1, months := 6);
+  make_interval  
+-----------------
+ @ 1 year 6 mons
+(1 row)
+
+select make_interval(years := 1, months := -1, weeks := 5, days := -7, hours := 25, mins := -180);
+       make_interval        
+----------------------------
+ @ 11 mons 28 days 22 hours
+(1 row)
+
+select make_interval() = make_interval(years := 0, months := 0, weeks := 0, days := 0, mins := 0, secs := 0.0);
+ ?column? 
+----------
+ t
+(1 row)
+
+select make_interval(hours := -2, mins := -10, secs := -25.3);
+          make_interval          
+---------------------------------
+ @ 2 hours 10 mins 25.3 secs ago
+(1 row)
+
+select make_interval(years := 'inf'::float::int);
+ERROR:  integer out of range
+select make_interval(months := 'NaN'::float::int);
+ERROR:  integer out of range
+select make_interval(secs := 'inf');
+ERROR:  interval out of range
+select make_interval(secs := 'NaN');
+ERROR:  interval out of range
+select make_interval(secs := 7e12);
+           make_interval            
+------------------------------------
+ @ 1944444444 hours 26 mins 40 secs
 (1 row)
 

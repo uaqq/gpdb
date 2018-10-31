@@ -3,15 +3,15 @@
  * attoptcache.h
  *	  Attribute options cache.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/attoptcache.h,v 1.1 2010/01/22 16:42:31 rhaas Exp $
+ * src/include/utils/attoptcache.h
  *
  *-------------------------------------------------------------------------
  */
-#ifndef SPCCACHE_H
-#define SPCCACHE_H
+#ifndef ATTOPTCACHE_H
+#define ATTOPTCACHE_H
 
 /*
  * Attribute options.
@@ -25,4 +25,4 @@ typedef struct AttributeOpts
 
 AttributeOpts *get_attribute_options(Oid spcid, int attnum);
 
-#endif   /* SPCCACHE_H */
+#endif   /* ATTOPTCACHE_H */

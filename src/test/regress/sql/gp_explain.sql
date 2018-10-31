@@ -105,3 +105,40 @@ SELECT trim(et) et from
 get_explain_output($$
 	select * from (values (1)) as f(a) join (values(2)) b(b) on a = b$$) as et
 WHERE et like '%Hash Cond:%';
+
+--
+-- Test EXPLAINing of the Partition By in a window function. (PostgreSQL
+-- doesn't print it at all.)
+--
+explain (costs off) select count(*) over (partition by g) from generate_series(1, 10) g;
+
+
+--
+-- Test non-text format with a few queries that contain GPDB-specific node types.
+--
+
+-- The default init_file rules contain a line to mask this out in normal
+-- text-format EXPLAIN output, but it doesn't catch these alternative formats.
+-- start_matchignore
+-- m/Optimizer.*PQO version .*/
+-- end_matchignore
+
+CREATE EXTERNAL WEB TABLE dummy_ext_tab (x text) EXECUTE 'echo foo' FORMAT 'text';
+
+-- External Table Scan
+explain (format json, costs off) SELECT * FROM dummy_ext_tab;
+
+-- Append-only Scan
+CREATE TEMP TABLE dummy_aotab (x int4) WITH (appendonly=true);
+explain (format yaml, costs off) SELECT * FROM dummy_aotab;
+
+-- DML node (with ORCA)
+explain (format xml, costs off) insert into dummy_aotab values (1);
+
+-- github issues 5795. explain fails previously.
+explain SELECT * from information_schema.key_column_usage;
+
+-- github issue 5794.
+set gp_enable_explain_allstat=on;
+explain analyze SELECT * FROM explaintest;
+set gp_enable_explain_allstat=DEFAULT;

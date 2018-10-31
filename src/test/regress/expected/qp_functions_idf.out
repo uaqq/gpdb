@@ -179,7 +179,13 @@ select c, percentile_cont(0.9999) within group (order by ts2::timestamptz -ts1::
 (10 rows)
 
 -- DATE
-select c, percentile_cont(0.9999) within group (order by ts2::date -ts1::date) from perctint group by c order by 2 limit 10;
+-- The test frame work now does not sort the output of
+-- `select ... order by` statement. This is not enough.
+-- Because there are tuples with the same order-by key
+-- but different other cols. Their order is important
+-- to the correctness of the case. So we add more order-by
+-- keys here.
+select * from (select c, percentile_cont(0.9999) within group (order by ts2::date -ts1::date) from perctint group by c order by 2 limit 10) r order by 2,1;
  c  | percentile_cont 
 ----+-----------------
   1 |            1462
@@ -187,8 +193,8 @@ select c, percentile_cont(0.9999) within group (order by ts2::date -ts1::date) f
   3 |            1464
   4 |            1465
   5 |            1466
-  7 |            1467
   6 |            1467
+  7 |            1467
   8 |            1468
   9 |            1469
  10 |            1470
@@ -518,32 +524,32 @@ select count(*),median(a) from perct group by b having median(b) <> 33 order by 
 
 --SQL with multiple IDF conditions in HAVING clause
 select a, avg(b),percentile_cont(0.4) within group (order by a)  from perct group by a having percentile_cont(0.4) within group (order by a)  > 1 and percentile_cont(0.4) within group( order by a ) < 10  order by a;
- a | avg | percentile_cont 
----+-----+-----------------
- 2 |   0 |               2
- 3 |   0 |               3
- 4 |   0 |               4
- 5 |   0 |               5
- 6 |   0 |               6
- 7 |   0 |               7
- 8 |   0 |               8
- 9 |   0 |               9
+ a |          avg           | percentile_cont 
+---+------------------------+-----------------
+ 2 | 0.00000000000000000000 |               2
+ 3 | 0.00000000000000000000 |               3
+ 4 | 0.00000000000000000000 |               4
+ 5 | 0.00000000000000000000 |               5
+ 6 | 0.00000000000000000000 |               6
+ 7 | 0.00000000000000000000 |               7
+ 8 | 0.00000000000000000000 |               8
+ 9 | 0.00000000000000000000 |               9
 (8 rows)
 
 --SQL with multiple IDF conditions in HAVING clause (including median)
 select a, avg(b)  from perct group by a having percentile_cont(0.4) within group (order by a)  > median(b)  order by a desc limit 10;
-  a  | avg 
------+-----
- 100 |  10
-  99 |   9
-  98 |   9
-  97 |   9
-  96 |   9
-  95 |   9
-  94 |   9
-  93 |   9
-  92 |   9
-  91 |   9
+  a  |         avg         
+-----+---------------------
+ 100 | 10.0000000000000000
+  99 |  9.0000000000000000
+  98 |  9.0000000000000000
+  97 |  9.0000000000000000
+  96 |  9.0000000000000000
+  95 |  9.0000000000000000
+  94 |  9.0000000000000000
+  93 |  9.0000000000000000
+  92 |  9.0000000000000000
+  91 |  9.0000000000000000
 (10 rows)
 
 --SQL with IDF and not in condition in HAVING clause
@@ -640,15 +646,15 @@ LINE 1: select a,median(b) from perct4 group by median(c);
                                                 ^
 -- SQL with Outer aggregate reference and IDF
 select ( (select sum(a) from perct group by b having median(t.a) < 5 limit 1 ) ) from perct t;
- ?column? 
-----------
-         
+ sum 
+-----
+    
 (1 row)
 
 select ( select percentile_cont(0.6) within group (order by t.a) from perct where a <10 limit 1 )  from perct t;
- ?column? 
-----------
-     60.4
+ percentile_cont 
+-----------------
+            60.4
 (1 row)
 
 -- SQL with Group by () and IDF
@@ -1089,12 +1095,13 @@ select DISTINCT percentile_cont(0.7) within group (order by a) from perct group 
 create view idf_v1 as select median (( select median((select median(a) from perct)) from perct ));
 -- end_ignore
 select pg_get_viewdef('idf_v1');  
-                                                   pg_get_viewdef                                                    
----------------------------------------------------------------------------------------------------------------------
- SELECT MEDIAN((SELECT MEDIAN((SELECT MEDIAN(perct.a) AS "median" FROM perct)) AS "median" FROM perct)) AS "median";
+                            pg_get_viewdef                             
+-----------------------------------------------------------------------
+  SELECT MEDIAN(( SELECT MEDIAN(( SELECT MEDIAN(perct_1.a) AS "median"+
+                    FROM perct perct_1)) AS "median"                  +
+            FROM perct)) AS "median";
 (1 row)
 
- 
 -- VIEW with IDF and its definition -- Percentile function with wrong input
 -- start_ignore
 create view idf_v4 as select percentile_disc(1.5) within group (order by a) as percentile_disc_a, percentile_disc( 0.9) within group (order by b) as percentile_disc_b  from perct;

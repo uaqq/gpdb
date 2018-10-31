@@ -761,9 +761,17 @@ select t1.a, t2.b from t1 full outer join t2 on  (t1.a=t2.a) where ((t1.a,t2.b) 
    | 8
 (3 rows)
 
--- unsupported case
+-- not in subquery with a row var in FULL JOIN condition
 select t1.a, t2.b from t1 full outer join t2 on  (t1.a=t2.a and ((t1.a,t2.b) not in (select i1.a,i1.b from i1))); 
-ERROR:  FULL JOIN is only supported with merge-joinable join conditions
+ a | b 
+---+---
+ 3 | 4
+ 5 |  
+   | 8
+ 1 |  
+   | 2
+(5 rows)
+
 --
 -- more complex case
 --
@@ -947,6 +955,24 @@ select Tbl04.* from Tbl04 where (Tbl04.a,Tbl04.b) not in (select Tbl06.a,Tbl06.b
 ---+---
  5 | 6
 (1 row)
+
+explain (costs off)
+select Tbl04.* from Tbl04 where not ((Tbl04.a,Tbl04.b) in (select Tbl06.a,Tbl06.b from Tbl06) or (Tbl04.a,Tbl04.b) in (select i3.a, i3.b from i3));
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Gather Motion 3:1  (slice2; segments: 3)
+   ->  Hash Left Anti Semi (Not-In) Join
+         Hash Cond: ((tbl04.a = i3.a) AND (tbl04.b = i3.b))
+         ->  Nested Loop Left Anti Semi (Not-In) Join
+               Join Filter: ((tbl04.a = tbl06.a) AND (tbl04.b = tbl06.b))
+               ->  Seq Scan on tbl04
+               ->  Materialize
+                     ->  Broadcast Motion 3:3  (slice1; segments: 3)
+                           ->  Seq Scan on tbl06
+         ->  Hash
+               ->  Seq Scan on i3
+ Optimizer: legacy query optimizer
+(12 rows)
 
 select Tbl04.* from Tbl04 where not ((Tbl04.a,Tbl04.b) in (select Tbl06.a,Tbl06.b from Tbl06) or (Tbl04.a,Tbl04.b) in (select i3.a, i3.b from i3)); -- expected: (5,6)
  a | b 
@@ -1218,32 +1244,30 @@ explain delete from TabDel1 where TabDel1.a not in (select a from TabDel3); -- d
                                                QUERY PLAN                                                
 ---------------------------------------------------------------------------------------------------------
  Delete  (cost=0.00..862.04 rows=1 width=1)
-   ->  Result  (cost=0.00..862.00 rows=1 width=26)
+   ->  Result  (cost=0.00..862.00 rows=1 width=22)
          ->  Hash Left Anti Semi (Not-In) Join  (cost=0.00..862.00 rows=1 width=18)
-               Hash Cond: qp_subquery.tabdel1.a = tabdel3.a
+               Hash Cond: tabdel1.a = tabdel3.a
                ->  Table Scan on tabdel1  (cost=0.00..431.00 rows=1 width=18)
                ->  Hash  (cost=431.00..431.00 rows=1 width=4)
                      ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
                            ->  Table Scan on tabdel3  (cost=0.00..431.00 rows=1 width=4)
- Settings:  optimizer=on
- Optimizer status: PQO version 1.624
-(10 rows)
+ Optimizer: PQO version 2.74.0
+(9 rows)
 
 explain delete from TabDel2 where TabDel2.a not in (select a from TabDel4); -- support this
                                                   QUERY PLAN                                                   
 ---------------------------------------------------------------------------------------------------------------
  Delete  (cost=0.00..862.04 rows=1 width=1)
-   ->  Result  (cost=0.00..862.00 rows=1 width=26)
+   ->  Result  (cost=0.00..862.00 rows=1 width=22)
          ->  Explicit Redistribute Motion 3:3  (slice2; segments: 3)  (cost=0.00..862.00 rows=1 width=18)
                ->  Hash Left Anti Semi (Not-In) Join  (cost=0.00..862.00 rows=1 width=18)
-                     Hash Cond: qp_subquery.tabdel2.a = tabdel4.a
+                     Hash Cond: tabdel2.a = tabdel4.a
                      ->  Table Scan on tabdel2  (cost=0.00..431.00 rows=1 width=18)
                      ->  Hash  (cost=431.00..431.00 rows=1 width=4)
                            ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
                                  ->  Table Scan on tabdel4  (cost=0.00..431.00 rows=1 width=4)
- Settings:  optimizer=on
- Optimizer status: PQO version 1.624
-(11 rows)
+ Optimizer: PQO version 2.74.0
+(10 rows)
 
 -- start_ignore
 delete from TabDel2 where TabDel2.a not in (select a from TabDel4); 
@@ -1292,6 +1316,79 @@ select * from TblUp2;
    1 | 2
  100 | 6
 (3 rows)
+
+--
+-- Check for correct results for subqueries nested inside a scalar expression
+--
+-- start_ignore
+create table subselect_tab1 (a int, b text, c int);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'a' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+create table subselect_tab2 (a int, b int, c int);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'a' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+create table subselect_tab3 (a int, b text, c int);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'a' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+insert into subselect_tab1 VALUES (100, 'false', 1);
+insert into subselect_tab1 VALUES (200, 'true', 2);
+insert into subselect_tab2 VALUES (2,2,2);
+insert into subselect_tab3 VALUES (200, 'falseg', 1);
+-- end_ignore
+-- scalar subquery in a null test expression
+select * from subselect_tab1 where (select b from subselect_tab2) is null;
+ a | b | c 
+---+---+---
+(0 rows)
+
+-- ANY subquery nested in a scalar comparison expression
+select * from subselect_tab1 where b::bool = ( c = any(select c from subselect_tab2));
+  a  |   b   | c 
+-----+-------+---
+ 200 | true  | 2
+ 100 | false | 1
+(2 rows)
+
+-- ALL subquery deeply nested in a scalar expression
+select * from subselect_tab3 where b = ( a < all(select c from subselect_tab2) || 'g');
+  a  |   b    | c 
+-----+--------+---
+ 200 | falseg | 1
+(1 row)
+
+-- EXISTS subquery nested in a boolean expression
+select * from subselect_tab1 where b::bool = (exists(select c from subselect_tab2) and not exists (select c from subselect_tab3));
+  a  |   b   | c 
+-----+-------+---
+ 100 | false | 1
+(1 row)
+
+-- ALL and EXISTS nested in a CASE-WHEN-THEN expression
+select * from subselect_tab1 where case when b is not null then (subselect_tab1.c < all(select c from subselect_tab2 where exists (select * from subselect_tab3))) else false end;
+  a  |   b   | c 
+-----+-------+---
+ 100 | false | 1
+(1 row)
+
+-- EXISTS subquery nested in a scalar comparison expression
+select * from subselect_tab1 where b::bool = exists(select c from subselect_tab2);
+  a  |  b   | c 
+-----+------+---
+ 200 | true | 2
+(1 row)
+
+-- a few more complex combinations..
+SELECT * FROM subselect_tab3 WHERE (EXISTS(SELECT c FROM subselect_tab2) AND NOT EXISTS (SELECT c from subselect_tab3)) IN (SELECT b::BOOL from subselect_tab1);
+  a  |   b    | c 
+-----+--------+---
+ 200 | falseg | 1
+(1 row)
+
+SELECT * FROM subselect_tab3 WHERE (NOT EXISTS(SELECT c FROM subselect_tab2)) IN (SELECT b::boolean  from subselect_tab1);
+  a  |   b    | c 
+-----+--------+---
+ 200 | falseg | 1
+(1 row)
 
 -- start_ignore
 drop schema qp_subquery cascade;

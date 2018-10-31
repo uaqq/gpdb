@@ -27,15 +27,14 @@ SET_VERSION_SCRIPTS = \
 	bin/gpstop \
 	bin/gpsys1 \
 	bin/gpcheckcat \
+	bin/gptransfer \
 	sbin/gpaddconfig.py \
 	sbin/gpchangeuserpassword \
 	sbin/gpcleansegmentdir.py \
 	sbin/gpfixuserlimts \
 	sbin/gpgetstatususingtransition.py \
-	sbin/gprepairmirrorseg.py \
 	sbin/gpsegstart.py \
 	sbin/gpsegstop.py \
-	sbin/gpsegtoprimaryormirror.py \
 	sbin/gpsetdbid.py \
 	sbin/gpupgrademirror.py \
 	lib/python/gppylib/programs/clsAddMirrors.py \
@@ -130,7 +129,6 @@ install: generate_greenplum_path_file
 	rm -rf $(DESTDIR)$(prefix)/bin/pythonSrc
 	rm -rf $(DESTDIR)$(prefix)/bin/Makefile
 	rm -rf $(DESTDIR)$(prefix)/bin/src
-	rm -f $(DESTDIR)$(prefix)/bin/gpchecksubnetcfg
 	rm -rf $(DESTDIR)$(prefix)/bin/gppylib
 	rm -rf $(DESTDIR)$(prefix)/bin/gpload_test
 	find $(DESTDIR)$(prefix)/lib/python/gppylib -name test -type d | xargs rm -rf

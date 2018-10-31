@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import filecmp
 import fileinput
 import os
 import re
@@ -21,35 +20,6 @@ from pygresql import pg
 
 PARTITION_START_DATE = '2010-01-01'
 PARTITION_END_DATE = '2013-01-01'
-
-GET_APPENDONLY_DATA_TABLE_INFO_SQL = """SELECT ALL_DATA_TABLES.oid, ALL_DATA_TABLES.schemaname, ALL_DATA_TABLES.tablename, OUTER_PG_CLASS.relname AS tupletable FROM(
-SELECT ALLTABLES.oid, ALLTABLES.schemaname, ALLTABLES.tablename FROM
-    (SELECT c.oid, n.nspname AS schemaname, c.relname AS tablename FROM pg_class c, pg_namespace n
-    WHERE n.oid = c.relnamespace) AS ALLTABLES,
-    (SELECT n.nspname AS schemaname, c.relname AS tablename
-    FROM pg_class c LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace
-    WHERE c.relkind = 'r'::CHAR AND c.oid > 16384 AND (c.relnamespace > 16384 OR n.nspname = 'public')
-    EXCEPT
-    ((SELECT x.schemaname, x.partitiontablename FROM
-    (SELECT DISTINCT schemaname, tablename, partitiontablename, partitionlevel FROM pg_partitions) AS X,
-    (SELECT schemaname, tablename maxtable, max(partitionlevel) maxlevel FROM pg_partitions GROUP BY (tablename, schemaname))
- AS Y
-    WHERE x.schemaname = y.schemaname AND x.tablename = Y.maxtable AND x.partitionlevel != Y.maxlevel)
-    UNION (SELECT DISTINCT schemaname, tablename FROM pg_partitions))) AS DATATABLES
-WHERE ALLTABLES.schemaname = DATATABLES.schemaname AND ALLTABLES.tablename = DATATABLES.tablename AND ALLTABLES.oid NOT IN (SELECT reloid FROM pg_exttable)
-) AS ALL_DATA_TABLES, pg_appendonly, pg_class OUTER_PG_CLASS
-    WHERE ALL_DATA_TABLES.oid = pg_appendonly.relid
-    AND OUTER_PG_CLASS.oid = pg_appendonly.segrelid
-"""
-
-GET_ALL_AO_DATATABLES_SQL = """
-    %s AND pg_appendonly.columnstore = 'f'
-""" % GET_APPENDONLY_DATA_TABLE_INFO_SQL
-
-GET_ALL_CO_DATATABLES_SQL = """
-    %s AND pg_appendonly.columnstore = 't'
-""" % GET_APPENDONLY_DATA_TABLE_INFO_SQL
 
 master_data_dir = os.environ.get('MASTER_DATA_DIRECTORY')
 if master_data_dir is None:
@@ -117,10 +87,10 @@ def run_cmd(command):
     return (result.rc, result.stdout, result.stderr)
 
 
-def run_command_remote(context, command, host, source_file, export_mdd):
+def run_command_remote(context, command, host, source_file, export_mdd, validateAfter=True):
     cmd = Command(name='run command %s' % command,
                   cmdStr='gpssh -h %s -e \'source %s; %s; %s\'' % (host, source_file, export_mdd, command))
-    cmd.run(validateAfter=True)
+    cmd.run(validateAfter=validateAfter)
     result = cmd.get_results()
     context.ret_code = result.rc
     context.stdout_message = result.stdout
@@ -141,6 +111,8 @@ def run_gpcommand(context, command, cmd_prefix=''):
     context.ret_code = result.rc
     context.stdout_message = result.stdout
     context.error_message = result.stderr
+
+    return (result.rc, result.stderr, result.stdout)
 
 
 def run_gpcommand_async(context, command):
@@ -179,14 +151,6 @@ def check_return_code(context, ret_code):
         if context.stdout_message:
             emsg += "STDOUT:\n%s\n" % context.stdout_message
         raise Exception("expected return code '%s' does not equal actual return code '%s' \n%s" % (ret_code, context.ret_code, emsg))
-
-
-def check_not_return_code(context, ret_code):
-    if context.ret_code == int(ret_code):
-        emsg = ""
-        if context.error_message:
-            emsg += context.error_message
-        raise Exception("return code unexpectedly equals '%s' %s" % (ret_code, emsg))
 
 
 def check_database_is_running(context):
@@ -255,7 +219,8 @@ def check_db_exists(dbname, host=None, port=0, user=None):
 def create_database_if_not_exists(context, dbname, host=None, port=0, user=None):
     if not check_db_exists(dbname, host, port, user):
         create_database(context, dbname, host, port, user)
-
+    context.dbname = dbname
+    context.conn = dbconn.connect(dbconn.DbURL(dbname=context.dbname))
 
 def create_database(context, dbname=None, host=None, port=0, user=None):
     LOOPS = 10
@@ -287,13 +252,6 @@ def create_database(context, dbname=None, host=None, port=0, user=None):
 def get_segment_hostnames(context, dbname):
     sql = "SELECT DISTINCT(hostname) FROM gp_segment_configuration WHERE content != -1;"
     return getRows(dbname, sql)
-
-
-def check_partition_table_exists(context, dbname, schemaname, table_name, table_type=None, part_level=1, part_number=1):
-    partitions = get_partition_names(schemaname, table_name, dbname, part_level, part_number)
-    if not partitions:
-        return False
-    return check_table_exists(context, dbname, partitions[0][0].strip(), table_type)
 
 
 def check_table_exists(context, dbname, table_name, table_type=None, host=None, port=0, user=None):
@@ -395,19 +353,6 @@ def drop_schema(context, schema_name, dbname):
         conn.commit()
     if check_schema_exists(context, schema_name, dbname):
         raise Exception('Unable to successfully drop the schema %s' % schema_name)
-
-
-def get_table_names(dbname):
-    sql = """
-            SELECT n.nspname AS schemaname, c.relname AS tablename\
-            FROM pg_class c\
-            LEFT JOIN pg_namespace n ON n.oid = c.relnamespace\
-            LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace\
-            WHERE c.relkind = 'r'::CHAR AND c.oid > 16384 AND (c.relnamespace > 16384 OR n.nspname = 'public')
-                  AND n.nspname NOT LIKE 'pg_temp_%'
-          """
-
-    return getRows(dbname, sql)
 
 
 def get_partition_tablenames(tablename, dbname, part_level=1):
@@ -604,43 +549,6 @@ def drop_database_if_exists(context, dbname=None, host=None, port=0, user=None):
         drop_database(context, dbname, host=host, port=port, user=user)
 
 
-def run_on_all_segs(context, dbname, query):
-    gparray = GpArray.initFromCatalog(dbconn.DbURL())
-    primary_segs = [seg for seg in gparray.getDbList() if seg.isSegmentPrimary()]
-
-    for seg in primary_segs:
-        with dbconn.connect(dbconn.DbURL(dbname=dbname, hostname=seg.getSegmentHostName(), port=seg.getSegmentPort()),
-                            utility=True) as conn:
-            dbconn.execSQL(conn, query)
-            conn.commit()
-
-
-def get_nic_up(hostname, nic):
-    address = hostname + '-cm'
-    cmd = Command(name='ifconfig nic', cmdStr='sudo /sbin/ifconfig %s' % nic, remoteHost=address, ctxt=REMOTE)
-    cmd.run(validateAfter=True)
-
-    return 'UP' in cmd.get_results().stdout
-
-
-def bring_nic_down(hostname, nic):
-    address = hostname + '-cm'
-    cmd = Command(name='bring down nic', cmdStr='sudo /sbin/ifdown %s' % nic, remoteHost=address, ctxt=REMOTE)
-    cmd.run(validateAfter=True)
-
-    if get_nic_up(hostname, nic):
-        raise Exception('Unable to bring down nic %s on host %s' % (nic, hostname))
-
-
-def bring_nic_up(hostname, nic):
-    address = hostname + '-cm'
-    cmd = Command(name='bring up nic', cmdStr='sudo /sbin/ifup %s' % nic, remoteHost=address, ctxt=REMOTE)
-    cmd.run(validateAfter=True)
-
-    if not get_nic_up(hostname, nic):
-        raise Exception('Unable to bring up nic %s on host %s' % (nic, hostname))
-
-
 def are_segments_synchronized():
     gparray = GpArray.initFromCatalog(dbconn.DbURL())
     segments = gparray.getDbList()
@@ -659,10 +567,15 @@ def is_any_segment_resynchronized():
     return False
 
 
-def check_row_count(tablename, dbname, nrows):
+def check_row_count(context, tablename, dbname, nrows):
     NUM_ROWS_QUERY = 'select count(*) from %s' % tablename
     # We want to bubble up the exception so that if table does not exist, the test fails
-    with dbconn.connect(dbconn.DbURL(dbname=dbname)) as conn:
+    if hasattr(context, 'standby_was_activated') and context.standby_was_activated is True:
+        dburl = dbconn.DbURL(dbname=dbname, port=context.standby_port, hostname=context.standby_hostname)
+    else:
+        dburl = dbconn.DbURL(dbname=dbname)
+
+    with dbconn.connect(dburl) as conn:
         result = dbconn.execSQLForSingleton(conn, NUM_ROWS_QUERY)
     if result != nrows:
         raise Exception('%d rows in table %s.%s, expected row count = %d' % (result, dbname, tablename, nrows))
@@ -709,33 +622,9 @@ def truncate_table(dbname, tablename):
     execute_sql(dbname, TRUNCATE_SQL)
 
 
-def get_table_oid(context, dbname, schema, tablename):
-    OID_SQL = """SELECT c.oid
-                 FROM pg_class c, pg_namespace n
-                 WHERE c.relnamespace = n.oid AND c.relname = '%s' AND n.nspname = '%s'""" % (tablename, schema)
-
-    with dbconn.connect(dbconn.DbURL(dbname=dbname)) as conn:
-        oid = dbconn.execSQLForSingleton(conn, OID_SQL)
-
-    return oid
-
-
 def insert_row(context, row_values, table, dbname):
     sql = """INSERT INTO %s values(%s)""" % (table, row_values)
     execute_sql(dbname, sql)
-
-
-def get_partition_list(partition_type, dbname):
-    if partition_type == 'ao':
-        sql = GET_ALL_AO_DATATABLES_SQL
-    elif partition_type == 'co':
-        sql = GET_ALL_CO_DATATABLES_SQL
-
-    partition_list = getRows(dbname, sql)
-    for line in partition_list:
-        if len(line) != 4:
-            raise Exception('Invalid results from query to get all AO tables: [%s]' % (','.join(line)))
-    return partition_list
 
 
 def get_all_hostnames_as_list(context, dbname):
@@ -768,20 +657,6 @@ def get_pid_for_segment(seg_data_dir, seg_host):
         return None
 
     return int(pid)
-
-
-def install_gppkg(context):
-    if 'GPPKG_PATH' not in os.environ:
-        raise Exception('GPPKG_PATH needs to be set in the environment to install gppkg')
-    if 'GPPKG_NAME' not in os.environ:
-        raise Exception('GPPKG_NAME needs to be set in the environment to install gppkg')
-
-    gppkg_path = os.environ['GPPKG_PATH']
-    gppkg_name = os.environ['GPPKG_NAME']
-    command = "gppkg --install %s/%s.gppkg" % (gppkg_path, gppkg_name)
-    run_command(context, command)
-    print "Install gppkg command: '%s', stdout: '%s', stderr: '%s'" % (
-    command, context.stdout_message, context.error_message)
 
 
 def kill_process(pid, host=None, sig=signal.SIGTERM):

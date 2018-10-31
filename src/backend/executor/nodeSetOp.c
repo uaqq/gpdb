@@ -5,7 +5,7 @@
  *
  * The input of a SetOp node consists of tuples from two relations,
  * which have been combined into one dataset, with a junk attribute added
- * that shows which relation each tuple came from.	In SETOP_SORTED mode,
+ * that shows which relation each tuple came from.  In SETOP_SORTED mode,
  * the input has furthermore been sorted according to all the grouping
  * columns (ie, all the non-junk attributes).  The SetOp node scans each
  * group of identical tuples to determine how many came from each input
@@ -18,7 +18,7 @@
  * relation is the left-hand one for EXCEPT, and tries to make the smaller
  * input relation come first for INTERSECT.  We build a hash table in memory
  * with one entry for each group of identical tuples, and count the number of
- * tuples in the group from each relation.	After seeing all the input, we
+ * tuples in the group from each relation.  After seeing all the input, we
  * scan the hashtable and generate the correct output using those counts.
  * We can avoid making hashtable entries for any tuples appearing only in the
  * second input relation, since they cannot result in any output.
@@ -32,18 +32,19 @@
  * input group.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/nodeSetOp.c,v 1.33 2010/01/02 16:57:45 momjian Exp $
+ *	  src/backend/executor/nodeSetOp.c
  *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
 
+#include "access/htup_details.h"
 #include "executor/executor.h"
 #include "executor/nodeSetOp.h"
 #include "utils/memutils.h"
@@ -76,7 +77,7 @@ typedef struct SetOpHashEntryData
 {
 	TupleHashEntryData shared;	/* common header for hash table entries */
 	SetOpStatePerGroupData pergroup;
-} SetOpHashEntryData;
+}	SetOpHashEntryData;
 
 
 static TupleTableSlot *setop_retrieve_direct(SetOpState *setopstate);
@@ -267,7 +268,7 @@ setop_retrieve_direct(SetOpState *setopstate)
 
 		/*
 		 * Store the copied first input tuple in the tuple table slot reserved
-		 * for it.	The tuple will be deleted when it is cleared from the
+		 * for it.  The tuple will be deleted when it is cleared from the
 		 * slot.
 		 */
 		ExecStoreHeapTuple(setopstate->grp_firstTuple,
@@ -344,7 +345,7 @@ setop_fill_hash_table(SetOpState *setopstate)
 	SetOp	   *node = (SetOp *) setopstate->ps.plan;
 	PlanState  *outerPlan;
 	int			firstFlag;
-	bool		in_first_rel;
+	bool in_first_rel PG_USED_FOR_ASSERTS_ONLY;
 
 	/*
 	 * get state info from node
@@ -597,7 +598,7 @@ ExecEndSetOp(SetOpState *node)
 
 
 void
-ExecReScanSetOp(SetOpState *node, ExprContext *exprCtxt)
+ExecReScanSetOp(SetOpState *node)
 {
 	ExecClearTuple(node->ps.ps_ResultTupleSlot);
 	node->setop_done = false;
@@ -619,7 +620,7 @@ ExecReScanSetOp(SetOpState *node, ExprContext *exprCtxt)
 		 * parameter changes, then we can just rescan the existing hash table;
 		 * no need to build it again.
 		 */
-		if (((PlanState *) node)->lefttree->chgParam == NULL)
+		if (node->ps.lefttree->chgParam == NULL)
 		{
 			ResetTupleHashIterator(node->hashtable, &node->hashiter);
 			return;
@@ -648,6 +649,6 @@ ExecReScanSetOp(SetOpState *node, ExprContext *exprCtxt)
 	 * if chgParam of subnode is not null then plan will be re-scanned by
 	 * first ExecProcNode.
 	 */
-	if (((PlanState *) node)->lefttree->chgParam == NULL)
-		ExecReScan(((PlanState *) node)->lefttree, exprCtxt);
+	if (node->ps.lefttree->chgParam == NULL)
+		ExecReScan(node->ps.lefttree);
 }

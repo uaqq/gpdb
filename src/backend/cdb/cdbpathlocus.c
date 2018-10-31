@@ -25,6 +25,7 @@
 #include "optimizer/tlist.h"	/* tlist_member() */
 #include "parser/parse_expr.h"	/* exprType() and exprTypmod() */
 
+#include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
 #include "cdb/cdbpathlocus.h"	/* me */
 
@@ -32,18 +33,6 @@ static List *cdb_build_distribution_pathkeys(PlannerInfo *root,
 								RelOptInfo *rel,
 								int nattrs,
 								AttrNumber *attrs);
-
-
-/*
- * This flag controls the policy type returned from
- * cdbpathlocus_from_baserel() for non-partitioned tables.
- * It's a kludge put in to allow us to do
- * distributed queries on catalog tables, like pg_class
- * and pg_statistic.
- * To use it, simply set it to true before running a catalog query, then set
- * it back to false.
- */
-bool		cdbpathlocus_querysegmentcatalogs = false;
 
 /*
  * Are two pathkeys equal?
@@ -124,6 +113,11 @@ cdbpathlocus_compare(CdbPathLocus_Comparison op,
 
 	Assert(op == CdbPathLocus_Comparison_Equal ||
 		   op == CdbPathLocus_Comparison_Contains);
+
+	/* Unless a and b have the same numsegments the result is always false */
+	if (CdbPathLocus_NumSegments(a) !=
+		CdbPathLocus_NumSegments(b))
+		return false;
 
 	if (CdbPathLocus_IsStrewn(a) ||
 		CdbPathLocus_IsStrewn(b))
@@ -236,9 +230,6 @@ cdb_build_distribution_pathkeys(PlannerInfo *root,
 	List	   *retval = NIL;
 	List	   *eq = list_make1(makeString("="));
 	int			i;
-	bool		isAppendChildRelation = false;
-
-	isAppendChildRelation = (rel->reloptkind == RELOPT_OTHER_MEMBER_REL);
 
 	for (i = 0; i < nattrs; ++i)
 	{
@@ -247,47 +238,10 @@ cdb_build_distribution_pathkeys(PlannerInfo *root,
 		/* Find or create a Var node that references the specified column. */
 		Var		   *expr = find_indexkey_var(root, rel, attrs[i]);
 
-		Assert(expr);
-
 		/*
-		 * Find or create a pathkey. We distinguish two cases for performance
-		 * reasons: 1) If the relation in question is a child relation under
-		 * an append node, we don't care about ensuring that we return a
-		 * canonicalized version of its pathkey item. Co-location of
-		 * joins/group-bys happens at the append relation level. In
-		 * create_append_path(), the call to
-		 * cdbpathlocus_pull_above_projection() ensures that canonicalized
-		 * pathkeys are created at the append relation level. (see MPP-3536).
-		 *
-		 * 2) For regular relations, we create a canonical pathkey so that we
-		 * may identify co-location for joins/group-bys.
+		 * Find or create a pathkey.
 		 */
-		if (isAppendChildRelation)
-		{
-			/**
-        	 * Append child relation.
-        	 */
-#ifdef DISTRIBUTION_PATHKEYS_DEBUG
-			PathKey    *canonicalPathKeyList = cdb_make_pathkey_for_expr(root, (Node *) expr, eq, true);
-
-			/*
-			 * This assert ensures that we should not really find any
-			 * equivalent keys during canonicalization for append child
-			 * relations.
-			 */
-			Assert(list_length(canonicalPathKeyList) == 1);
-#endif
-			cpathkey = cdb_make_pathkey_for_expr(root, (Node *) expr, eq, false);
-			Assert(cpathkey);
-		}
-		else
-		{
-			/**
-        	 * Regular relation.
-        	 */
-			cpathkey = cdb_make_pathkey_for_expr(root, (Node *) expr, eq, true);
-		}
-		Assert(cpathkey);
+		cpathkey = cdb_make_pathkey_for_expr(root, (Node *) expr, eq);
 
 		/* Append to list of pathkeys. */
 		retval = lappend(retval, cpathkey);
@@ -325,21 +279,17 @@ cdbpathlocus_from_baserel(struct PlannerInfo *root,
 					policy->nattrs,
 					policy->attrs);
 
-			CdbPathLocus_MakeHashed(&result, partkey);
+			CdbPathLocus_MakeHashed(&result, partkey, policy->numsegments);
 		}
 
 		/* Rows are distributed on an unknown criterion (uniformly, we hope!) */
 		else
-			CdbPathLocus_MakeStrewn(&result);
+			CdbPathLocus_MakeStrewn(&result, policy->numsegments);
 	}
 	else if (GpPolicyIsReplicated(policy))
 	{
-		CdbPathLocus_MakeSegmentGeneral(&result);
+		CdbPathLocus_MakeSegmentGeneral(&result, policy->numsegments);
 	}
-	/* Kludge used internally for querying catalogs on segment dbs */
-	else if (cdbpathlocus_querysegmentcatalogs)
-		CdbPathLocus_MakeStrewn(&result);
-
 	/* Normal catalog access */
 	else
 		CdbPathLocus_MakeEntry(&result);
@@ -355,7 +305,8 @@ cdbpathlocus_from_baserel(struct PlannerInfo *root,
  */
 CdbPathLocus
 cdbpathlocus_from_exprs(struct PlannerInfo *root,
-						List *hash_on_exprs)
+						List *hash_on_exprs,
+						int numsegments)
 {
 	CdbPathLocus locus;
 	List	   *partkey = NIL;
@@ -367,11 +318,11 @@ cdbpathlocus_from_exprs(struct PlannerInfo *root,
 		Node	   *expr = (Node *) lfirst(cell);
 		PathKey    *pathkey;
 
-		pathkey = cdb_make_pathkey_for_expr(root, expr, eq, true);
+		pathkey = cdb_make_pathkey_for_expr(root, expr, eq);
 		partkey = lappend(partkey, pathkey);
 	}
 
-	CdbPathLocus_MakeHashed(&locus, partkey);
+	CdbPathLocus_MakeHashed(&locus, partkey, numsegments);
 	list_free_deep(eq);
 	return locus;
 }								/* cdbpathlocus_from_exprs */
@@ -394,8 +345,15 @@ cdbpathlocus_from_subquery(struct PlannerInfo *root,
 {
 	CdbPathLocus locus;
 	Flow	   *flow = subqplan->flow;
+	int			numsegments;
 
 	Insist(flow);
+
+	/*
+	 * We want to create a locus representing the subquery, so numsegments
+	 * should be the same with the subquery.
+	 */
+	numsegments = flow->numsegments;
 
 	/* Flow node was made from CdbPathLocus by cdbpathtoplan_create_flow() */
 	switch (flow->flotype)
@@ -410,13 +368,13 @@ cdbpathlocus_from_subquery(struct PlannerInfo *root,
 				 * this subplan to qDisp unexpectedly 
 				 */
 				if (flow->locustype == CdbLocusType_SegmentGeneral)
-					CdbPathLocus_MakeSegmentGeneral(&locus);
+					CdbPathLocus_MakeSegmentGeneral(&locus, numsegments);
 				else
-					CdbPathLocus_MakeSingleQE(&locus);
+					CdbPathLocus_MakeSingleQE(&locus, numsegments);
 			}
 			break;
 		case FLOW_REPLICATED:
-			CdbPathLocus_MakeReplicated(&locus);
+			CdbPathLocus_MakeReplicated(&locus, numsegments);
 			break;
 		case FLOW_PARTITIONED:
 			{
@@ -444,20 +402,21 @@ cdbpathlocus_from_subquery(struct PlannerInfo *root,
 								  tle->resno,
 								  exprType((Node *) tle->expr),
 								  exprTypmod((Node *) tle->expr),
+								  exprCollation((Node *) tle->expr),
 								  0);
-					pathkey = cdb_make_pathkey_for_expr(root, (Node *) var, eq, true);
+					pathkey = cdb_make_pathkey_for_expr(root, (Node *) var, eq);
 					partkey = lappend(partkey, pathkey);
 				}
 				if (partkey &&
 					!hashexprcell)
-					CdbPathLocus_MakeHashed(&locus, partkey);
+					CdbPathLocus_MakeHashed(&locus, partkey, numsegments);
 				else
-					CdbPathLocus_MakeStrewn(&locus);
+					CdbPathLocus_MakeStrewn(&locus, numsegments);
 				list_free_deep(eq);
 				break;
 			}
 		default:
-			CdbPathLocus_MakeNull(&locus);
+			CdbPathLocus_MakeNull(&locus, __GP_POLICY_EVIL_NUMSEGMENTS);
 			Insist(0);
 	}
 	return locus;
@@ -561,8 +520,14 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 	CdbPathLocus newlocus;
 	ListCell   *partkeycell;
 	List	   *newpartkey = NIL;
+	int			numsegments;
 
 	Assert(cdbpathlocus_is_valid(locus));
+
+	/*
+	 * Keep the numsegments unchanged.
+	 */
+	numsegments = CdbPathLocus_NumSegments(locus);
 
 	if (CdbPathLocus_IsHashed(locus))
 	{
@@ -586,7 +551,7 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 			 */
 			if (!newpathkey)
 			{
-				CdbPathLocus_MakeStrewn(&newlocus);
+				CdbPathLocus_MakeStrewn(&newlocus, numsegments);
 				return newlocus;
 			}
 
@@ -595,7 +560,7 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 		}
 
 		/* Build new locus. */
-		CdbPathLocus_MakeHashed(&newlocus, newpartkey);
+		CdbPathLocus_MakeHashed(&newlocus, newpartkey, numsegments);
 		return newlocus;
 	}
 	else if (CdbPathLocus_IsHashedOJ(locus))
@@ -638,7 +603,7 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 			 */
 			if (!newpathkey)
 			{
-				CdbPathLocus_MakeStrewn(&newlocus);
+				CdbPathLocus_MakeStrewn(&newlocus, numsegments);
 				return newlocus;
 			}
 
@@ -647,7 +612,7 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 		}
 
 		/* Build new locus. */
-		CdbPathLocus_MakeHashed(&newlocus, newpartkey);
+		CdbPathLocus_MakeHashed(&newlocus, newpartkey, numsegments);
 		return newlocus;
 	}
 	else
@@ -668,6 +633,7 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 	ListCell   *bcell;
 	List	   *equivpathkeylist;
 	CdbPathLocus ojlocus = {0};
+	int			numsegments;
 
 	Assert(cdbpathlocus_is_valid(a));
 	Assert(cdbpathlocus_is_valid(b));
@@ -676,17 +642,61 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 	if (cdbpathlocus_compare(CdbPathLocus_Comparison_Equal, a, b))
 		return a;
 
-	/* If one rel is general or replicated, result stays with the other rel. */
+	numsegments = CdbPathLocus_CommonSegments(a, b);
+
+	/*
+	 * SingleQE may have different segment counts.
+	 */
+	if (CdbPathLocus_IsSingleQE(a) &&
+		CdbPathLocus_IsSingleQE(b))
+	{
+		CdbPathLocus_MakeSingleQE(&ojlocus, numsegments);
+		return ojlocus;
+	}
+
+	/*
+	 * If both are Entry then do the job on the common segments.
+	 */
+	if (CdbPathLocus_IsEntry(a) &&
+		CdbPathLocus_IsEntry(b))
+	{
+		a.numsegments = numsegments;
+		return a;
+	}
+
+	/*
+	 * If one rel is general or replicated, result stays with the other rel,
+	 * but need to ensure the result is on the common segments.
+	 */
 	if (CdbPathLocus_IsGeneral(a) ||
 		CdbPathLocus_IsReplicated(a))
+	{
+		b.numsegments = numsegments;
 		return b;
+	}
 	if (CdbPathLocus_IsGeneral(b) ||
 		CdbPathLocus_IsReplicated(b))
+	{
+		a.numsegments = numsegments;
+		return a;
+	}
+
+	/*
+	 * FIXME: should we adjust the returned numsegments like
+	 * Replicated above?
+	 */
+	if (CdbPathLocus_IsSegmentGeneral(a))
+		return b;
+	else if (CdbPathLocus_IsSegmentGeneral(b))
 		return a;
 
-	/* This is an outer join, or one or both inputs are outer join results. */
+	/*
+	 * This is an outer join, or one or both inputs are outer join results.
+	 * And a and b are on the same segments.
+	 */
 
 	Assert(CdbPathLocus_Degree(a) > 0 &&
+		   CdbPathLocus_NumSegments(a) == CdbPathLocus_NumSegments(b) &&
 		   CdbPathLocus_Degree(a) == CdbPathLocus_Degree(b));
 
 	if (CdbPathLocus_IsHashed(a) &&
@@ -703,7 +713,7 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 			equivpathkeylist = list_make2(apathkey, bpathkey);
 			partkey_oj = lappend(partkey_oj, equivpathkeylist);
 		}
-		CdbPathLocus_MakeHashedOJ(&ojlocus, partkey_oj);
+		CdbPathLocus_MakeHashedOJ(&ojlocus, partkey_oj, numsegments);
 		Assert(cdbpathlocus_is_valid(ojlocus));
 		return ojlocus;
 	}
@@ -727,7 +737,7 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 			equivpathkeylist = lappend(list_copy(aequivpathkeylist), bpathkey);
 			partkey_oj = lappend(partkey_oj, equivpathkeylist);
 		}
-		CdbPathLocus_MakeHashedOJ(&ojlocus, partkey_oj);
+		CdbPathLocus_MakeHashedOJ(&ojlocus, partkey_oj, numsegments);
 	}
 	else if (CdbPathLocus_IsHashedOJ(b))
 	{
@@ -742,7 +752,7 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 											  bequivpathkeylist);
 			partkey_oj = lappend(partkey_oj, equivpathkeylist);
 		}
-		CdbPathLocus_MakeHashedOJ(&ojlocus, partkey_oj);
+		CdbPathLocus_MakeHashedOJ(&ojlocus, partkey_oj, numsegments);
 	}
 	Assert(cdbpathlocus_is_valid(ojlocus));
 	return ojlocus;

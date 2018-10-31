@@ -26,27 +26,24 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $PostgreSQL: pgsql/contrib/pgcrypto/pgp-s2k.c,v 1.5 2009/06/11 14:48:52 momjian Exp $
+ * contrib/pgcrypto/pgp-s2k.c
  */
 
 #include "postgres.h"
 
 #include "px.h"
-#include "mbuf.h"
 #include "pgp.h"
 
 static int
 calc_s2k_simple(PGP_S2K *s2k, PX_MD *md, const uint8 *key,
 				unsigned key_len)
 {
-	unsigned	md_bs,
-				md_rlen;
+	unsigned	md_rlen;
 	uint8		buf[PGP_MAX_DIGEST];
 	unsigned	preload;
 	unsigned	remain;
 	uint8	   *dst = s2k->key;
 
-	md_bs = px_md_block_size(md);
 	md_rlen = px_md_result_size(md);
 
 	remain = s2k->key_len;
@@ -84,14 +81,12 @@ calc_s2k_simple(PGP_S2K *s2k, PX_MD *md, const uint8 *key,
 static int
 calc_s2k_salted(PGP_S2K *s2k, PX_MD *md, const uint8 *key, unsigned key_len)
 {
-	unsigned	md_bs,
-				md_rlen;
+	unsigned	md_rlen;
 	uint8		buf[PGP_MAX_DIGEST];
 	unsigned	preload = 0;
 	uint8	   *dst;
 	unsigned	remain;
 
-	md_bs = px_md_block_size(md);
 	md_rlen = px_md_result_size(md);
 
 	dst = s2k->key;
@@ -131,8 +126,7 @@ static int
 calc_s2k_iter_salted(PGP_S2K *s2k, PX_MD *md, const uint8 *key,
 					 unsigned key_len)
 {
-	unsigned	md_bs,
-				md_rlen;
+	unsigned	md_rlen;
 	uint8		buf[PGP_MAX_DIGEST];
 	uint8	   *dst;
 	unsigned	preload = 0;
@@ -145,7 +139,6 @@ calc_s2k_iter_salted(PGP_S2K *s2k, PX_MD *md, const uint8 *key,
 	cval = s2k->iter;
 	count = ((unsigned) 16 + (cval & 15)) << ((cval >> 4) + 6);
 
-	md_bs = px_md_block_size(md);
 	md_rlen = px_md_result_size(md);
 
 	remain = s2k->key_len;
@@ -229,13 +222,13 @@ pgp_s2k_fill(PGP_S2K *s2k, int mode, int digest_algo)
 		case 0:
 			break;
 		case 1:
-			res = px_get_pseudo_random_bytes(s2k->salt, PGP_S2K_SALT);
+			res = px_get_random_bytes(s2k->salt, PGP_S2K_SALT);
 			break;
 		case 3:
-			res = px_get_pseudo_random_bytes(s2k->salt, PGP_S2K_SALT);
+			res = px_get_random_bytes(s2k->salt, PGP_S2K_SALT);
 			if (res < 0)
 				break;
-			res = px_get_pseudo_random_bytes(&tmp, 1);
+			res = px_get_random_bytes(&tmp, 1);
 			if (res < 0)
 				break;
 			s2k->iter = decide_count(tmp);

@@ -4,10 +4,10 @@
  *	  prototypes for nodeAgg.c
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/executor/nodeAgg.h,v 1.32 2010/01/02 16:58:03 momjian Exp $
+ * src/include/executor/nodeAgg.h
  *
  *-------------------------------------------------------------------------
  */
@@ -22,7 +22,7 @@
 extern AggState *ExecInitAgg(Agg *node, EState *estate, int eflags);
 extern struct TupleTableSlot *ExecAgg(AggState *node);
 extern void ExecEndAgg(AggState *node);
-extern void ExecReScanAgg(AggState *node, ExprContext *exprCtxt);
+extern void ExecReScanAgg(AggState *node);
 
 extern Size hash_agg_entry_size(int numAggs);
 
@@ -75,7 +75,9 @@ typedef struct AggStatePerAggData
 
 	/* Oids of transfer functions */
 	Oid			transfn_oid;
-	Oid         prelimfn_oid;
+	Oid			serialfn_oid;
+	Oid			deserialfn_oid;
+	Oid         combinefn_oid;
 	Oid			finalfn_oid;	/* may be InvalidOid */
 
 	/*
@@ -84,8 +86,13 @@ typedef struct AggStatePerAggData
 	 * flags are kept here.
 	 */
 	FmgrInfo	transfn;
-	FmgrInfo    prelimfn;
+	FmgrInfo	serialfn;
+	FmgrInfo	deserialfn;
+	FmgrInfo    combinefn;
 	FmgrInfo	finalfn;
+
+	/* Input collation derived for aggregate */
+	Oid			aggCollation;
 
 	/* number of sorting columns */
 	int			numSortCols;
@@ -97,6 +104,7 @@ typedef struct AggStatePerAggData
 	/* deconstructed sorting information (arrays of length numSortCols) */
 	AttrNumber *sortColIdx;
 	Oid		   *sortOperators;
+	Oid		   *sortCollations;
 	bool	   *sortNullsFirst;
 
 	/*
@@ -127,7 +135,7 @@ typedef struct AggStatePerAggData
 				transtypeByVal;
 
 	/*
-	 * Stuff for evaluation of inputs.	We used to just use ExecEvalExpr, but
+	 * Stuff for evaluation of inputs.  We used to just use ExecEvalExpr, but
 	 * with the addition of ORDER BY we now need at least a slot for passing
 	 * data to the sort object, which requires a tupledesc, so we might as
 	 * well go whole hog and use ExecProject too.
@@ -155,6 +163,14 @@ typedef struct AggStatePerAggData
 	 */
 
 	void *sortstate;	/* sort object, if DISTINCT or ORDER BY */
+
+	/*
+	 * This field is a pre-initialized FunctionCallInfo struct used for
+	 * calling this aggregate's transfn.  We save a few cycles per row by not
+	 * re-initializing the unchanging fields; which isn't much, but it seems
+	 * worth the extra space consumption.
+	 */
+	FunctionCallInfoData transfn_fcinfo;
 } AggStatePerAggData;
 
 /*
@@ -182,7 +198,7 @@ typedef struct AggStatePerGroupData
 
 	/*
 	 * Note: noTransValue initially has the same value as transValueIsNull,
-	 * and if true both are cleared to false at the same time.	They are not
+	 * and if true both are cleared to false at the same time.  They are not
 	 * the same though: if transfn later returns a NULL, we want to keep that
 	 * NULL and not auto-replace it with a later input value. Only the first
 	 * non-NULL input will be auto-substituted.

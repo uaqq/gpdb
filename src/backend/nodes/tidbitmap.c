@@ -20,10 +20,10 @@
  * point, but for now that seems useless complexity.
  *
  *
- * Copyright (c) 2003-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2003-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/tidbitmap.c,v 1.20 2010/01/02 16:57:46 momjian Exp $
+ *	  src/backend/nodes/tidbitmap.c
  *
  *-------------------------------------------------------------------------
  */
@@ -32,11 +32,11 @@
 #include <limits.h>
 
 #include "access/htup.h"
+#include "access/htup_details.h"
 #include "access/bitmap.h"		/* XXX: remove once pull_stream is generic */
 #include "executor/instrument.h"	/* Instrumentation */
 #include "nodes/bitmapset.h"
 #include "nodes/tidbitmap.h"
-#include "storage/bufpage.h"
 #include "utils/hsearch.h"
 
 #define WORDNUM(x)	((x) / TBM_BITS_PER_BITMAPWORD)
@@ -91,7 +91,7 @@ struct TIDBitmap
 
 /*
  * When iterating over a bitmap in sorted order, a TBMIterator is used to
- * track our progress.	There can be several iterators scanning the same
+ * track our progress.  There can be several iterators scanning the same
  * bitmap concurrently.  Note that the bitmap becomes read-only as soon as
  * any iterator is created.
  */
@@ -388,7 +388,7 @@ tbm_union_page(TIDBitmap *a, const PagetableEntry *bpage)
 	if (bpage->ischunk)
 	{
 		/* Scan b's chunk, mark each indicated page lossy in a */
-		for (wordnum = 0; wordnum < WORDS_PER_PAGE; wordnum++)
+		for (wordnum = 0; wordnum < WORDS_PER_CHUNK; wordnum++)
 		{
 			tbm_bitmapword w = bpage->words[wordnum];
 
@@ -502,7 +502,7 @@ tbm_intersect_page(TIDBitmap *a, PagetableEntry *apage, const TIDBitmap *b)
 		/* Scan each bit in chunk, try to clear */
 		bool		candelete = true;
 
-		for (wordnum = 0; wordnum < WORDS_PER_PAGE; wordnum++)
+		for (wordnum = 0; wordnum < WORDS_PER_CHUNK; wordnum++)
 		{
 			tbm_bitmapword w = apage->words[wordnum];
 
@@ -805,6 +805,7 @@ tbm_iterate_page(PagetableEntry *page, TBMIterateResult *output)
 
 	output->blockno = page->blockno;
 	output->ntuples = ntuples;
+	output->recheck = page->recheck;
 
 	return true;
 }
@@ -1010,7 +1011,7 @@ tbm_find_pageentry(const TIDBitmap *tbm, BlockNumber pageno)
  *
  * If new, the entry is marked as an exact (non-chunk) entry.
  *
- * This may cause the table to exceed the desired memory size.	It is
+ * This may cause the table to exceed the desired memory size.  It is
  * up to the caller to call tbm_lossify() at the next safe point if so.
  */
 static PagetableEntry *
@@ -1090,7 +1091,7 @@ tbm_page_is_lossy(const TIDBitmap *tbm, BlockNumber pageno)
 /*
  * tbm_mark_page_lossy - mark the page number as lossily stored
  *
- * This may cause the table to exceed the desired memory size.	It is
+ * This may cause the table to exceed the desired memory size.  It is
  * up to the caller to call tbm_lossify() at the next safe point if so.
  */
 static void
@@ -1111,7 +1112,7 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 	chunk_pageno = pageno - bitno;
 
 	/*
-	 * Remove any extant non-lossy entry for the page.	If the page is its own
+	 * Remove any extant non-lossy entry for the page.  If the page is its own
 	 * chunk header, however, we skip this and handle the case below.
 	 */
 	if (bitno != 0)
@@ -1198,7 +1199,7 @@ tbm_lossify(TIDBitmap *tbm)
 		/* This does the dirty work ... */
 		tbm_mark_page_lossy(tbm, page->blockno);
 
-		if (tbm->nentries <= tbm->maxentries)
+		if (tbm->nentries <= tbm->maxentries / 2)
 		{
 			/* we have done enough */
 			hash_seq_term(&status);
@@ -1213,14 +1214,14 @@ tbm_lossify(TIDBitmap *tbm)
 	}
 
 	/*
-	 * With a big bitmap and small work_mem, it's possible that we cannot
-	 * get under maxentries.  Again, if that happens, we'd end up uselessly
+	 * With a big bitmap and small work_mem, it's possible that we cannot get
+	 * under maxentries.  Again, if that happens, we'd end up uselessly
 	 * calling tbm_lossify over and over.  To prevent this from becoming a
 	 * performance sink, force maxentries up to at least double the current
 	 * number of entries.  (In essence, we're admitting inability to fit
-	 * within work_mem when we do this.)  Note that this test will not fire
-	 * if we broke out of the loop early; and if we didn't, the current
-	 * number of entries is simply not reducible any further.
+	 * within work_mem when we do this.)  Note that this test will not fire if
+	 * we broke out of the loop early; and if we didn't, the current number of
+	 * entries is simply not reducible any further.
 	 */
 	if (tbm->nentries > tbm->maxentries / 2)
 		tbm->maxentries = Min(tbm->nentries, (INT_MAX - 1) / 2) * 2;
@@ -1232,8 +1233,8 @@ tbm_lossify(TIDBitmap *tbm)
 static int
 tbm_comparator(const void *left, const void *right)
 {
-	BlockNumber l = (*((const PagetableEntry **) left))->blockno;
-	BlockNumber r = (*((const PagetableEntry **) right))->blockno;
+	BlockNumber l = (*((PagetableEntry *const *) left))->blockno;
+	BlockNumber r = (*((PagetableEntry *const *) right))->blockno;
 
 	if (l < r)
 		return -1;

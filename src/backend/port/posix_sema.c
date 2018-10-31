@@ -7,11 +7,11 @@
  * sem_init).  We can cope with the kind made with sem_open, however.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/port/posix_sema.c,v 1.23 2010/01/02 16:57:50 momjian Exp $
+ *	  src/backend/port/posix_sema.c
  *
  *-------------------------------------------------------------------------
  */
@@ -138,7 +138,7 @@ PosixSemaphoreKill(sem_t * sem)
  *
  * This is called during postmaster start or shared memory reinitialization.
  * It should do whatever is needed to be able to support up to maxSemas
- * subsequent PGSemaphoreCreate calls.	Also, if any system resources
+ * subsequent PGSemaphoreCreate calls.  Also, if any system resources
  * are acquired here or in PGSemaphoreCreate, register an on_shmem_exit
  * callback to release them.
  *

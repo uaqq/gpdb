@@ -15,32 +15,40 @@ create table T_pkey1 (
     key2	char(20),
     txt		char(40)
 );
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'key1' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 create table T_pkey2 (
     key1	int4,
     key2	char(20),
     txt		char(40)
 );
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'key1' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 create table T_dta1 (
     tkey	char(10),
     ref1	int4,
     ref2	char(20)
 );
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'tkey' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 create table T_dta2 (
     tkey	char(10),
     ref1	int4,
     ref2	char(20)
 );
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'tkey' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 --
--- Function to check key existance in T_pkey1
+-- Function to check key existence in T_pkey1
 --
 create function check_pkey1_exists(int4, bpchar) returns bool as E'
     if {![info exists GD]} {
         set GD(plan) [spi_prepare				\\
 	    "select 1 from T_pkey1				\\
 	        where key1 = \\$1 and key2 = \\$2"		\\
-    	    {int4 bpchar}]
+	    {int4 bpchar}]
     }
-    
+
     set n [spi_execp -count 1 $GD(plan) [list $1 $2]]
 
     if {$n > 0} {
@@ -51,17 +59,20 @@ create function check_pkey1_exists(int4, bpchar) returns bool as E'
 -- dump trigger data
 CREATE TABLE trigger_test
     (i int, v text );
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+CREATE VIEW trigger_test_view AS SELECT * FROM trigger_test;
 CREATE FUNCTION trigger_data() returns trigger language pltcl as $_$
 
 	if { [info exists TG_relid] } {
-    	set TG_relid "bogus:12345"
-   	}
+	set TG_relid "bogus:12345"
+	}
 
 	set dnames [info locals {[a-zA-Z]*} ]
 
 	foreach key [lsort $dnames] {
-    
-		if { [array exists $key] } { 
+
+		if { [array exists $key] } {
 			set str "{"
 			foreach akey [lsort [ array names $key ] ] {
 				if {[string length $str] > 1} { set str "$str, " }
@@ -71,20 +82,24 @@ CREATE FUNCTION trigger_data() returns trigger language pltcl as $_$
 				set str "$str$akey: $val"
 			}
 			set str "$str}"
-    		elog NOTICE "$key: $str"
+		elog NOTICE "$key: $str"
 		} else {
 			set val [eval list "\$$key" ]
-    		elog NOTICE "$key: $val"
+		elog NOTICE "$key: $val"
 		}
 	}
 
 
-	return OK  
+	return OK
 
 $_$;
-CREATE TRIGGER show_trigger_data_trig 
+CREATE TRIGGER show_trigger_data_trig
 BEFORE INSERT OR UPDATE OR DELETE ON trigger_test
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+CREATE TRIGGER show_trigger_data_view_trig
+INSTEAD OF INSERT OR UPDATE OR DELETE ON trigger_test_view
+FOR EACH ROW EXECUTE PROCEDURE trigger_data(24,'skidoo view');
+ERROR:  INSTEAD OF triggers are not supported in Greenplum
 --
 -- Trigger function on every change to T_pkey1
 --
@@ -515,3 +530,26 @@ select tcl_date_week(2001,10,24);
  42
 (1 row)
 
+-- test pltcl event triggers
+create or replace function tclsnitch() returns event_trigger language pltcl as $$
+  elog NOTICE "tclsnitch: $TG_event $TG_tag"
+$$;
+create event trigger tcl_a_snitch on ddl_command_start execute procedure tclsnitch();
+create event trigger tcl_b_snitch on ddl_command_end execute procedure tclsnitch();
+create or replace function foobar() returns int language sql as $$select 1;$$;
+NOTICE:  tclsnitch: ddl_command_start CREATE FUNCTION
+NOTICE:  tclsnitch: ddl_command_end CREATE FUNCTION
+alter function foobar() cost 77;
+NOTICE:  tclsnitch: ddl_command_start ALTER FUNCTION
+NOTICE:  tclsnitch: ddl_command_end ALTER FUNCTION
+drop function foobar();
+NOTICE:  tclsnitch: ddl_command_start DROP FUNCTION
+NOTICE:  tclsnitch: ddl_command_end DROP FUNCTION
+create table foo();
+NOTICE:  tclsnitch: ddl_command_start CREATE TABLE
+NOTICE:  tclsnitch: ddl_command_end CREATE TABLE
+drop table foo;
+NOTICE:  tclsnitch: ddl_command_start DROP TABLE
+NOTICE:  tclsnitch: ddl_command_end DROP TABLE
+drop event trigger tcl_a_snitch;
+drop event trigger tcl_b_snitch;

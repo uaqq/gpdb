@@ -6,6 +6,10 @@ set gp_default_storage_options='orientation=@orientation@';
 -- The queries in this test are not interesting from the point of view of
 -- testing the optimizer, so just disable ORCA to work around that.
 set optimizer=off;
+-- With gp_select_invisible set true, the snapshot will be SnapshotAnyData.
+-- But in one case of IndexOnlyScan, only MVCC snapshots are supported.
+-- So we disable IndexOnlyScan here, as what we want to test is gp_select_invisible.
+set enable_indexonlyscan=off;
 -- @Description Tests basic delete feature with two AO blocks
 -- 
 DROP TABLE IF EXISTS foo;
@@ -580,7 +584,12 @@ create table bar2 ( a int, b int) with (appendonly = true);
 insert into bar2 select x , x from generate_series(1,10) as x;
 SET gp_select_invisible=false;
 set gp_select_invisible = true;
-select * from bar2 order by 1;
+-- The test framework assumes that the output of `select ... order by`
+-- is in order. It is true but not enought because the order of the
+-- tuples with the same order-by key might be different in other cols.
+-- To make these kind of test cases not flaky, we should order the
+-- results in all the cols. 
+select * from (select * from bar2 order by 1) r order by 1, 2;
  a  | b  
 ----+----
   1 |  1
@@ -596,15 +605,15 @@ select * from bar2 order by 1;
 (10 rows)
 
 update bar2 set b = b+200 where a = 5;
-select * from bar2 order by 1;
+select * from (select * from bar2 order by 1) r order by 1, 2;
  a  |  b  
 ----+-----
   1 |   1
   2 |   2
   3 |   3
   4 |   4
-  5 | 205
   5 |   5
+  5 | 205
   6 |   6
   7 |   7
   8 |   8
@@ -620,8 +629,8 @@ select * from bar2 order by 1;
   2 |   2
   3 |   3
   4 |   4
-  5 | 205
   5 |   5
+  5 | 205
   6 |   6
   7 |   7
   8 |   8
@@ -1079,7 +1088,7 @@ DELETE FROM foo USING BAR WHERE foo.b = bar.b AND foo.a = bar.a AND
 -- This query should return the same output irrespective of GPDB
 -- configuration (1 segdb, 2 or more segdbs).
 SELECT distinct(a) FROM foo
-WHERE gp_segment_id = 0 AND foo.a IN (12, 80001, 1001)
+WHERE gp_segment_id = 2 AND foo.a IN (12, 80001, 1001)
 ORDER BY a;
    a   
 -------
@@ -1111,14 +1120,14 @@ INSERT INTO bar SELECT i as a, 2 as b, '' as c  FROM generate_series(1, 100000) 
 ANALYZE foo;
 ANALYZE bar;
 -- MPP-23546.  The following update statements ensure that
--- appendonly_udpate() sees tuples out of order with respect to their
+-- appendonly_update() sees tuples out of order with respect to their
 -- row numbers / tuple ids and also that the tuples seen by update
 -- span more than one visimap entry.
 set enable_nestloop=false;
 UPDATE foo SET a = 0 FROM bar WHERE foo.b = bar.b AND foo.a = bar.a AND
 (bar.a = 10 OR bar.a = 40000 OR bar.a = 20000);
 -- Ensure that tuples to be updated are all from the same GPDB segment.
-SELECT distinct(a) FROM foo WHERE gp_segment_id = 0 AND
+SELECT distinct(a) FROM foo WHERE gp_segment_id = 2 AND
 foo.a IN (12, 80001, 1001) ORDER BY a;
    a   
 -------
@@ -1137,7 +1146,6 @@ DROP TABLE IF EXISTS uao_orders_into;
 DROP TABLE IF EXISTS new_uao_orders_into;
 CREATE TABLE uao_orders_into(order_id serial , customer_id integer,
       order_datetime timestamp, order_total numeric(10,2)) with (appendonly=true);
-NOTICE:  CREATE TABLE will create implicit sequence "uao_orders_into_order_id_seq" for serial column "uao_orders_into.order_id"
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column(s) named 'order_id' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 INSERT INTO uao_orders_into(customer_id, order_datetime, order_total)

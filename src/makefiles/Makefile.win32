@@ -1,4 +1,4 @@
-# $PostgreSQL: pgsql/src/makefiles/Makefile.win32,v 1.17 2010/07/05 23:15:56 tgl Exp $
+# src/makefiles/Makefile.win32
 
 # Use replacement include files for those missing on Win32
 override CPPFLAGS+="-I$(top_srcdir)/src/include/port/win32"
@@ -21,6 +21,10 @@ override CPPFLAGS+= -DBUILDING_DLL
 endif
 endif
 endif
+endif
+
+ifneq (,$(findstring src/common,$(subdir)))
+override CPPFLAGS+= -DBUILDING_DLL
 endif
 
 ifneq (,$(findstring timezone,$(subdir)))
@@ -68,6 +72,4 @@ win32ver.o: win32ver.rc
 
 # Rule for building a shared library from a single .o file
 %.dll: %.o
-	$(DLLTOOL) --export-all --output-def $*.def $<
-	$(DLLWRAP) -o $@ --def $*.def $< $(LDFLAGS) $(LDFLAGS_SL) $(BE_DLLLIBS)
-	rm -f $*.def
+	$(CC) $(CFLAGS) -shared -o $@ $< -Wl,--export-all-symbols $(LDFLAGS) $(LDFLAGS_SL) $(BE_DLLLIBS)

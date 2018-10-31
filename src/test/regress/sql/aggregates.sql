@@ -43,6 +43,18 @@ SELECT var_samp(b::numeric) FROM aggtest;
 SELECT var_pop(1.0), var_samp(2.0);
 SELECT stddev_pop(3.0::numeric), stddev_samp(4.0::numeric);
 
+-- verify correct results for null and NaN inputs
+select sum(null::int4) from generate_series(1,3);
+select sum(null::int8) from generate_series(1,3);
+select sum(null::numeric) from generate_series(1,3);
+select sum(null::float8) from generate_series(1,3);
+select avg(null::int4) from generate_series(1,3);
+select avg(null::int8) from generate_series(1,3);
+select avg(null::numeric) from generate_series(1,3);
+select avg(null::float8) from generate_series(1,3);
+select sum('NaN'::numeric) from generate_series(1,3);
+select avg('NaN'::numeric) from generate_series(1,3);
+
 -- SQL2003 binary aggregates
 SELECT regr_count(b, a) FROM aggtest;
 SELECT regr_sxx(b, a) FROM aggtest;
@@ -103,7 +115,7 @@ CREATE TEMPORARY TABLE bitwise_test(
 );
 
 -- empty case
-SELECT 
+SELECT
   BIT_AND(i2) AS "?",
   BIT_OR(i4)  AS "?"
 FROM bitwise_test;
@@ -163,7 +175,7 @@ SELECT
   boolor_statefunc(FALSE, TRUE) AS "t",
   NOT boolor_statefunc(FALSE, FALSE) AS "t";
 
-CREATE TEMPORARY TABLE bool_test(  
+CREATE TEMPORARY TABLE bool_test(
   b1 BOOL,
   b2 BOOL,
   b3 BOOL,
@@ -209,33 +221,91 @@ SELECT
 FROM bool_test;
 
 --
--- Test several cases that should be optimized into indexscans instead of
--- the generic aggregate implementation.  We can't actually verify that they
--- are done as indexscans, but we can check that the results are correct.
+-- Test cases that should be optimized into indexscans instead of
+-- the generic aggregate implementation.
 --
 
 -- Basic cases
+explain (costs off)
+  select min(unique1) from tenk1;
+select min(unique1) from tenk1;
+explain (costs off)
+  select max(unique1) from tenk1;
 select max(unique1) from tenk1;
+explain (costs off)
+  select max(unique1) from tenk1 where unique1 < 42;
 select max(unique1) from tenk1 where unique1 < 42;
+explain (costs off)
+  select max(unique1) from tenk1 where unique1 > 42;
 select max(unique1) from tenk1 where unique1 > 42;
+set enable_seqscan=off;
+set enable_bitmapscan=off;
+explain (costs off)
+  select max(unique1) from tenk1 where unique1 > 42000;
 select max(unique1) from tenk1 where unique1 > 42000;
+reset enable_seqscan;
 
 -- multi-column index (uses tenk1_thous_tenthous)
+explain (costs off)
+  select max(tenthous) from tenk1 where thousand = 33;
 select max(tenthous) from tenk1 where thousand = 33;
+explain (costs off)
+  select min(tenthous) from tenk1 where thousand = 33;
 select min(tenthous) from tenk1 where thousand = 33;
 
 -- check parameter propagation into an indexscan subquery
+-- In GPDB, this cannot use the MIN/MAX optimization, because the subplan
+-- parameter cannot be pushed through a Motion node.
+explain (costs off)
+  select f1, (select min(unique1) from tenk1 where unique1 > f1) AS gt
+    from int4_tbl;
 select f1, (select min(unique1) from tenk1 where unique1 > f1) AS gt
-from int4_tbl;
+  from int4_tbl;
 
 -- check some cases that were handled incorrectly in 8.3.0
+explain (costs off)
+  select distinct max(unique2) from tenk1;
 select distinct max(unique2) from tenk1;
+explain (costs off)
+  select max(unique2) from tenk1 order by 1;
 select max(unique2) from tenk1 order by 1;
+explain (costs off)
+  select max(unique2) from tenk1 order by max(unique2);
 select max(unique2) from tenk1 order by max(unique2);
+explain (costs off)
+  select max(unique2) from tenk1 order by max(unique2)+1;
 select max(unique2) from tenk1 order by max(unique2)+1;
-
--- MPP: This works in Postgres
+explain (costs off)
+  select max(unique2), generate_series(1,3) as g from tenk1 order by g desc;
 select max(unique2), generate_series(1,3) as g from tenk1 order by g desc;
+
+-- try it on an inheritance tree
+create table minmaxtest(f1 int);
+create table minmaxtest1() inherits (minmaxtest);
+create table minmaxtest2() inherits (minmaxtest);
+create table minmaxtest3() inherits (minmaxtest);
+create index minmaxtesti on minmaxtest(f1);
+create index minmaxtest1i on minmaxtest1(f1);
+create index minmaxtest2i on minmaxtest2(f1 desc);
+create index minmaxtest3i on minmaxtest3(f1) where f1 is not null;
+
+insert into minmaxtest values(11), (12);
+insert into minmaxtest1 values(13), (14);
+insert into minmaxtest2 values(15), (16);
+insert into minmaxtest3 values(17), (18);
+
+set enable_seqscan=off;
+explain (costs off)
+  select min(f1), max(f1) from minmaxtest;
+select min(f1), max(f1) from minmaxtest;
+reset enable_seqscan;
+
+-- DISTINCT doesn't do anything useful here, but it shouldn't fail
+explain (costs off)
+  select distinct min(f1), max(f1) from minmaxtest;
+select distinct min(f1), max(f1) from minmaxtest;
+
+drop table minmaxtest cascade;
 
 -- check for correct detection of nested-aggregate errors
 select max(min(unique1)) from tenk1;
@@ -377,11 +447,16 @@ select aggfns(distinct a,a,c order by a,b)
   from (values (1,1,'foo')) v(a,b,c), generate_series(1,2) i;
 
 -- string_agg tests
-select string_agg(a) from (values('aaaa'),('bbbb'),('cccc')) g(a);
 select string_agg(a,',') from (values('aaaa'),('bbbb'),('cccc')) g(a);
 select string_agg(a,',') from (values('aaaa'),(null),('bbbb'),('cccc')) g(a);
-select string_agg(a,',') from (values(null),(null),('bbbb'),('cccc')) g(a);
+select string_agg(a,'AB') from (values(null),(null),('bbbb'),('cccc')) g(a);
 select string_agg(a,',') from (values(null),(null)) g(a);
+
+-- check some implicit casting cases, as per bug #5564
+select string_agg(distinct f1, ',' order by f1) from varchar_tbl;  -- ok
+select string_agg(distinct f1::text, ',' order by f1) from varchar_tbl;  -- not ok
+select string_agg(distinct f1, ',' order by f1::text) from varchar_tbl;  -- not ok
+select string_agg(distinct f1::text, ',' order by f1::text) from varchar_tbl;  -- ok
 
 -- FILTER tests
 
@@ -394,8 +469,8 @@ select ten, sum(distinct four) filter (where four > 10) from onek a
 group by ten
 having exists (select 1 from onek b where sum(distinct a.four) = b.four);
 
---select max(foo COLLATE "C") filter (where (bar collate "POSIX") > '0')
---from (values ('a', 'b')) AS v(foo,bar);
+select max(foo COLLATE "C") filter (where (bar collate "POSIX") > '0')
+from (values ('a', 'b')) AS v(foo,bar);
 
 -- outer reference in FILTER (PostgreSQL extension)
 select (select count(*)
@@ -471,8 +546,8 @@ select percentile_disc(array[0.25,0.5,0.75]) within group (order by x)
 from unnest('{fred,jim,fred,jack,jill,fred,jill,jim,jim,sheila,jim,sheila}'::text[]) u(x);
 
 -- check collation propagates up in suitable cases:
---select pg_collation_for(percentile_disc(1) within group (order by x collate "POSIX"))
---  from (values ('fred'),('jim')) v(x);
+select pg_collation_for(percentile_disc(1) within group (order by x collate "POSIX"))
+  from (values ('fred'),('jim')) v(x);
 
 -- ordered-set aggs created with CREATE AGGREGATE
 select test_rank(3) within group (order by x)
@@ -494,8 +569,8 @@ select rank(sum(x)) within group (order by x) from generate_series(1,5) x;
 select rank(3) within group (order by x) from (values ('fred'),('jim')) v(x);
 select rank(3) within group (order by stringu1,stringu2) from tenk1;
 select rank('fred') within group (order by x) from generate_series(1,5) x;
---select rank('adam'::text collate "C") within group (order by x collate "POSIX")
---  from (values ('fred'),('jim')) v(x);
+select rank('adam'::text collate "C") within group (order by x collate "POSIX")
+  from (values ('fred'),('jim')) v(x);
 -- hypothetical-set type unification successes:
 select rank('adam'::varchar) within group (order by x) from (values ('fred'),('jim')) v(x);
 select rank('3') within group (order by x) from generate_series(1,5) x;
@@ -525,6 +600,168 @@ SET optimizer_trace_fallback to on;
 select * from aggordview1 order by ten;
 drop view aggordview1;
 
+
+-- variadic aggregates
+select least_agg(q1,q2) from int8_tbl;
+select least_agg(variadic array[q1,q2]) from int8_tbl;
+
+-- string_agg bytea tests
+create table bytea_test_table(gpDistKey int, v bytea);
+
+select string_agg(v, '') from bytea_test_table;
+
+insert into bytea_test_table(v) values(decode('ff','hex'));
+
+select string_agg(v, '') from bytea_test_table;
+
+insert into bytea_test_table(v) values(decode('aa','hex'));
+
+select string_agg(v, '') from bytea_test_table;
+select string_agg(v, NULL) from bytea_test_table;
+select string_agg(v, decode('ee', 'hex')) from bytea_test_table;
+
+drop table bytea_test_table;
+
+-- FILTER tests
+
+select min(unique1) filter (where unique1 > 100) from tenk1;
+
+select ten, sum(distinct four) filter (where four::text ~ '123') from onek a
+group by ten;
+
+select ten, sum(distinct four) filter (where four > 10) from onek a
+group by ten
+having exists (select 1 from onek b where sum(distinct a.four) = b.four);
+
+select max(foo COLLATE "C") filter (where (bar collate "POSIX") > '0')
+from (values ('a', 'b')) AS v(foo,bar);
+
+-- outer reference in FILTER (PostgreSQL extension)
+select (select count(*)
+        from (values (1)) t0(inner_c))
+from (values (2),(3)) t1(outer_c); -- inner query is aggregation query
+select (select count(*) filter (where outer_c <> 0)
+        from (values (1)) t0(inner_c))
+from (values (2),(3)) t1(outer_c); -- outer query is aggregation query
+select (select count(inner_c) filter (where outer_c <> 0)
+        from (values (1)) t0(inner_c))
+from (values (2),(3)) t1(outer_c); -- inner query is aggregation query
+select
+  (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1))
+     filter (where o.unique1 < 10))
+from tenk1 o;					-- outer query is aggregation query
+
+-- subquery in FILTER clause (PostgreSQL extension)
+select sum(unique1) FILTER (WHERE
+  unique1 IN (SELECT unique1 FROM onek where unique1 < 100)) FROM tenk1;
+
+-- exercise lots of aggregate parts with FILTER
+select aggfns(distinct a,b,c order by a,c using ~<~,b) filter (where a > 1)
+    from (values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz')) v(a,b,c),
+    generate_series(1,2) i;
+
+-- ordered-set aggregates
+
+select p, percentile_cont(p) within group (order by x::float8)
+from generate_series(1,5) x,
+     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+group by p order by p;
+
+select p, percentile_cont(p order by p) within group (order by x)  -- error
+from generate_series(1,5) x,
+     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+group by p order by p;
+
+select p, sum() within group (order by x::float8)  -- error
+from generate_series(1,5) x,
+     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+group by p order by p;
+
+select p, percentile_cont(p,p)  -- error
+from generate_series(1,5) x,
+     (values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1)) v(p)
+group by p order by p;
+
+select percentile_cont(0.5) within group (order by b) from aggtest;
+select percentile_cont(0.5) within group (order by b), sum(b) from aggtest;
+select percentile_cont(0.5) within group (order by thousand) from tenk1;
+select percentile_disc(0.5) within group (order by thousand) from tenk1;
+select rank(3) within group (order by x)
+from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+select cume_dist(3) within group (order by x)
+from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+select percent_rank(3) within group (order by x)
+from (values (1),(1),(2),(2),(3),(3),(4),(5)) v(x);
+select dense_rank(3) within group (order by x)
+from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+
+select percentile_disc(array[0,0.1,0.25,0.5,0.75,0.9,1]) within group (order by thousand)
+from tenk1;
+select percentile_cont(array[0,0.25,0.5,0.75,1]) within group (order by thousand)
+from tenk1;
+select percentile_disc(array[[null,1,0.5],[0.75,0.25,null]]) within group (order by thousand)
+from tenk1;
+select percentile_cont(array[0,1,0.25,0.75,0.5,1]) within group (order by x)
+from generate_series(1,6) x;
+
+select ten, mode() within group (order by string4) from tenk1 group by ten;
+
+select percentile_disc(array[0.25,0.5,0.75]) within group (order by x)
+from unnest('{fred,jim,fred,jack,jill,fred,jill,jim,jim,sheila,jim,sheila}'::text[]) u(x);
+
+-- check collation propagates up in suitable cases:
+select pg_collation_for(percentile_disc(1) within group (order by x collate "POSIX"))
+  from (values ('fred'),('jim')) v(x);
+
+-- ordered-set aggs created with CREATE AGGREGATE
+select test_rank(3) within group (order by x)
+from (values (1),(1),(2),(2),(3),(3),(4)) v(x);
+select test_percentile_disc(0.5) within group (order by thousand) from tenk1;
+
+-- ordered-set aggs can't use ungrouped vars in direct args:
+select rank(x) within group (order by x) from generate_series(1,5) x;
+
+-- outer-level agg can't use a grouped arg of a lower level, either:
+select array(select percentile_disc(a) within group (order by x)
+               from (values (0.3),(0.7)) v(a) group by a)
+  from generate_series(1,5) g(x);
+
+-- agg in the direct args is a grouping violation, too:
+select rank(sum(x)) within group (order by x) from generate_series(1,5) x;
+
+-- hypothetical-set type unification and argument-count failures:
+select rank(3) within group (order by x) from (values ('fred'),('jim')) v(x);
+select rank(3) within group (order by stringu1,stringu2) from tenk1;
+select rank('fred') within group (order by x) from generate_series(1,5) x;
+select rank('adam'::text collate "C") within group (order by x collate "POSIX")
+  from (values ('fred'),('jim')) v(x);
+-- hypothetical-set type unification successes:
+select rank('adam'::varchar) within group (order by x) from (values ('fred'),('jim')) v(x);
+select rank('3') within group (order by x) from generate_series(1,5) x;
+
+-- divide by zero check
+select percent_rank(0) within group (order by x) from generate_series(1,0) x;
+
+-- deparse and multiple features:
+create view aggordview1 as
+select ten,
+       percentile_disc(0.5) within group (order by thousand) as p50,
+       percentile_disc(0.5) within group (order by thousand) filter (where hundred=1) as px,
+       rank(5,'AZZZZ',50) within group (order by hundred, string4 desc, hundred)
+  from tenk1
+ group by ten order by ten;
+
+-- start_ignore
+-- pg_get_viewdef() runs some internal queries on catalogs, and we don't want
+-- fallback notices about those.
+reset optimizer_trace_fallback;
+-- end_ignore
+select pg_get_viewdef('aggordview1');
+-- start_ignore
+SET optimizer_trace_fallback to on;
+-- end_ignore
+select * from aggordview1 order by ten;
+drop view aggordview1;
 
 -- variadic aggregates
 select least_agg(q1,q2) from int8_tbl;

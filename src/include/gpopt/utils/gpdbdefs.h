@@ -69,7 +69,7 @@ extern "C" {
 #include "funcapi.h"
 
 extern
-Query *preprocess_query_optimizer(Query *pquery, ParamListInfo boundParams);
+Query *preprocess_query_optimizer(Query *query, ParamListInfo boundParams);
 
 extern
 List *pg_parse_and_rewrite(const char *query_string, Oid *paramTypes, int iNumParams);
@@ -100,12 +100,6 @@ void ExecutorRun(QueryDesc *pqueryDesc, ScanDirection direction, long lCount);
 
 extern
 void ExecutorEnd(QueryDesc *pqueryDesc);
-
-extern
-void ExecCheckRTPerms(List *rangeTable);
-
-extern
-void ExecCheckRTEPerms(RangeTblEntry *rte);
 
 } // end extern C
 

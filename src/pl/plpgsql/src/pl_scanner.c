@@ -4,12 +4,12 @@
  *	  lexical scanning for PL/pgSQL
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/pl/plpgsql/src/pl_scanner.c,v 1.5 2010/02/26 02:01:35 momjian Exp $
+ *	  src/pl/plpgsql/src/pl_scanner.c
  *
  *-------------------------------------------------------------------------
  */
@@ -40,11 +40,11 @@ IdentifierLookup plpgsql_IdentifierLookup = IDENTIFIER_LOOKUP_NORMAL;
  *
  * In certain contexts it is desirable to prefer recognizing an unreserved
  * keyword over recognizing a variable name.  Those cases are handled in
- * gram.y using tok_is_keyword().
+ * pl_gram.y using tok_is_keyword().
  *
  * For the most part, the reserved keywords are those that start a PL/pgSQL
  * statement (and so would conflict with an assignment to a variable of the
- * same name).	We also don't sweat it much about reserving keywords that
+ * same name).  We also don't sweat it much about reserving keywords that
  * are reserved in the core grammar.  Try to avoid reserving other words.
  */
 
@@ -55,7 +55,7 @@ IdentifierLookup plpgsql_IdentifierLookup = IDENTIFIER_LOOKUP_NORMAL;
  *		 search is used to locate entries.
  *
  * Be careful not to put the same word in both lists.  Also be sure that
- * gram.y's unreserved_keyword production agrees with the second list.
+ * pl_gram.y's unreserved_keyword production agrees with the second list.
  */
 
 static const ScanKeyword reserved_keywords[] = {
@@ -64,6 +64,7 @@ static const ScanKeyword reserved_keywords[] = {
 	PG_KEYWORD("by", K_BY, RESERVED_KEYWORD)
 	PG_KEYWORD("case", K_CASE, RESERVED_KEYWORD)
 	PG_KEYWORD("close", K_CLOSE, RESERVED_KEYWORD)
+	PG_KEYWORD("collate", K_COLLATE, RESERVED_KEYWORD)
 	PG_KEYWORD("continue", K_CONTINUE, RESERVED_KEYWORD)
 	PG_KEYWORD("declare", K_DECLARE, RESERVED_KEYWORD)
 	PG_KEYWORD("default", K_DEFAULT, RESERVED_KEYWORD)
@@ -77,6 +78,7 @@ static const ScanKeyword reserved_keywords[] = {
 	PG_KEYWORD("exit", K_EXIT, RESERVED_KEYWORD)
 	PG_KEYWORD("fetch", K_FETCH, RESERVED_KEYWORD)
 	PG_KEYWORD("for", K_FOR, RESERVED_KEYWORD)
+	PG_KEYWORD("foreach", K_FOREACH, RESERVED_KEYWORD)
 	PG_KEYWORD("from", K_FROM, RESERVED_KEYWORD)
 	PG_KEYWORD("get", K_GET, RESERVED_KEYWORD)
 	PG_KEYWORD("if", K_IF, RESERVED_KEYWORD)
@@ -105,9 +107,16 @@ static const int num_reserved_keywords = lengthof(reserved_keywords);
 static const ScanKeyword unreserved_keywords[] = {
 	PG_KEYWORD("absolute", K_ABSOLUTE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("alias", K_ALIAS, UNRESERVED_KEYWORD)
+	PG_KEYWORD("array", K_ARRAY, UNRESERVED_KEYWORD)
 	PG_KEYWORD("backward", K_BACKWARD, UNRESERVED_KEYWORD)
+	PG_KEYWORD("column", K_COLUMN, UNRESERVED_KEYWORD)
+	PG_KEYWORD("column_name", K_COLUMN_NAME, UNRESERVED_KEYWORD)
 	PG_KEYWORD("constant", K_CONSTANT, UNRESERVED_KEYWORD)
+	PG_KEYWORD("constraint", K_CONSTRAINT, UNRESERVED_KEYWORD)
+	PG_KEYWORD("constraint_name", K_CONSTRAINT_NAME, UNRESERVED_KEYWORD)
+	PG_KEYWORD("current", K_CURRENT, UNRESERVED_KEYWORD)
 	PG_KEYWORD("cursor", K_CURSOR, UNRESERVED_KEYWORD)
+	PG_KEYWORD("datatype", K_DATATYPE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("debug", K_DEBUG, UNRESERVED_KEYWORD)
 	PG_KEYWORD("detail", K_DETAIL, UNRESERVED_KEYWORD)
 	PG_KEYWORD("dump", K_DUMP, UNRESERVED_KEYWORD)
@@ -121,19 +130,33 @@ static const ScanKeyword unreserved_keywords[] = {
 	PG_KEYWORD("last", K_LAST, UNRESERVED_KEYWORD)
 	PG_KEYWORD("log", K_LOG, UNRESERVED_KEYWORD)
 	PG_KEYWORD("message", K_MESSAGE, UNRESERVED_KEYWORD)
+	PG_KEYWORD("message_text", K_MESSAGE_TEXT, UNRESERVED_KEYWORD)
 	PG_KEYWORD("next", K_NEXT, UNRESERVED_KEYWORD)
 	PG_KEYWORD("no", K_NO, UNRESERVED_KEYWORD)
 	PG_KEYWORD("notice", K_NOTICE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("option", K_OPTION, UNRESERVED_KEYWORD)
+	PG_KEYWORD("pg_context", K_PG_CONTEXT, UNRESERVED_KEYWORD)
+	PG_KEYWORD("pg_datatype_name", K_PG_DATATYPE_NAME, UNRESERVED_KEYWORD)
+	PG_KEYWORD("pg_exception_context", K_PG_EXCEPTION_CONTEXT, UNRESERVED_KEYWORD)
+	PG_KEYWORD("pg_exception_detail", K_PG_EXCEPTION_DETAIL, UNRESERVED_KEYWORD)
+	PG_KEYWORD("pg_exception_hint", K_PG_EXCEPTION_HINT, UNRESERVED_KEYWORD)
+	PG_KEYWORD("print_strict_params", K_PRINT_STRICT_PARAMS, UNRESERVED_KEYWORD)
 	PG_KEYWORD("prior", K_PRIOR, UNRESERVED_KEYWORD)
 	PG_KEYWORD("query", K_QUERY, UNRESERVED_KEYWORD)
 	PG_KEYWORD("relative", K_RELATIVE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("result_oid", K_RESULT_OID, UNRESERVED_KEYWORD)
+	PG_KEYWORD("returned_sqlstate", K_RETURNED_SQLSTATE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("reverse", K_REVERSE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("row_count", K_ROW_COUNT, UNRESERVED_KEYWORD)
 	PG_KEYWORD("rowtype", K_ROWTYPE, UNRESERVED_KEYWORD)
+	PG_KEYWORD("schema", K_SCHEMA, UNRESERVED_KEYWORD)
+	PG_KEYWORD("schema_name", K_SCHEMA_NAME, UNRESERVED_KEYWORD)
 	PG_KEYWORD("scroll", K_SCROLL, UNRESERVED_KEYWORD)
+	PG_KEYWORD("slice", K_SLICE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("sqlstate", K_SQLSTATE, UNRESERVED_KEYWORD)
+	PG_KEYWORD("stacked", K_STACKED, UNRESERVED_KEYWORD)
+	PG_KEYWORD("table", K_TABLE, UNRESERVED_KEYWORD)
+	PG_KEYWORD("table_name", K_TABLE_NAME, UNRESERVED_KEYWORD)
 	PG_KEYWORD("type", K_TYPE, UNRESERVED_KEYWORD)
 	PG_KEYWORD("use_column", K_USE_COLUMN, UNRESERVED_KEYWORD)
 	PG_KEYWORD("use_variable", K_USE_VARIABLE, UNRESERVED_KEYWORD)
@@ -154,7 +177,7 @@ typedef struct
 
 /*
  * Scanner working state.  At some point we might wish to fold all this
- * into a YY_EXTRA struct.	For the moment, there is no need for plpgsql's
+ * into a YY_EXTRA struct.  For the moment, there is no need for plpgsql's
  * lexer to be re-entrant, and the notational burden of passing a yyscanner
  * pointer around is great enough to not want to do it without need.
  */
@@ -322,7 +345,7 @@ plpgsql_yylex(void)
 
 /*
  * Internal yylex function.  This wraps the core lexer and adds one feature:
- * a token pushback stack.	We also make a couple of trivial single-token
+ * a token pushback stack.  We also make a couple of trivial single-token
  * translations from what the core lexer does to what we want, in particular
  * interfacing from the core_YYSTYPE to YYSTYPE union.
  */
@@ -400,6 +423,25 @@ plpgsql_push_back_token(int token)
 }
 
 /*
+ * Tell whether a token is an unreserved keyword.
+ *
+ * (If it is, its lowercased form was returned as the token value, so we
+ * do not need to offer that data here.)
+ */
+bool
+plpgsql_token_is_unreserved_keyword(int token)
+{
+	int			i;
+
+	for (i = 0; i < num_unreserved_keywords; i++)
+	{
+		if (unreserved_keywords[i].value == token)
+			return true;
+	}
+	return false;
+}
+
+/*
  * Append the function text starting at startlocation and extending to
  * (not including) endlocation onto the existing contents of "buf".
  */
@@ -410,6 +452,54 @@ plpgsql_append_source_text(StringInfo buf,
 	Assert(startlocation <= endlocation);
 	appendBinaryStringInfo(buf, scanorig + startlocation,
 						   endlocation - startlocation);
+}
+
+/*
+ * Peek one token ahead in the input stream.  Only the token code is
+ * made available, not any of the auxiliary info such as location.
+ *
+ * NB: no variable or unreserved keyword lookup is performed here, they will
+ * be returned as IDENT. Reserved keywords are resolved as usual.
+ */
+int
+plpgsql_peek(void)
+{
+	int			tok1;
+	TokenAuxData aux1;
+
+	tok1 = internal_yylex(&aux1);
+	push_back_token(tok1, &aux1);
+	return tok1;
+}
+
+/*
+ * Peek two tokens ahead in the input stream. The first token and its
+ * location in the query are returned in *tok1_p and *tok1_loc, second token
+ * and its location in *tok2_p and *tok2_loc.
+ *
+ * NB: no variable or unreserved keyword lookup is performed here, they will
+ * be returned as IDENT. Reserved keywords are resolved as usual.
+ */
+void
+plpgsql_peek2(int *tok1_p, int *tok2_p, int *tok1_loc, int *tok2_loc)
+{
+	int			tok1,
+				tok2;
+	TokenAuxData aux1,
+				aux2;
+
+	tok1 = internal_yylex(&aux1);
+	tok2 = internal_yylex(&aux2);
+
+	*tok1_p = tok1;
+	if (tok1_loc)
+		*tok1_loc = aux1.lloc;
+	*tok2_p = tok2;
+	if (tok2_loc)
+		*tok2_loc = aux2.lloc;
+
+	push_back_token(tok2, &aux2);
+	push_back_token(tok1, &aux1);
 }
 
 /*
@@ -451,6 +541,7 @@ plpgsql_scanner_errposition(int location)
  * be misleading!
  */
 void
+__attribute__((noreturn))
 plpgsql_yyerror(const char *message)
 {
 	char	   *yytext = core_yy.scanbuf + plpgsql_yylloc;
@@ -468,7 +559,7 @@ plpgsql_yyerror(const char *message)
 		/*
 		 * If we have done any lookahead then flex will have restored the
 		 * character after the end-of-token.  Zap it again so that we report
-		 * only the single token here.	This modifies scanbuf but we no longer
+		 * only the single token here.  This modifies scanbuf but we no longer
 		 * care about that.
 		 */
 		yytext[plpgsql_yyleng] = '\0';
@@ -518,19 +609,6 @@ location_lineno_init(void)
 {
 	cur_line_start = scanorig;
 	cur_line_num = 1;
-
-	/*----------
-	 * Hack: skip any initial newline, so that in the common coding layout
-	 *		CREATE FUNCTION ... AS $$
-	 *			code body
-	 *		$$ LANGUAGE plpgsql;
-	 * we will think "line 1" is what the programmer thinks of as line 1.
-	 *----------
-	 */
-	if (*cur_line_start == '\r')
-		cur_line_start++;
-	if (*cur_line_start == '\n')
-		cur_line_start++;
 
 	cur_line_end = strchr(cur_line_start, '\n');
 }

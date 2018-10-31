@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/create_database.sgml,v 1.54 2010/04/03 07:22:58 petere Exp $
+doc/src/sgml/ref/create_database.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-CREATEDATABASE">
+ <indexterm zone="sql-createdatabase">
+  <primary>CREATE DATABASE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>CREATE DATABASE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,10 +19,6 @@ PostgreSQL documentation
   <refpurpose>create a new database</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-createdatabase">
-  <primary>CREATE DATABASE</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
@@ -27,7 +27,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
            [ ENCODING [=] <replaceable class="parameter">encoding</replaceable> ]
            [ LC_COLLATE [=] <replaceable class="parameter">lc_collate</replaceable> ]
            [ LC_CTYPE [=] <replaceable class="parameter">lc_ctype</replaceable> ]
-           [ TABLESPACE [=] <replaceable class="parameter">tablespace</replaceable> ]
+           [ TABLESPACE [=] <replaceable class="parameter">tablespace_name</replaceable> ]
            [ CONNECTION LIMIT [=] <replaceable class="parameter">connlimit</replaceable> ] ]
 </synopsis>
  </refsynopsisdiv>
@@ -73,7 +73,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
       </listitem>
      </varlistentry>
      <varlistentry>
-      <term><replaceable class="parameter">use_name</replaceable></term>
+      <term><replaceable class="parameter">user_name</replaceable></term>
       <listitem>
        <para>
         The role name of the user who will own the new database,
@@ -133,7 +133,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
       </listitem>
      </varlistentry>
      <varlistentry>
-      <term><replaceable class="parameter">tablespace</replaceable></term>
+      <term><replaceable class="parameter">tablespace_name</replaceable></term>
       <listitem>
        <para>
         The name of the tablespace that will be associated with the
@@ -185,6 +185,12 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
    <para>
     The program <xref linkend="APP-CREATEDB"> is a
     wrapper program around this command, provided for convenience.
+   </para>
+
+   <para>
+    Database-level configuration parameters (set via <xref
+    linkend="sql-alterdatabase">) are not copied from the template
+    database.
    </para>
 
   <para>

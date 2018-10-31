@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/drop_tsparser.sgml,v 1.3 2010/04/03 07:23:01 petere Exp $
+doc/src/sgml/ref/drop_tsparser.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPTSPARSER">
+ <indexterm zone="sql-droptsparser">
+  <primary>DROP TEXT SEARCH PARSER</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP TEXT SEARCH PARSER</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>DROP TEXT SEARCH PARSER</refname>
   <refpurpose>remove a text search parser</refpurpose>
  </refnamediv>
-  
- <indexterm zone="sql-droptsparser">
-  <primary>DROP TEXT SEARCH PARSER</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
@@ -33,7 +33,7 @@ DROP TEXT SEARCH PARSER [ IF EXISTS ] <replaceable class="PARAMETER">name</repla
    parser.  You must be a superuser to use this command.
   </para>
  </refsect1>
-  
+
  <refsect1>
   <title>Parameters</title>
 
@@ -94,7 +94,7 @@ DROP TEXT SEARCH PARSER my_parser;
    drop such configurations along with the parser.
   </para>
  </refsect1>
- 
+
  <refsect1>
   <title>Compatibility</title>
 

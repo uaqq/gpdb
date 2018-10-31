@@ -3,7 +3,7 @@
  * c_keywords.c
  *	  lexical token lookup for reserved words in postgres embedded SQL
  *
- * $PostgreSQL: pgsql/src/interfaces/ecpg/preproc/c_keywords.c,v 1.25 2010/02/26 02:01:31 momjian Exp $
+ * src/interfaces/ecpg/preproc/c_keywords.c
  *
  *-------------------------------------------------------------------------
  */
@@ -57,7 +57,7 @@ static const ScanKeyword ScanCKeywords[] = {
 
 
 /*
- * Do a binary search using plain strcmp() comparison.	This is much like
+ * Do a binary search using plain strcmp() comparison.  This is much like
  * ScanKeywordLookup(), except we want case-sensitive matching.
  */
 const ScanKeyword *

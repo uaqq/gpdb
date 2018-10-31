@@ -3,21 +3,18 @@
  * dict_snowball.c
  *		Snowball dictionary
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/snowball/dict_snowball.c,v 1.9 2010/01/02 16:57:51 momjian Exp $
+ *	  src/backend/snowball/dict_snowball.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "commands/defrem.h"
-#include "fmgr.h"
 #include "tsearch/ts_locale.h"
-#include "tsearch/ts_public.h"
 #include "tsearch/ts_utils.h"
-#include "utils/builtins.h"
 
 /* Some platforms define MAXINT and/or MININT, causing conflicts */
 #ifdef MAXINT
@@ -258,10 +255,7 @@ dsnowball_lexize(PG_FUNCTION_ARGS)
 		{
 			char	   *recoded;
 
-			recoded = (char *) pg_do_encoding_conversion((unsigned char *) txt,
-														 strlen(txt),
-													   GetDatabaseEncoding(),
-														 PG_UTF8);
+			recoded = pg_server_to_any(txt, strlen(txt), PG_UTF8);
 			if (recoded != txt)
 			{
 				pfree(txt);
@@ -287,10 +281,7 @@ dsnowball_lexize(PG_FUNCTION_ARGS)
 		{
 			char	   *recoded;
 
-			recoded = (char *) pg_do_encoding_conversion((unsigned char *) txt,
-														 strlen(txt),
-														 PG_UTF8,
-													  GetDatabaseEncoding());
+			recoded = pg_any_to_server(txt, strlen(txt), PG_UTF8);
 			if (recoded != txt)
 			{
 				pfree(txt);

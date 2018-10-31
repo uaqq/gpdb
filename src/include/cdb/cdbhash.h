@@ -16,13 +16,12 @@
 #define CDBHASH_H
 
 /*
- * hashing algorithms.
+ * Hash Method
+ * if change here, please also change pg_database.h
  */
-typedef enum
-{
-	HASH_FNV_1 = 1,
-	HASH_FNV_1A
-} CdbHashAlg;
+#define INVALID_HASH_METHOD      (-1)
+#define MODULO_HASH_METHOD       0
+#define JUMP_HASH_METHOD         1
 
 /*
  * reduction methods.
@@ -30,7 +29,8 @@ typedef enum
 typedef enum
 {
 	REDUCE_LAZYMOD = 1,
-	REDUCE_BITMASK
+	REDUCE_BITMASK,
+	REDUCE_JUMP_HASH
 } CdbHashReduce;
 
 /*
@@ -45,12 +45,6 @@ typedef struct CdbHash
 	uint32		rrindex;		/* round robin index for empty policy tables		*/
 
 } CdbHash;
-
-
-typedef void (*datumHashFunction)(void *clientData, void *buf, size_t len);
-
-extern void hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData);
-extern void hashNullDatum(datumHashFunction hashFn, void *clientData);
 
 /*
  * Create and initialize a CdbHash in the current memory context.
@@ -89,6 +83,11 @@ extern unsigned int cdbhashreduce(CdbHash *h);
 extern bool isGreenplumDbHashable(Oid typid);
 
 /*
+ * Return true if the operator Oid is hashable internally in Greenplum Database.
+ */
+extern bool isGreenplumDbOprRedistributable(Oid oprid);
+
+/*
  * Return true if the Oid is an array type.  This can be used prior
  *   to hashing the datum because array typeoids are expected to
  *   have been converted to any array oid.
@@ -96,5 +95,7 @@ extern bool isGreenplumDbHashable(Oid typid);
 extern bool typeIsArrayType(Oid typeoid);
 
 extern bool typeIsEnumType(Oid typeoid);
+
+extern bool typeIsRangeType(Oid typeoid);
 
 #endif   /* CDBHASH_H */

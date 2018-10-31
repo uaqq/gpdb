@@ -26,13 +26,11 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $PostgreSQL: pgsql/contrib/pgcrypto/pgp-pgsql.c,v 1.11 2009/06/11 14:48:52 momjian Exp $
+ * contrib/pgcrypto/pgp-pgsql.c
  */
 
 #include "postgres.h"
 
-#include "fmgr.h"
-#include "parser/scansup.h"
 #include "mb/pg_wchar.h"
 #include "utils/builtins.h"
 
@@ -43,23 +41,6 @@
 /*
  * public functions
  */
-Datum		pgp_sym_encrypt_text(PG_FUNCTION_ARGS);
-Datum		pgp_sym_encrypt_bytea(PG_FUNCTION_ARGS);
-Datum		pgp_sym_decrypt_text(PG_FUNCTION_ARGS);
-Datum		pgp_sym_decrypt_bytea(PG_FUNCTION_ARGS);
-
-Datum		pgp_pub_encrypt_text(PG_FUNCTION_ARGS);
-Datum		pgp_pub_encrypt_bytea(PG_FUNCTION_ARGS);
-Datum		pgp_pub_decrypt_text(PG_FUNCTION_ARGS);
-Datum		pgp_pub_decrypt_bytea(PG_FUNCTION_ARGS);
-
-Datum		pgp_key_id_w(PG_FUNCTION_ARGS);
-
-Datum		pg_armor(PG_FUNCTION_ARGS);
-Datum		pg_dearmor(PG_FUNCTION_ARGS);
-
-/* function headers */
-
 PG_FUNCTION_INFO_V1(pgp_sym_encrypt_bytea);
 PG_FUNCTION_INFO_V1(pgp_sym_encrypt_text);
 PG_FUNCTION_INFO_V1(pgp_sym_decrypt_bytea);
@@ -617,7 +598,7 @@ decrypt_internal(int is_pubenc, int need_text, text *data,
 	px_set_debug_handler(NULL);
 
 	/*
-	 * add successfull decryptions also into RNG
+	 * add successful decryptions also into RNG
 	 */
 	add_entropy(res, key, keypsw);
 

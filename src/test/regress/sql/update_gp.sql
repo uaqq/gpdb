@@ -52,6 +52,19 @@ update target set b = 10 where c = 10;
 
 drop table todelete;
 drop table target;
+
+--
+-- Test updated on inheritance parent table, where some child tables need a
+-- Split Update, but not all.
+--
+create table base_tbl (a int4, b int4) distributed by (a);
+create table child_a (a int4, b int4) inherits (base_tbl) distributed by (a);
+create table child_b (a int4, b int4) inherits (base_tbl) distributed by (b);
+insert into base_tbl select g, g from generate_series(1, 5) g;
+
+explain (costs off) update base_tbl set a=a+1;
+update base_tbl set a = 5;
+
 --
 -- Explicit Distribution motion must be added if any of the child nodes
 -- contains any motion excluding the motions in initplans.
@@ -70,7 +83,7 @@ INSERT INTO keo3 VALUES ('1', '1');
 CREATE TABLE keo4 ( keo_para_required_period character varying(6), keo_para_budget_date character varying(24)) DISTRIBUTED RANDOMLY;
 INSERT INTO keo4 VALUES ('1', '1');
 -- Explicit Redistribution motion should be added in case of GPDB Planner (test case not applicable for ORCA)
-EXPLAIN UPDATE keo1 SET user_vie_act_cntr_marg_cum = 234.682 FROM
+EXPLAIN (COSTS OFF) UPDATE keo1 SET user_vie_act_cntr_marg_cum = 234.682 FROM
     ( SELECT a.user_vie_project_code_pk FROM keo1 a INNER JOIN keo2 b 
         ON b.projects_pk=a.user_vie_project_code_pk
         WHERE a.user_vie_fiscal_year_period_sk =
@@ -93,7 +106,7 @@ SELECT user_vie_act_cntr_marg_cum FROM keo1;
 -- Explicit Redistribution motion should not be added in case of GPDB Planner (test case not applicable to ORCA)
 CREATE TABLE keo5 (x int, y int) DISTRIBUTED BY (x);
 INSERT INTO keo5 VALUES (1,1);
-EXPLAIN DELETE FROM keo5 WHERE x IN (SELECT x FROM keo5 WHERE EXISTS (SELECT x FROM keo5 WHERE x < 2));
+EXPLAIN (COSTS OFF) DELETE FROM keo5 WHERE x IN (SELECT x FROM keo5 WHERE EXISTS (SELECT x FROM keo5 WHERE x < 2));
 DELETE FROM keo5 WHERE x IN (SELECT x FROM keo5 WHERE EXISTS (SELECT x FROM keo5 WHERE x < 2));
 SELECT x FROM keo5;
 
@@ -103,3 +116,138 @@ DROP TABLE keo2;
 DROP TABLE keo3;
 DROP TABLE keo4;
 DROP TABLE keo5;
+
+--
+-- text types. We should support the following updates.
+--
+
+CREATE TEMP TABLE ttab1 (a varchar(15), b integer) DISTRIBUTED BY (a);
+CREATE TEMP TABLE ttab2 (a varchar(15), b integer) DISTRIBUTED BY (a);
+
+UPDATE ttab1 SET b = ttab2.b FROM ttab2 WHERE ttab1.a = ttab2.a;
+
+DROP TABLE ttab1;
+DROP TABLE ttab2;
+
+
+CREATE TEMP TABLE ttab1 (a text, b integer) DISTRIBUTED BY (a);
+CREATE TEMP TABLE ttab2 (a text, b integer) DISTRIBUTED BY (a);
+
+UPDATE ttab1 SET b = ttab2.b FROM ttab2 WHERE ttab1.a = ttab2.a;
+
+
+DROP TABLE ttab1;
+DROP TABLE ttab2;
+
+CREATE TEMP TABLE ttab1 (a varchar, b integer) DISTRIBUTED BY (a);
+CREATE TEMP TABLE ttab2 (a varchar, b integer) DISTRIBUTED BY (a);
+
+UPDATE ttab1 SET b = ttab2.b FROM ttab2 WHERE ttab1.a = ttab2.a;
+
+
+DROP TABLE ttab1;
+DROP TABLE ttab2;
+
+CREATE TEMP TABLE ttab1 (a char(15), b integer) DISTRIBUTED BY (a);
+CREATE TEMP TABLE ttab2 (a char(15), b integer) DISTRIBUTED BY (a);
+
+UPDATE ttab1 SET b = ttab2.b FROM ttab2 WHERE ttab1.a = ttab2.a;
+
+DROP TABLE IF EXISTS update_distr_key;
+
+CREATE TEMP TABLE update_distr_key (a int, b int) DISTRIBUTED BY (a);
+INSERT INTO update_distr_key select i, i* 10 from generate_series(0, 9) i;
+
+UPDATE update_distr_key SET a = 5 WHERE b = 10;
+
+SELECT * from update_distr_key;
+
+DROP TABLE update_distr_key;
+
+-- Update distribution key
+
+-- start_ignore
+drop table if exists r;
+drop table if exists s;
+drop table if exists update_dist;
+drop table if exists ao_table;
+drop table if exists aoco_table;
+-- end_ignore
+
+-- Update normal table distribution key
+create table update_dist(a int) distributed by (a);
+insert into update_dist values(1);
+update update_dist set a=0 where a=1;
+select * from update_dist;
+
+-- Update distribution key with join
+
+create table r (a int, b int) distributed by (a);
+create table s (a int, b int) distributed by (a);
+insert into r select generate_series(1, 5), generate_series(1, 5) * 2;
+insert into s select generate_series(1, 5), generate_series(1, 5) * 2;
+select * from r;
+select * from s;
+update r set a = r.a + 1 from s where r.a = s.a;
+select * from r;
+update r set a = r.a + 1 where a in (select a from s);
+select * from r;
+
+-- Update redistribution
+delete from r;
+delete from s;
+insert into r select generate_series(1, 5), generate_series(1, 5);
+insert into s select generate_series(1, 5), generate_series(1, 5) * 2;
+select * from r;
+select * from s;
+update r set a = r.a + 1 from s where r.b = s.b;
+select * from r;
+update r set a = r.a + 1 where b in (select b from s);
+select * from r;
+
+-- Update hash aggreate group by
+delete from r;
+delete from s;
+insert into r select generate_series(1, 5), generate_series(1, 5) * 2;
+insert into s select generate_series(1, 5), generate_series(1, 5);
+select * from r;
+select * from s;
+update s set a = s.a + 1 where exists (select 1 from r where s.a = r.b);
+select * from s;
+
+-- Update ao table distribution key
+create table ao_table (a int, b int) WITH (appendonly=true) distributed by (a);
+insert into ao_table select g, g from generate_series(1, 5) g;
+select * from ao_table;
+update ao_table set a = a + 1 where b = 3;
+select * from ao_table;
+
+-- Update aoco table distribution key
+create table aoco_table (a int, b int) WITH (appendonly=true, orientation=column) distributed by (a);
+insert into aoco_table select g,g from generate_series(1, 5) g;
+select * from aoco_table;
+update aoco_table set a = a + 1 where b = 3;
+select * from aoco_table;
+
+-- Update prepare
+delete from s;
+insert into s select generate_series(1, 5), generate_series(1, 5);
+select * from r;
+select * from s;
+prepare update_s(int) as update s set a = s.a + $1 where exists (select 1 from r where s.a = r.b);
+execute update_s(10);
+select * from s;
+
+-- Confirm that a split update is not created for a table excluded by
+-- constraints in the planner.
+create table nosplitupdate (a int) distributed by (a);
+explain update nosplitupdate set a=0 where a=1 and a<1;
+
+-- start_ignore
+drop table r;
+drop table s;
+drop table update_dist;
+drop table ao_table;
+drop table aoco_table;
+drop table nosplitupdate;
+-- end_ignore

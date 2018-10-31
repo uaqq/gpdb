@@ -23,6 +23,7 @@
 #include "access/sdir.h"
 #include "access/tupmacs.h"
 #include "access/xlogutils.h"
+#include "access/xlog.h"
 #include "access/appendonly_visimap.h"
 #include "executor/tuptable.h"
 #include "nodes/primnodes.h"
@@ -35,7 +36,6 @@
 
 #include "access/appendonlytid.h"
 
-#include "cdb/cdbvarblock.h"
 #include "cdb/cdbbufferedappend.h"
 #include "cdb/cdbbufferedread.h"
 #include "cdb/cdbvarblock.h"
@@ -66,8 +66,8 @@ typedef struct AppendOnlyInsertDescData
 	File			appendFile;
 	int				appendFilePathNameMaxLen;
 	char			*appendFilePathName;
-	float8			insertCount;
-	float8			varblockCount;
+	int64			insertCount;
+	int64			varblockCount;
 	int64           rowCount; /* total row count before insert */
 	int64           numSequences; /* total number of available sequences */
 	int64           lastSequence; /* last used sequence */
@@ -371,36 +371,6 @@ extern HTSU_Result appendonly_update(
 		MemTuple memTuple,
 		AOTupleId* aoTupleId,
 		AOTupleId* newAoTupleId);
-
-#define XLOG_APPENDONLY_INSERT			0x00
-#define XLOG_APPENDONLY_TRUNCATE		0x10
-
-typedef struct
-{
-	RelFileNode node;
-	uint32		segment_filenum;
-	int64		offset;
-} xl_ao_target;
-
-#define SizeOfAOTarget (offsetof(xl_ao_target, offset) + sizeof(int64))
-
-typedef struct
-{
-	/* meta data about the inserted block of AO data*/
-	xl_ao_target target;
-	/* BLOCK DATA FOLLOWS AT END OF STRUCT */
-} xl_ao_insert;
-
-#define SizeOfAOInsert (offsetof(xl_ao_insert, target) + SizeOfAOTarget)
-
-typedef struct
-{
-	/* meta data about the truncated AO/CO file*/
-	xl_ao_target target;
-} xl_ao_truncate;
-
-extern void appendonly_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record);
-extern void appendonly_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record);
 
 extern void appendonly_update_finish(AppendOnlyUpdateDesc aoUpdateDesc);
 

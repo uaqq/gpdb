@@ -4,11 +4,11 @@
  *	  routines to support running postgres in 'bootstrap' mode
  *	bootstrap mode is used to create the initial template database
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/bootstrap/bootstrap.c,v 1.261 2010/04/20 01:38:52 tgl Exp $
+ *	  src/backend/bootstrap/bootstrap.c
  *
  *-------------------------------------------------------------------------
  */
@@ -17,39 +17,35 @@
 #include <time.h>
 #include <unistd.h>
 #include <signal.h>
-#ifdef HAVE_GETOPT_H
-#include <getopt.h>
-#endif
 
-#include "access/genam.h"
-#include "access/heapam.h"
-#include "access/xact.h"
+#include "access/htup_details.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/index.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "pg_getopt.h"
 #include "postmaster/bgwriter.h"
+#include "postmaster/startup.h"
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
-#include "storage/procsignal.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
+#include "utils/rel.h"
 #include "utils/relmapper.h"
 #include "utils/tqual.h"
 
-extern int	optind;
-extern char *optarg;
+uint32		bootstrap_data_checksum_version = 0;		/* No checksum */
 
-uint32 bootstrap_data_checksum_version = 0;  /* No checksum */
 
 #define ALLOC(t, c)		((t *) calloc((unsigned)(c), sizeof(t)))
 
@@ -66,8 +62,9 @@ static void cleanup(void);
  * ----------------
  */
 
+AuxProcType MyAuxProcType = NotAnAuxProcess;	/* declared in miscadmin.h */
+
 Relation	boot_reldesc;		/* current relation descriptor */
-AuxProcType MyAuxProcType = NotAnAuxProcess;
 
 Form_pg_attribute attrtypes[MAXATTR];	/* points to attribute info */
 int			numattr;			/* number of attributes for cur. rel */
@@ -75,10 +72,11 @@ int			numattr;			/* number of attributes for cur. rel */
 
 /*
  * Basic information associated with each type.  This is used before
- * pg_type is created.
+ * pg_type is filled, so it has to cover the datatypes used as column types
+ * in the core "bootstrapped" catalogs.
  *
  *		XXX several of these input/output functions do catalog scans
- *			(e.g., F_REGPROCIN scans pg_proc).	this obviously creates some
+ *			(e.g., F_REGPROCIN scans pg_proc).  this obviously creates some
  *			order dependencies in the catalog creation process.
  */
 struct typinfo
@@ -90,54 +88,57 @@ struct typinfo
 	bool		byval;
 	char		align;
 	char		storage;
+	Oid			collation;
 	Oid			inproc;
 	Oid			outproc;
 };
 
 static const struct typinfo TypInfo[] = {
-	{"bool", BOOLOID, 0, 1, true, 'c', 'p',
+	{"bool", BOOLOID, 0, 1, true, 'c', 'p', InvalidOid,
 	F_BOOLIN, F_BOOLOUT},
-	{"bytea", BYTEAOID, 0, -1, false, 'i', 'x',
+	{"bytea", BYTEAOID, 0, -1, false, 'i', 'x', InvalidOid,
 	F_BYTEAIN, F_BYTEAOUT},
-	{"char", CHAROID, 0, 1, true, 'c', 'p',
+	{"char", CHAROID, 0, 1, true, 'c', 'p', InvalidOid,
 	F_CHARIN, F_CHAROUT},
-	{"int2", INT2OID, 0, 2, true, 's', 'p',
+	{"int2", INT2OID, 0, 2, true, 's', 'p', InvalidOid,
 	F_INT2IN, F_INT2OUT},
-	{"int4", INT4OID, 0, 4, true, 'i', 'p',
+	{"int4", INT4OID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_INT4IN, F_INT4OUT},
-	{"float4", FLOAT4OID, 0, 4, FLOAT4PASSBYVAL, 'i', 'p',
+	{"float4", FLOAT4OID, 0, 4, FLOAT4PASSBYVAL, 'i', 'p', InvalidOid,
 	F_FLOAT4IN, F_FLOAT4OUT},
-	{"name", NAMEOID, CHAROID, NAMEDATALEN, false, 'c', 'p',
+	{"name", NAMEOID, CHAROID, NAMEDATALEN, false, 'c', 'p', InvalidOid,
 	F_NAMEIN, F_NAMEOUT},
-	{"regclass", REGCLASSOID, 0, 4, true, 'i', 'p',
+	{"regclass", REGCLASSOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_REGCLASSIN, F_REGCLASSOUT},
-	{"regproc", REGPROCOID, 0, 4, true, 'i', 'p',
+	{"regproc", REGPROCOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_REGPROCIN, F_REGPROCOUT},
-	{"regtype", REGTYPEOID, 0, 4, true, 'i', 'p',
+	{"regtype", REGTYPEOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_REGTYPEIN, F_REGTYPEOUT},
-	{"text", TEXTOID, 0, -1, false, 'i', 'x',
+	{"text", TEXTOID, 0, -1, false, 'i', 'x', DEFAULT_COLLATION_OID,
 	F_TEXTIN, F_TEXTOUT},
-	{"oid", OIDOID, 0, 4, true, 'i', 'p',
+	{"oid", OIDOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_OIDIN, F_OIDOUT},
-	{"tid", TIDOID, 0, 6, false, 's', 'p',
+	{"tid", TIDOID, 0, 6, false, 's', 'p', InvalidOid,
 	F_TIDIN, F_TIDOUT},
-	{"xid", XIDOID, 0, 4, true, 'i', 'p',
+	{"xid", XIDOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_XIDIN, F_XIDOUT},
-	{"cid", CIDOID, 0, 4, true, 'i', 'p',
+	{"cid", CIDOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_CIDIN, F_CIDOUT},
-	{"int2vector", INT2VECTOROID, INT2OID, -1, false, 'i', 'p',
+	{"pg_node_tree", PGNODETREEOID, 0, -1, false, 'i', 'x', DEFAULT_COLLATION_OID,
+	F_PG_NODE_TREE_IN, F_PG_NODE_TREE_OUT},
+	{"int2vector", INT2VECTOROID, INT2OID, -1, false, 'i', 'p', InvalidOid,
 	F_INT2VECTORIN, F_INT2VECTOROUT},
-	{"oidvector", OIDVECTOROID, OIDOID, -1, false, 'i', 'p',
+	{"oidvector", OIDVECTOROID, OIDOID, -1, false, 'i', 'p', InvalidOid,
 	F_OIDVECTORIN, F_OIDVECTOROUT},
-	{"_int4", INT4ARRAYOID, INT4OID, -1, false, 'i', 'x',
+	{"_int4", INT4ARRAYOID, INT4OID, -1, false, 'i', 'x', InvalidOid,
 	F_ARRAY_IN, F_ARRAY_OUT},
-	{"_text", 1009, TEXTOID, -1, false, 'i', 'x',
+	{"_text", 1009, TEXTOID, -1, false, 'i', 'x', DEFAULT_COLLATION_OID,
 	F_ARRAY_IN, F_ARRAY_OUT},
-	{"_oid", 1028, OIDOID, -1, false, 'i', 'x',
+	{"_oid", 1028, OIDOID, -1, false, 'i', 'x', InvalidOid,
 	F_ARRAY_IN, F_ARRAY_OUT},
-	{"_char", 1002, CHAROID, -1, false, 'i', 'x',
+	{"_char", 1002, CHAROID, -1, false, 'i', 'x', InvalidOid,
 	F_ARRAY_IN, F_ARRAY_OUT},
-	{"_aclitem", 1034, ACLITEMOID, -1, false, 'i', 'x',
+	{"_aclitem", 1034, ACLITEMOID, -1, false, 'i', 'x', InvalidOid,
 	F_ARRAY_IN, F_ARRAY_OUT}
 };
 
@@ -187,7 +188,6 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	char	   *progname = argv[0];
 	int			flag;
 	char	   *userDoption = NULL;
-	char		stack_base;
 
 	/*
 	 * initialize globals
@@ -195,17 +195,6 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	MyProcPid = getpid();
 
 	MyStartTime = time(NULL);
-
-	/* Set up reference point for stack depth checking */
-	stack_base_ptr = &stack_base;
-
-	/*
-	 * Fire up essential subsystems: error and memory management
-	 *
-	 * If we are running under the postmaster, this is done already.
-	 */
-	if (!IsUnderPostmaster)
-		MemoryContextInit();
 
 	/* Compute paths, if we didn't inherit them from postmaster */
 	if (my_exec_path[0] == '\0')
@@ -230,6 +219,7 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		argc--;
 	}
 
+	/* If no -x argument, we are a CheckerProcess */
 	MyAuxProcType = CheckerProcess;
 
 	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:x:y:-:")) != -1)
@@ -240,14 +230,14 @@ AuxiliaryProcessMain(int argc, char *argv[])
 				SetConfigOption("shared_buffers", optarg, PGC_POSTMASTER, PGC_S_ARGV);
 				break;
 			case 'D':
-				userDoption = optarg;
+				userDoption = strdup(optarg);
 				break;
 			case 'd':
 				{
 					/* Turn on debugging for the bootstrap process. */
-					char	   *debugstr = palloc(strlen("debug") + strlen(optarg) + 1);
+					char	   *debugstr;
 
-					sprintf(debugstr, "debug%s", optarg);
+					debugstr = psprintf("debug%s", optarg);
 					SetConfigOption("log_min_messages", debugstr,
 									PGC_POSTMASTER, PGC_S_ARGV);
 					SetConfigOption("client_min_messages", debugstr,
@@ -258,9 +248,9 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case 'F':
 				SetConfigOption("fsync", "false", PGC_POSTMASTER, PGC_S_ARGV);
 				break;
- 			case 'k':
+			case 'k':
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
- 				break;
+				break;
 			case 'r':
 				strlcpy(OutputFileName, optarg, MAXPGPATH);
 				break;
@@ -323,14 +313,14 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case BgWriterProcess:
 				statmsg = "writer process";
 				break;
+			case CheckpointerProcess:
+				statmsg = "checkpointer process";
+				break;
 			case WalWriterProcess:
 				statmsg = "wal writer process";
 				break;
 			case WalReceiverProcess:
 				statmsg = "wal receiver process";
-				break;
-			case CheckpointerProcess:
-				statmsg = "checkpointer process";
 				break;
 			default:
 				statmsg = "??? process";
@@ -361,6 +351,10 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	SetProcessingMode(BootstrapProcessing);
 	IgnoreSystemIndexes = true;
 
+	/* Initialize MaxBackends (if under postmaster, was done already) */
+	if (!IsUnderPostmaster)
+		InitializeMaxBackends();
+
 	BaseInit();
 
 	/*
@@ -379,10 +373,10 @@ AuxiliaryProcessMain(int argc, char *argv[])
 #endif
 
 		/*
-		 * Assign the ProcSignalSlot for an auxiliary process.	Since it
+		 * Assign the ProcSignalSlot for an auxiliary process.  Since it
 		 * doesn't have a BackendId, the slot is statically allocated based on
-		 * the auxiliary process type (MyAuxProcType).  Backends use slots indexed
-		 * in the range from 1 to MaxBackends (inclusive), so we use
+		 * the auxiliary process type (MyAuxProcType).  Backends use slots
+		 * indexed in the range from 1 to MaxBackends (inclusive), so we use
 		 * MaxBackends + AuxProcType + 1 as the index of the slot for an
 		 * auxiliary process.
 		 *
@@ -394,8 +388,8 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		/* finish setting up bufmgr.c */
 		InitBufferPoolBackend();
 
-		/* register a shutdown callback for LWLock cleanup */
-		on_shmem_exit(ShutdownAuxiliaryProcess, 0);
+		/* register a before-shutdown callback for LWLock cleanup */
+		before_shmem_exit(ShutdownAuxiliaryProcess, 0);
 	}
 
 	/*
@@ -431,19 +425,19 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			CheckpointerMain();
 			proc_exit(1);		/* should never return */
 
-		case WalReceiverProcess:
-			/* don't set signals, walreceiver has its own agenda */
-			WalReceiverMain();
-			proc_exit(1);		/* should never return */
-
 		case WalWriterProcess:
 			/* don't set signals, walwriter has its own agenda */
 			InitXLOGAccess();
 			WalWriterMain();
 			proc_exit(1);		/* should never return */
 
+		case WalReceiverProcess:
+			/* don't set signals, walreceiver has its own agenda */
+			WalReceiverMain();
+			proc_exit(1);
+
 		default:
-			elog(PANIC, "unrecognized process type: %d", MyAuxProcType);
+			elog(PANIC, "unrecognized process type: %d", (int) MyAuxProcType);
 			proc_exit(1);
 	}
 }
@@ -566,7 +560,7 @@ bootstrap_signals(void)
 }
 
 /*
- * Begin shutdown of an auxiliary process.	This is approximately the equivalent
+ * Begin shutdown of an auxiliary process.  This is approximately the equivalent
  * of ShutdownPostgres() in postinit.c.  We can't run transactions in an
  * auxiliary process, so most of the work of AbortTransaction() is not needed,
  * but we do need to make sure we've released any LWLocks we are holding.
@@ -603,7 +597,7 @@ boot_openrel(char *relname)
 	{
 		/* We can now load the pg_type data */
 		rel = heap_open(TypeRelationId, NoLock);
-		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+		scan = heap_beginscan_catalog(rel, 0, NULL);
 		i = 0;
 		while ((tup = heap_getnext(scan, ForwardScanDirection)) != NULL)
 			++i;
@@ -612,7 +606,7 @@ boot_openrel(char *relname)
 		while (i-- > 0)
 			*app++ = ALLOC(struct typmap, 1);
 		*app = NULL;
-		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+		scan = heap_beginscan_catalog(rel, 0, NULL);
 		app = Typ;
 		while ((tup = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
@@ -721,6 +715,7 @@ DefineAttr(char *name, char *type, int attnum)
 		attrtypes[attnum]->attbyval = Ap->am_typ.typbyval;
 		attrtypes[attnum]->attstorage = Ap->am_typ.typstorage;
 		attrtypes[attnum]->attalign = Ap->am_typ.typalign;
+		attrtypes[attnum]->attcollation = Ap->am_typ.typcollation;
 		/* if an array type, assume 1-dimensional attribute */
 		if (Ap->am_typ.typelem != InvalidOid && Ap->am_typ.typlen < 0)
 			attrtypes[attnum]->attndims = 1;
@@ -734,6 +729,7 @@ DefineAttr(char *name, char *type, int attnum)
 		attrtypes[attnum]->attbyval = TypInfo[typeoid].byval;
 		attrtypes[attnum]->attstorage = TypInfo[typeoid].storage;
 		attrtypes[attnum]->attalign = TypInfo[typeoid].align;
+		attrtypes[attnum]->attcollation = TypInfo[typeoid].collation;
 		/* if an array type, assume 1-dimensional attribute */
 		if (TypInfo[typeoid].elem != InvalidOid &&
 			attrtypes[attnum]->attlen < 0)
@@ -825,9 +821,8 @@ InsertOneValue(char *value, int i)
 	Oid			typioparam;
 	Oid			typinput;
 	Oid			typoutput;
-	char	   *prt;
 
-	AssertArg(i >= 0 || i < MAXATTR);
+	AssertArg(i >= 0 && i < MAXATTR);
 
 	elog(DEBUG4, "inserting column %d value \"%s\"", i, value);
 
@@ -839,9 +834,14 @@ InsertOneValue(char *value, int i)
 						  &typinput, &typoutput);
 
 	values[i] = OidInputFunctionCall(typinput, value, typioparam, -1);
-	prt = OidOutputFunctionCall(typoutput, values[i]);
-	elog(DEBUG4, "inserted -> %s", prt);
-	pfree(prt);
+
+	/*
+	 * We use ereport not elog here so that parameters aren't evaluated unless
+	 * the message is going to be printed, which generally it isn't
+	 */
+	ereport(DEBUG4,
+			(errmsg_internal("inserted -> %s",
+							 OidOutputFunctionCall(typoutput, values[i]))));
 }
 
 /* ----------------
@@ -852,7 +852,7 @@ void
 InsertOneNull(int i)
 {
 	elog(DEBUG4, "inserting column %d NULL", i);
-	Assert(i >= 0 || i < MAXATTR);
+	Assert(i >= 0 && i < MAXATTR);
 	values[i] = PointerGetDatum(NULL);
 	Nulls[i] = true;
 }
@@ -875,7 +875,7 @@ cleanup(void)
  * and not an OID at all, until the first reference to a type not known in
  * TypInfo[].  At that point it will read and cache pg_type in the Typ array,
  * and subsequently return a real OID (and set the global pointer Ap to
- * point at the found row in Typ).	So caller must check whether Typ is
+ * point at the found row in Typ).  So caller must check whether Typ is
  * still NULL to determine what the return value is!
  * ----------------
  */
@@ -908,7 +908,7 @@ gettype(char *type)
 		}
 		elog(DEBUG4, "external type: %s", type);
 		rel = heap_open(TypeRelationId, NoLock);
-		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+		scan = heap_beginscan_catalog(rel, 0, NULL);
 		i = 0;
 		while ((tup = heap_getnext(scan, ForwardScanDirection)) != NULL)
 			++i;
@@ -917,7 +917,7 @@ gettype(char *type)
 		while (i-- > 0)
 			*app++ = ALLOC(struct typmap, 1);
 		*app = NULL;
-		scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+		scan = heap_beginscan_catalog(rel, 0, NULL);
 		app = Typ;
 		while ((tup = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
@@ -1072,9 +1072,9 @@ MapArrayTypeName(char *s)
  *
  *		At bootstrap time, we define a bunch of indexes on system catalogs.
  *		We postpone actually building the indexes until just before we're
- *		finished with initialization, however.	This is because the indexes
+ *		finished with initialization, however.  This is because the indexes
  *		themselves have catalog entries, and those have to be included in the
- *		indexes on those catalogs.	Doing it in two phases is the simplest
+ *		indexes on those catalogs.  Doing it in two phases is the simplest
  *		way of making sure the indexes have the right contents at the end.
  */
 void
@@ -1087,7 +1087,7 @@ index_register(Oid heap,
 
 	/*
 	 * XXX mao 10/31/92 -- don't gc index reldescs, associated info at
-	 * bootstrap time.	we'll declare the indexes now, but want to create them
+	 * bootstrap time.  we'll declare the indexes now, but want to create them
 	 * later.
 	 */
 

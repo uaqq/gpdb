@@ -26,14 +26,13 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $PostgreSQL: pgsql/contrib/pgcrypto/pgp-mpi-openssl.c,v 1.5 2009/06/11 14:48:52 momjian Exp $
+ * contrib/pgcrypto/pgp-mpi-openssl.c
  */
 #include "postgres.h"
 
 #include <openssl/bn.h>
 
 #include "px.h"
-#include "mbuf.h"
 #include "pgp.h"
 
 static BIGNUM *

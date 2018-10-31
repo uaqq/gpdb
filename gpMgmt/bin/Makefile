@@ -63,6 +63,8 @@ pygresql:
 	    cd $(PYLIB_SRC)/$(PYGRESQL_DIR) && DESTDIR="$(DESTDIR)" CC="$(CC)" LDFLAGS="-L../../../../gpAux/ext/hpux_ia64/python-2.5.6/lib" python setup.py build; \
 	elif [ "$(BLD_ARCH)" = 'aix7_ppc_64' ]; then \
 	    unset PYTHONPATH && cd $(PYLIB_SRC)/$(PYGRESQL_DIR) && DESTDIR="$(DESTDIR)" CC="$(CC)" python_64 setup.py build; \
+	elif [ `uname -s` = 'OpenBSD' ]; then \
+	    cd $(PYLIB_SRC)/$(PYGRESQL_DIR) && DESTDIR="$(DESTDIR)" CC=cc python setup.py build; \
 	else \
 	    cd $(PYLIB_SRC)/$(PYGRESQL_DIR) && DESTDIR="$(DESTDIR)" CC="$(CC)" python setup.py build; \
 	fi
@@ -71,6 +73,8 @@ pygresql:
 	  cp -r $(PYLIB_SRC)/$(PYGRESQL_DIR)/build/lib.macosx*/* $(PYLIB_DIR)/pygresql; \
 	elif [ `uname -s` = 'AIX' ]; then \
 	  cp -r $(PYLIB_SRC)/$(PYGRESQL_DIR)/build/lib.aix*/* $(PYLIB_DIR)/pygresql; \
+	elif [ `uname -s` = 'OpenBSD' ]; then \
+	  cp -r $(PYLIB_SRC)/$(PYGRESQL_DIR)/build/lib.openbsd*/* $(PYLIB_DIR)/pygresql; \
 	else \
 	  cp -r $(PYLIB_SRC)/$(PYGRESQL_DIR)/build/lib.linux*/* $(PYLIB_DIR)/pygresql; \
 	fi
@@ -180,14 +184,14 @@ MOCK_VERSION=1.0.1
 MOCK_DIR=mock-$(MOCK_VERSION)
 BEHAVE_VERSION=1.2.4
 SETUP_TOOLS_VERSION=36.6.0
-PARSE_VERSION=1.5.3
+PARSE_VERSION=1.8.2
 ARG_PARSE_VERSION=1.2.1
 BEHAVE_DIR=behave-$(BEHAVE_VERSION)
 SETUP_TOOLS_DIR=setuptools-$(SETUP_TOOLS_VERSION)
 PARSE_DIR=parse-$(PARSE_VERSION)
 ARG_PARSE_DIR=argparse-$(ARG_PARSE_VERSION)
 PYTHONSRC_INSTALL=$(PYLIB_SRC_EXT)/install
-PYTHON_VERSION=$(shell python -c "import sys; print '%s.%s' % (sys.version_info[0:2])")
+PYTHON_VERSION=$(shell python -c "import sys; print ('%s.%s' % (sys.version_info[0:2]))")
 PYTHONSRC_INSTALL_SITE=$(PYLIB_SRC_EXT)/install/lib/python$(PYTHON_VERSION)/site-packages
 PYTHONSRC_INSTALL_PYTHON_PATH=$(PYTHONPATH):$(PYTHONSRC_INSTALL_SITE)
 BEHAVE_BIN=$(PYTHONSRC_INSTALL)/bin/behave

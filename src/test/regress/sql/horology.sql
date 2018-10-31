@@ -256,6 +256,9 @@ SELECT time with time zone 'T040506.789-08';
 SELECT time with time zone 'T040506.789 +08';
 SELECT time with time zone 'T040506.789 -08';
 SET DateStyle = 'Postgres, MDY';
+-- Check Julian dates BC
+SELECT date 'J1520447' AS "Confucius' Birthday";
+SELECT date 'J0' AS "Julian Epoch";
 
 --
 -- date, time arithmetic
@@ -288,7 +291,13 @@ SELECT timestamp without time zone '12/31/294276' - timestamp without time zone 
 -- So, just try to test parser and hope for the best - thomas 97/04/26
 SELECT (timestamp without time zone 'today' = (timestamp without time zone 'yesterday' + interval '1 day')) as "True";
 SELECT (timestamp without time zone 'today' = (timestamp without time zone 'tomorrow' - interval '1 day')) as "True";
+SELECT (timestamp without time zone 'today 10:30' = (timestamp without time zone 'yesterday' + interval '1 day 10 hr 30 min')) as "True";
+SELECT (timestamp without time zone '10:30 today' = (timestamp without time zone 'yesterday' + interval '1 day 10 hr 30 min')) as "True";
 SELECT (timestamp without time zone 'tomorrow' = (timestamp without time zone 'yesterday' + interval '2 days')) as "True";
+SELECT (timestamp without time zone 'tomorrow 16:00:00' = (timestamp without time zone 'today' + interval '1 day 16 hours')) as "True";
+SELECT (timestamp without time zone '16:00:00 tomorrow' = (timestamp without time zone 'today' + interval '1 day 16 hours')) as "True";
+SELECT (timestamp without time zone 'yesterday 12:34:56' = (timestamp without time zone 'tomorrow' - interval '2 days - 12:34:56')) as "True";
+SELECT (timestamp without time zone '12:34:56 yesterday' = (timestamp without time zone 'tomorrow' - interval '2 days - 12:34:56')) as "True";
 SELECT (timestamp without time zone 'tomorrow' > 'now') as "True";
 
 -- Convert from date and time to timestamp
@@ -633,6 +642,26 @@ SELECT to_timestamp(' 2005 03 02', 'YYYYMMDD');
 SELECT to_timestamp('  20050302', 'YYYYMMDD');
 
 --
+-- Check handling of multiple spaces in format and/or input
+--
+
+SELECT to_timestamp('2011-12-18 23:38:15', 'YYYY-MM-DD  HH24:MI:SS');
+SELECT to_timestamp('2011-12-18  23:38:15', 'YYYY-MM-DD  HH24:MI:SS');
+SELECT to_timestamp('2011-12-18   23:38:15', 'YYYY-MM-DD  HH24:MI:SS');
+
+SELECT to_timestamp('2011-12-18  23:38:15', 'YYYY-MM-DD HH24:MI:SS');
+SELECT to_timestamp('2011-12-18  23:38:15', 'YYYY-MM-DD  HH24:MI:SS');
+SELECT to_timestamp('2011-12-18  23:38:15', 'YYYY-MM-DD   HH24:MI:SS');
+
+SELECT to_date('2011 12  18', 'YYYY MM DD');
+SELECT to_date('2011 12  18', 'YYYY MM  DD');
+SELECT to_date('2011 12  18', 'YYYY MM   DD');
+
+SELECT to_date('2011 12 18', 'YYYY  MM DD');
+SELECT to_date('2011  12 18', 'YYYY  MM DD');
+SELECT to_date('2011   12 18', 'YYYY  MM DD');
+
+--
 -- Check errors for some incorrect usages of to_timestamp()
 --
 
@@ -653,6 +682,22 @@ SELECT to_timestamp('199711xy', 'YYYYMMDD');
 
 -- Input that doesn't fit in an int:
 SELECT to_timestamp('10000000000', 'FMYYYY');
+
+--
+-- Check behavior with SQL-style fixed-GMT-offset time zone (cf bug #8572)
+--
+
+SET TIME ZONE 'America/New_York';
+SET TIME ZONE '-1.5';
+
+SHOW TIME ZONE;
+
+SELECT '2012-12-12 12:00'::timestamptz;
+SELECT '2012-12-12 12:00 America/New_York'::timestamptz;
+
+SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
+
+RESET TIME ZONE;
 
 
 -- Clean up

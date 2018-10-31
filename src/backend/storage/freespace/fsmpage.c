@@ -4,11 +4,11 @@
  *	  routines to search and manipulate one FSM page.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/freespace/fsmpage.c,v 1.6 2010/01/02 16:57:51 momjian Exp $
+ *	  src/backend/storage/freespace/fsmpage.c
  *
  * NOTES:
  *
@@ -185,13 +185,13 @@ restart:
 
 	/*----------
 	 * Start the search from the target slot.  At every step, move one
-	 * node to the right, then climb up to the parent.	Stop when we reach
+	 * node to the right, then climb up to the parent.  Stop when we reach
 	 * a node with enough free space (as we must, since the root has enough
 	 * space).
 	 *
 	 * The idea is to gradually expand our "search triangle", that is, all
 	 * nodes covered by the current node, and to be sure we search to the
-	 * right from the start point.	At the first step, only the target slot
+	 * right from the start point.  At the first step, only the target slot
 	 * is examined.  When we move up from a left child to its parent, we are
 	 * adding the right-hand subtree of that parent to the search triangle.
 	 * When we move right then up from a right child, we are dropping the
@@ -284,9 +284,7 @@ restart:
 				exclusive_lock_held = true;
 			}
 			fsm_rebuild_page(page);
-			/* GPDB_84_MERGE_FIXME: upstream calls MarkBufferDirtyHint instead.
-			 * Backport commit 20723ce80 to fix. */
-			MarkBufferDirty(buf);
+			MarkBufferDirtyHint(buf, false);
 			goto restart;
 		}
 	}

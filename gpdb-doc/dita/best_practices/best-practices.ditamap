@@ -8,6 +8,7 @@
         <topicref href="summary.xml"/>
         <topicref href="sysconfig.xml"/>
         <topicref href="schema.xml"/>
+        <topicref href="resgroups.xml"/>
         <topicref href="workloads.xml"/>
         <topicref href="maintenance.xml">
             <topicref href="analyze.xml"/>
@@ -18,7 +19,6 @@
         <topicref href="gptransfer.xml"/>
         <topicref href="security.xml"/>
         <topicref href="encryption.xml"/>
-        <topicref href="kerberos-hdfs.xml"/>
         <topicref href="tuning_queries.xml"/>
         <topicref href="ha.xml"/>
     </topicref>

@@ -3,11 +3,11 @@
  * tsgistidx.c
  *	  GiST support functions for tsvector_ops
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsgistidx.c,v 1.12 2010/01/02 16:57:55 momjian Exp $
+ *	  src/backend/utils/adt/tsgistidx.c
  *
  *-------------------------------------------------------------------------
  */
@@ -16,15 +16,13 @@
 
 #include "access/gist.h"
 #include "access/tuptoaster.h"
-#include "tsearch/ts_type.h"
 #include "tsearch/ts_utils.h"
-#include "utils/pg_crc.h"
 
 
 #define SIGLENINT  31			/* >121 => key will toast, so it will not work
 								 * !!! */
 
-#define SIGLEN	( sizeof(int4) * SIGLENINT )
+#define SIGLEN	( sizeof(int32) * SIGLENINT )
 #define SIGLENBIT (SIGLEN * BITS_PER_BYTE)
 
 typedef char BITVEC[SIGLEN];
@@ -51,7 +49,7 @@ typedef char *BITVECP;
 typedef struct
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
-	int4		flag;
+	int32		flag;
 	char		data[1];
 } SignTSVector;
 
@@ -63,12 +61,12 @@ typedef struct
 #define ISSIGNKEY(x)	( ((SignTSVector*)(x))->flag & SIGNKEY )
 #define ISALLTRUE(x)	( ((SignTSVector*)(x))->flag & ALLISTRUE )
 
-#define GTHDRSIZE	( VARHDRSZ + sizeof(int4) )
-#define CALCGTSIZE(flag, len) ( GTHDRSIZE + ( ( (flag) & ARRKEY ) ? ((len)*sizeof(int4)) : (((flag) & ALLISTRUE) ? 0 : SIGLEN) ) )
+#define GTHDRSIZE	( VARHDRSZ + sizeof(int32) )
+#define CALCGTSIZE(flag, len) ( GTHDRSIZE + ( ( (flag) & ARRKEY ) ? ((len)*sizeof(int32)) : (((flag) & ALLISTRUE) ? 0 : SIGLEN) ) )
 
 #define GETSIGN(x)	( (BITVECP)( (char*)(x)+GTHDRSIZE ) )
-#define GETARR(x)	( (int4*)( (char*)(x)+GTHDRSIZE ) )
-#define ARRNELEM(x) ( ( VARSIZE(x) - GTHDRSIZE )/sizeof(int4) )
+#define GETARR(x)	( (int32*)( (char*)(x)+GTHDRSIZE ) )
+#define ARRNELEM(x) ( ( VARSIZE(x) - GTHDRSIZE )/sizeof(int32) )
 
 /* Number of one-bits in an unsigned byte */
 static const uint8 number_of_ones[256] = {
@@ -90,7 +88,7 @@ static const uint8 number_of_ones[256] = {
 	4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8
 };
 
-static int4 sizebitvec(BITVECP sign);
+static int32 sizebitvec(BITVECP sign);
 
 Datum
 gtsvectorin(PG_FUNCTION_ARGS)
@@ -133,8 +131,8 @@ gtsvectorout(PG_FUNCTION_ARGS)
 static int
 compareint(const void *va, const void *vb)
 {
-	int4		a = *((int4 *) va);
-	int4		b = *((int4 *) vb);
+	int32		a = *((const int32 *) va);
+	int32		b = *((const int32 *) vb);
 
 	if (a == b)
 		return 0;
@@ -142,13 +140,13 @@ compareint(const void *va, const void *vb)
 }
 
 /*
- * Removes duplicates from an array of int4. 'l' is
+ * Removes duplicates from an array of int32. 'l' is
  * size of the input array. Returns the new size of the array.
  */
 static int
-uniqueint(int4 *a, int4 l)
+uniqueint(int32 *a, int32 l)
 {
-	int4	   *ptr,
+	int32	   *ptr,
 			   *res;
 
 	if (l <= 1)
@@ -156,7 +154,7 @@ uniqueint(int4 *a, int4 l)
 
 	ptr = res = a;
 
-	qsort((void *) a, l, sizeof(int4), compareint);
+	qsort((void *) a, l, sizeof(int32), compareint);
 
 	while (ptr - a < l)
 		if (*ptr != *res)
@@ -169,9 +167,9 @@ uniqueint(int4 *a, int4 l)
 static void
 makesign(BITVECP sign, SignTSVector *a)
 {
-	int4		k,
+	int32		k,
 				len = ARRNELEM(a);
-	int4	   *ptr = GETARR(a);
+	int32	   *ptr = GETARR(a);
 
 	MemSet((void *) sign, 0, sizeof(BITVEC));
 	for (k = 0; k < len; k++)
@@ -188,8 +186,8 @@ gtsvector_compress(PG_FUNCTION_ARGS)
 	{							/* tsvector */
 		SignTSVector *res;
 		TSVector	val = DatumGetTSVector(entry->key);
-		int4		len;
-		int4	   *arr;
+		int32		len;
+		int32	   *arr;
 		WordEntry  *ptr = ARRPTR(val);
 		char	   *words = STRPTR(val);
 
@@ -207,7 +205,7 @@ gtsvector_compress(PG_FUNCTION_ARGS)
 			COMP_LEGACY_CRC32(c, words + ptr->pos, ptr->len);
 			FIN_LEGACY_CRC32(c);
 
-			*arr = *(int4 *) &c;
+			*arr = *(int32 *) &c;
 			arr++;
 			ptr++;
 		}
@@ -245,7 +243,7 @@ gtsvector_compress(PG_FUNCTION_ARGS)
 	else if (ISSIGNKEY(DatumGetPointer(entry->key)) &&
 			 !ISALLTRUE(DatumGetPointer(entry->key)))
 	{
-		int4		i,
+		int32		i,
 					len;
 		SignTSVector *res;
 		BITVECP		sign = GETSIGN(DatumGetPointer(entry->key));
@@ -291,8 +289,8 @@ gtsvector_decompress(PG_FUNCTION_ARGS)
 
 typedef struct
 {
-	int4	   *arrb;
-	int4	   *arre;
+	int32	   *arrb;
+	int32	   *arre;
 } CHKVAL;
 
 /*
@@ -301,9 +299,9 @@ typedef struct
 static bool
 checkcondition_arr(void *checkval, QueryOperand *val)
 {
-	int4	   *StopLow = ((CHKVAL *) checkval)->arrb;
-	int4	   *StopHigh = ((CHKVAL *) checkval)->arre;
-	int4	   *StopMiddle;
+	int32	   *StopLow = ((CHKVAL *) checkval)->arrb;
+	int32	   *StopHigh = ((CHKVAL *) checkval)->arre;
+	int32	   *StopMiddle;
 
 	/* Loop invariant: StopLow <= val < StopHigh */
 
@@ -380,10 +378,10 @@ gtsvector_consistent(PG_FUNCTION_ARGS)
 	}
 }
 
-static int4
+static int32
 unionkey(BITVECP sbase, SignTSVector *add)
 {
-	int4		i;
+	int32		i;
 
 	if (ISSIGNKEY(add))
 	{
@@ -397,7 +395,7 @@ unionkey(BITVECP sbase, SignTSVector *add)
 	}
 	else
 	{
-		int4	   *ptr = GETARR(add);
+		int32	   *ptr = GETARR(add);
 
 		for (i = 0; i < ARRNELEM(add); i++)
 			HASH(sbase, ptr[i]);
@@ -412,9 +410,9 @@ gtsvector_union(PG_FUNCTION_ARGS)
 	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
 	int		   *size = (int *) PG_GETARG_POINTER(1);
 	BITVEC		base;
-	int4		i,
+	int32		i,
 				len;
-	int4		flag = 0;
+	int32		flag = 0;
 	SignTSVector *result;
 
 	MemSet((void *) base, 0, sizeof(BITVEC));
@@ -456,7 +454,7 @@ gtsvector_same(PG_FUNCTION_ARGS)
 			*result = false;
 		else
 		{
-			int4		i;
+			int32		i;
 			BITVECP		sa = GETSIGN(a),
 						sb = GETSIGN(b);
 
@@ -473,16 +471,16 @@ gtsvector_same(PG_FUNCTION_ARGS)
 	}
 	else
 	{							/* a and b ISARRKEY */
-		int4		lena = ARRNELEM(a),
+		int32		lena = ARRNELEM(a),
 					lenb = ARRNELEM(b);
 
 		if (lena != lenb)
 			*result = false;
 		else
 		{
-			int4	   *ptra = GETARR(a),
+			int32	   *ptra = GETARR(a),
 					   *ptrb = GETARR(b);
-			int4		i;
+			int32		i;
 
 			*result = true;
 			for (i = 0; i < lena; i++)
@@ -497,10 +495,10 @@ gtsvector_same(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(result);
 }
 
-static int4
+static int32
 sizebitvec(BITVECP sign)
 {
-	int4		size = 0,
+	int32		size = 0,
 				i;
 
 	LOOPBYTE
@@ -589,14 +587,14 @@ fillcache(CACHESIGN *item, SignTSVector *key)
 typedef struct
 {
 	OffsetNumber pos;
-	int4		cost;
+	int32		cost;
 } SPLITCOST;
 
 static int
 comparecost(const void *va, const void *vb)
 {
-	SPLITCOST  *a = (SPLITCOST *) va;
-	SPLITCOST  *b = (SPLITCOST *) vb;
+	const SPLITCOST *a = (const SPLITCOST *) va;
+	const SPLITCOST *b = (const SPLITCOST *) vb;
 
 	if (a->cost == b->cost)
 		return 0;
@@ -632,11 +630,11 @@ gtsvector_picksplit(PG_FUNCTION_ARGS)
 			   *datum_r;
 	BITVECP		union_l,
 				union_r;
-	int4		size_alpha,
+	int32		size_alpha,
 				size_beta;
-	int4		size_waste,
+	int32		size_waste,
 				waste = -1;
-	int4		nbytes;
+	int32		nbytes;
 	OffsetNumber seed_1 = 0,
 				seed_2 = 0;
 	OffsetNumber *left,

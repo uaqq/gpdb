@@ -4,12 +4,12 @@
  *	  Support routines for various kinds of object creation.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/define.c,v 1.108 2010/02/26 02:00:38 momjian Exp $
+ *	  src/backend/commands/define.c
  *
  * DESCRIPTION
  *	  The "DefineFoo" routines take the parse tree and pick out the
@@ -42,19 +42,6 @@
 #include "parser/scansup.h"
 #include "utils/int8.h"
 
-
-/*
- * Translate the input language name to lower case, and truncate if needed.
- *
- * Returns a palloc'd string
- */
-char *
-case_translate_language_name(const char *input)
-{
-	return downcase_truncate_identifier(input, strlen(input), false);
-}
-
-
 /*
  * Extract a string value (otherwise uninterpreted) from a DefElem.
  */
@@ -69,12 +56,7 @@ defGetString(DefElem *def)
 	switch (nodeTag(def->arg))
 	{
 		case T_Integer:
-			{
-				char	   *str = palloc(32);
-
-				snprintf(str, 32, "%ld", (long) intVal(def->arg));
-				return str;
-			}
+			return psprintf("%ld", (long) intVal(def->arg));
 		case T_Float:
 
 			/*
@@ -178,6 +160,30 @@ defGetBoolean(DefElem *def)
 }
 
 /*
+ * Extract an int32 value from a DefElem.
+ */
+int32
+defGetInt32(DefElem *def)
+{
+	if (def->arg == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("%s requires an integer value",
+						def->defname)));
+	switch (nodeTag(def->arg))
+	{
+		case T_Integer:
+			return (int32) intVal(def->arg);
+		default:
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("%s requires an integer value",
+							def->defname)));
+	}
+	return 0;					/* keep compiler quiet */
+}
+
+/*
  * Extract an int64 value from a DefElem.
  */
 int64
@@ -196,7 +202,7 @@ defGetInt64(DefElem *def)
 
 			/*
 			 * Values too large for int4 will be represented as Float
-			 * constants by the lexer.	Accept these if they are valid int8
+			 * constants by the lexer.  Accept these if they are valid int8
 			 * strings.
 			 */
 			return DatumGetInt64(DirectFunctionCall1(int8in,

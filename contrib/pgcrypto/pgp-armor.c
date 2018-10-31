@@ -26,13 +26,12 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $PostgreSQL: pgsql/contrib/pgcrypto/pgp-armor.c,v 1.3 2005/10/15 02:49:06 momjian Exp $
+ * contrib/pgcrypto/pgp-armor.c
  */
 
 #include "postgres.h"
 
 #include "px.h"
-#include "mbuf.h"
 #include "pgp.h"
 
 /*

@@ -3,10 +3,10 @@
  * postmaster.h
  *	  Exports from postmaster/postmaster.c.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/postmaster/postmaster.h,v 1.22 2010/01/02 16:58:08 momjian Exp $
+ * src/include/postmaster/postmaster.h
  *
  *-------------------------------------------------------------------------
  */
@@ -15,12 +15,11 @@
 
 /* GUC options */
 extern bool EnableSSL;
-extern bool SilentMode;
 extern int	ReservedBackends;
 extern int	PostPortNumber;
 extern int	Unix_socket_permissions;
 extern char *Unix_socket_group;
-extern char *UnixSocketDir;
+extern char *Unix_socket_directories;
 extern char *ListenAddresses;
 extern char *BackendListenAddress;
 extern bool ClientAuthInProgress;
@@ -30,6 +29,7 @@ extern bool Log_connections;
 extern bool log_hostname;
 extern bool enable_bonjour;
 extern char *bonjour_name;
+extern bool restart_after_crash;
 
 #ifdef WIN32
 extern HANDLE PostmasterHandle;
@@ -47,23 +47,24 @@ extern int	postmaster_alive_fds[2];
 
 #define POSTMASTER_IN_STARTUP_MSG "the database system is starting up"
 #define POSTMASTER_IN_RECOVERY_MSG "the database system is in recovery mode"
+#define POSTMASTER_IN_RECOVERY_DETAIL_MSG "last replayed record at"
 
 extern const char *progname;
 
-/* stack base pointer, defined in postgres.c */
-extern char *stack_base_ptr;
-
-extern int	PostmasterMain(int argc, char *argv[]);
+extern void PostmasterMain(int argc, char *argv[]) __attribute__((noreturn));
 extern void ClosePostmasterPorts(bool am_syslogger);
 
 extern int	MaxLivePostmasterChildren(void);
+
+extern int	GetNumShmemAttachedBgworkers(void);
+extern bool PostmasterMarkPIDForWorkerNotify(int);
 
 extern void SignalPromote(void);
 extern void ResetMirrorReadyFlag(void);
 
 #ifdef EXEC_BACKEND
 extern pid_t postmaster_forkexec(int argc, char *argv[]);
-extern int	SubPostmasterMain(int argc, char *argv[]);
+extern void SubPostmasterMain(int argc, char *argv[]) __attribute__((noreturn));
 
 extern Size ShmemBackendArraySize(void);
 extern void ShmemBackendArrayAllocation(void);
@@ -71,5 +72,14 @@ extern void ShmemBackendArrayAllocation(void);
 
 /* CDB */
 typedef int (PMSubStartCallback)(void);
+
+/*
+ * Note: MAX_BACKENDS is limited to 2^23-1 because inval.c stores the
+ * backend ID as a 3-byte signed integer.  Even if that limitation were
+ * removed, we still could not exceed INT_MAX/4 because some places compute
+ * 4*MaxBackends without any overflow check.  This is rechecked in the relevant
+ * GUC check hooks and in RegisterBackgroundWorker().
+ */
+#define MAX_BACKENDS	0x7fffff
 
 #endif   /* _POSTMASTER_H */

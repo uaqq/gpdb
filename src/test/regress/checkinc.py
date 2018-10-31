@@ -81,9 +81,11 @@ fileset = {
     'atomic.h':              [],
     'mbarrier.h':            [],
     'machine/sys/inline.h':  [],
+    'xlocale.h':             [],
     # snowball/libstemmer/header.h includes "api.h", without specifying
     # a path. Don't be alarmed by that.
-    'api.h': []
+    'api.h':                 [],
+    'valgrind/memcheck.h':   []
 }
 
 

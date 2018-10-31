@@ -24,7 +24,6 @@
 #include "catalog/catalog.h"
 
 #include "access/xlogutils.h"
-#include "cdb/cdbappendonlyam.h"
 
 /*
  * Insert an AO XLOG/AOCO record.
@@ -61,7 +60,7 @@ xlog_ao_insert(RelFileNode relFileNode, int32 segmentFileNum,
 	XLogInsert(RM_APPEND_ONLY_ID, XLOG_APPENDONLY_INSERT, rdata);
 }
 
-void
+static void
 ao_insert_replay(XLogRecord *record)
 {
 	char	   *dbPath;
@@ -98,15 +97,6 @@ ao_insert_replay(XLogRecord *record)
 	seek_offset = FileSeek(file, xlrec->target.offset, SEEK_SET);
 	if (seek_offset != xlrec->target.offset)
 	{
-		/*
-		 * FIXME: If non-existance of the segment file is handled by recording
-		 * it as invalid using XLogAOSegmentFile, should this case also behave
-		 * that way?  See GitHub issue
-		 *    https://github.com/greenplum-db/gpdb/issues/3843
-		 *
-		 * Note: heap redo routines treat a non existant file and a non
-		 * existant block within a file as identical.  See XLogReadBuffer.
-		 */
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("seeked to position " INT64_FORMAT " but expected to seek to position " INT64_FORMAT " in file \"%s\": %m",
@@ -156,7 +146,7 @@ void xlog_ao_truncate(RelFileNode relFileNode, int32 segmentFileNum, int64 offse
 	XLogInsert(RM_APPEND_ONLY_ID, XLOG_APPENDONLY_TRUNCATE, rdata);
 }
 
-void
+static void
 ao_truncate_replay(XLogRecord *record)
 {
 	char	   *dbPath;
@@ -189,4 +179,31 @@ ao_truncate_replay(XLogRecord *record)
 	}
 
 	FileClose(file);
+}
+
+void
+appendonly_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
+{
+	uint8         xl_info = record->xl_info;
+	uint8         info = xl_info & ~XLR_INFO_MASK;
+
+	/*
+	 * Perform redo of AO XLOG records only for standby mode. We do
+	 * not need to replay AO XLOG records in normal mode because fsync
+	 * is performed on file close.
+	 */
+	if (!IsStandbyMode())
+		return;
+
+	switch (info)
+	{
+		case XLOG_APPENDONLY_INSERT:
+			ao_insert_replay(record);
+			break;
+		case XLOG_APPENDONLY_TRUNCATE:
+			ao_truncate_replay(record);
+			break;
+		default:
+			elog(PANIC, "appendonly_redo: unknown code %u", info);
+	}
 }

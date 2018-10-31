@@ -3,12 +3,12 @@
  * hio.c
  *	  POSTGRES heap access method input/output code.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/heap/hio.c,v 1.78 2010/02/09 21:43:29 tgl Exp $
+ *	  src/backend/access/heap/hio.c
  *
  *-------------------------------------------------------------------------
  */
@@ -17,6 +17,8 @@
 
 #include "access/heapam.h"
 #include "access/hio.h"
+#include "access/htup_details.h"
+#include "access/visibilitymap.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
@@ -96,6 +98,64 @@ ReadBufferBI(Relation relation, BlockNumber targetBlock,
 }
 
 /*
+ * For each heap page which is all-visible, acquire a pin on the appropriate
+ * visibility map page, if we haven't already got one.
+ *
+ * buffer2 may be InvalidBuffer, if only one buffer is involved.  buffer1
+ * must not be InvalidBuffer.  If both buffers are specified, buffer1 must
+ * be less than buffer2.
+ */
+static void
+GetVisibilityMapPins(Relation relation, Buffer buffer1, Buffer buffer2,
+					 BlockNumber block1, BlockNumber block2,
+					 Buffer *vmbuffer1, Buffer *vmbuffer2)
+{
+	bool		need_to_pin_buffer1;
+	bool		need_to_pin_buffer2;
+
+	Assert(BufferIsValid(buffer1));
+	Assert(buffer2 == InvalidBuffer || buffer1 <= buffer2);
+
+	while (1)
+	{
+		/* Figure out which pins we need but don't have. */
+		need_to_pin_buffer1 = PageIsAllVisible(BufferGetPage(buffer1))
+			&& !visibilitymap_pin_ok(block1, *vmbuffer1);
+		need_to_pin_buffer2 = buffer2 != InvalidBuffer
+			&& PageIsAllVisible(BufferGetPage(buffer2))
+			&& !visibilitymap_pin_ok(block2, *vmbuffer2);
+		if (!need_to_pin_buffer1 && !need_to_pin_buffer2)
+			return;
+
+		/* We must unlock both buffers before doing any I/O. */
+		LockBuffer(buffer1, BUFFER_LOCK_UNLOCK);
+		if (buffer2 != InvalidBuffer && buffer2 != buffer1)
+			LockBuffer(buffer2, BUFFER_LOCK_UNLOCK);
+
+		/* Get pins. */
+		if (need_to_pin_buffer1)
+			visibilitymap_pin(relation, block1, vmbuffer1);
+		if (need_to_pin_buffer2)
+			visibilitymap_pin(relation, block2, vmbuffer2);
+
+		/* Relock buffers. */
+		LockBuffer(buffer1, BUFFER_LOCK_EXCLUSIVE);
+		if (buffer2 != InvalidBuffer && buffer2 != buffer1)
+			LockBuffer(buffer2, BUFFER_LOCK_EXCLUSIVE);
+
+		/*
+		 * If there are two buffers involved and we pinned just one of them,
+		 * it's possible that the second one became all-visible while we were
+		 * busy pinning the first one.  If it looks like that's a possible
+		 * scenario, we'll need to make a second pass through this loop.
+		 */
+		if (buffer2 == InvalidBuffer || buffer1 == buffer2
+			|| (need_to_pin_buffer1 && need_to_pin_buffer2))
+			break;
+	}
+}
+
+/*
  * RelationGetBufferForTuple
  *
  *	Returns pinned and exclusive-locked buffer of a page in given relation
@@ -117,7 +177,11 @@ ReadBufferBI(Relation relation, BlockNumber targetBlock,
  *	NOTE: it is unlikely, but not quite impossible, for otherBuffer to be the
  *	same buffer we select for insertion of the new tuple (this could only
  *	happen if space is freed in that page after heap_update finds there's not
- *	enough there).	In that case, the page will be pinned and locked only once.
+ *	enough there).  In that case, the page will be pinned and locked only once.
+ *
+ *	For the vmbuffer and vmbuffer_other arguments, we avoid deadlock by
+ *	locking them only after locking the corresponding heap page, and taking
+ *	no further lwlocks while they are locked.
  *
  *	We normally use FSM to help us find free space.  However,
  *	if HEAP_INSERT_SKIP_FSM is specified, we just append a new empty page to
@@ -134,7 +198,7 @@ ReadBufferBI(Relation relation, BlockNumber targetBlock,
  *	for additional constraints needed for safe usage of this behavior.)
  *
  *	The caller can also provide a BulkInsertState object to optimize many
- *	insertions into the same relation.	This keeps a pin on the current
+ *	insertions into the same relation.  This keeps a pin on the current
  *	insertion target page (to save pin/unpin cycles) and also passes a
  *	BULKWRITE buffer selection strategy object to the buffer manager.
  *	Passing NULL for bistate selects the default behavior.
@@ -150,7 +214,8 @@ ReadBufferBI(Relation relation, BlockNumber targetBlock,
 Buffer
 RelationGetBufferForTuple(Relation relation, Size len,
 						  Buffer otherBuffer, int options,
-						  struct BulkInsertStateData *bistate)
+						  BulkInsertState bistate,
+						  Buffer *vmbuffer, Buffer *vmbuffer_other)
 {
 	bool		use_fsm = !(options & HEAP_INSERT_SKIP_FSM);
 	Buffer		buffer = InvalidBuffer;
@@ -172,9 +237,8 @@ RelationGetBufferForTuple(Relation relation, Size len,
 	if (len > MaxHeapTupleSize)
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("row is too big: size %lu, maximum size %lu",
-						(unsigned long) len,
-						(unsigned long) MaxHeapTupleSize)));
+				 errmsg("row is too big: size %zu, maximum size %zu",
+						len, MaxHeapTupleSize)));
 
 	/* Compute desired extra freespace due to fillfactor option */
 	saveFreeSpace = RelationGetTargetPageFreeSpace(relation,
@@ -187,7 +251,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 
 	/*
 	 * We first try to put the tuple on the same page we last inserted a tuple
-	 * on, as cached in the BulkInsertState or relcache entry.	If that
+	 * on, as cached in the BulkInsertState or relcache entry.  If that
 	 * doesn't work, we ask the Free Space Map to locate a suitable page.
 	 * Since the FSM's info might be out of date, we have to be prepared to
 	 * loop around and retry multiple times. (To insure this isn't an infinite
@@ -219,7 +283,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 
 		/*
 		 * If the FSM knows nothing of the rel, try the last page before we
-		 * give up and extend.	This avoids one-tuple-per-page syndrome during
+		 * give up and extend.  This avoids one-tuple-per-page syndrome during
 		 * bootstrapping or in a recently-started system.
 		 */
 		if (targetBlock == InvalidBlockNumber)
@@ -237,23 +301,37 @@ RelationGetBufferForTuple(Relation relation, Size len,
 		 * Read and exclusive-lock the target block, as well as the other
 		 * block if one was given, taking suitable care with lock ordering and
 		 * the possibility they are the same block.
+		 *
+		 * If the page-level all-visible flag is set, caller will need to
+		 * clear both that and the corresponding visibility map bit.  However,
+		 * by the time we return, we'll have x-locked the buffer, and we don't
+		 * want to do any I/O while in that state.  So we check the bit here
+		 * before taking the lock, and pin the page if it appears necessary.
+		 * Checking without the lock creates a risk of getting the wrong
+		 * answer, so we'll have to recheck after acquiring the lock.
 		 */
 		if (otherBuffer == InvalidBuffer)
 		{
 			/* easy case */
 			buffer = ReadBufferBI(relation, targetBlock, bistate);
+			if (PageIsAllVisible(BufferGetPage(buffer)))
+				visibilitymap_pin(relation, targetBlock, vmbuffer);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		}
 		else if (otherBlock == targetBlock)
 		{
 			/* also easy case */
 			buffer = otherBuffer;
+			if (PageIsAllVisible(BufferGetPage(buffer)))
+				visibilitymap_pin(relation, targetBlock, vmbuffer);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		}
 		else if (otherBlock < targetBlock)
 		{
 			/* lock other buffer first */
 			buffer = ReadBuffer(relation, targetBlock);
+			if (PageIsAllVisible(BufferGetPage(buffer)))
+				visibilitymap_pin(relation, targetBlock, vmbuffer);
 			LockBuffer(otherBuffer, BUFFER_LOCK_EXCLUSIVE);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		}
@@ -261,9 +339,41 @@ RelationGetBufferForTuple(Relation relation, Size len,
 		{
 			/* lock target buffer first */
 			buffer = ReadBuffer(relation, targetBlock);
+			if (PageIsAllVisible(BufferGetPage(buffer)))
+				visibilitymap_pin(relation, targetBlock, vmbuffer);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 			LockBuffer(otherBuffer, BUFFER_LOCK_EXCLUSIVE);
 		}
+
+		/*
+		 * We now have the target page (and the other buffer, if any) pinned
+		 * and locked.  However, since our initial PageIsAllVisible checks
+		 * were performed before acquiring the lock, the results might now be
+		 * out of date, either for the selected victim buffer, or for the
+		 * other buffer passed by the caller.  In that case, we'll need to
+		 * give up our locks, go get the pin(s) we failed to get earlier, and
+		 * re-lock.  That's pretty painful, but hopefully shouldn't happen
+		 * often.
+		 *
+		 * Note that there's a small possibility that we didn't pin the page
+		 * above but still have the correct page pinned anyway, either because
+		 * we've already made a previous pass through this loop, or because
+		 * caller passed us the right page anyway.
+		 *
+		 * Note also that it's possible that by the time we get the pin and
+		 * retake the buffer locks, the visibility map bit will have been
+		 * cleared by some other backend anyway.  In that case, we'll have
+		 * done a bit of extra work for no gain, but there's no real harm
+		 * done.
+		 */
+		if (otherBuffer == InvalidBuffer || buffer <= otherBuffer)
+			GetVisibilityMapPins(relation, buffer, otherBuffer,
+								 targetBlock, otherBlock, vmbuffer,
+								 vmbuffer_other);
+		else
+			GetVisibilityMapPins(relation, otherBuffer, buffer,
+								 otherBlock, targetBlock, vmbuffer_other,
+								 vmbuffer);
 
 		/*
 		 * Now we can check to see if there's enough free space here. If so,
@@ -280,7 +390,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 
 		/*
 		 * Not enough space, so we must give up our page locks and pin (if
-		 * any) and prepare to look elsewhere.	We don't care which order we
+		 * any) and prepare to look elsewhere.  We don't care which order we
 		 * unlock the two buffers in, so this can be slightly simpler than the
 		 * code above.
 		 */
@@ -322,7 +432,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 
 	/*
 	 * XXX This does an lseek - rather expensive - but at the moment it is the
-	 * only way to accurately determine how many blocks are in a relation.	Is
+	 * only way to accurately determine how many blocks are in a relation.  Is
 	 * it worth keeping an accurate file length in shared memory someplace,
 	 * rather than relying on the kernel to do it for us?
 	 */
@@ -342,7 +452,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 
 	/*
 	 * Release the file-extension lock; it's now OK for someone else to extend
-	 * the relation some more.	Note that we cannot release this lock before
+	 * the relation some more.  Note that we cannot release this lock before
 	 * we have buffer lock on the new page, or we risk a race condition
 	 * against vacuumlazy.c --- see comments therein.
 	 */
@@ -366,7 +476,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 	if (len > PageGetHeapFreeSpace(page))
 	{
 		/* We should not get here given the test at the top */
-		elog(PANIC, "tuple is too big: size %lu", (unsigned long) len);
+		elog(PANIC, "tuple is too big: size %zu", len);
 	}
 
 	/*

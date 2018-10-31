@@ -26,8 +26,11 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $PostgreSQL: pgsql/contrib/pgcrypto/pgp.h,v 1.6 2009/06/11 14:48:52 momjian Exp $
+ * contrib/pgcrypto/pgp.h
  */
+
+#include "mbuf.h"
+#include "px.h"
 
 enum PGP_S2K_TYPE
 {
@@ -267,8 +270,7 @@ int			pgp_s2k_read(PullFilter *src, PGP_S2K *s2k);
 int			pgp_s2k_process(PGP_S2K *s2k, int cipher, const uint8 *key, int klen);
 
 typedef struct PGP_CFB PGP_CFB;
-int
-pgp_cfb_create(PGP_CFB **ctx_p, int algo,
+int pgp_cfb_create(PGP_CFB **ctx_p, int algo,
 			   const uint8 *key, int key_len, int recync, uint8 *iv);
 void		pgp_cfb_free(PGP_CFB *ctx);
 int			pgp_cfb_encrypt(PGP_CFB *ctx, const uint8 *data, int len, uint8 *dst);

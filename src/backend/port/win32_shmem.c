@@ -3,16 +3,17 @@
  * win32_shmem.c
  *	  Implement shared memory using win32 facilities
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/port/win32_shmem.c,v 1.16 2010/02/26 02:00:53 momjian Exp $
+ *	  src/backend/port/win32_shmem.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "miscadmin.h"
+#include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
 
@@ -45,7 +46,7 @@ GetSharedMemName(void)
 
 	bufsize = GetFullPathName(DataDir, 0, NULL, NULL);
 	if (bufsize == 0)
-		elog(FATAL, "could not get size for full pathname of datadir %s: %lu",
+		elog(FATAL, "could not get size for full pathname of datadir %s: error code %lu",
 			 DataDir, GetLastError());
 
 	retptr = malloc(bufsize + 18);		/* 18 for Global\PostgreSQL: */
@@ -55,7 +56,7 @@ GetSharedMemName(void)
 	strcpy(retptr, "Global\\PostgreSQL:");
 	r = GetFullPathName(DataDir, bufsize, retptr + 18, NULL);
 	if (r == 0 || r > bufsize)
-		elog(FATAL, "could not generate full pathname for datadir %s: %lu",
+		elog(FATAL, "could not generate full pathname for datadir %s: error code %lu",
 			 DataDir, GetLastError());
 
 	/*
@@ -78,7 +79,7 @@ GetSharedMemName(void)
  * Is a previously-existing shmem segment still existing and in use?
  *
  * The point of this exercise is to detect the case where a prior postmaster
- * crashed, but it left child backends that are still running.	Therefore
+ * crashed, but it left child backends that are still running.  Therefore
  * we only care about shmem segments that are associated with the intended
  * DataDir.  This is an important consideration since accidental matches of
  * shmem segment IDs are reasonably common.
@@ -117,7 +118,8 @@ PGSharedMemoryIsInUse(unsigned long id1, unsigned long id2)
  *
  */
 PGShmemHeader *
-PGSharedMemoryCreate(Size size, bool makePrivate, int port)
+PGSharedMemoryCreate(Size size, bool makePrivate, int port,
+					 PGShmemHeader **shim)
 {
 	void	   *memAddress;
 	PGShmemHeader *hdr;
@@ -127,6 +129,11 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 	int			i;
 	DWORD		size_high;
 	DWORD		size_low;
+
+	if (huge_pages == HUGE_PAGES_ON)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("huge pages not supported on this platform")));
 
 	/* Room for a header? */
 	Assert(size > MAXALIGN(sizeof(PGShmemHeader)));
@@ -165,9 +172,9 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 
 		if (!hmap)
 			ereport(FATAL,
-					(errmsg("could not create shared memory segment: %lu", GetLastError()),
-					 errdetail("Failed system call was CreateFileMapping(size=%lu, name=%s).",
-							   (unsigned long) size, szShareMem)));
+					(errmsg("could not create shared memory segment: error code %lu", GetLastError()),
+					 errdetail("Failed system call was CreateFileMapping(size=%zu, name=%s).",
+							   size, szShareMem)));
 
 		/*
 		 * If the segment already existed, CreateFileMapping() will return a
@@ -200,7 +207,7 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 	 */
 	if (!DuplicateHandle(GetCurrentProcess(), hmap, GetCurrentProcess(), &hmap2, 0, TRUE, DUPLICATE_SAME_ACCESS))
 		ereport(FATAL,
-				(errmsg("could not create shared memory segment: %lu", GetLastError()),
+				(errmsg("could not create shared memory segment: error code %lu", GetLastError()),
 				 errdetail("Failed system call was DuplicateHandle.")));
 
 	/*
@@ -208,7 +215,7 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 	 * care.
 	 */
 	if (!CloseHandle(hmap))
-		elog(LOG, "could not close handle to shared memory: %lu", GetLastError());
+		elog(LOG, "could not close handle to shared memory: error code %lu", GetLastError());
 
 
 	/* Register on-exit routine to delete the new segment */
@@ -221,7 +228,7 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 	memAddress = MapViewOfFileEx(hmap2, FILE_MAP_WRITE | FILE_MAP_READ, 0, 0, 0, NULL);
 	if (!memAddress)
 		ereport(FATAL,
-				(errmsg("could not create shared memory segment: %lu", GetLastError()),
+				(errmsg("could not create shared memory segment: error code %lu", GetLastError()),
 				 errdetail("Failed system call was MapViewOfFileEx.")));
 
 
@@ -240,12 +247,14 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port)
 	 */
 	hdr->totalsize = size;
 	hdr->freeoffset = MAXALIGN(sizeof(PGShmemHeader));
+	hdr->dsm_control = 0;
 
 	/* Save info for possible future use */
 	UsedShmemSegAddr = memAddress;
 	UsedShmemSegSize = size;
 	UsedShmemSegID = hmap2;
 
+	*shim = hdr;
 	return hdr;
 }
 
@@ -272,18 +281,19 @@ PGSharedMemoryReAttach(void)
 	 * Release memory region reservation that was made by the postmaster
 	 */
 	if (VirtualFree(UsedShmemSegAddr, 0, MEM_RELEASE) == 0)
-		elog(FATAL, "failed to release reserved memory region (addr=%p): %lu",
+		elog(FATAL, "failed to release reserved memory region (addr=%p): error code %lu",
 			 UsedShmemSegAddr, GetLastError());
 
 	hdr = (PGShmemHeader *) MapViewOfFileEx(UsedShmemSegID, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0, UsedShmemSegAddr);
 	if (!hdr)
-		elog(FATAL, "could not reattach to shared memory (key=%p, addr=%p): %lu",
+		elog(FATAL, "could not reattach to shared memory (key=%p, addr=%p): error code %lu",
 			 UsedShmemSegID, UsedShmemSegAddr, GetLastError());
 	if (hdr != origUsedShmemSegAddr)
 		elog(FATAL, "reattaching to shared memory returned unexpected address (got %p, expected %p)",
 			 hdr, origUsedShmemSegAddr);
 	if (hdr->magic != PGShmemMagic)
 		elog(FATAL, "reattaching to shared memory returned non-PostgreSQL memory");
+	dsm_set_control_handle(hdr->dsm_control);
 
 	UsedShmemSegAddr = hdr;		/* probably redundant */
 }
@@ -302,7 +312,7 @@ PGSharedMemoryDetach(void)
 	if (UsedShmemSegAddr != NULL)
 	{
 		if (!UnmapViewOfFile(UsedShmemSegAddr))
-			elog(LOG, "could not unmap view of shared memory: %lu", GetLastError());
+			elog(LOG, "could not unmap view of shared memory: error code %lu", GetLastError());
 
 		UsedShmemSegAddr = NULL;
 	}
@@ -318,7 +328,7 @@ pgwin32_SharedMemoryDelete(int status, Datum shmId)
 {
 	PGSharedMemoryDetach();
 	if (!CloseHandle(DatumGetPointer(shmId)))
-		elog(LOG, "could not close handle to shared memory: %lu", GetLastError());
+		elog(LOG, "could not close handle to shared memory: error code %lu", GetLastError());
 }
 
 /*
@@ -351,7 +361,7 @@ pgwin32_ReserveSharedMemoryRegion(HANDLE hChild)
 	if (address == NULL)
 	{
 		/* Don't use FATAL since we're running in the postmaster */
-		elog(LOG, "could not reserve shared memory region (addr=%p) for child %p: %lu",
+		elog(LOG, "could not reserve shared memory region (addr=%p) for child %p: error code %lu",
 			 UsedShmemSegAddr, hChild, GetLastError());
 		return false;
 	}

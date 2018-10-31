@@ -6,12 +6,12 @@
  * NB - this file is also used by ECPG and several frontend programs in
  * src/bin/ including pg_dump and psql
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/kwlookup.c,v 2.4 2010/01/02 16:57:49 momjian Exp $
+ *	  src/backend/parser/kwlookup.c
  *
  *-------------------------------------------------------------------------
  */
@@ -52,7 +52,7 @@ ScanKeywordLookup(const char *text,
 		return NULL;
 
 	/*
-	 * Apply an ASCII-only downcasing.	We must not use tolower() since it may
+	 * Apply an ASCII-only downcasing.  We must not use tolower() since it may
 	 * produce the wrong translation in some locales (eg, Turkish).
 	 */
 	for (i = 0; i < len; i++)

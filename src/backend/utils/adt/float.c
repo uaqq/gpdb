@@ -3,12 +3,12 @@
  * float.c
  *	  Functions for the built-in floating-point types.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/float.c,v 1.166 2010/02/27 21:53:21 tgl Exp $
+ *	  src/backend/utils/adt/float.c
  *
  *-------------------------------------------------------------------------
  */
@@ -24,6 +24,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/float_utils.h"
+#include "utils/sortsupport.h"
 
 
 #ifndef M_PI
@@ -67,9 +68,6 @@ static int	float8_cmp_internal(float8 a, float8 b);
 static double cbrt(double x);
 #endif   /* HAVE_CBRT */
 
-static ArrayType *float8_amalg_demalg(ArrayType *aTransArray, ArrayType *bTransArray,
-									  FunctionCallInfo fcinfo, bool is_amalg);
-
 /*
  * Routines to provide reasonably platform-independent handling of
  * infinity and NaN.  We assume that isinf() and isnan() are available
@@ -96,6 +94,14 @@ get_float8_infinity(void)
 #endif
 }
 
+/*
+* The funny placements of the two #pragmas is necessary because of a
+* long lived bug in the Microsoft compilers.
+* See http://support.microsoft.com/kb/120968/en-us for details
+*/
+#if (_MSC_VER >= 1800)
+#pragma warning(disable:4756)
+#endif
 float
 get_float4_infinity(void)
 {
@@ -103,6 +109,9 @@ get_float4_infinity(void)
 	/* C99 standard way */
 	return (float) INFINITY;
 #else
+#if (_MSC_VER >= 1800)
+#pragma warning(default:4756)
+#endif
 
 	/*
 	 * On some platforms, HUGE_VAL is an infinity, elsewhere it's just the
@@ -161,11 +170,7 @@ is_infinite(double val)
 
 
 /*
- *		float4in		- converts "num" to float
- *						  restricted syntax:
- *						  {<sp>} [+|-] {digit} [.{digit}] [<exp>]
- *						  where <sp> is a space, digit is 0-9,
- *						  <exp> is "e" or "E" followed by an integer.
+ *		float4in		- converts "num" to float4
  */
 Datum
 float4in(PG_FUNCTION_ARGS)
@@ -182,6 +187,10 @@ float4in(PG_FUNCTION_ARGS)
 	 */
 	orig_num = num;
 
+	/* skip leading whitespace */
+	while (*num != '\0' && isspace((unsigned char) *num))
+		num++;
+
 	/*
 	 * Check for an empty-string input to begin with, to avoid the vagaries of
 	 * strtod() on different platforms.
@@ -192,20 +201,23 @@ float4in(PG_FUNCTION_ARGS)
 				 errmsg("invalid input syntax for type real: \"%s\"",
 						orig_num)));
 
-	/* skip leading whitespace */
-	while (*num != '\0' && isspace((unsigned char) *num))
-		num++;
-
 	errno = 0;
 	val = strtod(num, &endptr);
 
 	/* did we not see anything that looks like a double? */
 	if (endptr == num || errno != 0)
 	{
+		int			save_errno = errno;
+
 		/*
-		 * C99 requires that strtod() accept NaN and [-]Infinity, but not all
-		 * platforms support that yet (and some accept them but set ERANGE
-		 * anyway...)  Therefore, we check for these inputs ourselves.
+		 * C99 requires that strtod() accept NaN, [+-]Infinity, and [+-]Inf,
+		 * but not all platforms support all of these (and some accept them
+		 * but set ERANGE anyway...)  Therefore, we check for these inputs
+		 * ourselves if strtod() fails.
+		 *
+		 * Note: C99 also requires hexadecimal input as well as some extended
+		 * forms of NaN, but we consider these forms unportable and don't try
+		 * to support them.  You can use 'em if your strtod() takes 'em.
 		 */
 		if (pg_strncasecmp(num, "NaN", 3) == 0)
 		{
@@ -217,16 +229,46 @@ float4in(PG_FUNCTION_ARGS)
 			val = get_float4_infinity();
 			endptr = num + 8;
 		}
+		else if (pg_strncasecmp(num, "+Infinity", 9) == 0)
+		{
+			val = get_float4_infinity();
+			endptr = num + 9;
+		}
 		else if (pg_strncasecmp(num, "-Infinity", 9) == 0)
 		{
 			val = -get_float4_infinity();
 			endptr = num + 9;
 		}
-		else if (errno == ERANGE)
-			ereport(ERROR,
-					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-					 errmsg("\"%s\" is out of range for type real",
-							orig_num)));
+		else if (pg_strncasecmp(num, "inf", 3) == 0)
+		{
+			val = get_float4_infinity();
+			endptr = num + 3;
+		}
+		else if (pg_strncasecmp(num, "+inf", 4) == 0)
+		{
+			val = get_float4_infinity();
+			endptr = num + 4;
+		}
+		else if (pg_strncasecmp(num, "-inf", 4) == 0)
+		{
+			val = -get_float4_infinity();
+			endptr = num + 4;
+		}
+		else if (save_errno == ERANGE)
+		{
+			/*
+			 * Some platforms return ERANGE for denormalized numbers (those
+			 * that are not zero, but are too close to zero to have full
+			 * precision).  We'd prefer not to throw error for that, so try to
+			 * detect whether it's a "real" out-of-range condition by checking
+			 * to see if the result is zero or huge.
+			 */
+			if (val == 0.0 || val >= HUGE_VAL || val <= -HUGE_VAL)
+				ereport(ERROR,
+						(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+						 errmsg("\"%s\" is out of range for type real",
+								orig_num)));
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
@@ -245,33 +287,6 @@ float4in(PG_FUNCTION_ARGS)
 			endptr--;
 	}
 #endif   /* HAVE_BUGGY_SOLARIS_STRTOD */
-
-#ifdef HAVE_BUGGY_IRIX_STRTOD
-
-	/*
-	 * In some IRIX versions, strtod() recognizes only "inf", so if the input
-	 * is "infinity" we have to skip over "inity".	Also, it may return
-	 * positive infinity for "-inf".
-	 */
-	if (isinf(val))
-	{
-		if (pg_strncasecmp(num, "Infinity", 8) == 0)
-		{
-			val = get_float4_infinity();
-			endptr = num + 8;
-		}
-		else if (pg_strncasecmp(num, "-Infinity", 9) == 0)
-		{
-			val = -get_float4_infinity();
-			endptr = num + 9;
-		}
-		else if (pg_strncasecmp(num, "-inf", 4) == 0)
-		{
-			val = -get_float4_infinity();
-			endptr = num + 4;
-		}
-	}
-#endif   /* HAVE_BUGGY_IRIX_STRTOD */
 
 	/* skip trailing whitespace */
 	while (*endptr != '\0' && isspace((unsigned char) *endptr))
@@ -355,10 +370,6 @@ float4send(PG_FUNCTION_ARGS)
 
 /*
  *		float8in		- converts "num" to float8
- *						  restricted syntax:
- *						  {<sp>} [+|-] {digit} [.{digit}] [<exp>]
- *						  where <sp> is a space, digit is 0-9,
- *						  <exp> is "e" or "E" followed by an integer.
  */
 Datum
 float8in(PG_FUNCTION_ARGS)
@@ -376,6 +387,10 @@ float8in(PG_FUNCTION_ARGS)
 	 */
 	orig_num = num;
 
+	/* skip leading whitespace */
+	while (*num != '\0' && isspace((unsigned char) *num))
+		num++;
+
 	/*
 	 * Check for an empty-string input to begin with, to avoid the vagaries of
 	 * strtod() on different platforms.
@@ -386,20 +401,23 @@ float8in(PG_FUNCTION_ARGS)
 			 errmsg("invalid input syntax for type double precision: \"%s\"",
 					orig_num)));
 
-	/* skip leading whitespace */
-	while (*num != '\0' && isspace((unsigned char) *num))
-		num++;
-
 	errno = 0;
 	val = strtold(num, &endptr);
 
 	/* did we not see anything that looks like a double? */
 	if (endptr == num || errno != 0)
 	{
+		int			save_errno = errno;
+
 		/*
-		 * C99 requires that strtod() accept NaN and [-]Infinity, but not all
-		 * platforms support that yet (and some accept them but set ERANGE
-		 * anyway...)  Therefore, we check for these inputs ourselves.
+		 * C99 requires that strtod() accept NaN, [+-]Infinity, and [+-]Inf,
+		 * but not all platforms support all of these (and some accept them
+		 * but set ERANGE anyway...)  Therefore, we check for these inputs
+		 * ourselves if strtod() fails.
+		 *
+		 * Note: C99 also requires hexadecimal input as well as some extended
+		 * forms of NaN, but we consider these forms unportable and don't try
+		 * to support them.  You can use 'em if your strtod() takes 'em.
 		 */
 		if (pg_strncasecmp(num, "NaN", 3) == 0)
 		{
@@ -411,16 +429,46 @@ float8in(PG_FUNCTION_ARGS)
 			val = get_float8_infinity();
 			endptr = num + 8;
 		}
+		else if (pg_strncasecmp(num, "+Infinity", 9) == 0)
+		{
+			val = get_float8_infinity();
+			endptr = num + 9;
+		}
 		else if (pg_strncasecmp(num, "-Infinity", 9) == 0)
 		{
 			val = -get_float8_infinity();
 			endptr = num + 9;
 		}
-		else if (errno == ERANGE)
-			ereport(ERROR,
-					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+		else if (pg_strncasecmp(num, "inf", 3) == 0)
+		{
+			val = get_float8_infinity();
+			endptr = num + 3;
+		}
+		else if (pg_strncasecmp(num, "+inf", 4) == 0)
+		{
+			val = get_float8_infinity();
+			endptr = num + 4;
+		}
+		else if (pg_strncasecmp(num, "-inf", 4) == 0)
+		{
+			val = -get_float8_infinity();
+			endptr = num + 4;
+		}
+		else if (save_errno == ERANGE)
+		{
+			/*
+			 * Some platforms return ERANGE for denormalized numbers (those
+			 * that are not zero, but are too close to zero to have full
+			 * precision).  We'd prefer not to throw error for that, so try to
+			 * detect whether it's a "real" out-of-range condition by checking
+			 * to see if the result is zero or huge.
+			 */
+			if (val == 0.0 || val >= HUGE_VAL || val <= -HUGE_VAL)
+				ereport(ERROR,
+						(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				   errmsg("\"%s\" is out of range for type double precision",
 						  orig_num)));
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
@@ -439,33 +487,6 @@ float8in(PG_FUNCTION_ARGS)
 			endptr--;
 	}
 #endif   /* HAVE_BUGGY_SOLARIS_STRTOD */
-
-#ifdef HAVE_BUGGY_IRIX_STRTOD
-
-	/*
-	 * In some IRIX versions, strtod() recognizes only "inf", so if the input
-	 * is "infinity" we have to skip over "inity".	Also, it may return
-	 * positive infinity for "-inf".
-	 */
-	if (isinf(val))
-	{
-		if (pg_strncasecmp(num, "Infinity", 8) == 0 || pg_strncasecmp(num, "+Infinity", 9) == 0)
-		{
-			val = get_float8_infinity();
-			endptr = num + 8;
-		}
-		else if (pg_strncasecmp(num, "-Infinity", 9) == 0)
-		{
-			val = -get_float8_infinity();
-			endptr = num + 9;
-		}
-		else if (pg_strncasecmp(num, "-inf", 4) == 0)
-		{
-			val = -get_float8_infinity();
-			endptr = num + 4;
-		}
-	}
-#endif   /* HAVE_BUGGY_IRIX_STRTOD */
 
 	/* skip trailing whitespace */
 	while (*endptr != '\0' && isspace((unsigned char) *endptr))
@@ -946,6 +967,24 @@ btfloat4cmp(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(float4_cmp_internal(arg1, arg2));
 }
 
+static int
+btfloat4fastcmp(Datum x, Datum y, SortSupport ssup)
+{
+	float4		arg1 = DatumGetFloat4(x);
+	float4		arg2 = DatumGetFloat4(y);
+
+	return float4_cmp_internal(arg1, arg2);
+}
+
+Datum
+btfloat4sortsupport(PG_FUNCTION_ARGS)
+{
+	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
+
+	ssup->comparator = btfloat4fastcmp;
+	PG_RETURN_VOID();
+}
+
 /*
  *		float8{eq,ne,lt,le,gt,ge}		- float8/float8 comparison operations
  */
@@ -1040,6 +1079,24 @@ btfloat8cmp(PG_FUNCTION_ARGS)
 	float8		arg2 = PG_GETARG_FLOAT8(1);
 
 	PG_RETURN_INT32(float8_cmp_internal(arg1, arg2));
+}
+
+static int
+btfloat8fastcmp(Datum x, Datum y, SortSupport ssup)
+{
+	float8		arg1 = DatumGetFloat8(x);
+	float8		arg2 = DatumGetFloat8(y);
+
+	return float8_cmp_internal(arg1, arg2);
+}
+
+Datum
+btfloat8sortsupport(PG_FUNCTION_ARGS)
+{
+	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
+
+	ssup->comparator = btfloat8fastcmp;
+	PG_RETURN_VOID();
 }
 
 Datum
@@ -1772,6 +1829,50 @@ check_float8_array(ArrayType *transarray, const char *caller, int n)
 	return (float8 *) ARR_DATA_PTR(transarray);
 }
 
+/*
+ * float8_combine
+ *
+ * An aggregate combine function used to combine two 3 fields
+ * aggregate transition data into a single transition data.
+ * This function is used only in two stage aggregation and
+ * shouldn't be called outside aggregate context.
+ */
+Datum
+float8_combine(PG_FUNCTION_ARGS)
+{
+	ArrayType  *transarray1 = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *transarray2 = PG_GETARG_ARRAYTYPE_P(1);
+	float8	   *transvalues1;
+	float8	   *transvalues2;
+	float8		N,
+				sumX,
+				sumX2;
+
+	if (!AggCheckCallContext(fcinfo, NULL))
+		elog(ERROR, "aggregate function called in non-aggregate context");
+
+	transvalues1 = check_float8_array(transarray1, "float8_combine", 3);
+	N = transvalues1[0];
+	sumX = transvalues1[1];
+	sumX2 = transvalues1[2];
+
+	transvalues2 = check_float8_array(transarray2, "float8_combine", 3);
+
+	N += transvalues2[0];
+	sumX += transvalues2[1];
+	CHECKFLOATVAL(sumX, isinf(transvalues1[1]) || isinf(transvalues2[1]),
+				  true);
+	sumX2 += transvalues2[2];
+	CHECKFLOATVAL(sumX2, isinf(transvalues1[2]) || isinf(transvalues2[2]),
+				  true);
+
+	transvalues1[0] = N;
+	transvalues1[1] = sumX;
+	transvalues1[2] = sumX2;
+
+	PG_RETURN_ARRAYTYPE_P(transarray1);
+}
+
 Datum
 float8_accum(PG_FUNCTION_ARGS)
 {
@@ -1822,59 +1923,6 @@ float8_accum(PG_FUNCTION_ARGS)
 		PG_RETURN_ARRAYTYPE_P(result);
 	}
 }
-
-
-Datum
-float8_decum(PG_FUNCTION_ARGS)
-{
-	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
-	float8		newval = PG_GETARG_FLOAT8(1);
-	float8	   *transvalues;
-	float8		N,
-				miX,
-				miX2;
-
-	transvalues = check_float8_array(transarray, "float8_decum", 3);
-	N = transvalues[0];
-	miX = transvalues[1];
-	miX2 = transvalues[2];
-
-	N -= 1.0;
-	miX -= newval;
-	miX2 -= newval * newval;
-
-	/*
-	 * If we're invoked by nodeAgg, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (fcinfo->context &&
-		(IsA(fcinfo->context, AggState) ||
-		 IsA(fcinfo->context, WindowAggState)))
-	{
-		transvalues[0] = N;
-		transvalues[1] = miX;
-		transvalues[2] = miX2;
-
-		PG_RETURN_ARRAYTYPE_P(transarray);
-	}
-	else
-	{
-		Datum		transdatums[3];
-		ArrayType  *result;
-
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(miX);
-		transdatums[2] = Float8GetDatumFast(miX2);
-
-		result = construct_array(transdatums, 3,
-								 FLOAT8OID,
-							 sizeof(float8), true /* float8 byval */ , 'd');
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
-}
-
 
 Datum
 float4_accum(PG_FUNCTION_ARGS)
@@ -1929,60 +1977,24 @@ float4_accum(PG_FUNCTION_ARGS)
 	}
 }
 
-
 Datum
-float4_decum(PG_FUNCTION_ARGS)
+float8_avg(PG_FUNCTION_ARGS)
 {
 	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
-	float4		newval4 = PG_GETARG_FLOAT4(1);
 	float8	   *transvalues;
 	float8		N,
-				miX,
-				miX2,
-				newval;
+				sumX;
 
-	transvalues = check_float8_array(transarray, "float4_decum", 3);
+	transvalues = check_float8_array(transarray, "float8_avg", 3);
 	N = transvalues[0];
-	miX = transvalues[1];
-	miX2 = transvalues[2];
+	sumX = transvalues[1];
+	/* ignore sumX2 */
 
-	/* Do arithmetic in float8 for best accuracy */
-	newval = newval4;
+	/* SQL defines AVG of no values to be NULL */
+	if (N == 0.0)
+		PG_RETURN_NULL();
 
-	N -= 1.0;
-	miX -= newval;
-	miX2 -= newval * newval;
-
-	/*
-	 * If we're invoked by nodeAgg, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (fcinfo->context &&
-		(IsA(fcinfo->context, AggState) ||
-		 IsA(fcinfo->context, WindowAggState)))
-	{
-		transvalues[0] = N;
-		transvalues[1] = miX;
-		transvalues[2] = miX2;
-
-		PG_RETURN_ARRAYTYPE_P(transarray);
-	}
-	else
-	{
-		Datum		transdatums[3];
-		ArrayType  *result;
-
-		transdatums[0] = Float8GetDatumFast(N);
-		transdatums[1] = Float8GetDatumFast(miX);
-		transdatums[2] = Float8GetDatumFast(miX2);
-
-		result = construct_array(transdatums, 3,
-								 FLOAT8OID,
-							 sizeof(float8), true /* float8 byval */ , 'd');
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
+	PG_RETURN_FLOAT8(sumX / N);
 }
 
 Datum
@@ -2111,7 +2123,7 @@ float8_stddev_samp(PG_FUNCTION_ARGS)
  * in that order.  Note that Y is the first argument to the aggregates!
  *
  * It might seem attractive to optimize this by having multiple accumulator
- * functions that only calculate the sums actually needed.	But on most
+ * functions that only calculate the sums actually needed.  But on most
  * modern machines, a couple of extra floating-point multiplies will be
  * insignificant compared to the other per-tuple overhead, so I've chosen
  * to minimize code space instead.
@@ -2187,6 +2199,69 @@ float8_regr_accum(PG_FUNCTION_ARGS)
 		PG_RETURN_ARRAYTYPE_P(result);
 	}
 }
+
+/*
+ * float8_regr_combine
+ *
+ * An aggregate combine function used to combine two 6 fields
+ * aggregate transition data into a single transition data.
+ * This function is used only in two stage aggregation and
+ * shouldn't be called outside aggregate context.
+ */
+Datum
+float8_regr_combine(PG_FUNCTION_ARGS)
+{
+	ArrayType  *transarray1 = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *transarray2 = PG_GETARG_ARRAYTYPE_P(1);
+	float8	   *transvalues1;
+	float8	   *transvalues2;
+	float8		N,
+				sumX,
+				sumX2,
+				sumY,
+				sumY2,
+				sumXY;
+
+	if (!AggCheckCallContext(fcinfo, NULL))
+		elog(ERROR, "aggregate function called in non-aggregate context");
+
+	transvalues1 = check_float8_array(transarray1, "float8_regr_combine", 6);
+	N = transvalues1[0];
+	sumX = transvalues1[1];
+	sumX2 = transvalues1[2];
+	sumY = transvalues1[3];
+	sumY2 = transvalues1[4];
+	sumXY = transvalues1[5];
+
+	transvalues2 = check_float8_array(transarray2, "float8_regr_combine", 6);
+
+	N += transvalues2[0];
+	sumX += transvalues2[1];
+	CHECKFLOATVAL(sumX, isinf(transvalues1[1]) || isinf(transvalues2[1]),
+				  true);
+	sumX2 += transvalues2[2];
+	CHECKFLOATVAL(sumX2, isinf(transvalues1[2]) || isinf(transvalues2[2]),
+				  true);
+	sumY += transvalues2[3];
+	CHECKFLOATVAL(sumY, isinf(transvalues1[3]) || isinf(transvalues2[3]),
+				  true);
+	sumY2 += transvalues2[4];
+	CHECKFLOATVAL(sumY2, isinf(transvalues1[4]) || isinf(transvalues2[4]),
+				  true);
+	sumXY += transvalues2[5];
+	CHECKFLOATVAL(sumXY, isinf(transvalues1[5]) || isinf(transvalues2[5]),
+				  true);
+
+	transvalues1[0] = N;
+	transvalues1[1] = sumX;
+	transvalues1[2] = sumX2;
+	transvalues1[3] = sumY;
+	transvalues1[4] = sumY2;
+	transvalues1[5] = sumXY;
+
+	PG_RETURN_ARRAYTYPE_P(transarray1);
+}
+
 
 Datum
 float8_regr_sxx(PG_FUNCTION_ARGS)
@@ -2806,7 +2881,7 @@ width_bucket_float8(PG_FUNCTION_ARGS)
 	if (isnan(operand) || isnan(bound1) || isnan(bound2))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_ARGUMENT_FOR_WIDTH_BUCKET_FUNCTION),
-			  errmsg("operand, lower bound and upper bound cannot be NaN")));
+			 errmsg("operand, lower bound, and upper bound cannot be NaN")));
 
 	/* Note that we allow "operand" to be infinite */
 	if (isinf(bound1) || isinf(bound2))
@@ -2881,169 +2956,3 @@ cbrt(double x)
 }
 
 #endif   /* !HAVE_CBRT */
-
-
-Datum
-float8_amalg(PG_FUNCTION_ARGS)
-{
-	ArrayType  *aTransArray = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *bTransArray = PG_GETARG_ARRAYTYPE_P(1);
-
-	PG_RETURN_ARRAYTYPE_P(float8_amalg_demalg(aTransArray, bTransArray,
-											  fcinfo, true));
-}
-
-Datum
-float8_demalg(PG_FUNCTION_ARGS)
-{
-	ArrayType  *aTransArray = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *bTransArray = PG_GETARG_ARRAYTYPE_P(1);
-
-	PG_RETURN_ARRAYTYPE_P(float8_amalg_demalg(aTransArray, bTransArray,
-											  fcinfo, false));	
-}
-
-static ArrayType *
-float8_amalg_demalg(ArrayType *aTransArray, ArrayType *bTransArray,
-					FunctionCallInfo fcinfo, bool is_amalg)
-{
-	float8	   *transvalues;
-	float8		aN, bN,
-				aSumX, bSumX,
-				aSumX2, bSumX2;
-
-	if (is_amalg)
-		transvalues = check_float8_array(bTransArray, "float8_amalg", 3);
-	else
-		transvalues = check_float8_array(bTransArray, "float8_demalg", 3);
-	bN = transvalues[0];
-	bSumX = transvalues[1];
-	bSumX2 = transvalues[2];
-
-	if (is_amalg)
-		transvalues = check_float8_array(aTransArray, "float8_amalg", 3);
-	else
-		transvalues = check_float8_array(aTransArray, "float8_demalg", 3);
-	aN = transvalues[0];
-	aSumX = transvalues[1];
-	aSumX2 = transvalues[2];
-
-	if (is_amalg)
-	{
-		aN += bN;
-		aSumX += bSumX;
-		aSumX2 += bSumX2;
-	}
-	else
-	{
-		aN -= bN;
-		aSumX -= bSumX;
-		aSumX2 -= bSumX2;
-	}
-
-	/*
-	 * If we're invoked by nodeAgg, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (fcinfo->context &&
-		(IsA(fcinfo->context, AggState) ||
-		 IsA(fcinfo->context, WindowAggState)))
-	{
-		transvalues[0] = aN;
-		transvalues[1] = aSumX;
-		transvalues[2] = aSumX2;
-
-		return aTransArray;
-	}
-	else
-	{
-		Datum		transdatums[3];
-		ArrayType  *result;
-
-		transdatums[0] = Float8GetDatumFast(aN);
-		transdatums[1] = Float8GetDatumFast(aSumX);
-		transdatums[2] = Float8GetDatumFast(aSumX2);
-
-		result = construct_array(transdatums, 3,
-								 FLOAT8OID,
-							 sizeof(float8), true /* float8 byval */ , 'd');
-
-		return result;
-	}
-}
-
-/* amalgamate values for linear regression functions */
-Datum
-float8_regr_amalg(PG_FUNCTION_ARGS)
-{
-	ArrayType  *aTransArray = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *bTransArray = PG_GETARG_ARRAYTYPE_P(1);
-	float8	   *transvalues;
-	float8		aN, bN,
-				aSumX, bSumX,
-				aSumY, bSumY,
-				aSumX2, bSumX2,
-				aSumY2, bSumY2,
-				aSumXY, bSumXY;
-
-	transvalues = check_float8_array(bTransArray, "float8_regr_amalg", 6);
-	bN = transvalues[0];
-	bSumX = transvalues[1];
-	bSumX2 = transvalues[2];
-	bSumY = transvalues[3];
-	bSumY2 = transvalues[4];
-	bSumXY = transvalues[5];
-
-	transvalues = check_float8_array(aTransArray, "float8_regr_amalg", 6);
-	aN = transvalues[0];
-	aSumX = transvalues[1];
-	aSumX2 = transvalues[2];
-	aSumY = transvalues[3];
-	aSumY2 = transvalues[4];
-	aSumXY = transvalues[5];
-
-	aN += bN;
-	aSumX += bSumX;
-	aSumX2 += bSumX2;
-	aSumY += bSumY;
-	aSumY2 += bSumY2;
-	aSumXY += bSumXY;
-
-	/*
-	 * If we're invoked by nodeAgg, we can cheat and modify our first
-	 * parameter in-place to reduce palloc overhead. Otherwise we construct a
-	 * new array with the updated transition data and return it.
-	 */
-	if (fcinfo->context &&
-		(IsA(fcinfo->context, AggState) ||
-		 IsA(fcinfo->context, WindowAggState)))
-	{
-		transvalues[0] = aN;
-		transvalues[1] = aSumX;
-		transvalues[2] = aSumX2;
-		transvalues[3] = aSumY;
-		transvalues[4] = aSumY2;
-		transvalues[5] = aSumXY;
-
-		PG_RETURN_ARRAYTYPE_P(aTransArray);
-	}
-	else
-	{
-		Datum		transdatums[6];
-		ArrayType  *result;
-
-		transdatums[0] = Float8GetDatumFast(aN);
-		transdatums[1] = Float8GetDatumFast(aSumX);
-		transdatums[2] = Float8GetDatumFast(aSumX2);
-		transdatums[3] = Float8GetDatumFast(aSumY);
-		transdatums[4] = Float8GetDatumFast(aSumY2);
-		transdatums[5] = Float8GetDatumFast(aSumXY);
-
-		result = construct_array(transdatums, 6,
-								 FLOAT8OID,
-							 sizeof(float8), true /* float8 byval */ , 'd');
-
-		PG_RETURN_ARRAYTYPE_P(result);
-	}
-}

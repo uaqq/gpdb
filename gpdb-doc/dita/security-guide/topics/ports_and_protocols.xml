@@ -134,7 +134,7 @@ MIRROR_REPLICATION_PORT_BASE = 9000</codeblock></note>
           <row>
             <entry>Backup completion notification</entry>
             <entry>TCP 25, TCP 587, SMTP</entry>
-            <entry>The gpcrondump backup utility can optionally send email to a list of email
+            <entry>The <codeph>gpbackup</codeph> backup utility can optionally send email to a list of email
               addresses at completion of a backup. The SMTP service must be enabled on the Greenplum
               master host. </entry>
           </row>
@@ -196,15 +196,6 @@ MIRROR_REPLICATION_PORT_BASE = 9000</codeblock></note>
               server.</entry>
           </row>
           <row>
-            <entry morerows="1">Symantec NetBackup</entry>
-            <entry>TCP/UDB 1556, veritas-pbx</entry>
-            <entry>The Symantec NetBackup client network port. </entry>
-          </row>
-          <row>
-            <entry>TCP 13724, vnetd</entry>
-            <entry>Symantec NetBackup vnetd communication port.</entry>
-          </row>
-          <row>
             <entry>Pgbouncer connection pooler</entry>
             <entry>TCP, libpq</entry>
             <entry>The pgbouncer connection pooler runs between libpq clients and Greenplum (or
@@ -214,16 +205,6 @@ MIRROR_REPLICATION_PORT_BASE = 9000</codeblock></note>
               to the Greenplum standby host without requiring clients to reconfigure. Set the client
               connection port and the Greenplum master host address and port in the
                 <filepath>pgbouncer.ini</filepath> configuration file. </entry>
-          </row>
-          <row>
-            <entry>stunnel SSL proxy</entry>
-            <entry>TCP, ssh, libpq</entry>
-            <entry>A stunnel SSL proxy can be used to add SSL support for database clients accessing
-              the database through a pgbouncer connection pool. A secure tunnel can be set up by
-              setting up stunnel on the client and the pgbouncer host. Newer versions of stunnel
-              that support encrypted libpq connections only require stunnel on the pgbouncer host.
-              The stunnel proxy's connection ports and the pgbouncer host and port are specified in
-              the <filepath>stunnel.conf</filepath> configuration file.</entry>
           </row>
         </tbody>
       </tgroup>

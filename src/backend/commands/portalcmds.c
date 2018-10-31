@@ -4,19 +4,19 @@
  *	  Utility commands affecting portals (that is, SQL cursor commands)
  *
  * Note: see also tcop/pquery.c, which implements portal operations for
- * the FE/BE protocol.	This module uses pquery.c for some operations.
+ * the FE/BE protocol.  This module uses pquery.c for some operations.
  * And both modules depend on utils/mmgr/portalmem.c, which controls
  * storage management for portals (but doesn't run any queries in them).
  *
  *
  * Portions Copyright (c) 2006-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/portalcmds.c,v 1.82 2010/01/02 16:57:37 momjian Exp $
+ *	  src/backend/commands/portalcmds.c
  *
  *-------------------------------------------------------------------------
  */
@@ -119,7 +119,7 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 
 	/*----------
 	 * Also copy the outer portal's parameter list into the inner portal's
-	 * memory context.	We want to pass down the parameter values in case we
+	 * memory context.  We want to pass down the parameter values in case we
 	 * had a command like
 	 *		DECLARE c CURSOR FOR SELECT ... WHERE foo = $1
 	 * This will have been parsed using the outer parameter set and the
@@ -138,7 +138,7 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 	 *
 	 * If the user didn't specify a SCROLL type, allow or disallow scrolling
 	 * based on whether it would require any additional runtime overhead to do
-	 * so.	Also, we disallow scrolling for FOR UPDATE cursors.
+	 * so.  Also, we disallow scrolling for FOR UPDATE cursors.
 	 *
 	 * GPDB: we do not allow backward scans at the moment regardless
 	 * of any additional runtime overhead. We forced CURSOR_OPT_NO_SCROLL
@@ -159,7 +159,7 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 	/*
 	 * Start execution, inserting parameters if any.
 	 */
-	PortalStart(portal, params, GetActiveSnapshot(), NULL);
+	PortalStart(portal, params, 0, GetActiveSnapshot(), NULL);
 
 	Assert(portal->strategy == PORTAL_ONE_SELECT);
 
@@ -262,7 +262,7 @@ PerformPortalClose(const char *name)
 	}
 
 	/*
-	 * Note: PortalCleanup is called as a side-effect
+	 * Note: PortalCleanup is called as a side-effect, if not already done.
 	 */
 	PortalDrop(portal, false);
 }
@@ -272,6 +272,10 @@ PerformPortalClose(const char *name)
  *
  * Clean up a portal when it's dropped.  This is the standard cleanup hook
  * for portals.
+ *
+ * Note: if portal->status is PORTAL_FAILED, we are probably being called
+ * during error abort, and must be careful to avoid doing anything that
+ * is likely to fail again.
  */
 void
 PortalCleanup(Portal portal)
@@ -292,7 +296,14 @@ PortalCleanup(Portal portal)
 	queryDesc = PortalGetQueryDesc(portal);
 	if (queryDesc)
 	{
+		/*
+		 * Reset the queryDesc before anything else.  This prevents us from
+		 * trying to shut down the executor twice, in case of an error below.
+		 * The transaction abort mechanisms will take care of resource cleanup
+		 * in such a case.
+		 */
 		portal->queryDesc = NULL;
+
 		if (portal->status != PORTAL_FAILED)
 		{
 			ResourceOwner saveResourceOwner;
@@ -301,6 +312,8 @@ PortalCleanup(Portal portal)
 			saveResourceOwner = CurrentResourceOwner;
 			PG_TRY();
 			{
+				if (portal->resowner)
+					CurrentResourceOwner = portal->resowner;
 				CurrentResourceOwner = portal->resowner;
 
 				/*
@@ -308,7 +321,7 @@ PortalCleanup(Portal portal)
 				 */
 				queryDesc->estate->cancelUnfinished = true;
 
-				/* we do not need AfterTriggerEndQuery() here */
+				ExecutorFinish(queryDesc);
 				ExecutorEnd(queryDesc);
 				FreeQueryDesc(queryDesc);
 			}
@@ -316,20 +329,6 @@ PortalCleanup(Portal portal)
 			{
 				/* Ensure CurrentResourceOwner is restored on error */
 				CurrentResourceOwner = saveResourceOwner;
-
-				/*
-				 * If ExecutorEnd() threw an error, our gangs might be sitting
-				 * on the allocated-list without having been properly free()ed.
-				 *
-				 * For cursor-queries with large numbers of slices, this
-				 * can "leak" a lot of resources on the segments.
-				 */
-				if (Gp_role == GP_ROLE_DISPATCH)
-				{
-					freeGangsForPortal((char *) portal->name);
-					cleanupPortalGangs(portal);
-				}
-
 				PG_RE_THROW();
 			}
 			PG_END_TRY();
@@ -337,18 +336,11 @@ PortalCleanup(Portal portal)
 		}
 	}
 
-	/*
-	 * Terminate unneeded QE processes.
-	 */
-	if (Gp_role == GP_ROLE_DISPATCH)
-		cleanupPortalGangs(portal);
-
 	/* 
 	 * If resource scheduling is enabled, release the resource lock. 
 	 */
-	if (portal->releaseResLock)
+	if (IsResQueueLockedForPortal(portal))
 	{
-		portal->releaseResLock = false;
         ResUnLockPortal(portal);
 	}
 
@@ -441,7 +433,7 @@ PersistHoldablePortal(Portal portal)
 			ExecutorRewind(queryDesc);
 
 		/*
-		 * Change the destination to output to the tuplestore.	Note we tell
+		 * Change the destination to output to the tuplestore.  Note we tell
 		 * the tuplestore receiver to detoast all data passed through it.
 		 */
 		queryDesc->dest = CreateDestReceiver(DestTuplestore);
@@ -460,18 +452,12 @@ PersistHoldablePortal(Portal portal)
 		 * Now shut down the inner executor.
 		 */
 		portal->queryDesc = NULL;		/* prevent double shutdown */
-		/* we do not need AfterTriggerEndQuery() here */
+		ExecutorFinish(queryDesc);
 		ExecutorEnd(queryDesc);
 		FreeQueryDesc(queryDesc);
 
 		/*
-		 * Set the position in the result set: ideally, this could be
-		 * implemented by just skipping straight to the tuple # that we need
-		 * to be at, but the tuplestore API doesn't support that. So we start
-		 * at the beginning of the tuplestore and iterate through it until we
-		 * reach where we need to be.  FIXME someday?  (Fortunately, the
-		 * typical case is that we're supposed to be at or near the start of
-		 * the result set, so this isn't as bad as it sounds.)
+		 * Set the position in the result set.
 		 */
 		MemoryContextSwitchTo(portal->holdContext);
 
@@ -489,27 +475,24 @@ PersistHoldablePortal(Portal portal)
 				 * Just force the tuplestore forward to its end.  The size of the
 				 * skip request here is arbitrary.
 				 */
-				while (tuplestore_advance(portal->holdStore, true))
+				while (tuplestore_skiptuples(portal->holdStore, 1000000, true))
 					/* continue */ ;
 			}
 			else
 			{
-				int64		store_pos;
-	
 				tuplestore_rescan(portal->holdStore);
-	
-				for (store_pos = 0; store_pos < portal->portalPos; store_pos++)
-				{
-					if (!tuplestore_advance(portal->holdStore, true))
-						elog(ERROR, "unexpected end of tuple stream");
-				}
+
+				if (!tuplestore_skiptuples(portal->holdStore,
+										   portal->portalPos,
+										   true))
+					elog(ERROR, "unexpected end of tuple stream");
 			}
 		}
 	}
 	PG_CATCH();
 	{
 		/* Uncaught error while executing portal: mark it dead */
-		portal->status = PORTAL_FAILED;
+		MarkPortalFailed(portal);
 
 		/* GPDB: cleanup dispatch and teardown interconnect */
 		if (portal->queryDesc)

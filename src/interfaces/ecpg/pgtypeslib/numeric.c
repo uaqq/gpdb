@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/pgtypeslib/numeric.c,v 1.35 2010/02/02 16:09:12 meskes Exp $ */
+/* src/interfaces/ecpg/pgtypeslib/numeric.c */
 
 #include "postgres_fe.h"
 #include <ctype.h>
@@ -417,7 +417,7 @@ PGTYPESnumeric_from_asc(char *str, char **endptr)
 	ret = set_var_from_str(str, ptr, value);
 	if (ret)
 	{
-		free(value);
+		PGTYPESnumeric_free(value);
 		return (NULL);
 	}
 
@@ -974,7 +974,7 @@ PGTYPESnumeric_sub(numeric *var1, numeric *var2, numeric *result)
  * mul_var() -
  *
  *	Multiplication on variable level. Product of var1 * var2 is stored
- *	in result.	Accuracy of result is determined by global_rscale.
+ *	in result.  Accuracy of result is determined by global_rscale.
  * ----------
  */
 int
@@ -1366,7 +1366,6 @@ done:
 int
 PGTYPESnumeric_cmp(numeric *var1, numeric *var2)
 {
-
 	/* use cmp_abs function to calculate the result */
 
 	/* both are positive: normal comparation with cmp_abs */
@@ -1609,8 +1608,12 @@ PGTYPESnumeric_to_long(numeric *nv, long *lp)
 	errno = 0;
 	*lp = strtol(s, &endptr, 10);
 	if (endptr == s)
+	{
 		/* this should not happen actually */
+		free(s);
 		return -1;
+	}
+	free(s);
 	if (errno == ERANGE)
 	{
 		if (*lp == LONG_MIN)
@@ -1619,7 +1622,6 @@ PGTYPESnumeric_to_long(numeric *nv, long *lp)
 			errno = PGTYPES_NUM_OVERFLOW;
 		return -1;
 	}
-	free(s);
 	return 0;
 }
 

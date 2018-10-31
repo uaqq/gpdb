@@ -6,7 +6,7 @@
  * Joe Conway <mail@joeconway.com>
  *
  * contrib/fuzzystrmatch/fuzzystrmatch.c
- * Copyright (c) 2001-2011, PostgreSQL Global Development Group
+ * Copyright (c) 2001-2014, PostgreSQL Global Development Group
  * ALL RIGHTS RESERVED;
  *
  * metaphone()
@@ -40,23 +40,10 @@
 
 #include <ctype.h>
 
-#include "fmgr.h"
 #include "mb/pg_wchar.h"
 #include "utils/builtins.h"
 
 PG_MODULE_MAGIC;
-
-
-/*
- * External declarations for exported functions
- */
-extern Datum levenshtein_with_costs(PG_FUNCTION_ARGS);
-extern Datum levenshtein(PG_FUNCTION_ARGS);
-extern Datum levenshtein_less_equal_with_costs(PG_FUNCTION_ARGS);
-extern Datum levenshtein_less_equal(PG_FUNCTION_ARGS);
-extern Datum metaphone(PG_FUNCTION_ARGS);
-extern Datum soundex(PG_FUNCTION_ARGS);
-extern Datum difference(PG_FUNCTION_ARGS);
 
 /*
  * Soundex
@@ -158,7 +145,7 @@ getcode(char c)
 /* These letters are passed through unchanged */
 #define NOCHANGE(c) (getcode(c) & 2)	/* FJMNR */
 
-/* These form dipthongs when preceding H */
+/* These form diphthongs when preceding H */
 #define AFFECTH(c)	(getcode(c) & 4)	/* CGPST */
 
 /* These make C and G soft */
@@ -168,7 +155,7 @@ getcode(char c)
 #define NOGHTOF(c)	(getcode(c) & 16)	/* BDH */
 
 /* Faster than memcmp(), for this use case. */
-static bool inline
+static inline bool
 rest_of_char_same(const char *s1, const char *s2, int len)
 {
 	while (len > 0)

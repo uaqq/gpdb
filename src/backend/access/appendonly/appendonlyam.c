@@ -57,6 +57,7 @@
 #include "utils/faultinjector.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/snapmgr.h"
 
 #define SCANNED_SEGNO  \
 	(&scan->aos_segfile_arr[ \
@@ -423,11 +424,16 @@ errdetail_appendonly_insert_block_header(AppendOnlyInsertDesc aoInsertDesc)
 static void
 SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 {
+	RelFileNodeBackend rnode;
+
 	FileSegInfo *fsinfo;
 	int64		eof;
 	int64		eof_uncompressed;
 	int64		varblockcount;
 	int32		fileSegNo;
+
+	rnode.node = aoInsertDesc->aoi_rel->rd_node;
+	rnode.backend = aoInsertDesc->aoi_rel->rd_backend;
 
 	/* Make the 'segment' file name */
 	MakeAOSegmentFileName(aoInsertDesc->aoi_rel,
@@ -466,7 +472,9 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 	}
 
 	/* Never insert into a segment that is awaiting a drop */
-	Assert(aoInsertDesc->fsInfo->state != AOSEG_STATE_AWAITING_DROP);
+	elogif(aoInsertDesc->fsInfo->state == AOSEG_STATE_AWAITING_DROP,
+		   ERROR, "cannot insert into segno (%d) from AO relid %d that is in state AOSEG_STATE_AWAITING_DROP",
+		   aoInsertDesc->cur_segno, RelationGetRelid(aoInsertDesc->aoi_rel));
 
 	fsinfo = aoInsertDesc->fsInfo;
 	Assert(fsinfo);
@@ -484,7 +492,7 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 	{
 		AppendOnlyStorageWrite_TransactionCreateFile(&aoInsertDesc->storageWrite,
 													 aoInsertDesc->appendFilePathName,
-													 &aoInsertDesc->aoi_rel->rd_node,
+													 &rnode,
 													 aoInsertDesc->cur_segno);
 	}
 
@@ -496,7 +504,7 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 									aoInsertDesc->fsInfo->formatversion,
 									eof,
 									eof_uncompressed,
-									&aoInsertDesc->aoi_rel->rd_node,
+									&rnode,
 									aoInsertDesc->cur_segno);
 
 	/* reset counts */
@@ -551,7 +559,7 @@ CloseWritableFileSeg(AppendOnlyInsertDesc aoInsertDesc)
 
 	elogif(Debug_appendonly_print_insert, LOG,
 		   "Append-only scan closed write file segment #%d for table %s "
-		   "(file length " INT64_FORMAT ", insert count %f, VarBlock count %f",
+		   "(file length " INT64_FORMAT ", insert count " INT64_FORMAT ", VarBlock count " INT64_FORMAT,
 		   aoInsertDesc->cur_segno,
 		   NameStr(aoInsertDesc->aoi_rel->rd_rel->relname),
 		   fileLen,
@@ -911,7 +919,7 @@ upgrade_tuple(AppendOnlyExecutorReadBlock *executorReadBlock,
 			executorReadBlock->numNumericAtts = n;
 		}
 
-		/* If there were any numeric columns, we need to conver them. */
+		/* If there were any numeric columns, we need to convert them. */
 		if (executorReadBlock->numNumericAtts > 0)
 			convert_numerics = true;
 	}
@@ -1584,7 +1592,7 @@ appendonly_beginrangescan_internal(Relation relation,
 	scan->aos_filenamepath_maxlen = AOSegmentFilePathNameLen(relation) + 1;
 	scan->aos_filenamepath = (char *) palloc(scan->aos_filenamepath_maxlen);
 	scan->aos_filenamepath[0] = '\0';
-	scan->usableBlockSize = AppendOnlyStorage_GetUsableBlockSize(relation->rd_appendonly->blocksize);
+	scan->usableBlockSize = relation->rd_appendonly->blocksize;
 	scan->aos_rd = relation;
 	scan->appendOnlyMetaDataSnapshot = appendOnlyMetaDataSnapshot;
 	scan->snapshot = snapshot;
@@ -2143,9 +2151,7 @@ appendonly_fetch_init(Relation relation,
 	attr->compressLevel = relation->rd_appendonly->compresslevel;
 	attr->checksum = relation->rd_appendonly->checksum;
 	attr->safeFSWriteSize = relation->rd_appendonly->safefswritesize;
-
-	aoFetchDesc->usableBlockSize =
-		AppendOnlyStorage_GetUsableBlockSize(relation->rd_appendonly->blocksize);
+	aoFetchDesc->usableBlockSize = relation->rd_appendonly->blocksize;
 
 	/*
 	 * Get information about all the file segments we need to scan
@@ -2441,7 +2447,7 @@ AppendOnlyDeleteDesc
 appendonly_delete_init(Relation rel, Snapshot appendOnlyMetaDataSnapshot)
 {
 	Assert(RelationIsAoRows(rel));
-	Assert(!IsXactIsoLevelSerializable);
+	Assert(!IsolationUsesXactSnapshot());
 
 	AppendOnlyDeleteDesc aoDeleteDesc = palloc0(sizeof(AppendOnlyDeleteDescData));
 
@@ -2507,7 +2513,7 @@ AppendOnlyUpdateDesc
 appendonly_update_init(Relation rel, Snapshot appendOnlyMetaDataSnapshot, int segno)
 {
 	Assert(RelationIsAoRows(rel));
-	Assert(!IsXactIsoLevelSerializable);
+	Assert(!IsolationUsesXactSnapshot());
 
 	/*
 	 * allocate and initialize the insert descriptor
@@ -2615,7 +2621,7 @@ appendonly_insert_init(Relation rel, int segno, bool update_mode)
 	 * Writers uses this since they have exclusive access to the lock acquired
 	 * with LockRelationAppendOnlySegmentFile for the segment-file.
 	 */
-	aoInsertDesc->appendOnlyMetaDataSnapshot = SnapshotNow;
+	aoInsertDesc->appendOnlyMetaDataSnapshot = RegisterSnapshot(GetCatalogSnapshot(InvalidOid));
 
 	aoInsertDesc->mt_bind = create_memtuple_binding(RelationGetDescr(rel));
 
@@ -2643,7 +2649,7 @@ appendonly_insert_init(Relation rel, int segno, bool update_mode)
 /* 	aoInsertDesc->useNoToast = aoentry->notoast; */
 	aoInsertDesc->useNoToast = Debug_appendonly_use_no_toast;
 
-	aoInsertDesc->usableBlockSize = AppendOnlyStorage_GetUsableBlockSize(rel->rd_appendonly->blocksize);
+	aoInsertDesc->usableBlockSize = rel->rd_appendonly->blocksize;
 
 	attr = &aoInsertDesc->storageAttributes;
 
@@ -2834,7 +2840,7 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 	/* tableName */
 #endif
 
-	Insist(RelationIsAoRows(relation));
+	Assert(RelationIsAoRows(relation));
 
 	if (aoInsertDesc->useNoToast)
 		need_toast = false;
@@ -3021,7 +3027,7 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 
 	aoInsertDesc->insertCount++;
 	if (!aoInsertDesc->update_mode)
-		pgstat_count_heap_insert(relation);
+		pgstat_count_heap_insert(relation, 1);
 	else
 		pgstat_count_heap_update(relation, false);
 	aoInsertDesc->lastSequence++;
@@ -3088,6 +3094,8 @@ appendonly_insert_finish(AppendOnlyInsertDesc aoInsertDesc)
 	AppendOnlyBlockDirectory_End_forInsert(&(aoInsertDesc->blockDirectory));
 
 	AppendOnlyStorageWrite_FinishSession(&aoInsertDesc->storageWrite);
+
+	UnregisterSnapshot(aoInsertDesc->appendOnlyMetaDataSnapshot);
 
 	pfree(aoInsertDesc->title);
 	pfree(aoInsertDesc);

@@ -3,11 +3,11 @@
  * tsquery.c
  *	  I/O functions for tsquery
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/tsquery.c,v 1.22 2010/01/02 16:57:55 momjian Exp $
+ *	  src/backend/utils/adt/tsquery.c
  *
  *-------------------------------------------------------------------------
  */
@@ -17,11 +17,9 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "tsearch/ts_locale.h"
-#include "tsearch/ts_type.h"
 #include "tsearch/ts_utils.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
-#include "utils/pg_crc.h"
 
 
 struct TSQueryParserStateData
@@ -218,7 +216,6 @@ gettoken_query(TSQueryParserState state,
 		}
 		state->buf += pg_mblen(state->buf);
 	}
-	return PT_END;
 }
 
 /*
@@ -273,7 +270,7 @@ pushValue_internal(TSQueryParserState state, pg_crc32 valcrc, int distance, int 
  * of the string.
  */
 void
-pushValue(TSQueryParserState state, char *strval, int lenval, int2 weight, bool prefix)
+pushValue(TSQueryParserState state, char *strval, int lenval, int16 weight, bool prefix)
 {
 	pg_crc32	valcrc;
 
@@ -517,8 +514,13 @@ parse_tsquery(char *buf,
 		return query;
 	}
 
-	/* Pack the QueryItems in the final TSQuery struct to return to caller */
+	if (TSQUERY_TOO_BIG(list_length(state.polstr), state.sumlen))
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("tsquery is too large")));
 	commonlen = COMPUTESIZE(list_length(state.polstr), state.sumlen);
+
+	/* Pack the QueryItems in the final TSQuery struct to return to caller */
 	query = (TSQuery) palloc0(commonlen);
 	SET_VARSIZE(query, commonlen);
 	query->size = list_length(state.polstr);
@@ -571,8 +573,6 @@ Datum
 tsqueryin(PG_FUNCTION_ARGS)
 {
 	char	   *in = PG_GETARG_CSTRING(0);
-
-	pg_verifymbstr(in, strlen(in), false);
 
 	PG_RETURN_TSQUERY(parse_tsquery(in, pushval_asis, PointerGetDatum(NULL), false));
 }

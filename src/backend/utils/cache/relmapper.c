@@ -23,17 +23,17 @@
  * mapped catalogs can only be relocated by operations such as VACUUM FULL
  * and CLUSTER, which make no transactionally-significant changes: it must be
  * safe for the new file to replace the old, even if the transaction itself
- * aborts.	An important factor here is that the indexes and toast table of
+ * aborts.  An important factor here is that the indexes and toast table of
  * a mapped catalog must also be mapped, so that the rewrites/relocations of
  * all these files commit in a single map file update rather than being tied
  * to transaction commit.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/cache/relmapper.c,v 1.3 2010/02/26 02:01:12 momjian Exp $
+ *	  src/backend/utils/cache/relmapper.c
  *
  *-------------------------------------------------------------------------
  */
@@ -51,20 +51,19 @@
 #include "storage/fd.h"
 #include "storage/lwlock.h"
 #include "utils/inval.h"
-#include "utils/pg_crc.h"
 #include "utils/relmapper.h"
 
 
 /*
  * The map file is critical data: we have no automatic method for recovering
  * from loss or corruption of it.  We use a CRC so that we can detect
- * corruption.	To minimize the risk of failed updates, the map file should
+ * corruption.  To minimize the risk of failed updates, the map file should
  * be kept to no more than one standard-size disk sector (ie 512 bytes),
  * and we use overwrite-in-place rather than playing renaming games.
  * The struct layout below is designed to occupy exactly 512 bytes, which
  * might make filesystem updates a bit more efficient.
  *
- * Entries in the mappings[] array are in no particular order.	We could
+ * Entries in the mappings[] array are in no particular order.  We could
  * speed searching by insisting on OID order, but it really shouldn't be
  * worth the trouble given the intended size of the mapping sets.
  */
@@ -91,7 +90,7 @@ typedef struct RelMapFile
 
 /*
  * The currently known contents of the shared map file and our database's
- * local map file are stored here.	These can be reloaded from disk
+ * local map file are stored here.  These can be reloaded from disk
  * immediately whenever we receive an update sinval message.
  */
 static RelMapFile shared_map;
@@ -175,6 +174,59 @@ RelationMapOidToFilenode(Oid relationId, bool shared)
 		{
 			if (relationId == map->mappings[i].mapoid)
 				return map->mappings[i].mapfilenode;
+		}
+	}
+
+	return InvalidOid;
+}
+
+/*
+ * RelationMapFilenodeToOid
+ *
+ * Do the reverse of the normal direction of mapping done in
+ * RelationMapOidToFilenode.
+ *
+ * This is not supposed to be used during normal running but rather for
+ * information purposes when looking at the filesystem or xlog.
+ *
+ * Returns InvalidOid if the OID is not known; this can easily happen if the
+ * relfilenode doesn't pertain to a mapped relation.
+ */
+Oid
+RelationMapFilenodeToOid(Oid filenode, bool shared)
+{
+	const RelMapFile *map;
+	int32		i;
+
+	/* If there are active updates, believe those over the main maps */
+	if (shared)
+	{
+		map = &active_shared_updates;
+		for (i = 0; i < map->num_mappings; i++)
+		{
+			if (filenode == map->mappings[i].mapfilenode)
+				return map->mappings[i].mapoid;
+		}
+		map = &shared_map;
+		for (i = 0; i < map->num_mappings; i++)
+		{
+			if (filenode == map->mappings[i].mapfilenode)
+				return map->mappings[i].mapoid;
+		}
+	}
+	else
+	{
+		map = &active_local_updates;
+		for (i = 0; i < map->num_mappings; i++)
+		{
+			if (filenode == map->mappings[i].mapfilenode)
+				return map->mappings[i].mapoid;
+		}
+		map = &local_map;
+		for (i = 0; i < map->num_mappings; i++)
+		{
+			if (filenode == map->mappings[i].mapfilenode)
+				return map->mappings[i].mapoid;
 		}
 	}
 
@@ -294,7 +346,7 @@ merge_map_updates(RelMapFile *map, const RelMapFile *updates, bool add_okay)
  * RelationMapRemoveMapping
  *
  * Remove a relation's entry in the map.  This is only allowed for "active"
- * (but not committed) local mappings.	We need it so we can back out the
+ * (but not committed) local mappings.  We need it so we can back out the
  * entry for the transient target file when doing VACUUM FULL/CLUSTER on
  * a mapped relation.
  */
@@ -322,7 +374,7 @@ RelationMapRemoveMapping(Oid relationId)
  * RelationMapInvalidate
  *
  * This routine is invoked for SI cache flush messages.  We must re-read
- * the indicated map file.	However, we might receive a SI message in a
+ * the indicated map file.  However, we might receive a SI message in a
  * process that hasn't yet, and might never, load the mapping files;
  * for example the autovacuum launcher, which *must not* try to read
  * a local map since it is attached to no particular database.
@@ -390,7 +442,7 @@ AtCCI_RelationMap(void)
  *
  * During commit, this must be called as late as possible before the actual
  * transaction commit, so as to minimize the window where the transaction
- * could still roll back after committing map changes.	Although nothing
+ * could still roll back after committing map changes.  Although nothing
  * critically bad happens in such a case, we still would prefer that it
  * not happen, since we'd possibly be losing useful updates to the relations'
  * pg_class row(s).
@@ -457,7 +509,7 @@ AtPrepare_RelationMap(void)
 /*
  * CheckPointRelationMap
  *
- * This is called during a checkpoint.	It must ensure that any relation map
+ * This is called during a checkpoint.  It must ensure that any relation map
  * updates that were WAL-logged before the start of the checkpoint are
  * securely flushed to disk and will not need to be replayed later.  This
  * seems unlikely to be a performance-critical issue, so we use a simple
@@ -589,7 +641,8 @@ load_relmap_file(bool shared)
 	}
 
 	/* Read data ... */
-	fd = BasicOpenFile(mapfilename, O_RDONLY | PG_BINARY, S_IRUSR | S_IWUSR);
+	fd = OpenTransientFile(mapfilename,
+						   O_RDONLY | PG_BINARY, S_IRUSR | S_IWUSR);
 	if (fd < 0)
 		ereport(FATAL,
 				(errcode_for_file_access(),
@@ -609,7 +662,7 @@ load_relmap_file(bool shared)
 				 errmsg("could not read relation mapping file \"%s\": %m",
 						mapfilename)));
 
-	close(fd);
+	CloseTransientFile(fd);
 
 	/* check for correct magic number, etc */
 	if (map->magic != RELMAPPER_FILEMAGIC ||
@@ -647,7 +700,7 @@ load_relmap_file(bool shared)
  *
  * Because this may be called during WAL replay when MyDatabaseId,
  * DatabasePath, etc aren't valid, we require the caller to pass in suitable
- * values.	The caller is also responsible for being sure no concurrent
+ * values.  The caller is also responsible for being sure no concurrent
  * map update could be happening.
  */
 static void
@@ -673,12 +726,6 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 	/*
 	 * Open the target file.  We prefer to do this before entering the
 	 * critical section, so that an open() failure need not force PANIC.
-	 *
-	 * Note: since we use BasicOpenFile, we are nominally responsible for
-	 * ensuring the fd is closed on error.	In practice, this isn't important
-	 * because either an error happens inside the critical section, or we are
-	 * in bootstrap or WAL replay; so an error past this point is always fatal
-	 * anyway.
 	 */
 	if (shared)
 	{
@@ -693,9 +740,9 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 		realmap = &local_map;
 	}
 
-	fd = BasicOpenFile(mapfilename,
-					   O_WRONLY | O_CREAT | PG_BINARY,
-					   S_IRUSR | S_IWUSR);
+	fd = OpenTransientFile(mapfilename,
+						   O_WRONLY | O_CREAT | PG_BINARY,
+						   S_IRUSR | S_IWUSR);
 	if (fd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
@@ -754,7 +801,7 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 				 errmsg("could not fsync relation mapping file \"%s\": %m",
 						mapfilename)));
 
-	if (close(fd))
+	if (CloseTransientFile(fd))
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not close relation mapping file \"%s\": %m",
@@ -773,7 +820,7 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 
 	/*
 	 * Make sure that the files listed in the map are not deleted if the outer
-	 * transaction aborts.	This had better be within the critical section
+	 * transaction aborts.  This had better be within the critical section
 	 * too: it's not likely to fail, but if it did, we'd arrive at transaction
 	 * abort with the files still vulnerable.  PANICing will leave things in a
 	 * good state on-disk.
@@ -792,7 +839,7 @@ write_relmap_file(bool shared, RelMapFile *newmap,
 			rnode.spcNode = tsid;
 			rnode.dbNode = dbid;
 			rnode.relNode = newmap->mappings[i].mapfilenode;
-			RelationPreserveStorage(rnode);
+			RelationPreserveStorage(rnode, false);
 		}
 	}
 
@@ -838,7 +885,10 @@ perform_relmap_update(bool shared, const RelMapFile *updates)
 	else
 		memcpy(&newmap, &local_map, sizeof(RelMapFile));
 
-	/* Apply the updates to newmap.  No new mappings should appear. */
+	/*
+	 * Apply the updates to newmap.  No new mappings should appear, unless
+	 * somebody is adding indexes to system catalogs.
+	 */
 	merge_map_updates(&newmap, updates, false);
 
 	/* Write out the updated map and do other necessary tasks */
@@ -893,21 +943,4 @@ relmap_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
 	}
 	else
 		elog(PANIC, "relmap_redo: unknown op code %u", info);
-}
-
-void
-relmap_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record)
-{
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
-	char		*rec = XLogRecGetData(record);
-
-	if (info == XLOG_RELMAP_UPDATE)
-	{
-		xl_relmap_update *xlrec = (xl_relmap_update *) rec;
-
-		appendStringInfo(buf, "update relmap: database %u tablespace %u size %u",
-						 xlrec->dbid, xlrec->tsid, xlrec->nbytes);
-	}
-	else
-		appendStringInfo(buf, "UNKNOWN");
 }

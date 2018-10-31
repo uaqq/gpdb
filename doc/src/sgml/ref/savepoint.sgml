@@ -1,9 +1,18 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/savepoint.sgml,v 1.8 2010/05/27 06:25:32 heikki Exp $
+doc/src/sgml/ref/savepoint.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-SAVEPOINT">
+ <indexterm zone="sql-savepoint">
+  <primary>SAVEPOINT</primary>
+ </indexterm>
+
+ <indexterm zone="sql-savepoint">
+  <primary>savepoints</primary>
+  <secondary>defining</secondary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>SAVEPOINT</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,21 +24,12 @@ PostgreSQL documentation
   <refpurpose>define a new savepoint within the current transaction</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-savepoint">
-  <primary>SAVEPOINT</primary>
- </indexterm>
-
- <indexterm zone="sql-savepoint">
-  <primary>savepoints</primary>
-  <secondary>defining</secondary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 SAVEPOINT <replaceable>savepoint_name</replaceable>
 </synopsis>
  </refsynopsisdiv>
-  
+
  <refsect1>
   <title>Description</title>
 
@@ -44,7 +44,7 @@ SAVEPOINT <replaceable>savepoint_name</replaceable>
    the transaction state to what it was at the time of the savepoint.
   </para>
  </refsect1>
-  
+
  <refsect1>
   <title>Parameters</title>
 
@@ -110,7 +110,7 @@ COMMIT;
 
  <refsect1>
   <title>Compatibility</title>
-  
+
   <para>
    SQL requires a savepoint to be destroyed automatically when another
    savepoint with the same name is established.  In

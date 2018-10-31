@@ -7,11 +7,11 @@ create language plpythonu;
 create or replace function pg_ctl(datadir text, command text, port int, contentid int, dbid int)
 returns text as $$
     import subprocess
-    cmd = 'pg_ctl -D %s ' % datadir
+    cmd = 'pg_ctl -l postmaster.log -D %s ' % datadir
     if command in ('stop', 'restart'):
         cmd = cmd + '-w -m immediate %s' % command
     elif command == 'start':
-        opts = '-p %d -\-gp_dbid=%d -\-silent-mode=true -i -\-gp_contentid=%d -\-gp_num_contents_in_cluster=3' % (port, dbid, contentid)
+        opts = '-p %d -\-gp_dbid=%d -i -\-gp_contentid=%d -\-gp_num_contents_in_cluster=3' % (port, dbid, contentid)
         cmd = cmd + '-o "%s" start' % opts
     else:
         return 'Invalid command input'
@@ -19,7 +19,7 @@ returns text as $$
 $$ language plpythonu;
 
 -- make sure we are in-sync for the primary we will be testing with
-select content, role, preferred_role, mode, status from gp_segment_configuration where content=0;
+select content, role, preferred_role, mode, status from gp_segment_configuration;
 
 -- print synchronous_standby_names should be set to '*' at start of test
 0U: show synchronous_standby_names;
@@ -31,15 +31,18 @@ insert into segwalrep_commit_blocking values (1);
 -- skip FTS probes always
 create extension if not exists gp_inject_fault;
 select gp_inject_fault('fts_probe', 'reset', 1);
-select gp_inject_fault('fts_probe', 'skip', '', '', '', -1, 0, 1);
+select gp_inject_fault_infinite('fts_probe', 'skip', 1);
 -- force scan to trigger the fault
 select gp_request_fts_probe_scan();
 -- verify the failure should be triggered once
-select gp_inject_fault('fts_probe', 'status', 1);
+select gp_wait_until_triggered_fault('fts_probe', 1, 1);
 
 -- stop a mirror and show commit on dbid 2 will block
 -1U: select pg_ctl((select datadir from gp_segment_configuration c where c.role='m' and c.content=0), 'stop', NULL, NULL, NULL);
-0U&: insert into segwalrep_commit_blocking values (1);
+-- We should insert a tuple to segment 0.
+-- With jump consistent hash as the underlying hash algorithm,
+-- a int value of 4 is on seg0.
+0U&: insert into segwalrep_commit_blocking values (4);
 
 -- restart primary dbid 2
 -1U: select pg_ctl((select datadir from gp_segment_configuration c where c.role='p' and c.content=0), 'restart', NULL, NULL, NULL);

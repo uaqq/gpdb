@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/tablefunc/tablefunc.c,v 1.62 2010/01/02 16:57:32 momjian Exp $
+ * contrib/tablefunc/tablefunc.c
  *
  *
  * tablefunc
@@ -10,7 +10,7 @@
  * And contributors:
  * Nabil Sayegh <postgresql@e-trolley.de>
  *
- * Copyright (c) 2002-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2014, PostgreSQL Global Development Group
  *
  * Permission to use, copy, modify, and distribute this software and its
  * documentation for any purpose, without fee, and without a written agreement
@@ -34,15 +34,13 @@
 
 #include <math.h>
 
+#include "access/htup_details.h"
 #include "catalog/pg_type.h"
-#include "fmgr.h"
-#include "funcapi.h"
 #include "executor/spi.h"
+#include "funcapi.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
-#include "utils/guc.h"
-#include "utils/lsyscache.h"
 
 #include "tablefunc.h"
 
@@ -85,7 +83,6 @@ static Tuplestorestate *build_tuplestore_recursively(char *key_fld,
 							 MemoryContext per_query_ctx,
 							 AttInMetadata *attinmeta,
 							 Tuplestorestate *tupstore);
-static char *quote_literal_cstr(char *rawstr);
 
 typedef struct
 {
@@ -1343,7 +1340,7 @@ build_tuplestore_recursively(char *key_fld,
 		for (i = 0; i < proc; i++)
 		{
 			/* initialize branch for this pass */
-			appendStringInfo(&branchstr, "%s", branch);
+			appendStringInfoString(&branchstr, branch);
 			appendStringInfo(&chk_branchstr, "%s%s%s", branch_delim, branch, branch_delim);
 
 			/* get the next sql result tuple */
@@ -1563,23 +1560,4 @@ compatCrosstabTupleDescs(TupleDesc ret_tupdesc, TupleDesc sql_tupdesc)
 
 	/* OK, the two tupdescs are compatible for our purposes */
 	return true;
-}
-
-/*
- * Return a properly quoted literal value.
- * Uses quote_literal in quote.c
- */
-static char *
-quote_literal_cstr(char *rawstr)
-{
-	text	   *rawstr_text;
-	text	   *result_text;
-	char	   *result;
-
-	rawstr_text = cstring_to_text(rawstr);
-	result_text = DatumGetTextP(DirectFunctionCall1(quote_literal,
-											  PointerGetDatum(rawstr_text)));
-	result = text_to_cstring(result_text);
-
-	return result;
 }

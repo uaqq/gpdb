@@ -1818,9 +1818,9 @@ Table(select a,e from t1 t1 where a >
 
 select avg(a) from t1 
 group by (select b from transform(TABLE(select a,e from t1 where a=10 )) );
- avg  
-------
- 50.5
+         avg         
+---------------------
+ 50.5000000000000000
 (1 row)
 
 SELECT min(b) FROM
@@ -2495,12 +2495,14 @@ HINT:  No operator matches the given name and argument type(s). You might need t
  a      | text    |           | extended | 
  b      | integer |           | plain    | 
 View definition:
- SELECT transform.a, transform.b
-   FROM transform(TABLE( SELECT t1.a, t1.e
+ SELECT transform.a,
+    transform.b
+   FROM transform(TABLE( SELECT t1.a,
+            t1.e
            FROM t1
           WHERE t1.a < 10
           ORDER BY t1.a
-          SCATTER BY t1.a)) transform(a, b);
+          SCATTER BY t1.a)) transform;
 
     -- directly using transform to create view
     CREATE VIEW t1viewetf AS
@@ -2529,11 +2531,13 @@ LINE 2:     transform(
  a      | text    |           | extended | 
  b      | integer |           | plain    | 
 View definition:
- SELECT transform.a, transform.b
-   FROM transform(TABLE( SELECT t1_view.a, t1_view.e
+ SELECT transform.a,
+    transform.b
+   FROM transform(TABLE( SELECT t1_view.a,
+            t1_view.e
            FROM t1_view
           ORDER BY t1_view.b
-          SCATTER RANDOMLY)) transform(a, b)
+          SCATTER RANDOMLY)) transform
   ORDER BY transform.a;
 
     -- Create temp table (CTAS) using ETF 
@@ -2563,7 +2567,7 @@ HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sur
     -- ETF in InitPlan
     select array (select a from transform 
     ( TABLE(select * from intable order by id scatter by value) ) order by a);
-                                      ?column?                                      
+                                       array                                        
 ------------------------------------------------------------------------------------
  {value_1,value_10,value_2,value_3,value_4,value_5,value_6,value_7,value_8,value_9}
 (1 row)
@@ -3009,8 +3013,10 @@ typnotnull     | f
 typbasetype    | 0
 typtypmod      | -1
 typndims       | 0
+typcollation   | 0
 typdefaultbin  | 
 typdefault     | 
+typacl         | 
 
 -- Verify pg_proc catalog table for specific columns:
 -- # prorettype
@@ -3045,7 +3051,7 @@ proargmodes |
 proargnames | 
 -[ RECORD 2 ]--------
 prorettype  | 2249
-proargtypes | 3053 23
+proargtypes | 7053 23
 proargmodes | 
 proargnames | 
 
@@ -3297,9 +3303,9 @@ ERROR:  DESCRIBE is not supported for functions with OUT parameters
 
     -- Avg function
     SELECT avg(id) FROM project( TABLE( SELECT * FROM history ), 1);
-       avg        
-------------------
- 2.33333333333333
+        avg         
+--------------------
+ 2.3333333333333333
 (1 row)
 
     -- extract function, which takes timestamp type as input
@@ -4477,7 +4483,7 @@ ERROR:  CREATE VIEW statements cannot include calls to dynamically typed functio
         order by d scatter by c),
         '/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt') 
     order by position);
-                                                                                                                                                                                                                                                                                                         ?column?                                                                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                                                                           array                                                                                                                                                                                                                                                                                                           
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  {/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt,/data/hhuang/cdbfast/main/etablefunc_gppc/data/shortMsg.txt}
 (1 row)
@@ -4920,9 +4926,9 @@ LINE 2: TABLE( DELETE FROM randtable WHERE id=11;)
 SELECT * FROM transform(
 TABLE( select i, 'foo'||i into randtable2 from generate_series(11,15) i)
 );
-ERROR:  subquery in TABLE value expression cannot have SELECT INTO
+ERROR:  SELECT ... INTO is not allowed here
 LINE 2: TABLE( select i, 'foo'||i into randtable2 from generate_seri...
-        ^
+                                       ^
 SELECT * FROM ud_project(
 TABLE( CREATE TABLE neg_test (a int, b text)));
 ERROR:  syntax error at or near "CREATE"

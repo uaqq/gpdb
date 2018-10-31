@@ -95,6 +95,11 @@ select ROW('ABC','DEF') ~<=~ ROW('DEF','ABC') as true;
 select ROW('ABC','DEF') ~>=~ ROW('DEF','ABC') as false;
 select ROW('ABC','DEF') ~~ ROW('DEF','ABC') as fail;
 
+-- Comparisons of ROW() expressions can cope with some type mismatches
+select ROW(1,2) = ROW(1,2::int8);
+select ROW(1,2) in (ROW(3,4), ROW(1,2));
+select ROW(1,2) in (ROW(3,4), ROW(1,2::int8));
+
 -- Check row comparison with a subselect
 select unique1, unique2 from tenk1
 where (unique1, unique2) < any (select ten, ten from tenk1 where hundred < 3)
@@ -102,9 +107,28 @@ where (unique1, unique2) < any (select ten, ten from tenk1 where hundred < 3)
 order by 1;
 
 -- Also check row comparison with an indexable condition
+-- GPDB_93_MERGE_FIXME: In upstream, you naturally get an index only scan for
+-- this query. In GPDB, you get a seq scan, unless you force it. Why is the
+-- cost estimate so different on GPDB?
+set enable_sort=off;
+explain (costs off)
 select thousand, tenthous from tenk1
 where (thousand, tenthous) >= (997, 5000)
 order by thousand, tenthous;
+
+select thousand, tenthous from tenk1
+where (thousand, tenthous) >= (997, 5000)
+order by thousand, tenthous;
+
+-- Check row comparisons with IN
+select * from int8_tbl i8 where i8 in (row(123,456));  -- fail, type mismatch
+
+explain (costs off)
+select * from int8_tbl i8
+where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
+
+select * from int8_tbl i8
+where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
 
 -- Check some corner cases involving empty rowtypes
 select ROW();
@@ -117,3 +141,93 @@ select array[ row(1,2), row(3,4), row(5,6) ];
 -- Check ability to compare an anonymous row to elements of an array
 select row(1,1.1) = any (array[ row(7,7.7), row(1,1.1), row(0,0.0) ]);
 select row(1,1.1) = any (array[ row(7,7.7), row(1,1.0), row(0,0.0) ]);
+
+-- Check behavior with a non-comparable rowtype
+create type cantcompare as (p point, r float8);
+create temp table cc (f1 cantcompare);
+insert into cc values('("(1,2)",3)');
+insert into cc values('("(4,5)",6)');
+select * from cc order by f1; -- fail, but should complain about cantcompare
+
+--
+-- Test case derived from bug #5716: check multiple uses of a rowtype result
+--
+
+BEGIN;
+
+CREATE TABLE price (
+    id SERIAL PRIMARY KEY,
+    active BOOLEAN NOT NULL,
+    price NUMERIC
+);
+
+CREATE TYPE price_input AS (
+    id INTEGER,
+    price NUMERIC
+);
+
+CREATE TYPE price_key AS (
+    id INTEGER
+);
+
+CREATE FUNCTION price_key_from_table(price) RETURNS price_key AS $$
+    SELECT $1.id
+$$ LANGUAGE SQL;
+
+CREATE FUNCTION price_key_from_input(price_input) RETURNS price_key AS $$
+    SELECT $1.id
+$$ LANGUAGE SQL;
+
+insert into price values (1,false,42), (10,false,100), (11,true,17.99);
+
+UPDATE price
+    SET active = true, price = input_prices.price
+    FROM unnest(ARRAY[(10, 123.00), (11, 99.99)]::price_input[]) input_prices
+    WHERE price_key_from_table(price.*) = price_key_from_input(input_prices.*);
+
+select * from price;
+
+rollback;
+
+--
+-- Test case derived from bug #9085: check * qualification of composite
+-- parameters for SQL functions
+--
+
+create temp table compos (f1 int, f2 text);
+
+create function fcompos1(v compos) returns void as $$
+insert into compos values (v);  -- fail
+$$ language sql;
+
+create function fcompos1(v compos) returns void as $$
+insert into compos values (v.*);
+$$ language sql;
+
+create function fcompos2(v compos) returns void as $$
+select fcompos1(v);
+$$ language sql;
+
+create function fcompos3(v compos) returns void as $$
+select fcompos1(fcompos3.v.*);
+$$ language sql;
+
+select fcompos1(row(1,'one'));
+select fcompos2(row(2,'two'));
+select fcompos3(row(3,'three'));
+select * from compos;
+
+--
+-- We allow I/O conversion casts from composite types to strings to be
+-- invoked via cast syntax, but not functional syntax.  This is because
+-- the latter is too prone to be invoked unintentionally.
+--
+select cast (fullname as text) from fullname;
+select fullname::text from fullname;
+select text(fullname) from fullname;  -- error
+select fullname.text from fullname;  -- error
+-- same, but RECORD instead of named composite type:
+select cast (row('Jim', 'Beam') as text);
+select (row('Jim', 'Beam'))::text;
+select text(row('Jim', 'Beam'));  -- error
+select (row('Jim', 'Beam')).text;  -- error

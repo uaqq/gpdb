@@ -20,6 +20,7 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/xact.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_resqueue.h"
@@ -67,7 +68,8 @@ bool	ResourceCleanupIdleGangs;				/* Cleanup idle gangs? */
  * Global variables
  */
 ResSchedulerData	*ResScheduler;	/* Resource Scheduler (shared) data .*/
-Oid				MyQueueId = InvalidOid;	/* resource queue for current role. */
+static Oid		MyQueueId = InvalidOid;	/* resource queue for current role. */
+static bool		MyQueueIdIsValid = false; /* Is MyQueueId valid? */
 static uint32	portalId = 0;		/* id of portal, for tracking cursors. */
 static int32	numHoldPortals = 0;	/* # of holdable cursors tracked. */
 
@@ -192,14 +194,6 @@ InitResQueues(void)
 	SysScanDesc sscan;
 	
 	Assert(ResScheduler);
-
-	/*
-	 * Need a resource owner to keep the heapam code happy.
-	 */
-	Assert(CurrentResourceOwner == NULL);
-
-	ResourceOwner owner = ResourceOwnerCreate(NULL, "InitQueues");
-	CurrentResourceOwner = owner;
 	
 	/**
 	 * The resqueue shared mem initialization must be serialized. Only the first session
@@ -220,12 +214,10 @@ InitResQueues(void)
 		LWLockRelease(ResQueueLock);
 		UnlockRelationOid(ResQueueCapabilityRelationId, RowExclusiveLock);
 		heap_close(relResqueue, AccessShareLock);
-		CurrentResourceOwner = NULL;
-		ResourceOwnerDelete(owner);
 		return;
 	}
 
-	sscan = systable_beginscan(relResqueue, InvalidOid, false, SnapshotNow, 0, NULL);
+	sscan = systable_beginscan(relResqueue, InvalidOid, false, NULL, 0, NULL);
 	while (HeapTupleIsValid(tuple = systable_getnext(sscan)))
 	{
 		Form_pg_resqueue	queueform;
@@ -269,9 +261,6 @@ InitResQueues(void)
 
 
 	elog(LOG,"initialized %d resource queues", numQueues);
-
-	CurrentResourceOwner = NULL;
-	ResourceOwnerDelete(owner);
 
 	return;
 }
@@ -535,15 +524,11 @@ ResDestroyQueue(Oid queueid)
 
 /*
  * ResLockPortal -- get a resource lock for Portal execution.
- *
- * Returns:
- *	true if the lock has been taken
- *	false if the lock has been skipped.
  */
-bool
+void
 ResLockPortal(Portal portal, QueryDesc *qDesc)
 {
-	bool		returnReleaseOk = false;	/* Release resource lock? */
+	bool		shouldReleaseLock = false;	/* Release resource lock? */
 	bool		takeLock;					/* Take resource lock? */
 	LOCKTAG		tag;
 	Oid			queueid;
@@ -555,6 +540,8 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 	Assert(qDesc->plannedstmt);
 
 	plan = qDesc->plannedstmt->planTree;
+
+	portal->status = PORTAL_QUEUE;
 
 	queueid = portal->queueId;
 
@@ -582,7 +569,7 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 				if (ResourceSelectOnly)
 				{
 					takeLock = false;
-					returnReleaseOk = false;
+					shouldReleaseLock = false;
 					break;
 				}
 			}
@@ -618,7 +605,7 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 					incData.increments[RES_MEMORY_LIMIT] = (Cost) 0.0;				
 				}
 				takeLock = true;
-				returnReleaseOk = true;
+				shouldReleaseLock = true;
 			}
 			break;
 	
@@ -658,7 +645,7 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 				}
 
 				takeLock = true;
-				returnReleaseOk = true;
+				shouldReleaseLock = true;
 			}
 			break;
 	
@@ -669,7 +656,7 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 			{
 	
 				takeLock = false;
-				returnReleaseOk = false;
+				shouldReleaseLock = false;
 			}
 			break;
 	
@@ -745,27 +732,27 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 				 */
 				portal->queueId = InvalidOid;
 				portal->portalId = INVALID_PORTALID;
-				returnReleaseOk = false;
+				shouldReleaseLock = false;
 			}
 
 			/* Count holdable cursors (if we are locking this one) .*/
-			if (portal->cursorOptions & CURSOR_OPT_HOLD && returnReleaseOk)
+			if (portal->cursorOptions & CURSOR_OPT_HOLD && shouldReleaseLock)
 				numHoldPortals++;
 
 		}
 
 	}
-	return returnReleaseOk;
 
+	portal->hasResQueueLock = shouldReleaseLock;
 }
 
 /* This function is a simple version of ResLockPortal, which is used specially
  * for utility statements; the main logic is same as ResLockPortal, but remove
  * some unnecessary lines and make some tiny adjustments for utility stmts */
-bool
+void
 ResLockUtilityPortal(Portal portal, float4 ignoreCostLimit)
 {
-	bool returnReleaseOk = false;
+	bool shouldReleaseLock = false;
 	LOCKTAG		tag;
 	Oid			queueid;
 	int32		lockResult = 0;
@@ -786,7 +773,7 @@ ResLockUtilityPortal(Portal portal, float4 ignoreCostLimit)
 		incData.increments[RES_COUNT_LIMIT] = 1;
 		incData.increments[RES_COST_LIMIT] = ignoreCostLimit;
 		incData.increments[RES_MEMORY_LIMIT] = (Cost) 0.0;
-		returnReleaseOk = true;
+		shouldReleaseLock = true;
 
 		/*
 		 * Get the resource lock.
@@ -830,7 +817,8 @@ ResLockUtilityPortal(Portal portal, float4 ignoreCostLimit)
 		}
 		PG_END_TRY();
 	}
-	return returnReleaseOk;
+	
+	portal->hasResQueueLock = shouldReleaseLock;
 }
 
 /*
@@ -864,6 +852,8 @@ ResUnLockPortal(Portal portal)
 			numHoldPortals--;
 		}
 	}
+	
+	portal->hasResQueueLock = false;
 
 	return;
 }
@@ -909,25 +899,8 @@ GetResQueueForRole(Oid roleid)
 void
 SetResQueueId(void)
 {
-	/* to cave the code of cache part, we provide a resource owner here if no
-	 * existing */
-	ResourceOwner owner = NULL;
-
-	if (CurrentResourceOwner == NULL)
-	{
-		owner = ResourceOwnerCreate(NULL, "SetResQueueId");
-		CurrentResourceOwner = owner;
-	}
-
-	MyQueueId = GetResQueueForRole(GetUserId());
-
-	if (owner)
-	{
-		CurrentResourceOwner = NULL;
-		ResourceOwnerDelete(owner);
-	}
-
-	return;
+	MyQueueId = InvalidOid;
+	MyQueueIdIsValid = false;
 }
 
 
@@ -937,6 +910,19 @@ SetResQueueId(void)
 Oid
 GetResQueueId(void)
 {
+	if (!MyQueueIdIsValid)
+	{
+		/*
+		 * GPDB_94_MERGE_FIXME: cannot do catalog lookups, if we're not in a
+		 * transaction. Just play dumb, then. Arguably, abort processing
+		 * shouldn't be governed by resource queues, anyway.
+		 */
+		if (!IsTransactionState())
+			return InvalidOid;
+		MyQueueId = GetResQueueForRole(GetUserId());
+		MyQueueIdIsValid = true;
+	}
+
 	return MyQueueId;
 }
 
@@ -965,7 +951,7 @@ GetResQueueIdForName(char	*name)
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(name));
 	scan = systable_beginscan(rel, ResQueueRsqnameIndexId, true,
-							  SnapshotNow, 1, &scankey);
+							  NULL, 1, &scankey);
 
 	tuple = systable_getnext(scan);
 	if (tuple)
@@ -1075,13 +1061,13 @@ AtAbort_ResScheduler(void)
 		portalId = 0;
 }
 
-/* This routine checks whether speficied utility stmt should be involved into
- * resourece queue mgmt; if yes, take the slot from the resource queue; if we
+/* This routine checks whether specified utility stmt should be involved into
+ * resource queue mgmt; if yes, take the slot from the resource queue; if we
  * want to track additional utility stmts, add it into the condition check */
 void
 ResHandleUtilityStmt(Portal portal, Node *stmt)
 {
-	if (!IsA(stmt, CopyStmt))
+	if (!IsA(stmt, CopyStmt) && !IsA(stmt, CreateTableAsStmt))
 	{
 		return;
 	}
@@ -1103,7 +1089,7 @@ ResHandleUtilityStmt(Portal portal, Node *stmt)
 		{
 			portal->status = PORTAL_QUEUE;
 
-			portal->releaseResLock = ResLockUtilityPortal(portal, resQueue->ignorecostlimit);
+			ResLockUtilityPortal(portal, resQueue->ignorecostlimit);
 		}
 		portal->status = PORTAL_ACTIVE;
 	}

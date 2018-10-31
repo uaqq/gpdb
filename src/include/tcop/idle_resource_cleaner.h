@@ -15,14 +15,14 @@
 #ifndef IDLE_RESOURCE_CLEANER_H
 #define IDLE_RESOURCE_CLEANER_H
 
+extern void	StartIdleResourceCleanupTimers(void);
+extern void	CancelIdleResourceCleanupTimers(void);
 
-void		StartIdleResourceCleanupTimers(void);
+extern void IdleGangTimeoutHandler(void);
 
-void		DoIdleResourceCleanup(void);
+extern void EnableClientWaitTimeoutInterrupt(void);
+extern bool DisableClientWaitTimeoutInterrupt(void);
 
 extern int	IdleSessionGangTimeout;
-
-extern int	(*get_idle_session_timeout_hook) (void);
-extern void (*idle_session_timeout_action_hook) (void);
 
 #endif /* IDLE_RESOURCE_CLEANER_H */

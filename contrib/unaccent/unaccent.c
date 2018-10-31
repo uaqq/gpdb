@@ -3,20 +3,18 @@
  * unaccent.c
  *	  Text search unaccent dictionary
  *
- * Copyright (c) 2009-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2009-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/contrib/unaccent/unaccent.c,v 1.5 2010/02/26 02:00:32 momjian Exp $
+ *	  contrib/unaccent/unaccent.c
  *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
 
-#include "fmgr.h"
 #include "catalog/namespace.h"
 #include "commands/defrem.h"
-#include "mb/pg_wchar.h"
 #include "tsearch/ts_cache.h"
 #include "tsearch/ts_locale.h"
 #include "tsearch/ts_public.h"
@@ -25,30 +23,29 @@
 PG_MODULE_MAGIC;
 
 /*
- * Unaccent dictionary uses uncompressed suffix tree to find a
- * character to replace. Each node of tree is an array of
- * SuffixChar struct with length = 256 (n-th element of array
+ * Unaccent dictionary uses a trie to find a character to replace. Each node of
+ * the trie is an array of 256 TrieChar structs (n-th element of array
  * corresponds to byte)
  */
-typedef struct SuffixChar
+typedef struct TrieChar
 {
-	struct SuffixChar *nextChar;
+	struct TrieChar *nextChar;
 	char	   *replaceTo;
 	int			replacelen;
-} SuffixChar;
+} TrieChar;
 
 /*
- * placeChar - put str into tree's structure, byte by byte.
+ * placeChar - put str into trie's structure, byte by byte.
  */
-static SuffixChar *
-placeChar(SuffixChar *node, unsigned char *str, int lenstr, char *replaceTo, int replacelen)
+static TrieChar *
+placeChar(TrieChar *node, unsigned char *str, int lenstr, char *replaceTo, int replacelen)
 {
-	SuffixChar *curnode;
+	TrieChar   *curnode;
 
 	if (!node)
 	{
-		node = palloc(sizeof(SuffixChar) * 256);
-		memset(node, 0, sizeof(SuffixChar) * 256);
+		node = palloc(sizeof(TrieChar) * 256);
+		memset(node, 0, sizeof(TrieChar) * 256);
 	}
 
 	curnode = node + *str;
@@ -73,13 +70,14 @@ placeChar(SuffixChar *node, unsigned char *str, int lenstr, char *replaceTo, int
 }
 
 /*
- * initSuffixTree  - create suffix tree from file. Function converts
- * UTF8-encoded file into current encoding.
+ * initTrie  - create trie from file.
+ *
+ * Function converts UTF8-encoded file into current encoding.
  */
-static SuffixChar *
-initSuffixTree(char *filename)
+static TrieChar *
+initTrie(char *filename)
 {
-	SuffixChar *volatile rootSuffixTree = NULL;
+	TrieChar   *volatile rootTrie = NULL;
 	MemoryContext ccxt = CurrentMemoryContext;
 	tsearch_readline_state trst;
 	volatile bool skip;
@@ -93,35 +91,83 @@ initSuffixTree(char *filename)
 
 	do
 	{
-		char		src[4096];
-		char		trg[4096];
-		int			srclen;
-		int			trglen;
-		char	   *line = NULL;
-
+		/*
+		 * pg_do_encoding_conversion() (called by tsearch_readline()) will
+		 * emit exception if it finds untranslatable characters in current
+		 * locale. We just skip such lines, continuing with the next.
+		 */
 		skip = true;
 
 		PG_TRY();
 		{
-			/*
-			 * pg_do_encoding_conversion() (called by tsearch_readline()) will
-			 * emit exception if it finds untranslatable characters in current
-			 * locale. We just skip such characters.
-			 */
+			char	   *line;
+
 			while ((line = tsearch_readline(&trst)) != NULL)
 			{
-				if (sscanf(line, "%s\t%s\n", src, trg) != 2)
-					continue;
+				/*
+				 * The format of each line must be "src trg" where src and trg
+				 * are sequences of one or more non-whitespace characters,
+				 * separated by whitespace.  Whitespace at start or end of
+				 * line is ignored.
+				 */
+				int			state;
+				char	   *ptr;
+				char	   *src = NULL;
+				char	   *trg = NULL;
+				int			ptrlen;
+				int			srclen = 0;
+				int			trglen = 0;
 
-				srclen = strlen(src);
-				trglen = strlen(trg);
+				state = 0;
+				for (ptr = line; *ptr; ptr += ptrlen)
+				{
+					ptrlen = pg_mblen(ptr);
+					/* ignore whitespace, but end src or trg */
+					if (t_isspace(ptr))
+					{
+						if (state == 1)
+							state = 2;
+						else if (state == 3)
+							state = 4;
+						continue;
+					}
+					switch (state)
+					{
+						case 0:
+							/* start of src */
+							src = ptr;
+							srclen = ptrlen;
+							state = 1;
+							break;
+						case 1:
+							/* continue src */
+							srclen += ptrlen;
+							break;
+						case 2:
+							/* start of trg */
+							trg = ptr;
+							trglen = ptrlen;
+							state = 3;
+							break;
+						case 3:
+							/* continue trg */
+							trglen += ptrlen;
+							break;
+						default:
+							/* bogus line format */
+							state = -1;
+							break;
+					}
+				}
 
-				rootSuffixTree = placeChar(rootSuffixTree,
-										   (unsigned char *) src, srclen,
-										   trg, trglen);
-				skip = false;
+				if (state >= 3)
+					rootTrie = placeChar(rootTrie,
+										 (unsigned char *) src, srclen,
+										 trg, trglen);
+
 				pfree(line);
 			}
+			skip = false;
 		}
 		PG_CATCH();
 		{
@@ -146,14 +192,14 @@ initSuffixTree(char *filename)
 
 	tsearch_readline_end(&trst);
 
-	return rootSuffixTree;
+	return rootTrie;
 }
 
 /*
- * findReplaceTo - find multibyte character in tree
+ * findReplaceTo - find multibyte character in trie
  */
-static SuffixChar *
-findReplaceTo(SuffixChar *node, unsigned char *src, int srclen)
+static TrieChar *
+findReplaceTo(TrieChar *node, unsigned char *src, int srclen)
 {
 	while (node)
 	{
@@ -170,12 +216,11 @@ findReplaceTo(SuffixChar *node, unsigned char *src, int srclen)
 }
 
 PG_FUNCTION_INFO_V1(unaccent_init);
-Datum		unaccent_init(PG_FUNCTION_ARGS);
 Datum
 unaccent_init(PG_FUNCTION_ARGS)
 {
 	List	   *dictoptions = (List *) PG_GETARG_POINTER(0);
-	SuffixChar *rootSuffixTree = NULL;
+	TrieChar   *rootTrie = NULL;
 	bool		fileloaded = false;
 	ListCell   *l;
 
@@ -189,7 +234,7 @@ unaccent_init(PG_FUNCTION_ARGS)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("multiple Rules parameters")));
-			rootSuffixTree = initSuffixTree(defGetString(defel));
+			rootTrie = initTrie(defGetString(defel));
 			fileloaded = true;
 		}
 		else
@@ -208,34 +253,33 @@ unaccent_init(PG_FUNCTION_ARGS)
 				 errmsg("missing Rules parameter")));
 	}
 
-	PG_RETURN_POINTER(rootSuffixTree);
+	PG_RETURN_POINTER(rootTrie);
 }
 
 PG_FUNCTION_INFO_V1(unaccent_lexize);
-Datum		unaccent_lexize(PG_FUNCTION_ARGS);
 Datum
 unaccent_lexize(PG_FUNCTION_ARGS)
 {
-	SuffixChar *rootSuffixTree = (SuffixChar *) PG_GETARG_POINTER(0);
+	TrieChar   *rootTrie = (TrieChar *) PG_GETARG_POINTER(0);
 	char	   *srcchar = (char *) PG_GETARG_POINTER(1);
 	int32		len = PG_GETARG_INT32(2);
 	char	   *srcstart,
 			   *trgchar = NULL;
 	int			charlen;
 	TSLexeme   *res = NULL;
-	SuffixChar *node;
+	TrieChar   *node;
 
 	srcstart = srcchar;
 	while (srcchar - srcstart < len)
 	{
 		charlen = pg_mblen(srcchar);
 
-		node = findReplaceTo(rootSuffixTree, (unsigned char *) srcchar, charlen);
+		node = findReplaceTo(rootTrie, (unsigned char *) srcchar, charlen);
 		if (node && node->replaceTo)
 		{
 			if (!res)
 			{
-				/* allocate res only it it's needed */
+				/* allocate res only if it's needed */
 				res = palloc0(sizeof(TSLexeme) * 2);
 				res->lexeme = trgchar = palloc(len * pg_database_encoding_max_length() + 1 /* \0 */ );
 				res->flags = TSL_FILTER;
@@ -267,7 +311,6 @@ unaccent_lexize(PG_FUNCTION_ARGS)
  * Function-like wrapper for dictionary
  */
 PG_FUNCTION_INFO_V1(unaccent_dict);
-Datum		unaccent_dict(PG_FUNCTION_ARGS);
 Datum
 unaccent_dict(PG_FUNCTION_ARGS)
 {
@@ -279,7 +322,7 @@ unaccent_dict(PG_FUNCTION_ARGS)
 
 	if (PG_NARGS() == 1)
 	{
-		dictOid = TSDictionaryGetDictid(stringToQualifiedNameList("unaccent"), false);
+		dictOid = get_ts_dict_oid(stringToQualifiedNameList("unaccent"), false);
 		strArg = 0;
 	}
 	else

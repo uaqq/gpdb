@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #	Filename:-		gp_bash_functions.sh
 #	Status:-		Released
 #	Author:-		G L Coombe (Greenplum)
@@ -11,16 +11,11 @@
 #***************************************************************
 # Location Functions
 #******************************************************************************
-#Check that SHELL is /bin/bash
-	if [ $SHELL != /bin/bash ] && [ `ls -al /bin/sh|grep -c bash` -ne 1 ];then
-		echo "[FATAL]:-Scripts must be run by a user account that has SHELL=/bin/bash"
-		if [ -f /bin/bash ];then
-			echo "[INFO]:-/bin/bash exists, please update user account shell"
-		else
-			echo "[WARN]:-/bin/bash does not exist, does bash need to be installed?"
-		fi
-		exit 2
-	fi
+#Check that SHELL is Bash
+if [ -z $BASH ]; then
+	echo "[FATAL]:-Scripts must be executed using the Bash shell"
+	exit 2
+fi
 #CMDPATH is the list of locations to search for commands, in precedence order
 declare -a CMDPATH
 CMDPATH=(/usr/kerberos/bin /usr/sfw/bin /opt/sfw/bin /usr/local/bin /bin /usr/bin /sbin /usr/sbin /usr/ucb /sw/bin)
@@ -292,7 +287,7 @@ ERROR_EXIT () {
 		if [ $BACKOUT_FILE ]; then
 				if [ -s $BACKOUT_FILE ]; then
 						LOG_MSG "[WARN]:-Script has left Greenplum Database in an incomplete state"
-						LOG_MSG "[WARN]:-Run command /bin/bash $BACKOUT_FILE to remove these changes"
+						LOG_MSG "[WARN]:-Run command bash $BACKOUT_FILE to remove these changes"
 						BACKOUT_COMMAND "if [ x$MASTER_HOSTNAME != x\`$HOSTNAME\` ];then $ECHO \"[FATAL]:-Not on original master host $MASTER_HOSTNAME, backout script exiting!\";exit 2;fi"
 						$ECHO "$RM -f $BACKOUT_FILE" >> $BACKOUT_FILE
 				fi
@@ -348,7 +343,6 @@ RETRY () {
 
 SED_PG_CONF () {
 	LOG_MSG "[INFO]:-Start Function $FUNCNAME"
-	SED_TMP_FILE=/tmp/sed_text.$$
 	APPEND=0
 	FILENAME=$1;shift
 	SEARCH_TXT=$1;shift
@@ -412,30 +406,26 @@ SED_PG_CONF () {
 			fi
 		else
 			if [ $KEEP_PREV -eq 0 ];then
-				$ECHO "s/${SEARCH_TXT}/${SUB_TXT} #${SEARCH_TXT}/" > $SED_TMP_FILE
+				SED_COMMAND="s/${SEARCH_TXT}/${SUB_TXT} #${SEARCH_TXT}/"
 			else
-				$ECHO "s/${SEARCH_TXT}.*/${SUB_TXT}/" > $SED_TMP_FILE
+				SED_COMMAND="s/${SEARCH_TXT}.*/${SUB_TXT}/"
 			fi
-			$CAT $SED_TMP_FILE | $TRUSTED_SHELL ${SED_HOST} $DD of=$SED_TMP_FILE > /dev/null 2>&1
-			$TRUSTED_SHELL $SED_HOST "sed -i'.bak1' -f $SED_TMP_FILE $FILENAME" > /dev/null 2>&1
+			$TRUSTED_SHELL $SED_HOST sed -i'.bak1' -f /dev/stdin "$FILENAME" <<< "$SED_COMMAND" > /dev/null 2>&1
 			if [ $RETVAL -ne 0 ]; then
 				ERROR_EXIT "[FATAL]:-Failed to insert $SUB_TXT in $FILENAME on $SED_HOST" 2
 			else
 				LOG_MSG "[INFO]:-Replaced line in $FILENAME on $SED_HOST"
 				$TRUSTED_SHELL $SED_HOST "$RM -f ${FILENAME}.bak1" > /dev/null 2>&1
 			fi
-			$ECHO "s/^#${SEARCH_TXT}/${SEARCH_TXT}/" > $SED_TMP_FILE
-			$CAT $SED_TMP_FILE | $TRUSTED_SHELL ${SED_HOST} $DD of=$SED_TMP_FILE > /dev/null 2>&1
-			$TRUSTED_SHELL $SED_HOST "sed -i'.bak2' -f $SED_TMP_FILE $FILENAME" > /dev/null 2>&1
+
+			SED_COMMAND="s/^#${SEARCH_TXT}/${SEARCH_TXT}/"
+			$TRUSTED_SHELL $SED_HOST sed -i'.bak2' -f /dev/stdin "$FILENAME" <<< "$SED_COMMAND" > /dev/null 2>&1
 			if [ $RETVAL -ne 0 ]; then
 				ERROR_EXIT "[FATAL]:-Failed to substitute #${SEARCH_TXT} in $FILENAME on $SED_HOST" 2
 			else
 				LOG_MSG "[INFO]:-Replaced line in $FILENAME on $SED_HOST"
 				$TRUSTED_SHELL $SED_HOST "$RM -f ${FILENAME}.bak2" > /dev/null 2>&1
 			fi
-			$TRUSTED_SHELL $SED_HOST "$RM -f $SED_TMP_FILE"
-
-			$RM -f $SED_TMP_FILE
 		fi
 
 		trap - ERR DEBUG # Disable trap
@@ -779,8 +769,9 @@ GET_CIDRADDR () {
 
 BUILD_MASTER_PG_HBA_FILE () {
         LOG_MSG "[INFO]:-Start Function $FUNCNAME"
-	if [ $# -eq 0 ];then ERROR_EXIT "[FATAL]:-Passed zero parameters, expected at least 1" 2;fi
+	if [ $# -eq 0 ];then ERROR_EXIT "[FATAL]:-Passed zero parameters, expected at least 2" 2;fi
 	GP_DIR=$1
+	HBA_HOSTNAMES=${2:-0}
         LOG_MSG "[INFO]:-Clearing values in Master $PG_HBA"
         $GREP "^#" ${GP_DIR}/$PG_HBA > $TMP_PG_HBA
         $MV $TMP_PG_HBA ${GP_DIR}/$PG_HBA
@@ -788,27 +779,35 @@ BUILD_MASTER_PG_HBA_FILE () {
         $ECHO "local    all         $USER_NAME         $PG_METHOD" >> ${GP_DIR}/$PG_HBA
         #$ECHO "local    all         all                $PG_METHOD" >> ${GP_DIR}/$PG_HBA
         LOG_MSG "[INFO]:-Setting local host access"
-        $ECHO "host     all         $USER_NAME         127.0.0.1/28    trust" >> ${GP_DIR}/$PG_HBA
-        for ADDR in "${MASTER_IP_ADDRESS_ALL[@]}"
-        do
-        	# MPP-15889
-        	CIDRADDR=$(GET_CIDRADDR $ADDR)
-        	$ECHO "host     all         $USER_NAME         $CIDRADDR       trust" >> ${GP_DIR}/$PG_HBA
-        done
-        for ADDR in "${STANDBY_IP_ADDRESS_ALL[@]}"
-        do
-        	# MPP-15889
-        	CIDRADDR=$(GET_CIDRADDR $ADDR)
-        	$ECHO "host     all         $USER_NAME         $CIDRADDR       trust" >> ${GP_DIR}/$PG_HBA
-        done
+        if [ $HBA_HOSTNAMES -eq 0 ];then
+            $ECHO "host     all         $USER_NAME         127.0.0.1/28    trust" >> ${GP_DIR}/$PG_HBA
 
-        # Add all local IPV6 addresses
-        for ADDR in "${MASTER_IPV6_LOCAL_ADDRESS_ALL[@]}"
-        do
-        	# MPP-15889
-        	CIDRADDR=$(GET_CIDRADDR $ADDR)
-        	$ECHO "host     all         $USER_NAME         $CIDRADDR       trust" >> ${GP_DIR}/$PG_HBA
-        done
+            for ADDR in "${MASTER_IP_ADDRESS_ALL[@]}"
+            do
+                # MPP-15889
+                CIDRADDR=$(GET_CIDRADDR $ADDR)
+                $ECHO "host     all         $USER_NAME         $CIDRADDR       trust" >> ${GP_DIR}/$PG_HBA
+
+            done
+            for ADDR in "${STANDBY_IP_ADDRESS_ALL[@]}"
+            do
+                # MPP-15889
+                CIDRADDR=$(GET_CIDRADDR $ADDR)
+                $ECHO "host     all         $USER_NAME         $CIDRADDR       trust" >> ${GP_DIR}/$PG_HBA
+            done
+
+            # Add all local IPV6 addresses
+            for ADDR in "${MASTER_IPV6_LOCAL_ADDRESS_ALL[@]}"
+            do
+                # MPP-15889
+                CIDRADDR=$(GET_CIDRADDR $ADDR)
+                $ECHO "host     all         $USER_NAME         $CIDRADDR       trust" >> ${GP_DIR}/$PG_HBA
+            done
+        else
+            $ECHO "host     all         $USER_NAME         localhost    trust" >> ${GP_DIR}/$PG_HBA
+            $ECHO "host     all         $USER_NAME         $MASTER_HOSTNAME       trust" >> ${GP_DIR}/$PG_HBA
+        fi
+
 
         # Add replication config
         $ECHO "local    replication $USER_NAME         $PG_METHOD" >> ${GP_DIR}/$PG_HBA
@@ -1099,6 +1098,9 @@ PING_HOST () {
 		linux )
 			$PING $TARGET_HOST $PING_TIME > /dev/null 2>&1 || $PING6 $TARGET_HOST $PING_TIME > /dev/null 2>&1
                         ;;
+		openbsd )
+			$PING $PING_TIME $TARGET_HOST > /dev/null 2>&1 || $PING6 $PING_TIME $TARGET_HOST > /dev/null 2>&1
+                        ;;
 		* )
 			$PING $TARGET_HOST $PING_TIME > /dev/null 2>&1
 	esac
@@ -1303,23 +1305,6 @@ MAKE_DBID_FILE() {
 dbid = $DBID\" > $FILEPATH &&  chmod 400 $FILEPATH"
 }
 
-UPDATE_MPP () {
-	LOG_MSG "[INFO][$INST_COUNT]:-Start Function $FUNCNAME"
-	U_DB=$DEFAULTDB
-	U_PT=$1
-	U_MPPNAME="$2"
-	U_NUMSEG=$3
-	U_DBID=$4
-	U_CONTENT=$5
-	TYPE=$6
-	U_HOST=$7
-	U_DIR=$8
-	LOG_MSG "[INFO][$INST_COUNT]:-Making dbid file @ $U_HOST:$U_DIR = $U_DBID"
-	MAKE_DBID_FILE $U_DBID $U_HOST $U_DIR
-	LOG_MSG "[INFO][$INST_COUNT]:-Successfully updated GPDB system table"
-	LOG_MSG "[INFO][$INST_COUNT]:-End Function $FUNCNAME"
-}
-
 #******************************************************************************
 # Main Section
 #******************************************************************************
@@ -1388,6 +1373,16 @@ case $OS_TYPE in
 		DEFAULT_LOCALE_SETTING=en_US.utf8
 		PING_TIME="-c 1"
 		DF="`findCmdInPath df` -P"
+		DU_TXT="-c" ;;
+	openbsd ) IPV4_ADDR_LIST_CMD="ifconfig -a inet"
+		IPV6_ADDR_LIST_CMD="ifconfig -a inet6"
+		LIB_TYPE="LD_LIBRARY_PATH"
+		PG_METHOD="ident"
+		HOST_ARCH_TYPE="uname -m"
+		NOLINE_ECHO="echo -e"
+		DEFAULT_LOCALE_SETTING=en_US.UTF-8
+		PING_TIME="-c 1"
+		DF="df -P"
 		DU_TXT="-c" ;;
 	* ) echo unknown ;;
 esac

@@ -46,10 +46,10 @@
  *	be again.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/spin.h,v 1.32 2010/01/02 16:58:08 momjian Exp $
+ * src/include/storage/spin.h
  *
  *-------------------------------------------------------------------------
  */
@@ -57,6 +57,9 @@
 #define SPIN_H
 
 #include "storage/s_lock.h"
+#ifndef HAVE_SPINLOCKS
+#include "storage/pg_sema.h"
+#endif
 
 
 #define SpinLockInit(lock)	S_INIT_LOCK(lock)
@@ -69,5 +72,11 @@
 
 
 extern int	SpinlockSemas(void);
+extern Size SpinlockSemaSize(void);
+
+#ifndef HAVE_SPINLOCKS
+extern void SpinlockSemaInit(PGSemaphore);
+extern PGSemaphore SpinlockSemaArray;
+#endif
 
 #endif   /* SPIN_H */

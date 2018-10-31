@@ -11,16 +11,15 @@
  * bms_is_empty() in preference to testing for NULL.)
  *
  *
- * Copyright (c) 2003-2010, PostgreSQL Global Development Group
+ * Copyright (c) 2003-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/bitmapset.c,v 1.16 2010/01/02 16:57:45 momjian Exp $
+ *	  src/backend/nodes/bitmapset.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
-#include "nodes/bitmapset.h"
 #include "access/hash.h"
 
 
@@ -39,7 +38,7 @@
  * where x's are unspecified bits.  The two's complement negative is formed
  * by inverting all the bits and adding one.  Inversion gives
  *				yyyyyy01111
- * where each y is the inverse of the corresponding x.	Incrementing gives
+ * where each y is the inverse of the corresponding x.  Incrementing gives
  *				yyyyyy10000
  * and then ANDing with the original value gives
  *				00000010000
@@ -403,6 +402,83 @@ bms_is_subset(const Bitmapset *a, const Bitmapset *b)
 }
 
 /*
+ * bms_subset_compare - compare A and B for equality/subset relationships
+ *
+ * This is more efficient than testing bms_is_subset in both directions.
+ */
+BMS_Comparison
+bms_subset_compare(const Bitmapset *a, const Bitmapset *b)
+{
+	BMS_Comparison result;
+	int			shortlen;
+	int			longlen;
+	int			i;
+
+	/* Handle cases where either input is NULL */
+	if (a == NULL)
+	{
+		if (b == NULL)
+			return BMS_EQUAL;
+		return bms_is_empty(b) ? BMS_EQUAL : BMS_SUBSET1;
+	}
+	if (b == NULL)
+		return bms_is_empty(a) ? BMS_EQUAL : BMS_SUBSET2;
+	/* Check common words */
+	result = BMS_EQUAL;			/* status so far */
+	shortlen = Min(a->nwords, b->nwords);
+	for (i = 0; i < shortlen; i++)
+	{
+		bitmapword	aword = a->words[i];
+		bitmapword	bword = b->words[i];
+
+		if ((aword & ~bword) != 0)
+		{
+			/* a is not a subset of b */
+			if (result == BMS_SUBSET1)
+				return BMS_DIFFERENT;
+			result = BMS_SUBSET2;
+		}
+		if ((bword & ~aword) != 0)
+		{
+			/* b is not a subset of a */
+			if (result == BMS_SUBSET2)
+				return BMS_DIFFERENT;
+			result = BMS_SUBSET1;
+		}
+	}
+	/* Check extra words */
+	if (a->nwords > b->nwords)
+	{
+		longlen = a->nwords;
+		for (; i < longlen; i++)
+		{
+			if (a->words[i] != 0)
+			{
+				/* a is not a subset of b */
+				if (result == BMS_SUBSET1)
+					return BMS_DIFFERENT;
+				result = BMS_SUBSET2;
+			}
+		}
+	}
+	else if (a->nwords < b->nwords)
+	{
+		longlen = b->nwords;
+		for (; i < longlen; i++)
+		{
+			if (b->words[i] != 0)
+			{
+				/* b is not a subset of a */
+				if (result == BMS_SUBSET2)
+					return BMS_DIFFERENT;
+				result = BMS_SUBSET1;
+			}
+		}
+	}
+	return result;
+}
+
+/*
  * bms_is_member - is X a member of A?
  */
 bool
@@ -616,21 +692,20 @@ bms_add_member(Bitmapset *a, int x)
 		return bms_make_singleton(x);
 	wordnum = WORDNUM(x);
 	bitnum = BITNUM(x);
+
+	/* enlarge the set if necessary */
 	if (wordnum >= a->nwords)
 	{
-		/* Slow path: make a larger set and union the input set into it */
-		Bitmapset  *result;
-		int			nwords;
+		int			oldnwords = a->nwords;
 		int			i;
 
-		result = bms_make_singleton(x);
-		nwords = a->nwords;
-		for (i = 0; i < nwords; i++)
-			result->words[i] |= a->words[i];
-		pfree(a);
-		return result;
+		a = (Bitmapset *) repalloc(a, BITMAPSET_SIZE(wordnum + 1));
+		a->nwords = wordnum + 1;
+		/* zero out the enlarged portion */
+		for (i = oldnwords; i < a->nwords; i++)
+			a->words[i] = 0;
 	}
-	/* Fast path: x fits in existing set */
+
 	a->words[wordnum] |= ((bitmapword) 1 << bitnum);
 	return a;
 }
@@ -863,7 +938,7 @@ bms_first_from(const Bitmapset *a, int x)
 /*----------
  * bms_first_member - find and remove first member of a set
  *
- * Returns -1 if set is empty.	NB: set is destructively modified!
+ * Returns -1 if set is empty.  NB: set is destructively modified!
  *
  * This is intended as support for iterating through the members of a set.
  * The typical pattern is

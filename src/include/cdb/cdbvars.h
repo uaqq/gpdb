@@ -20,7 +20,7 @@
 #define CDBVARS_H
 
 #include "access/xlogdefs.h"  /*XLogRecPtr*/
-#include "utils/guc.h"
+#include "catalog/gp_segment_config.h" /* MASTER_CONTENT_ID */
 
 /*
  * ----- Declarations of Greenplum-specific global variables ------
@@ -123,13 +123,9 @@ typedef enum
 extern GpRoleValue Gp_session_role;	/* GUC var - server startup mode.  */
 extern char *gp_session_role_string;	/* Use by guc.c as staging area for
 										 * value. */
-extern const char *assign_gp_session_role(const char *newval, bool doit, GucSource source);
-extern const char *show_gp_session_role(void);
 
 extern GpRoleValue Gp_role;	/* GUC var - server operating mode.  */
 extern char *gp_role_string;	/* Use by guc.c as staging area for value. */
-extern const char *assign_gp_role(const char *newval, bool doit, GucSource source);
-extern const char *show_gp_role(void);
 
 extern bool gp_reraise_signal; /* try to force a core dump ?*/
 
@@ -176,17 +172,6 @@ extern int			gp_cached_gang_threshold;
  * some other number if it makes more sense in certain situations.
  */
 extern int			gp_reject_percent_threshold;
-
-/*
- * gp_max_csv_line_length
- *
- * maximum csv line length for COPY and external tables. It is best to keep
- * the default value of 64K to as it protects against a never ending rejection
- * of valid csv data as a result of a quote related formatting error. however,
- * there may be cases where data lines are indeed larger than 64K and that's
- * when this guc must be increased in order to be able to load the data.
- */
-extern int 			gp_max_csv_line_length;
 
 /*
  * For use while debugging DTM issues: alter MVCC semantics such that
@@ -263,6 +248,12 @@ extern bool gp_external_enable_exec;
 extern int gp_external_max_segs;
 
 /*
+ * This option determines whether curl verifies the authenticity of the
+ * gpfdist's certificate.
+ */
+extern bool verify_gpfdists_cert;
+
+/*
  * gp_command_count
  *
  * This GUC is 0 at the beginning of a client session and
@@ -301,40 +292,10 @@ extern int gp_fts_transition_retries;
 extern int gp_fts_transition_timeout;
 
 /*
- * Parameter gp_connections_per_thread
- *
- * The run-time parameter (GUC variables) gp_connections_per_thread
- * controls how many libpq connections to qExecs are processed in each
- * thread.
- *
- * Any number >= 1 is valid.
- *
- * 1 means each connection has its own thread.
- *
- * This can be set in the config file, or at runtime by a superuser using
- * SQL: set gp_connections_per_thread = x;
- *
- * The default is 256.	So, if there are fewer than 256 segdbs, all would be handled
- * by the same thread.
- *
- * Currently, this is used in two situation:
- *		1) In cdblink_setup, when the libpq connections are obtained by the dispatcher
- *				to the qExecs.
- *		2) In CdbDispatchCommand, when commands are sent from the dispatcher to the qExecs.
- *
- */
-extern int	gp_connections_per_thread; /* GUC var - server operating mode.  */
-
-extern bool assign_gp_connections_per_thread(int newval, bool doit, GucSource source);
-extern const char *show_gp_connections_per_thread(void);
-
-/*
  * If number of subtransactions within a transaction exceed this limit,
  * then a warning is given to the user.
  */
 extern int32 gp_subtrans_warn_limit;
-
-extern bool assign_gp_write_shared_snapshot(bool newval, bool doit, GucSource source);
 
 extern const char *role_to_string(GpRoleValue role);
 
@@ -457,20 +418,7 @@ extern bool gp_interconnect_log_stats;
 
 extern bool gp_interconnect_cache_future_packets;
 
-/*
- * Parameter gp_segment
- *
- * The segment (content) controlled by this QE
- * content indicator: -1 for entry database, 0, ..., n-1 for segment database
- *
- * This variable is in the PGC_BACKEND context; it is set internally by the
- * Query Dispatcher, and is propagated to Query Executors in the connection
- * parameters.	It is not modifiable by any user, ever.
- */
 #define UNDEF_SEGMENT -2
-extern int	Gp_segment;		/* GUC var */
-
-extern int	getgpsegmentCount(void);
 
 /*
  * Parameter interconnect_setup_timeout
@@ -586,6 +534,12 @@ extern double   gp_motion_cost_per_row;
  * estimates.  If 0, estimates are based on the actual number of segment dbs.
  */
 extern int      gp_segments_for_planner;
+
+/*
+ * Enable/disable the special optimization of MIN/MAX aggregates as
+ * Index Scan with limit.
+ */
+extern bool gp_enable_minmax_optimization;
 
 /*
  * "gp_enable_multiphase_agg"
@@ -792,13 +746,6 @@ extern bool gp_dynamic_partition_pruning;
  */
 extern bool gp_cte_sharing;
 
-/* MPP-7770: disallow altering storage using SET WITH */
-
-extern bool	gp_setwith_alter_storage;
-
-/* MPP-9772, MPP-9773: remove support for CREATE INDEX CONCURRENTLY */
-extern bool	gp_create_index_concurrently;
-
 /* Priority for the segworkers relative to the postmaster's priority */
 extern int gp_segworker_relative_priority;
 
@@ -831,8 +778,6 @@ extern int gp_motion_slice_noop;
 extern bool gp_disable_tuple_hints;
 
 /* Enable gpmon */
-extern bool gpvars_assign_gp_enable_gpperfmon(bool newval, bool doit, GucSource source);
-extern bool gpvars_assign_gp_gpperfmon_send_interval(int newval, bool doit, GucSource source);
 extern bool gp_enable_gpperfmon;
 extern int gp_gpperfmon_send_interval;
 extern bool gp_enable_query_metrics;
@@ -864,8 +809,6 @@ extern int gp_workfile_bytes_to_checksum;
 /* The type of work files that HashJoin should use */
 extern int gp_workfile_type_hashjoin;
 
-/* Disable logging while creating mapreduce views */
-extern bool gp_mapreduce_define;
 extern bool coredump_on_memerror;
 
 /*
@@ -887,21 +830,6 @@ extern int	gp_autostats_mode_in_functions;
 extern int	gp_autostats_on_change_threshold;
 extern bool	log_autostats;
 
-
-/* --------------------------------------------------------------------------------------------------
- * Miscellaneous developer use
- */
-
-/*
- * gp_dev_notice_agg_cost (bool)
- *
- * Issue aggregation optimizer cost estimates as NOTICE level messages
- * during GPDB aggregation planning.  This is intended to facilitate
- * tuning the cost algorithm.  The presence of this switch should not
- * be published.  The name is intended to suggest that it is for developer
- * use only.
- */
-extern bool  gp_dev_notice_agg_cost;
 
 /* --------------------------------------------------------------------------------------------------
  * Server debugging
@@ -935,9 +863,8 @@ extern int cdb_max_slices;
 
 typedef struct GpId
 {
-	int4		numsegments;	/* count of distinct segindexes */
-	int4		dbid;			/* the dbid of this database */
-	int4		segindex;		/* content indicator: -1 for entry database,
+	int32		dbid;			/* the dbid of this database */
+	int32		segindex;		/* content indicator: -1 for entry database,
 								 * 0, ..., n-1 for segment database *
 								 * a primary and its mirror have the same segIndex */
 } GpId;
@@ -947,40 +874,18 @@ typedef struct GpId
  */
 extern GpId GpIdentity;
 #define UNINITIALIZED_GP_IDENTITY_VALUE (-10000)
-
+#define IS_QUERY_DISPATCHER() (GpIdentity.segindex == MASTER_CONTENT_ID)
 
 /* Stores the listener port that this process uses to listen for incoming
  * Interconnect connections from other Motion nodes.
  */
 extern uint32 Gp_listener_port;
 
-
-
-/* SequenceServer information to be shared with everyone */
-typedef struct SeqServerControlBlock
-{
-	int4		seqServerPort;
-	XLogRecPtr  lastXlogEntry;
-}	SeqServerControlBlock;
-
-extern SeqServerControlBlock *seqServerCtl;
-
 /*
  * Thread-safe routine to write to the log
  */
 extern void write_log(const char *fmt,...) __attribute__((format(printf, 1, 2)));
 
-extern void verifyGpIdentityIsSet(void);
-
-extern const char *gpvars_assign_gp_resource_manager_policy(const char *newval, bool doit, GucSource source __attribute__((unused)) );
-
-extern const char *gpvars_show_gp_resource_manager_policy(void);
-
-extern const char *gpvars_assign_gp_resqueue_memory_policy(const char *newval, bool doit, GucSource source __attribute__((unused)) );
-
-extern const char *gpvars_show_gp_resqueue_memory_policy(void);
-
-extern bool gpvars_assign_statement_mem(int newval, bool doit, GucSource source __attribute__((unused)) );
 
 extern void increment_command_count(void);
 

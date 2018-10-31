@@ -7,10 +7,10 @@
  *
  * Portions Copyright (c) 2005-2009, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/executor/execdesc.h,v 1.42 2010/01/02 16:58:03 momjian Exp $
+ * src/include/executor/execdesc.h
  *
  *-------------------------------------------------------------------------
  */
@@ -18,7 +18,6 @@
 #define EXECDESC_H
 
 #include "nodes/execnodes.h"
-#include "nodes/plannodes.h"
 #include "tcop/dest.h"
 #include "gpmon/gpmon.h"
 
@@ -108,7 +107,11 @@ typedef struct Slice
 	 * The number of processes must agree with the the plan slice to be
 	 * implemented.
 	 */
-	List	   *primaryProcesses;
+	List		*primaryProcesses;
+	/* A bitmap to identify which QE should execute this slice */
+	Bitmapset	*processesMap;
+	/* A list of segment ids who will execute this slice */
+	List		*segments;
 } Slice;
 
 /*
@@ -195,7 +198,7 @@ typedef struct QueryDispatchDesc
 	 * queryDesc->dest, use the original table's reloptions. If DestRemote is
 	 * set, use default reloptions + gp_default_storage_options.
 	 */
-	bool validate_reloptions;
+	bool useChangedAOOpts;
 } QueryDispatchDesc;
 
 /*
@@ -265,6 +268,9 @@ typedef struct QueryDesc
 
 	/* This is always set NULL by the core system, but plugins can change it */
 	struct Instrumentation *totaltime;	/* total time spent in ExecutorRun */
+
+	/* The overall memory consumption account (i.e., outside of an operator) */
+	MemoryAccountIdType memoryAccountId;
 } QueryDesc;
 
 /* in pquery.c */

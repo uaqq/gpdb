@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/create_schema.sgml,v 1.22 2010/04/03 07:22:59 petere Exp $
+doc/src/sgml/ref/create_schema.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-CREATESCHEMA">
+ <indexterm zone="sql-createschema">
+  <primary>CREATE SCHEMA</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>CREATE SCHEMA</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,14 +19,12 @@ PostgreSQL documentation
   <refpurpose>define a new schema</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-createschema">
-  <primary>CREATE SCHEMA</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 CREATE SCHEMA <replaceable class="parameter">schema_name</replaceable> [ AUTHORIZATION <replaceable class="parameter">user_name</replaceable> ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
 CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">user_name</replaceable> [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
+CREATE SCHEMA IF NOT EXISTS <replaceable class="parameter">schema_name</replaceable> [ AUTHORIZATION <replaceable class="parameter">user_name</replaceable> ]
+CREATE SCHEMA IF NOT EXISTS AUTHORIZATION <replaceable class="parameter">user_name</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -66,7 +68,7 @@ CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">user_name</replaceabl
       <listitem>
        <para>
         The name of a schema to be created.  If this is omitted, the
-        <replaceable class="parameter">username</replaceable>
+        <replaceable class="parameter">user_name</replaceable>
         is used as the schema name.  The name cannot
         begin with <literal>pg_</literal>, as such names
         are reserved for system schemas.
@@ -97,6 +99,17 @@ CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">user_name</replaceabl
         TRIGGER</> and <command>GRANT</> are accepted as clauses
         within <command>CREATE SCHEMA</>. Other kinds of objects may
         be created in separate commands after the schema is created.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IF NOT EXISTS</literal></term>
+      <listitem>
+       <para>
+        Do nothing (except issuing a notice) if a schema with the same name
+        already exists.  <replaceable class="parameter">schema_element</>
+        subcommands cannot be included when this option is used.
        </para>
       </listitem>
      </varlistentry>
@@ -132,6 +145,15 @@ CREATE SCHEMA AUTHORIZATION joe;
   </para>
 
   <para>
+   Create a schema named <literal>test</> that will be owned by user
+   <literal>joe</>, unless there already is a schema named <literal>test</>.
+   (It does not matter whether <literal>joe</> owns the pre-existing schema.)
+<programlisting>
+CREATE SCHEMA IF NOT EXISTS test AUTHORIZATION joe;
+</programlisting>
+  </para>
+
+  <para>
    Create a schema and create a table and view within it:
 <programlisting>
 CREATE SCHEMA hollywood
@@ -149,8 +171,7 @@ CREATE SCHEMA hollywood;
 CREATE TABLE hollywood.films (title text, release date, awards text[]);
 CREATE VIEW hollywood.winners AS
     SELECT title, release FROM hollywood.films WHERE awards IS NOT NULL;
-</programlisting>
-  </para>
+</programlisting></para>
 
  </refsect1>
 
@@ -180,6 +201,11 @@ CREATE VIEW hollywood.winners AS
    schema owner.  This can happen only if the schema owner grants the
    <literal>CREATE</> privilege on his schema to someone else, or a
    superuser chooses to create objects in it.
+  </para>
+
+  <para>
+   The <literal>IF NOT EXISTS</literal> option is a
+   <productname>PostgreSQL</productname> extension.
   </para>
  </refsect1>
 

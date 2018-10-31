@@ -91,6 +91,7 @@
             <li>
               <xref href="#default_tablespace"/>
             </li>
+            <li><xref href="#default_text_search_config" format="dita"/></li>
             <li>
               <xref href="#default_transaction_isolation"/>
             </li>
@@ -143,9 +144,6 @@
               <xref href="#extra_float_digits"/>
             </li>
             <li>
-              <xref href="#filerep_mirrorvalidation_during_resync"/>
-            </li>
-            <li>
               <xref href="#from_collapse_limit"/>
             </li>
             <li>
@@ -178,9 +176,6 @@
             </li>
             <li>
               <xref href="#gp_connection_send_timeout"/>
-            </li>
-            <li>
-              <xref href="#gp_connections_per_thread"/>
             </li>
             <li>
               <xref href="#gp_content"/>
@@ -232,9 +227,6 @@
                 >gp_enable_exchange_default_partition</xref>
             </li>
             <li>
-              <xref href="#gp_enable_fallback_plan"/>
-            </li>
-            <li>
               <xref href="#gp_enable_fast_sri"/>
             </li>
             <li>
@@ -279,13 +271,7 @@
               <xref href="#gp_external_max_segs"/>
             </li>
             <li>
-              <xref href="#gp_filerep_tcp_keepalives_count"/>
-            </li>
-            <li>
-              <xref href="#gp_filerep_tcp_keepalives_idle"/>
-            </li>
-            <li>
-              <xref href="#gp_filerep_tcp_keepalives_interval"/>
+              <xref href="#gp_external_enable_filter_pushdown"/>
             </li>
             <li>
               <xref href="#gp_fts_probe_interval"/>
@@ -356,9 +342,6 @@
               <xref href="#gp_log_gang"/>
             </li>
             <li>
-              <xref href="#gp_max_csv_line_length"/>
-            </li>
-            <li>
               <xref href="#gp_max_local_distributed_cache"/>
             </li>
             <li>
@@ -367,6 +350,7 @@
             <li>
               <xref href="#gp_max_plan_size"/>
             </li>
+            <li><xref href="#gp_max_slices"/></li>
             <li>
               <xref href="#gp_motion_cost_per_row"/>
             </li>
@@ -382,6 +366,8 @@
             </li>
             <li>
               <xref href="#gp_resgroup_memory_policy"/>
+            </li>
+            <li><xref href="#gp_resource_group_bypass"/>
             </li>
             <li>
               <xref href="#gp_resource_group_cpu_limit"/>
@@ -583,6 +569,7 @@
             <li>
               <xref href="#log_truncate_on_rotation"/>
             </li>
+            <li><xref href="#maintenance_work_mem" format="dita"/></li>
             <li>
               <xref href="#max_appendonly_tables"/>
             </li>
@@ -591,12 +578,6 @@
             </li>
             <li>
               <xref href="#max_files_per_process"/>
-            </li>
-            <li>
-              <xref href="#max_fsm_pages"/>
-            </li>
-            <li>
-              <xref href="#max_fsm_relations"/>
             </li>
             <li>
               <xref href="#max_function_args"/>
@@ -700,9 +681,6 @@
             </li>
             <li>
               <xref href="#password_hash_algorithm"/>
-            </li>
-            <li>
-              <xref href="#pgstat_track_activity_query_size"/>
             </li>
             <li>
               <xref href="#pljava_classpath"/>
@@ -810,6 +788,9 @@
               <xref href="#track_activities"/>
             </li>
             <li>
+              <xref href="#track_activity_query_size"/>
+            </li>
+            <li>
               <xref href="#track_counts"/>
             </li>
             <li>
@@ -854,13 +835,15 @@
             <li>
               <xref href="#validate_previous_free_tid"/>
             </li>
+            <li><xref href="#verify_gpfdists_cert"/></li>
             <li><xref href="#vmem_process_interrupt" type="section"
               >vmem_process_interrupt</xref></li>
             <li>
               <xref href="#wal_receiver_status_interval"/>
             </li>
             <li><xref href="#writable_external_table_bufsize" type="section"
-                >writable_external_table_bufsize</xref></li>
+                >writable_external_table_bufsize</xref>
+            </li>
             <li>
               <xref href="#xid_stop_limit"/>
             </li>
@@ -1674,6 +1657,39 @@
       </table>
     </body>
   </topic>
+  <topic id="default_text_search_config">
+    <title>default_text_search_config</title>
+    <body>
+      <p>Selects the text search configuration that is used by those variants of the text search
+        functions that do not have an explicit argument specifying the configuration. See <xref
+          href="../../admin_guide/textsearch/full-text-search.xml#full-text-search"/> for further information. The
+        built-in default is <codeph>pg_catalog.simple</codeph>, but <codeph>initdb</codeph> will
+        initialize the configuration file with a setting that corresponds to the chosen
+          <codeph>lc_ctype</codeph> locale, if a configuration matching that locale can be
+        identified.</p>
+      <table id="table_enc_3mb_lfb">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">The name of a text search configuration.</entry>
+              <entry colname="col2"><codeph>pg_catalog.simple</codeph></entry>
+              <entry colname="col3">master<p>session</p><p>reload</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
   <topic id="default_transaction_isolation">
     <title>default_transaction_isolation</title>
     <body>
@@ -2175,37 +2191,6 @@
       </table>
     </body>
   </topic>
-  <topic id="filerep_mirrorvalidation_during_resync">
-    <title>filerep_mirrorvalidation_during_resync</title>
-    <body>
-      <p>The default setting <codeph>false</codeph> improves Greenplum Database performance during
-        incremental resynchronization of segment mirrors. Setting the value to <codeph>true</codeph>
-        enables checking for the existence of files for all relations on the segment mirror during
-        incremental resynchronization. Checking for files degrades performance of the incremental
-        resynchronization process but provides a minimal check of database objects.</p>
-      <table id="table_pfd_cyq_3s">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">Boolean </entry>
-              <entry colname="col2">false</entry>
-              <entry colname="col3">master<p>session</p><p>reload</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
   <topic id="from_collapse_limit">
     <title>from_collapse_limit</title>
     <body>
@@ -2582,48 +2567,6 @@
       </table>
     </body>
   </topic>
-  <topic id="gp_connections_per_thread">
-    <title>gp_connections_per_thread</title>
-    <body>
-      <p>Controls the number of asynchronous threads (worker threads) that a Greenplum Database
-        query dispatcher (QD) generates when dispatching work to query executor processes on segment
-        instances when processing SQL queries. The value sets the number of primary segment
-        instances that a worker thread connects to when processing a query. For example, when the
-        value is 2 and there are 64 segment instances, a QD generates 32 worker threads to dispatch
-        a query plan work. Each thread is assigned to two segments.</p>
-      <p>For the default value, 0, a query dispatcher generates two types of threads: a main thread
-        that manages the dispatch of query plan work, and an interconnect thread. The main thread
-        also acts as a worker thread.</p>
-      <p>For a value greater than 0, a QD generates three types of threads: a main thread, one or
-        more worker threads, and an interconnect thread. When the value is equal to or greater than
-        the number of segment instances, a QD generates three threads: a main thread, a single
-        worker thread, and an interconnect thread.</p>
-      <p>The value does not need to be changed from the default unless there are known throughput
-        performance issues.</p>
-      <p>This parameter is master only and changing it requires a server restart.</p>
-      <table id="gp_connections_per_thread_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">integer >= 0</entry>
-              <entry colname="col2">0</entry>
-              <entry colname="col3">master<p>restart</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
   <topic id="gp_content">
     <title>gp_content</title>
     <body>
@@ -2840,8 +2783,7 @@
                   2097152 </p><p><cmdname>CHECKSUM</cmdname>= <codeph>TRUE</codeph> |
                     <codeph>FALSE</codeph>
                 </p><p><cmdname>COMPRESSTYPE</cmdname>= <codeph>ZLIB</codeph> |
-                    <codeph>ZSTD</codeph> |
-                    <codeph>QUICKLZ</codeph><sup>2</sup> |
+                    <codeph>ZSTD</codeph> | <codeph>QUICKLZ</codeph><sup>2</sup> |
                     <codeph>RLE</codeph>_<codeph>TYPE</codeph> | <codeph>NONE</codeph>
                 </p><p><cmdname>COMPRESSLEVEL</cmdname>= integer between 0 and
                     19</p><p><cmdname>ORIENTATION</cmdname>= <codeph>ROW</codeph> |
@@ -3206,33 +3148,6 @@
       </table>
     </body>
   </topic>
-  <topic id="gp_enable_fallback_plan">
-    <title>gp_enable_fallback_plan</title>
-    <body>
-      <p>Allows use of disabled plan types when a query would not be feasible without them.</p>
-      <table id="gp_enable_fallback_plan_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">Boolean</entry>
-              <entry colname="col2">on</entry>
-              <entry colname="col3">master<p>session</p><p>reload</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
   <topic id="gp_enable_fast_sri">
     <title>gp_enable_fast_sri</title>
     <body>
@@ -3444,14 +3359,14 @@
   <topic id="gp_enable_query_metrics">
     <title>gp_enable_query_metrics</title>
     <body>
-      <p>Enables collection of query metrics. When query metrics collection is enabled, 
-        Greenplum Database collects metrics during query execution. The default is off.</p> 
-      <p>After changing this configuration parameter, Greenplum Database must be restarted for the 
+      <p>Enables collection of query metrics. When query metrics collection is enabled, Greenplum
+        Database collects metrics during query execution. The default is off.</p>
+      <p>After changing this configuration parameter, Greenplum Database must be restarted for the
         change to take effect.</p>
-      <p>The Greenplum Database metrics collection extension, when enabled, sends the
-      collected metrics over UDP to a Pivotal Greenplum Command Center agent<sup>1</sup>. </p>
-      <note><sup>1</sup> The metrics collection extension is included in Pivotal's commercial 
-      version of Greenplum Database. Pivotal Greenplum Command Center is supported only with 
+      <p>The Greenplum Database metrics collection extension, when enabled, sends the collected
+        metrics over UDP to a Pivotal Greenplum Command Center agent<sup>1</sup>. </p>
+      <note><sup>1</sup> The metrics collection extension is included in Pivotal's commercial
+        version of Greenplum Database. Pivotal Greenplum Command Center is supported only with
         Pivotal Greenplum Database.</note>
       <table id="gp_enable_query_metrics">
         <tgroup cols="3">
@@ -3479,11 +3394,15 @@
   <topic id="gp_enable_relsize_collection">
     <title>gp_enable_relsize_collection</title>
     <body>
-      <p>Enables the legacy query optimizer (planner) to use the estimated size of a table
-          (<codeph>pg_relation_size</codeph> function) if there are no statistics for the table. By
-        default, the planner uses a default value to estimate the number of rows if statistics are
-        not available. The default behavior improves query optimization time and reduces resource
-        queue usage in heavy workloads, but can lead to suboptimal plans.</p>
+      <p>Enables GPORCA and the legacy query optimizer (planner) to use the estimated size of a
+        table (<codeph>pg_relation_size</codeph> function) if there are no statistics for the table.
+        By default, GPORCA and the planner use a default value to estimate the number of rows if
+        statistics are not available. The default behavior improves query optimization time and
+        reduces resource queue usage in heavy workloads, but can lead to suboptimal plans.</p>
+      <p>This parameter is ignored for a root partition of a partitioned table. When GPORCA is
+        enabled and the root partition does not have statistics, GPORCA always uses the default
+        value. You can use <codeph>ANALZYE ROOTPARTITION</codeph> to collect statistics on the root
+        partition. See <codeph><xref href="../../ref_guide/sql_commands/ANALYZE.xml"/></codeph>.</p>
       <table id="table_b2v_b5t_3x">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
@@ -3669,15 +3588,14 @@
       </table>
     </body>
   </topic>
-  <topic id="gp_filerep_tcp_keepalives_count">
-    <title>gp_filerep_tcp_keepalives_count</title>
+  <topic id="gp_external_enable_filter_pushdown">
+    <title>gp_external_enable_filter_pushdown</title>
     <body>
-      <p>How many keepalives may be lost before the connection is considered dead. A value of 0 uses
-        the system default. If TCP_KEEPCNT is not supported, this parameter must be 0. </p>
-      <p>Use this parameter for all connections that are between a primary and mirror segment. Use
-          <codeph>tcp_keepalives_count</codeph> for settings that are not between a primary and
-        mirror segment.</p>
-      <table id="gp_filerep_tcp_keepalives_count_table">
+      <p>Enable filter pushdown when reading data from external tables. If pushdown fails, a query
+        is executed without pushing filters to the external data source (instead, Greenplum Database
+        applies the same constraints to the result). See <xref
+          href="../../admin_guide/external/g-external-tables.xml#topic3"/> for more information.</p>
+      <table id="enable_filter_pushdown_table">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
           <colspec colnum="2" colname="col2" colwidth="1*"/>
@@ -3691,70 +3609,9 @@
           </thead>
           <tbody>
             <row>
-              <entry colname="col1">number of lost keepalives</entry>
-              <entry colname="col2">2</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
-  <topic id="gp_filerep_tcp_keepalives_idle">
-    <title>gp_filerep_tcp_keepalives_idle</title>
-    <body>
-      <p>Number of seconds between sending keepalives on an otherwise idle connection. A value of 0
-        uses the system default. If TCP_KEEPIDLE is not supported, this parameter must be 0.</p>
-      <p>Use this parameter for all connections that are between a primary and mirror segment. Use
-          <codeph>tcp_keepalives_idle</codeph> for settings that are not between a primary and
-        mirror segment.</p>
-      <table id="gp_filerep_tcp_keepalives_idle_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">number of seconds</entry>
-              <entry colname="col2">1 min</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
-  <topic id="gp_filerep_tcp_keepalives_interval">
-    <title>gp_filerep_tcp_keepalives_interval</title>
-    <body>
-      <p>How many seconds to wait for a response to a keepalive before retransmitting. A value of 0
-        uses the system default. If TCP_KEEPINTVL is not supported, this parameter must be 0.</p>
-      <p>Use this parameter for all connections that are between a primary and mirror segment. Use
-        tcp_keepalives_interval for settings that are not between a primary and mirror segment.</p>
-      <table id="gp_filerep_tcp_keepalives_interval_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">number of seconds</entry>
-              <entry colname="col2">30 sec</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
+              <entry colname="col1">Boolean</entry>
+              <entry colname="col2">on</entry>
+              <entry colname="col3">master<p>session</p><p>reload</p></entry>
             </row>
           </tbody>
         </tgroup>
@@ -4122,13 +3979,13 @@
       <p>The default value is <codeph>false</codeph>, Greenplum Database returns an error if the
           <codeph>INTO ERROR TABLE</codeph> clause is specified in a command. </p>
       <p>If the value is <codeph>true</codeph>, Greenplum Database ignores the clause, issues a
-        warning, and executes the command and logs information about data rows with formatting
-        errors. In Greenplum Database 5.x, you access the error log information with built-in SQL
+        warning, and executes the command without the <codeph>INTO ERROR TABLE</codeph> clause. In
+        Greenplum Database 5.x and later, you access the error log information with built-in SQL
         functions. See the <codeph><xref href="../sql_commands/CREATE_EXTERNAL_TABLE.xml">CREATE
             EXTERNAL TABLE</xref></codeph> or <codeph><xref href="../sql_commands/COPY.xml"
             >COPY</xref></codeph> command.</p>
-      <p>You can set this value to <codeph>true</codeph> to avoid the Greenplum Database 5 error
-        when you run applications that execute <codeph>CREATE EXTERNAL TABLE</codeph> or
+      <p>You can set this value to <codeph>true</codeph> to avoid the Greenplum Database error when
+        you run applications that execute <codeph>CREATE EXTERNAL TABLE</codeph> or
           <codeph>COPY</codeph> commands that include the Greenplum Database 4.3.x <codeph>INTO
           ERROR TABLE</codeph> clause.</p>
       <table id="table_hnf_2v5_bdb">
@@ -4147,7 +4004,7 @@
             <row>
               <entry colname="col1">Boolean</entry>
               <entry colname="col2">false</entry>
-              <entry colname="col3">master<p>system</p><p>reload</p></entry>
+              <entry colname="col3">master<p>session</p><p>reload</p></entry>
             </row>
           </tbody>
         </tgroup>
@@ -4194,19 +4051,16 @@
   <topic id="gp_instrument_shmem_size">
     <title>gp_instrument_shmem_size</title>
     <body>
-      <p>The amount of shared memory, in kilobytes, allocated for query metrics.
-      The default is 5120 and the maximum is 131072. At startup, if
-      <codeph><xref href="#gp_enable_query_metrics"
-      format="dita">gp_enable_query_metrics</xref></codeph> is set to on,
-      Greenplum Database allocates space in shared memory to save query metrics.
-      This memory is organized as a header and a list of slots. The number of
-      slots needed depends on the number of concurrent queries and the number of
-      execution plan nodes per query. The default value, 5120, is based on a
-      Greenplum Database system that executes a maximum of about 250 concurrent
-      queries with 120 nodes per query. If the
-      <codeph>gp_enable_query_metrics</codeph> configuration parameter is off,
-      or if the slots are exhausted, the metrics are maintained in local memory
-      instead of in shared memory. </p>
+      <p>The amount of shared memory, in kilobytes, allocated for query metrics. The default is 5120
+        and the maximum is 131072. At startup, if <codeph><xref href="#gp_enable_query_metrics"
+            format="dita">gp_enable_query_metrics</xref></codeph> is set to on, Greenplum Database
+        allocates space in shared memory to save query metrics. This memory is organized as a header
+        and a list of slots. The number of slots needed depends on the number of concurrent queries
+        and the number of execution plan nodes per query. The default value, 5120, is based on a
+        Greenplum Database system that executes a maximum of about 250 concurrent queries with 120
+        nodes per query. If the <codeph>gp_enable_query_metrics</codeph> configuration parameter is
+        off, or if the slots are exhausted, the metrics are maintained in local memory instead of in
+        shared memory. </p>
       <table id="gp_instrument_shmem_size">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
@@ -4223,7 +4077,8 @@
             <row>
               <entry colname="col1">integer <codeph>0 - 131072</codeph></entry>
               <entry colname="col2">5120</entry>
-              <entry colname="col3">master<p>system</p><p>restart</p></entry></row>
+              <entry colname="col3">master<p>system</p><p>restart</p></entry>
+            </row>
           </tbody>
         </tgroup>
       </table>
@@ -4480,36 +4335,6 @@
       </table>
     </body>
   </topic>
-  <topic id="gp_max_csv_line_length">
-    <title>gp_max_csv_line_length</title>
-    <body>
-      <p>The maximum length of a line in a CSV formatted file that will be imported into the system.
-        The default is 1MB (1048576 bytes). Maximum allowed is 4MB (4194184 bytes). The default may
-        need to be increased if using the <i>gp_toolkit</i> administrative schema to read Greenplum
-        Database log files.</p>
-      <table id="gp_max_csv_line_length_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">number of bytes</entry>
-              <entry colname="col2">1048576</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
   <topic id="gp_max_local_distributed_cache">
     <title>gp_max_local_distributed_cache</title>
     <body>
@@ -4599,6 +4424,41 @@
               <entry colname="col1">integer</entry>
               <entry colname="col2">0</entry>
               <entry colname="col3">master<p>superuser</p><p>session</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
+  <topic id="gp_max_slices">
+    <title>gp_max_slices</title>
+    <body>
+      <p dir="ltr">Specifies the maximum number of slices (portions of a query plan that are
+        executed on segment instances) that can be generated by a query. If the query generates more
+        than the specified number of slices, Greenplum Database returns an error and does not
+        execute the query. The default value is <codeph>0</codeph>, no maximum value. </p>
+      <p>Executing a query that generates a large number of slices might affect Greenplum Database
+        performance. For example, a query that contains <codeph>UNION</codeph> or <codeph>UNION
+          ALL</codeph> operators over several complex views can generate a large number of slices.
+        You can run <codeph>EXPLAIN ANALYZE</codeph> on the query to view slice statistics for the
+        query.</p>
+      <table id="table_uwf_lzw_ldb">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">0 - INT_MAX</entry>
+              <entry colname="col2">0</entry>
+              <entry colname="col3">master<p>session</p><p>reload</p></entry>
             </row>
           </tbody>
         </tgroup>
@@ -4785,6 +4645,53 @@
               <entry colname="col1">auto, eager_free</entry>
               <entry colname="col2">eager_free</entry>
               <entry colname="col3">local<p>system</p><p>superuser</p><p>restart/reload</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
+  <topic id="gp_resource_group_bypass">
+    <title>gp_resource_group_bypass</title>
+    <body>
+      <note>The <codeph>gp_resource_group_bypass</codeph> server configuration parameter is enforced
+        only when resource group-based resource management is active.</note>
+      <p>Enables or disables the enforcement of resource group concurrent transaction limits on
+        Greenplum Database resources. The default value is <codeph>false</codeph>, which enforces
+        resource group transaction limits. Resource groups manage resources such as CPU, memory, and
+        the number of concurrent transactions that are used by queries and external components such
+        as PL/Container. </p>
+      <p>You can set this parameter to <codeph>true</codeph> to bypass resource group concurrent
+        transaction limitations so that a query can run immediately. For example, you can set the
+        parameter to <codeph>true</codeph> for a session to run a system catalog query or a similar
+        query that requires a minimal amount of resources. </p>
+      <p>When you set this parameter to <codeph>true</codeph> and a run a query, the query runs in
+        this environment:<ul id="ul_vgc_rw4_j2b">
+          <li>The query runs inside a resource group. The resource group assignment for the query
+            does not change.</li>
+          <li>The query memory quota is approximately 10 MB per query. The memory is allocated from
+            resource group shared memory or global shared memory. The query fails if there is not
+            enough shared memory available to fulfill the memory allocation request.</li>
+        </ul></p>
+      <p>This parameter can be set for a session. The parameter cannot be set within a transaction
+        or a function.</p>
+      <table id="table_szz_1yt_32b">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">Boolean</entry>
+              <entry colname="col2">false</entry>
+              <entry colname="col3">session</entry>
             </row>
           </tbody>
         </tgroup>
@@ -6820,6 +6727,36 @@
       </table>
     </body>
   </topic>
+  <topic id="maintenance_work_mem">
+    <title>maintenance_work_mem</title>
+    <body>
+      <p>Specifies the maximum amount of memory to be used in maintenance operations, such as
+          <codeph>VACUUM</codeph> and <codeph>CREATE INDEX</codeph>. It defaults to 16 megabytes
+        (16MB). Larger settings might improve performance for vacuuming and for restoring database
+        dumps.</p>
+      <table id="table_wfs_tfp_qcb">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">Integer</entry>
+              <entry colname="col2">16</entry>
+              <entry colname="col3">local<p>system</p><p>restart</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
   <topic id="max_appendonly_tables">
     <title>max_appendonly_tables</title>
     <body>
@@ -6904,65 +6841,6 @@
         setting. Some platforms such as BSD, the kernel will allow individual processes to open many
         more files than the system can really support.</p>
       <table id="max_files_per_process_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">integer</entry>
-              <entry colname="col2">1000</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
-  <topic id="max_fsm_pages">
-    <title>max_fsm_pages</title>
-    <body>
-      <p>Sets the maximum number of disk pages for which free space will be tracked in the shared
-        free-space map. Six bytes of shared memory are consumed for each page slot. </p>
-      <table id="max_fsm_pages_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">integer &gt; 16 * <i>max_fsm_relations</i></entry>
-              <entry colname="col2">200000</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
-  <topic id="max_fsm_relations">
-    <title>max_fsm_relations</title>
-    <body>
-      <p>Sets the maximum number of relations for which free space will be tracked in the shared
-        memory free-space map. Should be set to a value larger than the total number of:</p>
-      <p>tables + indexes + system tables.</p>
-      <p>It costs about 60 bytes of memory for each relation per segment instance. It is better to
-        allow some room for overhead and set too high rather than too low.</p>
-      <table id="max_fsm_relations_table">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
           <colspec colnum="2" colname="col2" colwidth="1*"/>
@@ -7268,13 +7146,14 @@
     <body>
       <note>The <codeph>memory_spill_ratio</codeph> server configuration parameter is enforced only
         when resource group-based resource management is active.</note>
-      <p>Sets the memory usage threshold for memory-intensive operators in a transaction. When a
-        transaction reaches this threshold, it spills to disk.</p>
-      <p>The default <codeph>memory_spill_ratio</codeph> is the value defined for the resource group
-        assigned to the currently active role. You can set <codeph>memory_spill_ratio</codeph> at
-        the session level to selectively set this limit on a per-query basis. For example, if you
-        have a specific query that spills to disk and requires more memory, you may choose to set a
-        larger <codeph>memory_spill_ratio</codeph> to increase the initial memory allocation.</p>
+      <p>Sets the memory usage threshold percentage for memory-intensive operators in a transaction.
+        When a transaction reaches this threshold, it spills to disk.</p>
+      <p>The default <codeph>memory_spill_ratio</codeph> percentage is the value defined for the
+        resource group assigned to the currently active role. You can set
+          <codeph>memory_spill_ratio</codeph> at the session level to selectively set this limit on
+        a per-query basis. For example, if you have a specific query that spills to disk and
+        requires more memory, you may choose to set a larger <codeph>memory_spill_ratio</codeph> to
+        increase the initial memory allocation.</p>
       <p>When you set <codeph>memory_spill_ratio</codeph> at the session level, Greenplum Database
         does not perform semantic validation on the new value until you next perform a query.</p>
       <table id="memory_spill_ratio_table">
@@ -7340,13 +7219,22 @@
   <topic id="optimizer_analyze_root_partition">
     <title>optimizer_analyze_root_partition</title>
     <body>
-      <p>For a partitioned table, collects statistics for the root partition when the
-          <cmdname>ANALYZE</cmdname> command is run on the table. GPORCA uses the root partition
-        statistics when generating a query plan. The legacy query optimizer does not use these
-        statistics. If you set the value of the server configuration parameter <codeph><xref
-            href="#optimizer" format="dita"/></codeph> to on, set the value of this parameter to on
-        and run the command <cmdname>ANALYZE</cmdname> or <cmdname>ANALYZE ROOTPARTITION</cmdname>
-        on partitioned tables to ensure the proper statistics have been collected. </p>
+      <p>For a partitioned table, controls whether the <codeph>ROOTPARTITION</codeph> keyword is
+        required to collect root partition statistics when the <cmdname>ANALYZE</cmdname> command is
+        run on the table. GPORCA uses the root partition statistics when generating a query plan.
+        The legacy query optimizer does not use these statistics. </p>
+      <p>The default setting for the parameter is <codeph>on</codeph>, the <codeph>ANALYZE</codeph>
+        command can collect root partition statistics without the <codeph>ROOTPARTITION</codeph>
+        keyword. Root partition statistics are collected when you run <codeph>ANALYZE</codeph> on
+        the root partition, or when you run <codeph>ANALYZE</codeph> on a child leaf partition of
+        the partitioned table and the other child leaf partitions have statistics. When the value is
+          <codeph>off</codeph>, you must run <codeph>ANALZYE ROOTPARTITION</codeph> to collect root
+        partition statistics. </p>
+      <p>When the value of the server configuration parameter <codeph><xref href="#optimizer"
+            format="dita"/></codeph> is <codeph>on</codeph> (the default), the value of this
+        parameter should also be <codeph>on</codeph>. For information about collecting table
+        statistics on partitioned tables, see <codeph><xref href="../sql_commands/ANALYZE.xml"
+          /></codeph>.</p>
       <p>For information about the legacy query optimizer and GPORCA, see <xref
           href="../../admin_guide/query/topics/query.xml">Querying Data</xref><ph
           otherprops="op-print"> in the <cite>Greenplum Database Administrator
@@ -7366,7 +7254,7 @@
           <tbody>
             <row>
               <entry colname="col1">Boolean</entry>
-              <entry colname="col2">off</entry>
+              <entry colname="col2">on</entry>
               <entry colname="col3">master<p>session</p><p>reload</p></entry>
             </row>
           </tbody>
@@ -7383,9 +7271,9 @@
         in the query predicate contains more than the number elements specified by parameter, GPORCA
         disables the transformation of the predicate into its disjunctive normal form during query
         optimization. </p>
-      <p>The default value is 25. </p>
+      <p>The default value is 100. </p>
       <p>For example, when GPORCA is executing a query that contains an <codeph>IN</codeph> clause
-        with more than 25 elements, GPORCA does not transform the predicate into its disjunctive
+        with more than 100 elements, GPORCA does not transform the predicate into its disjunctive
         normal form during query optimization to reduce optimization time consume less memory. The
         difference in query processing can be seen in the filter condition for the
           <codeph>IN</codeph> clause of the query <codeph>EXPLAIN</codeph> plan.</p>
@@ -7859,12 +7747,12 @@
   <topic id="optimizer_nestloop_factor">
     <title>optimizer_nestloop_factor</title>
     <body>
-      <p>When GPORCA is enabled (the default), this parameter controls the nested loop join cost
-        factor to apply to during query optimization. The default value, <codeph>1</codeph>,
-        specifies the default sort cost factor. The value is a ratio of increase or decrease from
-        the default factor. For example, a value of <codeph>2.0</codeph> sets the cost factor at
-        twice the default, and a value of <codeph>0.5</codeph> sets the factor at half the
-        default.</p>
+      <p>This parameter adds a costing factor to GPORCA to prioritize hash joins instead of nested
+        loop joins during query optimization. The default value of 1024 was chosen after evaluating
+        numerous workloads with uniformly distributed data. 1024 should be treated as the practical
+        upper bound setting for this parameter. If you find the GPORCA selects hash joins more often
+        than it should, reduce the value to shift the costing factor in favor of nested loop
+        joins.</p>
       <p>The parameter can be set for a database system, an individual database, or a session or
         query.</p>
       <table id="table_zy2_xlj_tz">
@@ -7881,8 +7769,8 @@
           </thead>
           <tbody>
             <row>
-              <entry colname="col1">Decimal > 0</entry>
-              <entry colname="col2">1</entry>
+              <entry colname="col1">INT_MAX > 1</entry>
+              <entry colname="col2">1024</entry>
               <entry colname="col3">master<p>session</p><p>reload</p></entry>
             </row>
           </tbody>
@@ -8089,34 +7977,6 @@
               <entry colname="col1">MD5<p>SHA-256</p></entry>
               <entry colname="col2">MD5</entry>
               <entry colname="col3">master<p>session</p><p>reload</p><p>superuser</p></entry>
-            </row>
-          </tbody>
-        </tgroup>
-      </table>
-    </body>
-  </topic>
-  <topic id="pgstat_track_activity_query_size">
-    <title>pgstat_track_activity_query_size</title>
-    <body>
-      <p>Sets the maximum length limit for the query text stored in <codeph>current_query</codeph>
-        column of the system catalog view pg_stat_activity. The minimum length is 1024 characters. </p>
-      <table id="pgstat_track_activity_query_size_table">
-        <tgroup cols="3">
-          <colspec colnum="1" colname="col1" colwidth="1*"/>
-          <colspec colnum="2" colname="col2" colwidth="1*"/>
-          <colspec colnum="3" colname="col3" colwidth="1*"/>
-          <thead>
-            <row>
-              <entry colname="col1">Value Range</entry>
-              <entry colname="col2">Default</entry>
-              <entry colname="col3">Set Classifications</entry>
-            </row>
-          </thead>
-          <tbody>
-            <row>
-              <entry colname="col1">integer</entry>
-              <entry colname="col2">1024</entry>
-              <entry colname="col3">local<p>system</p><p>restart</p></entry>
             </row>
           </tbody>
         </tgroup>
@@ -9035,8 +8895,7 @@
     <body>
       <p>How many keepalives may be lost before the connection is considered dead. A value of 0 uses
         the system default. If TCP_KEEPCNT is not supported, this parameter must be 0. </p>
-      <p>Use this parameter for all connections that are not between a primary and mirror segment.
-        Use gp_filerep_tcp_keepalives_count for settings that are between a primary and mirror
+      <p>Use this parameter for all connections that are not between a primary and mirror
         segment.</p>
       <table id="tcp_keepalives_count_table">
         <tgroup cols="3">
@@ -9066,8 +8925,7 @@
     <body>
       <p>Number of seconds between sending keepalives on an otherwise idle connection. A value of 0
         uses the system default. If TCP_KEEPIDLE is not supported, this parameter must be 0.</p>
-      <p>Use this parameter for all connections that are not between a primary and mirror segment.
-        Use gp_filerep_tcp_keepalives_idle for settings that are between a primary and mirror
+      <p>Use this parameter for all connections that are not between a primary and mirror
         segment.</p>
       <table id="tcp_keepalives_idle_table">
         <tgroup cols="3">
@@ -9097,8 +8955,7 @@
     <body>
       <p>How many seconds to wait for a response to a keepalive before retransmitting. A value of 0
         uses the system default. If TCP_KEEPINTVL is not supported, this parameter must be 0.</p>
-      <p>Use this parameter for all connections that are not between a primary and mirror segment.
-        Use gp_filerep_tcp_keepalives_interval for settings that are between a primary and mirror
+      <p>Use this parameter for all connections that are not between a primary and mirror
         segment.</p>
       <table id="tcp_keepalives_interval_table">
         <tgroup cols="3">
@@ -9259,6 +9116,34 @@
               <entry colname="col1">Boolean</entry>
               <entry colname="col2">on</entry>
               <entry colname="col3">master<p>session</p><p>reload</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
+  <topic id="track_activity_query_size">
+    <title>track_activity_query_size</title>
+    <body>
+      <p>Sets the maximum length limit for the query text stored in <codeph>current_query</codeph>
+        column of the system catalog view pg_stat_activity. The minimum length is 1024 characters. </p>
+      <table id="track_activity_query_size_table">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">integer</entry>
+              <entry colname="col2">1024</entry>
+              <entry colname="col3">local<p>system</p><p>restart</p></entry>
             </row>
           </tbody>
         </tgroup>
@@ -9676,6 +9561,54 @@
         failed. Greenplum Database attempts to execute the queries. </p>
       <note otherprops="pivotal">If a warning is returned, please contact Pivotal Support.</note>
       <table id="table_fkc_4pb_1w">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">Boolean</entry>
+              <entry colname="col2">true</entry>
+              <entry colname="col3">master<p>session</p><p>reload</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
+  <topic id="verify_gpfdists_cert">
+    <title>verify_gpfdists_cert</title>
+    <body>
+      <p dir="ltr">When a Greenplum Database external table is defined with the
+          <codeph>gpfdists</codeph> protocol to use SSL security, this parameter controls whether
+        SSL certificate authentication is enabled. The default is <codeph>true</codeph>, SSL
+        authentication is enabled when Greenplum Database communicates with the
+          <codeph>gpfdist</codeph> utility to either read data from or write data to an external
+        data source.</p>
+      <p>The value <codeph>false</codeph> disables SSL certificate authentication. These SSL
+        exceptions are ignored:<ul id="ul_ygd_1lj_mdb">
+          <li>The self-signed SSL certificate that is used by <codeph>gpfdist</codeph> is not
+            trusted by Greenplum Database.</li>
+          <li>The host name contained in the SSL certificate does not match the host name that is
+            running <codeph>gpfdist</codeph>.</li>
+        </ul></p>
+      <p>You can set the value to <codeph>false</codeph> to disable authentication when testing the
+        communication between the Greenplum Database external table and the <codeph>gpfdist</codeph>
+        utility that is serving the external data.
+        <note type="warning">Disabling SSL certificate authentication exposes a security risk by not
+          validating the <codeph>gpfdists</codeph> SSL certificate. </note></p>
+      <p>For information about the <codeph>gpfdists</codeph> protocol, see <xref
+          href="../../admin_guide/external/g-gpfdists-protocol.xml">gpfdists:// Protocol</xref>. For
+        information about running the <codeph>gpfdist</codeph> utility, see <xref
+          href="../../utility_guide/admin_utilities/gpfdist.xml"/>. </p>
+      <table id="table_ncx_n1h_ldb">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
           <colspec colnum="2" colname="col2" colwidth="1*"/>

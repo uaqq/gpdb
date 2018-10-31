@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/alter_aggregate.sgml,v 1.11 2010/04/03 07:22:56 petere Exp $
+doc/src/sgml/ref/alter_aggregate.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-ALTERAGGREGATE">
+ <indexterm zone="sql-alteraggregate">
+  <primary>ALTER AGGREGATE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>ALTER AGGREGATE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -13,11 +17,7 @@ PostgreSQL documentation
  <refnamediv>
   <refname>ALTER AGGREGATE</refname>
   <refpurpose>change the definition of an aggregate function</refpurpose>
- </refnamediv>  
-  
- <indexterm zone="sql-alteraggregate">
-  <primary>ALTER AGGREGATE</primary>
- </indexterm>
+ </refnamediv>
 
  <refsynopsisdiv>
 <synopsis>
@@ -28,11 +28,11 @@ ALTER AGGREGATE <replaceable>name</replaceable> ( <replaceable>aggregate_signatu
 <phrase>where <replaceable>aggregate_signature</replaceable> is:</phrase>
 
 * |
-[ <replaceable>argmode</replaceable> ] <replaceable>argtype</replaceable> [ , ... ] |
-[ [ <replaceable>argmode</replaceable> ] <replaceable>argtype</replaceable> [ , ... ] ] ORDER BY [ <replaceable>argmode</replaceable> ] <replaceable>argtype</replaceable> [ , ... ]
+[ <replaceable>argmode</replaceable> ] [ <replaceable>argname</replaceable> ] <replaceable>argtype</replaceable> [ , ... ] |
+[ [ <replaceable>argmode</replaceable> ] [ <replaceable>argname</replaceable> ] <replaceable>argtype</replaceable> [ , ... ] ] ORDER BY [ <replaceable>argmode</replaceable> ] [ <replaceable>argname</replaceable> ] <replaceable>argtype</replaceable> [ , ... ]
 </synopsis>
  </refsynopsisdiv>
-  
+
  <refsect1>
   <title>Description</title>
 
@@ -53,7 +53,7 @@ ALTER AGGREGATE <replaceable>name</replaceable> ( <replaceable>aggregate_signatu
    aggregate function anyway.)
   </para>
  </refsect1>
-  
+
  <refsect1>
   <title>Parameters</title>
 
@@ -74,6 +74,19 @@ ALTER AGGREGATE <replaceable>name</replaceable> ( <replaceable>aggregate_signatu
      <para>
       The mode of an argument: <literal>IN</> or <literal>VARIADIC</>.
       If omitted, the default is <literal>IN</>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">argname</replaceable></term>
+
+    <listitem>
+     <para>
+      The name of an argument.
+      Note that <command>ALTER AGGREGATE</command> does not actually pay
+      any attention to argument names, since only the argument data
+      types are needed to determine the aggregate function's identity.
      </para>
     </listitem>
    </varlistentry>

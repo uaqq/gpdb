@@ -4,10 +4,10 @@
  *	  POSTGRES LIBPQ buffer structure definitions.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/libpq/libpq.h,v 1.75 2010/02/26 02:01:24 momjian Exp $
+ * src/include/libpq/libpq.h
  *
  *-------------------------------------------------------------------------
  */
@@ -20,22 +20,6 @@
 #include "lib/stringinfo.h"
 #include "libpq/libpq-be.h"
 
-/* ----------------
- * PQArgBlock
- *		Information (pointer to array of this structure) required
- *		for the PQfn() call.  (This probably ought to go somewhere else...)
- * ----------------
- */
-typedef struct
-{
-	int			len;
-	int			isint;
-	union
-	{
-		int		   *ptr;		/* can't use void (dec compiler barfs)	 */
-		int			integer;
-	}			u;
-} PQArgBlock;
 
 /*
  * External functions.
@@ -45,11 +29,11 @@ typedef struct
  * prototypes for functions in pqcomm.c
  */
 extern int StreamServerPort(int family, char *hostName,
-	unsigned short portNumber, char *unixSocketName, pgsocket ListenSocket[],
-				 int MaxListen);
+				 unsigned short portNumber, char *unixSocketDir,
+				 pgsocket ListenSocket[], int MaxListen);
 extern int	StreamConnection(pgsocket server_fd, Port *port);
 extern void StreamClose(pgsocket sock);
-extern void TouchSocketFile(void);
+extern void TouchSocketFiles(void);
 extern void pq_init(void);
 extern void pq_comm_reset(void);
 extern void pq_comm_close_fatal(void);                                  /* GPDB only */
@@ -72,6 +56,11 @@ extern bool pq_waitForDataUsingSelect(void);                /* GPDB only */
 /*
  * prototypes for functions in be-secure.c
  */
+extern char *ssl_cert_file;
+extern char *ssl_key_file;
+extern char *ssl_ca_file;
+extern char *ssl_crl_file;
+
 extern int	secure_initialize(void);
 extern bool secure_loaded_verify_locations(void);
 extern void secure_destroy(void);

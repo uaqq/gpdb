@@ -3,8 +3,12 @@
 #include <setjmp.h>
 #include "cmockery.h"
 
+#include "postgres.h"
+#include "utils/memutils.h"
+
 #include "../cdbappendonlyxlog.c"
 
+#include "catalog/pg_magic_oid.h"
 #include "catalog/pg_tablespace.h"
 
 static int

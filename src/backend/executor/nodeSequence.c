@@ -23,8 +23,6 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 
-#define SEQUENCE_NSLOTS 1
-
 SequenceState *
 ExecInitSequence(Sequence *node, EState *estate, int eflags)
 {
@@ -135,7 +133,7 @@ ExecEndSequence(SequenceState *node)
 }
 
 void
-ExecReScanSequence(SequenceState *node, ExprContext *exprCtxt)
+ExecReScanSequence(SequenceState *node)
 {
 	for (int i = 0; i < node->numSubplans; i++)
 	{
@@ -154,7 +152,7 @@ ExecReScanSequence(SequenceState *node, ExprContext *exprCtxt)
 		 * Always rescan the inputs immediately, to ensure we can pass down
 		 * any outer tuple that might be used in index quals.
 		 */
-		ExecReScan(subnode, exprCtxt);
+		ExecReScan(subnode);
 	}
 
 	node->initState = true;

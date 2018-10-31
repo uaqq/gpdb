@@ -4,10 +4,10 @@
  *	  POSTGRES "position" definitions.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/pos.h,v 1.24 2010/01/02 16:58:08 momjian Exp $
+ * src/include/storage/pos.h
  *
  *-------------------------------------------------------------------------
  */
@@ -20,7 +20,7 @@
  * been changed to just <offset> as the notion of having multiple pages
  * within a block has been removed.
  *
- * the 'offset' abstraction is somewhat confusing.	it is NOT a byte
+ * the 'offset' abstraction is somewhat confusing.  it is NOT a byte
  * offset within the page; instead, it is an offset into the line
  * pointer array contained on every page that store (heap or index)
  * tuples.

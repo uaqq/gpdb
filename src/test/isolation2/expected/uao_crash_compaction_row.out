@@ -7,6 +7,18 @@
 -- end_matchsubs
 3:CREATE extension if NOT EXISTS gp_inject_fault;
 CREATE
+3:SELECT role, preferred_role, content, mode, status FROM gp_segment_configuration;
+role|preferred_role|content|mode|status
+----+--------------+-------+----+------
+m   |m             |-1     |s   |u     
+m   |m             |0      |s   |u     
+m   |m             |1      |s   |u     
+m   |m             |2      |s   |u     
+p   |p             |-1     |n   |u     
+p   |p             |0      |s   |u     
+p   |p             |1      |s   |u     
+p   |p             |2      |s   |u     
+(8 rows)
 --
 -- Test to validate crash at different points in AO/CO vacuum.
 --
@@ -52,53 +64,53 @@ INSERT 10
 3:UPDATE crash_vacuum_in_appendonly_insert SET b = 2;
 UPDATE 10
 
--- suspend at intended points
-3:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'suspend', '', '', 'crash_before_cleanup_phase', 0, 0, 2);
+-- suspend at intended points. Only one AO table can be in drop phase in a
+-- system at a time hence we must wait for this table's VACUUM to reach cleanup
+-- phase before triggering another VACUUM.
+3:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'suspend', '', '', 'crash_before_cleanup_phase', 1, -1, 0, 2);
 gp_inject_fault
 ---------------
 t              
 (1 row)
 1&:VACUUM crash_before_cleanup_phase;  <waiting ...>
-3:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'suspend', '', '', 'crash_before_segmentfile_drop', 0, 0, 2);
-gp_inject_fault
----------------
-t              
-(1 row)
-2&:VACUUM crash_before_segmentfile_drop;  <waiting ...>
-3:SELECT gp_inject_fault('appendonly_insert', 'panic', '', '', 'crash_vacuum_in_appendonly_insert', 0, 0, 2);
-gp_inject_fault
----------------
-t              
-(1 row)
-
--- wait for suspend faults to trigger and then proceed to run next
--- command which would trigger panic fault and help test
--- crash_recovery
 3:SELECT gp_wait_until_triggered_fault('compaction_before_cleanup_phase', 1, 2);
 gp_wait_until_triggered_fault
 -----------------------------
 t                            
 (1 row)
+
+3:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'suspend', '', '', 'crash_before_segmentfile_drop', 1, -1, 0, 2);
+gp_inject_fault
+---------------
+t              
+(1 row)
+2&:VACUUM crash_before_segmentfile_drop;  <waiting ...>
 3:SELECT gp_wait_until_triggered_fault('compaction_before_segmentfile_drop', 1, 2);
 gp_wait_until_triggered_fault
 -----------------------------
 t                            
 (1 row)
+
+-- we already waited for suspend faults to trigger and hence we can proceed to
+-- run next command which would trigger panic fault and help test
+-- crash_recovery
+3:SELECT gp_inject_fault('appendonly_insert', 'panic', '', '', 'crash_vacuum_in_appendonly_insert', 1, -1, 0, 2);
+gp_inject_fault
+---------------
+t              
+(1 row)
 3:VACUUM crash_vacuum_in_appendonly_insert;
-ERROR:  fault triggered, fault name:'appendonly_insert' fault type:'panic'  (seg0 127.0.1.1:25432 pid=7037)
-ERROR:  could not connect to segment: initialization of segworker group failed
+ERROR:  fault triggered, fault name:'appendonly_insert' fault type:'panic'  (seg0 127.0.0.1:25432 pid=21369)
 1<:  <... completed>
-ERROR:  Error on receive from seg0 127.0.1.1:25432 pid=7048: server closed the connection unexpectedly
+ERROR:  Error on receive from seg0 127.0.0.1:25432 pid=21379: server closed the connection unexpectedly
 DETAIL:  
 	This probably means the server terminated abnormally
 	before or while processing the request.
-ERROR:  could not connect to segment: initialization of segworker group failed
 2<:  <... completed>
-ERROR:  Error on receive from seg0 127.0.1.1:25432 pid=7057: server closed the connection unexpectedly
+ERROR:  Error on receive from seg0 127.0.0.1:25432 pid=21384: server closed the connection unexpectedly
 DETAIL:  
 	This probably means the server terminated abnormally
 	before or while processing the request.
-ERROR:  could not connect to segment: initialization of segworker group failed
 
 -- wait for segment to complete recovering
 0U: SELECT 1;
@@ -108,17 +120,17 @@ ERROR:  could not connect to segment: initialization of segworker group failed
 (1 row)
 
 -- reset faults as protection incase tests failed and panic didn't happen
-1:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'reset', '', '', '', 0, 0, 2);
+1:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'reset', 2);
 gp_inject_fault
 ---------------
 t              
 (1 row)
-1:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'reset', '', '', '', 0, 0, 2);
+1:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'reset', 2);
 gp_inject_fault
 ---------------
 t              
 (1 row)
-1:SELECT gp_inject_fault('appendonly_insert', 'reset', '', '', '', 0, 0, 2);
+1:SELECT gp_inject_fault('appendonly_insert', 'reset', 2);
 gp_inject_fault
 ---------------
 t              
@@ -126,6 +138,12 @@ t
 
 -- perform post crash validation checks
 -- for crash_before_cleanup_phase
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_before_cleanup_phase');
+segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
+-----+---+--------+-------------+----------------+--------+-------------+-----
+1    |0  |3       |0            |0               |2       |3            |1    
+2    |0  |4       |0            |0               |0       |3            |1    
+(2 rows)
 1:INSERT INTO crash_before_cleanup_phase VALUES(1, 1, 'c'), (25, 6, 'c');
 INSERT 2
 1:UPDATE crash_before_cleanup_phase SET b = b+10 WHERE a=25;
@@ -143,7 +161,7 @@ a |b |c
 10|1 |hello world         
 25|16|c                   
 (9 rows)
-1:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_before_cleanup_phase');
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_before_cleanup_phase');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |6       |0            |0               |4       |3            |1    
@@ -151,7 +169,7 @@ segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 (2 rows)
 1:VACUUM crash_before_cleanup_phase;
 VACUUM
-1:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_before_cleanup_phase');
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_before_cleanup_phase');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |1       |0            |0               |4       |3            |1    
@@ -178,6 +196,12 @@ a |b |c
 26|11|c                   
 (11 rows)
 -- for crash_before_segmentfile_drop
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_before_segmentfile_drop');
+segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
+-----+---+--------+-------------+----------------+--------+-------------+-----
+1    |0  |10      |0            |0               |2       |3            |1    
+2    |0  |4       |0            |0               |0       |3            |1    
+(2 rows)
 1:INSERT INTO crash_before_segmentfile_drop VALUES(1, 1, 'c'), (25, 6, 'c');
 INSERT 2
 1:UPDATE crash_before_segmentfile_drop SET b = b+10 WHERE a=25;
@@ -195,7 +219,7 @@ a |b |c
 10|1 |hello world         
 25|16|c                   
 (9 rows)
-1:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_before_segmentfile_drop');
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_before_segmentfile_drop');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |10      |0            |0               |2       |3            |1    
@@ -203,7 +227,7 @@ segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 (2 rows)
 1:VACUUM crash_before_segmentfile_drop;
 VACUUM
-1:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_before_segmentfile_drop');
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_before_segmentfile_drop');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |3       |0            |0               |2       |3            |1    
@@ -230,14 +254,14 @@ a |b |c
 26|11|c                   
 (11 rows)
 -- crash_vacuum_in_appendonly_insert
-1:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_vacuum_in_appendonly_insert');
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_vacuum_in_appendonly_insert');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |20      |0            |0               |2       |3            |1    
 (1 row)
 1:VACUUM crash_vacuum_in_appendonly_insert;
 VACUUM
-1:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_vacuum_in_appendonly_insert');
+1:SELECT * FROM gp_toolkit.__gp_aoseg('crash_vacuum_in_appendonly_insert');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |0       |0            |0               |2       |3            |1    
@@ -298,13 +322,13 @@ INSERT 10
 DELETE 3
 
 -- suspend at intended points
-2:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'suspend', '', '', 'crash_master_before_cleanup_phase', 0, 0, 1);
+2:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'suspend', '', '', 'crash_master_before_cleanup_phase', 1, -1, 0, 1);
 gp_inject_fault
 ---------------
 t              
 (1 row)
 1&:VACUUM crash_master_before_cleanup_phase;  <waiting ...>
-2:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'panic', '', '', 'crash_master_before_segmentfile_drop', 0, 0, 1);
+2:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'panic', '', '', 'crash_master_before_segmentfile_drop', 1, -1, 0, 1);
 gp_inject_fault
 ---------------
 t              
@@ -329,12 +353,12 @@ server closed the connection unexpectedly
 	before or while processing the request.
 
 -- reset faults as protection incase tests failed and panic didn't happen
-4:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'reset', '', '', '', 0, 0, 1);
+4:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'reset', 1);
 gp_inject_fault
 ---------------
 t              
 (1 row)
-4:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'reset', '', '', '', 0, 0, 1);
+4:SELECT gp_inject_fault('compaction_before_segmentfile_drop', 'reset', 1);
 gp_inject_fault
 ---------------
 t              
@@ -342,6 +366,12 @@ t
 
 -- perform post crash validation checks
 -- for crash_master_before_cleanup_phase
+4:SELECT * FROM gp_toolkit.__gp_aoseg('crash_master_before_cleanup_phase');
+segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
+-----+---+--------+-------------+----------------+--------+-------------+-----
+1    |0  |3       |0            |0               |2       |3            |1    
+2    |0  |4       |0            |0               |0       |3            |1    
+(2 rows)
 4:INSERT INTO crash_master_before_cleanup_phase VALUES(1, 1, 'c'), (25, 6, 'c');
 INSERT 2
 4:UPDATE crash_master_before_cleanup_phase SET b = b+10 WHERE a=25;
@@ -359,7 +389,7 @@ a |b |c
 10|1 |hello world         
 25|16|c                   
 (9 rows)
-4:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_master_before_cleanup_phase');
+4:SELECT * FROM gp_toolkit.__gp_aoseg('crash_master_before_cleanup_phase');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |6       |0            |0               |4       |3            |1    
@@ -367,7 +397,7 @@ segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 (2 rows)
 4:VACUUM crash_master_before_cleanup_phase;
 VACUUM
-4:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_master_before_cleanup_phase');
+4:SELECT * FROM gp_toolkit.__gp_aoseg('crash_master_before_cleanup_phase');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |1       |0            |0               |4       |3            |1    
@@ -394,6 +424,12 @@ a |b |c
 26|11|c                   
 (11 rows)
 -- for crash_master_before_segmentfile_drop
+4:SELECT * FROM gp_toolkit.__gp_aoseg('crash_master_before_segmentfile_drop');
+segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
+-----+---+--------+-------------+----------------+--------+-------------+-----
+1    |0  |10      |0            |0               |2       |3            |1    
+2    |0  |4       |0            |0               |0       |3            |1    
+(2 rows)
 4:INSERT INTO crash_master_before_segmentfile_drop VALUES(1, 1, 'c'), (25, 6, 'c');
 INSERT 2
 4:UPDATE crash_master_before_segmentfile_drop SET b = b+10 WHERE a=25;
@@ -411,7 +447,7 @@ a |b |c
 10|1 |hello world         
 25|16|c                   
 (9 rows)
-4:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_master_before_segmentfile_drop');
+4:SELECT * FROM gp_toolkit.__gp_aoseg('crash_master_before_segmentfile_drop');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |10      |0            |0               |2       |3            |1    
@@ -419,7 +455,7 @@ segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 (2 rows)
 4:VACUUM crash_master_before_segmentfile_drop;
 VACUUM
-4:SELECT * FROM gp_toolkit.__gp_aoseg_name('crash_master_before_segmentfile_drop');
+4:SELECT * FROM gp_toolkit.__gp_aoseg('crash_master_before_segmentfile_drop');
 segno|eof|tupcount|varblockcount|eof_uncompressed|modcount|formatversion|state
 -----+---+--------+-------------+----------------+--------+-------------+-----
 1    |0  |3       |0            |0               |2       |3            |1    

@@ -148,7 +148,6 @@ CREATE TABLE qp_misc_jiras.tbl1544
   pval TEXT
 )
 ;
-NOTICE:  CREATE TABLE / UNIQUE will create implicit index "tbl1544_pid_key" for table "tbl1544"
 -- 
 -- Child tables
 -- 
@@ -411,7 +410,6 @@ CREATE SEQUENCE qp_misc_jiras.satelliteupdatelog_id_seq
 ALTER SEQUENCE qp_misc_jiras.satelliteupdatelog_id_seq OWNED BY qp_misc_jiras.satelliteupdatelog.id;
 ALTER TABLE qp_misc_jiras.satelliteupdatelog ALTER COLUMN id SET DEFAULT nextval('qp_misc_jiras.satelliteupdatelog_id_seq'::regclass);
 ALTER TABLE ONLY qp_misc_jiras.satelliteupdatelog ADD CONSTRAINT satelliteupdatelog_pk PRIMARY KEY (id);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "satelliteupdatelog_pkey" for table "satelliteupdatelog"
 CREATE INDEX fki_satelliteupdatelog_idadvertiser_fk ON qp_misc_jiras.satelliteupdatelog USING btree (idadvertiser);
 CREATE INDEX fki_satelliteupdatelog_idaffiliate_fk ON qp_misc_jiras.satelliteupdatelog USING btree (idaffiliate);
 CREATE INDEX fki_satelliteupdatelog_idrep_fk ON qp_misc_jiras.satelliteupdatelog USING btree (idrep);
@@ -423,7 +421,6 @@ CREATE TABLE qp_misc_jiras.satelliteupdatelogkey (
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'idsatelliteupdatelog' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 ALTER TABLE ONLY qp_misc_jiras.satelliteupdatelogkey ADD CONSTRAINT satelliteupdatelogkey_pk PRIMARY KEY (idsatelliteupdatelog, columnname);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "satelliteupdatelogkey_pkey" for table "satelliteupdatelogkey"
 ALTER TABLE ONLY qp_misc_jiras.satelliteupdatelogkey ADD CONSTRAINT satelliteupdatelogkey_idsatelliteupdatelog_fk FOREIGN KEY (idsatelliteupdatelog) REFERENCES qp_misc_jiras.satelliteupdatelog(id);
 WARNING:  Referential integrity (FOREIGN KEY) constraints are not supported in Greenplum Database, will not be enforced.
 CREATE TABLE qp_misc_jiras.satellite (
@@ -453,7 +450,6 @@ CREATE TABLE qp_misc_jiras.satelliteupdatelogserver (
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'idsatelliteupdatelog' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 ALTER TABLE ONLY qp_misc_jiras.satelliteupdatelogserver ADD CONSTRAINT satelliteupdatelogserver_pk PRIMARY KEY (idsatelliteupdatelog, idsatellite); 
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "satelliteupdatelogserver_pkey" for table "satelliteupdatelogserver"
 CREATE INDEX fki_satelliteupdatelogserver_idsatelliteupdatelog_fk ON qp_misc_jiras.satelliteupdatelogserver USING btree (idsatelliteupdatelog);
 ALTER TABLE ONLY qp_misc_jiras.satelliteupdatelogserver ADD CONSTRAINT satelliteupdatelogserver_idsatellite_fk FOREIGN KEY (idsatellite) REFERENCES qp_misc_jiras.satellite(id);
 ERROR:  there is no unique constraint matching given keys for referenced table "satellite"
@@ -1189,7 +1185,6 @@ create table qp_misc_jiras.tbl5246_sale
         primary key (cn, vn, pn)
         
 ) distributed by (cn,vn,pn);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl5246_sale_pkey" for table "tbl5246_sale"
 insert into qp_misc_jiras.tbl5246_sale values
   ( 2, 40, 100, '1401-1-1', 1100, 2400),
   ( 1, 10, 200, '1401-3-1', 1, 0),
@@ -1225,7 +1220,6 @@ create table qp_misc_jiras.tbl4896_customer
         cloc text,
         primary key (cn)
 ) distributed by (cn);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl4896_customer_pkey" for table "tbl4896_customer"
 create table qp_misc_jiras.tbl4896_sale
 (
         cn int not null,
@@ -1238,7 +1232,6 @@ create table qp_misc_jiras.tbl4896_sale
         primary key (cn, vn, pn)
         
 ) distributed by (cn,vn,pn);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl4896_sale_pkey" for table "tbl4896_sale"
 insert into qp_misc_jiras.tbl4896_customer values
   ( 1, 'Macbeth', 'Inverness'),
   ( 2, 'Duncan', 'Forres'),
@@ -1684,15 +1677,14 @@ NOTICE:  CREATE TABLE will create partition "tbl6833_anl_1_prt_bb_1" for table "
 NOTICE:  CREATE TABLE will create partition "tbl6833_anl_1_prt_bb_2" for table "tbl6833_anl"
 analyze qp_misc_jiras.tbl6833_anl;
 explain select * from qp_misc_jiras.tbl6833_anl; -- should not hit cdbRelSize();
-                                          QUERY PLAN                                           
------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..2.00 rows=2 width=12)
-   ->  Append  (cost=0.00..2.00 rows=1 width=12)
-         ->  Seq Scan on tbl6833_anl_1_prt_bb_1 tbl6833_anl  (cost=0.00..1.00 rows=1 width=12)
-         ->  Seq Scan on tbl6833_anl_1_prt_bb_2 tbl6833_anl  (cost=0.00..1.00 rows=1 width=12)
- Settings:  enable_indexscan=off; enable_nestloop=on; enable_seqscan=off; optimizer=off
- Optimizer status: legacy query optimizer
-(6 rows)
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=10000000000.00..20000000002.00 rows=2 width=12)
+   ->  Append  (cost=10000000000.00..20000000002.00 rows=1 width=12)
+         ->  Seq Scan on tbl6833_anl_1_prt_bb_1  (cost=10000000000.00..10000000001.00 rows=1 width=12)
+         ->  Seq Scan on tbl6833_anl_1_prt_bb_2  (cost=10000000000.00..10000000001.00 rows=1 width=12)
+ Optimizer: legacy query optimizer
+(5 rows)
 
 select relname, reltuples, relpages from pg_class where relname like 'tbl6833_anl%'; -- should show relpages = 1.0
         relname         | reltuples | relpages 
@@ -1707,15 +1699,14 @@ NOTICE:  CREATE TABLE will create partition "tbl6833_vac_1_prt_bb_1" for table "
 NOTICE:  CREATE TABLE will create partition "tbl6833_vac_1_prt_bb_2" for table "tbl6833_vac"
 vacuum qp_misc_jiras.tbl6833_vac;
 explain select * from qp_misc_jiras.tbl6833_vac; -- should not hit cdbRelSize();
-                                          QUERY PLAN                                           
------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..2.00 rows=2 width=12)
-   ->  Append  (cost=0.00..2.00 rows=1 width=12)
-         ->  Seq Scan on tbl6833_vac_1_prt_bb_1 tbl6833_vac  (cost=0.00..1.00 rows=1 width=12)
-         ->  Seq Scan on tbl6833_vac_1_prt_bb_2 tbl6833_vac  (cost=0.00..1.00 rows=1 width=12)
- Settings:  enable_indexscan=off; enable_nestloop=on; enable_seqscan=off; optimizer=off
- Optimizer status: legacy query optimizer
-(6 rows)
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=10000000000.00..20000000002.00 rows=2 width=12)
+   ->  Append  (cost=10000000000.00..20000000002.00 rows=1 width=12)
+         ->  Seq Scan on tbl6833_vac_1_prt_bb_1  (cost=10000000000.00..10000000001.00 rows=1 width=12)
+         ->  Seq Scan on tbl6833_vac_1_prt_bb_2  (cost=10000000000.00..10000000001.00 rows=1 width=12)
+ Optimizer: legacy query optimizer
+(5 rows)
 
 select relname, reltuples, relpages from pg_class where relname like 'tbl6833_vac%'; -- should show relpages = 1.0
         relname         | reltuples | relpages 
@@ -2221,7 +2212,7 @@ HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sur
 insert into qp_misc_jiras.tbl7404_t1 select ('foo'|| i::text) from generate_series(1,2) i;
 insert into qp_misc_jiras.tbl7404_t2 select x from qp_misc_jiras.tbl7404_t1;
 --Setting to modify system catalog
-set allow_system_table_mods=dml;
+set allow_system_table_mods=true;
 --
 -- Case 1: make t1 and t2 appear really big
 --
@@ -2266,46 +2257,38 @@ select count(a.b) from qp_misc_jiras.tbl7616_test a inner join qp_misc_jiras.tbl
   1000
 (1 row)
 
--- start_ignore
 drop table qp_misc_jiras.tbl7616_test;
-create table qp_misc_jiras.tbl6874 ( a int, b text);
-NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'a' as the Greenplum Database data distribution key for this table.
-HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+create table qp_misc_jiras.tbl6874 (a int, b text) distributed by (a);
 \d+ qp_misc_jiras.tbl6874
-             Table "qp_misc_jiras.tbl6874"
- Column |  Type   | Modifiers | Storage  | Description 
---------+---------+-----------+----------+-------------
- a      | integer |           | plain    | 
- b      | text    |           | extended | 
-Has OIDs: no
+                    Table "qp_misc_jiras.tbl6874"
+ Column |  Type   | Modifiers | Storage  | Stats target | Description 
+--------+---------+-----------+----------+--------------+-------------
+ a      | integer |           | plain    |              | 
+ b      | text    |           | extended |              | 
 Distributed by: (a)
 
-insert into qp_misc_jiras.tbl6874 values ( generate_series(1,1000),'test_1');
-create index qp_misc_jiras.tbl6874_a on qp_misc_jiras.tbl6874 using bitmap(a);
-ERROR:  syntax error at or near "."
-LINE 1: create index qp_misc_jiras.tbl6874_a on qp_misc_jiras.tbl687...
-                                  ^
+insert into qp_misc_jiras.tbl6874 values (generate_series(1,10),'test_1');
+create index tbl6874_a on qp_misc_jiras.tbl6874 using bitmap(a);
 \d+ qp_misc_jiras.tbl6874
-             Table "qp_misc_jiras.tbl6874"
- Column |  Type   | Modifiers | Storage  | Description 
---------+---------+-----------+----------+-------------
- a      | integer |           | plain    | 
- b      | text    |           | extended | 
-Has OIDs: no
+                    Table "qp_misc_jiras.tbl6874"
+ Column |  Type   | Modifiers | Storage  | Stats target | Description 
+--------+---------+-----------+----------+--------------+-------------
+ a      | integer |           | plain    |              | 
+ b      | text    |           | extended |              | 
+Indexes:
+    "tbl6874_a" bitmap (a)
 Distributed by: (a)
 
 drop index qp_misc_jiras.tbl6874_a;
-ERROR:  index "tbl6874_a" does not exist
 \d+ qp_misc_jiras.tbl6874
-             Table "qp_misc_jiras.tbl6874"
- Column |  Type   | Modifiers | Storage  | Description 
---------+---------+-----------+----------+-------------
- a      | integer |           | plain    | 
- b      | text    |           | extended | 
-Has OIDs: no
+                    Table "qp_misc_jiras.tbl6874"
+ Column |  Type   | Modifiers | Storage  | Stats target | Description 
+--------+---------+-----------+----------+--------------+-------------
+ a      | integer |           | plain    |              | 
+ b      | text    |           | extended |              | 
 Distributed by: (a)
 
-drop table qp_misc_jiras.tbl6874 ;
+drop table qp_misc_jiras.tbl6874;
 CREATE TABLE qp_misc_jiras.tbl7740_rank (id int, gender char(1), count char(1) )
             DISTRIBUTED BY (id)
             PARTITION BY LIST (gender,count)
@@ -2315,7 +2298,6 @@ CREATE TABLE qp_misc_jiras.tbl7740_rank (id int, gender char(1), count char(1) )
 NOTICE:  CREATE TABLE will create partition "tbl7740_rank_1_prt_girls" for table "tbl7740_rank"
 NOTICE:  CREATE TABLE will create partition "tbl7740_rank_1_prt_boys" for table "tbl7740_rank"
 NOTICE:  CREATE TABLE will create partition "tbl7740_rank_1_prt_other" for table "tbl7740_rank"
--- end_ignore
 insert into qp_misc_jiras.tbl7740_rank values(1,'F','1');
 insert into qp_misc_jiras.tbl7740_rank values(1,'F','0');
 insert into qp_misc_jiras.tbl7740_rank values(1,'M','1');
@@ -2365,7 +2347,6 @@ CREATE TABLE qp_misc_jiras.one_of_every_data_type (
     ) 
  DISTRIBUTED BY (id)
  ;
-NOTICE:  CREATE TABLE will create implicit sequence "one_of_every_data_type_serial_col_seq" for serial column "one_of_every_data_type.serial_col"
 CREATE FUNCTION TO_LSEG(TEXT) RETURNS LSEG AS
   $$
     SELECT lseg_in(textout($1))
@@ -2393,25 +2374,24 @@ NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 insert into qp_misc_jiras.tbl7553_test values(1,2);
 explain select i as a, i as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a));
-                                                                       QUERY PLAN                                                                       
---------------------------------------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice2; segments: 3)  (cost=116.12..139.79 rows=2367 width=20)
-   ->  HashAggregate  (cost=116.12..139.79 rows=789 width=20)
-         Group By: "rollup".a, "rollup".a, "rollup"."grouping", "rollup"."group_id"
-         ->  Subquery Scan on "rollup"  (cost=51.58..109.67 rows=215 width=20)
-               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=51.58..103.22 rows=215 width=20)
-                     Hash Key: "rollup".a, "rollup".a, "grouping", group_id()
-                     ->  GroupAggregate  (cost=51.58..90.32 rows=215 width=20)
-                           Group By: "rollup".a, "rollup"."grouping", "rollup"."group_id"
-                           ->  Subquery Scan on "rollup"  (cost=51.58..75.26 rows=287 width=20)
-                                 ->  GroupAggregate  (cost=51.58..66.65 rows=287 width=20)
-                                       Group By: tbl7553_test.i, tbl7553_test.i
-                                       ->  Sort  (cost=51.58..53.74 rows=287 width=4)
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice2; segments: 3)  (cost=10000008731.75..10000008759.25 rows=2750 width=20)
+   ->  HashAggregate  (cost=10000008731.75..10000008759.25 rows=917 width=20)
+         Group Key: "rollup".a, "rollup".a_1, "rollup"."grouping", "rollup"."group_id"
+         ->  Subquery Scan on "rollup"  (cost=10000008018.50..10000008724.25 rows=250 width=20)
+               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=10000008018.50..10000008716.75 rows=250 width=20)
+                     Hash Key: rollup_1.a, rollup_1.a_1, (Grouping), group_id()
+                     ->  GroupAggregate  (cost=10000008018.50..10000008701.75 rows=250 width=20)
+                           Group Key: rollup_1.a, rollup_1."grouping", rollup_1."group_id"
+                           ->  Subquery Scan on rollup_1  (cost=10000008018.50..10000008684.25 rows=334 width=20)
+                                 ->  GroupAggregate  (cost=10000008018.50..10000008674.25 rows=334 width=20)
+                                       Group Key: tbl7553_test.i, tbl7553_test.i
+                                       ->  Sort  (cost=10000008018.50..10000008233.75 rows=28700 width=4)
                                              Sort Key: tbl7553_test.i, tbl7553_test.i
-                                             ->  Seq Scan on tbl7553_test  (cost=0.00..9.61 rows=287 width=4)
- Settings:  enable_indexscan=off; enable_nestloop=on; enable_seqscan=off; gp_enable_agg_distinct=off; gp_enable_agg_distinct_pruning=off; optimizer=off
- Optimizer status: legacy query optimizer
-(16 rows)
+                                             ->  Seq Scan on tbl7553_test  (cost=10000000000.00..10000000961.00 rows=28700 width=4)
+ Optimizer: legacy query optimizer
+(15 rows)
 
 select i as a, i as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a)); 
  a | b 
@@ -2592,7 +2572,7 @@ language plpgsql;
 select gp_segment_id, a, func2(a) from qp_misc_jiras.fim1; -- we should disallow this
 ERROR:  function cannot execute on a QE slice because it accesses relation "qp_misc_jiras.pg_foo"  (seg2 slice1 nikos-mac:25434 pid=94008)
 CONTEXT:  SQL statement "select count(*) from qp_misc_jiras.pg_foo"
-PL/pgSQL function "func2" line 4 at EXECUTE statement
+PL/pgSQL function func2(integer) line 5 at EXECUTE statement
 create or replace function func3(int) returns int as $$
 declare
 	t1 int;
@@ -2607,7 +2587,7 @@ select gp_segment_id, a, func3(a) from qp_misc_jiras.fim1; -- we allow this
 ---------------+-----+-------
              2 | 100 |     1
              1 | 200 |     1
-             1 | 300 |     1
+             0 | 300 |     1
 (3 rows)
 
 --
@@ -2818,9 +2798,9 @@ SELECT * FROM pg_indexes WHERE tablename='inet_ip_pairs';
 SELECT gp_segment_id,count(*) FROM qp_misc_jiras.inet_ip_pairs GROUP BY 1;
  gp_segment_id | count  
 ---------------+--------
-             2 | 333466
-             1 | 333446
-             0 | 333088
+             2 | 333127
+             0 | 333315
+             1 | 333558
 (3 rows)
 
 -- start_ignore
@@ -3044,84 +3024,88 @@ reset gp_enable_agg_distinct_pruning;
 set enable_groupagg=off;
 -- both queries should use hashagg
 explain select count(distinct j) from (select t1.* from qp_misc_jiras.tbl5994_test t1, qp_misc_jiras.tbl5994_test t2 where t1.j = t2.j) tmp group by j;
-                                                        QUERY PLAN                                                        
---------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice3; segments: 3)  (cost=1505574.42..1579721.52 rows=1000 width=12)
-   ->  GroupAggregate  (cost=1505574.42..1579721.52 rows=334 width=12)
-         Group By: t1.j
-         ->  Sort  (cost=1505574.42..1524107.45 rows=2471070 width=4)
-               Sort Key: t1.j
-               ->  Redistribute Motion 3:3  (slice2; segments: 3)  (cost=7633.75..286805.38 rows=2471070 width=4)
-                     Hash Key: t1.j
-                     ->  Hash Join  (cost=7633.75..138541.18 rows=2471070 width=4)
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice3; segments: 3)  (cost=1063082.43..1063092.43 rows=1000 width=12)
+   ->  HashAggregate  (cost=1063082.43..1063092.43 rows=334 width=12)
+         Group Key: t1.j
+         ->  HashAggregate  (cost=1063057.43..1063067.43 rows=334 width=8)
+               Group Key: t1.j, t1.j
+               ->  HashAggregate  (cost=1063039.93..1063039.93 rows=334 width=8)
+                     Group Key: t1.j, t1.j
+                     ->  Hash Join  (cost=3759.25..1007440.85 rows=2471070 width=4)
                            Hash Cond: t1.j = t2.j
-                           ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=4)
-                           ->  Hash  (cost=4405.00..4405.00 rows=86100 width=4)
-                                 ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..4405.00 rows=86100 width=4)
+                           ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..2683.00 rows=28700 width=4)
+                                 Hash Key: t1.j
+                                 ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=4)
+                           ->  Hash  (cost=2683.00..2683.00 rows=28700 width=4)
+                                 ->  Redistribute Motion 3:3  (slice2; segments: 3)  (cost=0.00..2683.00 rows=28700 width=4)
+                                       Hash Key: t2.j
                                        ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
- Settings:  enable_groupagg=off; optimizer=off; optimizer_force_three_stage_scalar_dqa=off; optimizer_segments=3
- Optimizer status: legacy query optimizer
-(15 rows)
+ Optimizer: legacy query optimizer
+(17 rows)
 
 explain select count(distinct j) from (select t1.* from qp_misc_jiras.tbl5994_test t1, qp_misc_jiras.tbl5994_test t2 where t1.i = t2.i) tmp group by j;
                                                     QUERY PLAN                                                    
 ------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice2; segments: 3)  (cost=1462911.87..1537058.97 rows=1000 width=12)
-   ->  GroupAggregate  (cost=1462911.87..1537058.97 rows=334 width=12)
-         Group By: t1.j
-         ->  Sort  (cost=1462911.87..1481444.90 rows=2471070 width=4)
-               Sort Key: t1.j
-               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=2037.25..244142.83 rows=2471070 width=4)
+ Gather Motion 3:1  (slice2; segments: 3)  (cost=1059658.43..1059668.43 rows=1000 width=12)
+   ->  HashAggregate  (cost=1059658.43..1059668.43 rows=334 width=12)
+         Group Key: t1.j
+         ->  HashAggregate  (cost=1059633.43..1059643.43 rows=334 width=8)
+               Group Key: t1.j, t1.j
+               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=1059595.93..1059615.93 rows=334 width=8)
                      Hash Key: t1.j
-                     ->  Hash Join  (cost=2037.25..95878.62 rows=2471070 width=4)
-                           Hash Cond: t1.i = t2.i
-                           ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=8)
-                           ->  Hash  (cost=961.00..961.00 rows=28700 width=4)
-                                 ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
- Settings:  enable_groupagg=off; optimizer=off; optimizer_force_three_stage_scalar_dqa=off; optimizer_segments=3
- Optimizer status: legacy query optimizer
-(14 rows)
+                     ->  HashAggregate  (cost=1059595.93..1059595.93 rows=334 width=8)
+                           Group Key: t1.j, t1.j
+                           ->  Hash Join  (cost=2037.25..1003996.85 rows=2471070 width=4)
+                                 Hash Cond: t1.i = t2.i
+                                 ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=8)
+                                 ->  Hash  (cost=961.00..961.00 rows=28700 width=4)
+                                       ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
+ Optimizer: legacy query optimizer
+(15 rows)
 
 set enable_groupagg=on;
 -- first query should use groupagg, and second one - hashagg
 explain select count(distinct j) from (select t1.* from qp_misc_jiras.tbl5994_test t1, qp_misc_jiras.tbl5994_test t2 where t1.j = t2.j) tmp group by j;
-                                                        QUERY PLAN                                                        
---------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice3; segments: 3)  (cost=1505574.42..1579721.52 rows=1000 width=12)
-   ->  GroupAggregate  (cost=1505574.42..1579721.52 rows=334 width=12)
-         Group By: t1.j
-         ->  Sort  (cost=1505574.42..1524107.45 rows=2471070 width=4)
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice3; segments: 3)  (cost=2226209.90..2281818.97 rows=1000 width=12)
+   ->  GroupAggregate  (cost=2226209.90..2281818.97 rows=334 width=12)
+         Group Key: t1.j
+         ->  Sort  (cost=2226209.90..2244742.92 rows=2471070 width=4)
                Sort Key: t1.j
-               ->  Redistribute Motion 3:3  (slice2; segments: 3)  (cost=7633.75..286805.38 rows=2471070 width=4)
-                     Hash Key: t1.j
-                     ->  Hash Join  (cost=7633.75..138541.18 rows=2471070 width=4)
-                           Hash Cond: t1.j = t2.j
+               ->  Hash Join  (cost=3759.25..1007440.85 rows=2471070 width=4)
+                     Hash Cond: t1.j = t2.j
+                     ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..2683.00 rows=28700 width=4)
+                           Hash Key: t1.j
                            ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=4)
-                           ->  Hash  (cost=4405.00..4405.00 rows=86100 width=4)
-                                 ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..4405.00 rows=86100 width=4)
-                                       ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
- Settings:  enable_groupagg=on; optimizer=off; optimizer_force_three_stage_scalar_dqa=off; optimizer_segments=3
- Optimizer status: legacy query optimizer
+                     ->  Hash  (cost=2683.00..2683.00 rows=28700 width=4)
+                           ->  Redistribute Motion 3:3  (slice2; segments: 3)  (cost=0.00..2683.00 rows=28700 width=4)
+                                 Hash Key: t2.j
+                                 ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
+ Optimizer: legacy query optimizer
 (15 rows)
 
 explain select count(distinct j) from (select t1.* from qp_misc_jiras.tbl5994_test t1, qp_misc_jiras.tbl5994_test t2 where t1.i = t2.i) tmp group by j;
                                                     QUERY PLAN                                                    
 ------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice2; segments: 3)  (cost=1462911.87..1537058.97 rows=1000 width=12)
-   ->  GroupAggregate  (cost=1462911.87..1537058.97 rows=334 width=12)
-         Group By: t1.j
-         ->  Sort  (cost=1462911.87..1481444.90 rows=2471070 width=4)
-               Sort Key: t1.j
-               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=2037.25..244142.83 rows=2471070 width=4)
+ Gather Motion 3:1  (slice2; segments: 3)  (cost=1059658.43..1059668.43 rows=1000 width=12)
+   ->  HashAggregate  (cost=1059658.43..1059668.43 rows=334 width=12)
+         Group Key: t1.j
+         ->  HashAggregate  (cost=1059633.43..1059643.43 rows=334 width=8)
+               Group Key: t1.j, t1.j
+               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=1059595.93..1059615.93 rows=334 width=8)
                      Hash Key: t1.j
-                     ->  Hash Join  (cost=2037.25..95878.62 rows=2471070 width=4)
-                           Hash Cond: t1.i = t2.i
-                           ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=8)
-                           ->  Hash  (cost=961.00..961.00 rows=28700 width=4)
-                                 ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
- Settings:  enable_groupagg=on; optimizer=off; optimizer_force_three_stage_scalar_dqa=off; optimizer_segments=3
- Optimizer status: legacy query optimizer
-(16 rows)
+                     ->  HashAggregate  (cost=1059595.93..1059595.93 rows=334 width=8)
+                           Group Key: t1.j, t1.j
+                           ->  Hash Join  (cost=2037.25..1003996.85 rows=2471070 width=4)
+                                 Hash Cond: t1.i = t2.i
+                                 ->  Seq Scan on tbl5994_test t1  (cost=0.00..961.00 rows=28700 width=8)
+                                 ->  Hash  (cost=961.00..961.00 rows=28700 width=4)
+                                       ->  Seq Scan on tbl5994_test t2  (cost=0.00..961.00 rows=28700 width=4)
+ Optimizer: legacy query optimizer
+(15 rows)
 
 drop table qp_misc_jiras.tbl5994_test;
 CREATE TABLE qp_misc_jiras.tbl_8205 (
@@ -3144,11 +3128,9 @@ explain analyze select reltablespace  from pg_class where oid = (select reltoast
 ------------------------------------------------------------------------------------------------------------------------------------
  Index Scan using pg_class_oid_index on pg_class  (cost=200.27..400.54 rows=1 width=4)
    Index Cond: oid = $0
-   Rows out:  1 rows with 0.025 ms to first row, 0.026 ms to end, start offset by 0.042 ms.
    InitPlan 1 (returns $0)
-     ->  Index Scan using pg_class_relname_nsp_index on pg_class  (cost=0.00..200.27 rows=1 width=4)
+     ->  Index Scan using pg_class_relname_nsp_index on pg_class pg_class_1  (cost=0.00..200.27 rows=1 width=4)
            Index Cond: relname = 'tbl_8205'::name
-           Rows out:  1 rows with 0.010 ms to first row, 0.012 ms to end of 2 scans, start offset by 0.044 ms.
  Slice statistics:
    (slice0)    Executor memory: 113K bytes.
    (slice1)    Executor memory: 113K bytes.
@@ -3514,15 +3496,15 @@ insert into qp_misc_jiras.tbl9706aoc select i from generate_series(1, 100) i;
 select * from pg_catalog.get_ao_distribution('qp_misc_jiras.tbl9706ao'::regclass) order by 1 limit 2;
  segmentid | tupcount 
 -----------+----------
-         0 |       31
-         1 |       32
+         0 |       32
+         1 |       40
 (2 rows)
 
 select * from pg_catalog.get_ao_distribution('qp_misc_jiras.tbl9706aoc'::regclass) order by 1 limit 2;
  segmentid | tupcount 
 -----------+----------
-         0 |       31
-         1 |       32
+         0 |       32
+         1 |       40
 (2 rows)
 
 create table qp_misc_jiras.bmap2 (a varchar, b varchar);
@@ -3588,33 +3570,6 @@ else 'Unidentify' end
 (10 rows)
 
 DROP TABLE qp_misc_jiras.ir_voice_sms_and_data;
-create table qp_misc_jiras.x (a int, b int) distributed by (a);
---create index xi on x(a);
-insert into qp_misc_jiras.x values (1,2), (2,3), (3,4);
-select count(*) from qp_misc_jiras.x;
- count 
--------
-     3
-(1 row)
-
-set gp_setwith_alter_storage to true;
-alter table qp_misc_jiras.x set with (appendonly=true) distributed by (b);
-insert into qp_misc_jiras.x values (4,5), (5,6);
-select count(*) from qp_misc_jiras.x;
- count 
--------
-     5
-(1 row)
-
-alter table qp_misc_jiras.x set with (appendonly=false) distributed by (a);
-insert into qp_misc_jiras.x values (6,7), (7,8);
-select count(*) from qp_misc_jiras.x;
- count 
--------
-     7
-(1 row)
-
-drop table if exists qp_misc_jiras.x cascade;
 create table qp_misc_jiras.r
     (a int, b int, c int)
     with (appendonly = true)
@@ -3642,7 +3597,7 @@ INSERT INTO qp_misc_jiras.test_trig VALUES (1, 'before creating trigger');
 SELECT gp_segment_id, * FROM qp_misc_jiras.test_trig;
  gp_segment_id | id |           aaa           
 ---------------+----+-------------------------
-             0 |  1 | before creating trigger
+             2 |  1 | before creating trigger
 (1 row)
 
 CREATE OR REPLACE FUNCTION fn_trig() RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -3664,9 +3619,9 @@ NOTICE:  2  (seg0 192.168.1.64:25432 pid=44904)
 SELECT gp_segment_id, * FROM qp_misc_jiras.test_trig;
  gp_segment_id | id |           aaa           
 ---------------+----+-------------------------
-             0 |  1 | before creating trigger
              0 |  1 | after creating trigger1
-             0 |  2 | aaa1
+             2 |  1 | before creating trigger
+             2 |  2 | aaa1
 (3 rows)
 
 UPDATE qp_misc_jiras.test_trig SET id = id;
@@ -3676,9 +3631,9 @@ NOTICE:  3  (seg0 192.168.1.64:25432 pid=44904)
 SELECT gp_segment_id, * FROM qp_misc_jiras.test_trig;
  gp_segment_id | id |           aaa            
 ---------------+----+--------------------------
-             0 |  2 | before creating trigger1
              0 |  2 | after creating trigger11
-             0 |  3 | aaa11
+             2 |  2 | before creating trigger1
+             2 |  3 | aaa11
 (3 rows)
 
 DROP TABLE qp_misc_jiras.test_trig;
@@ -3698,9 +3653,6 @@ partition d_2010_09_28 start (date '2010-09-28') end (date '2010-09-29')
 );
 NOTICE:  CREATE TABLE will create partition "tbl1_tbl_11257_1_prt_default_partition" for table "tbl1_tbl_11257"
 NOTICE:  CREATE TABLE will create partition "tbl1_tbl_11257_1_prt_d_2010_09_28" for table "tbl1_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl1_tbl_11257_pkey" for table "tbl1_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl1_tbl_11257_1_prt_default_partition_pkey" for table "tbl1_tbl_11257_1_prt_default_partition"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl1_tbl_11257_1_prt_d_2010_09_28_pkey" for table "tbl1_tbl_11257_1_prt_d_2010_09_28"
 select relname, attrnums as distribution_attributes from gp_distribution_policy p, pg_class c where p.localoid = c.oid and relname like 'tbl1_tbl_11257%' ;
                 relname                 | distribution_attributes 
 ----------------------------------------+-------------------------
@@ -3717,9 +3669,7 @@ into (partition d_2010_09_27, partition default_partition);
 NOTICE:  exchanged partition "default_partition" of relation "tbl1_tbl_11257" with relation "pg_temp_37266"
 NOTICE:  dropped partition "default_partition" for relation "tbl1_tbl_11257"
 NOTICE:  CREATE TABLE will create partition "tbl1_tbl_11257_1_prt_d_2010_09_27" for table "tbl1_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl1_tbl_11257_1_prt_d_2010_09_27_pkey" for table "tbl1_tbl_11257_1_prt_d_2010_09_27"
 NOTICE:  CREATE TABLE will create partition "tbl1_tbl_11257_1_prt_default_partition" for table "tbl1_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl1_tbl_11257_1_prt_default_partition_pkey1" for table "tbl1_tbl_11257_1_prt_default_partition"
 -- end_ignore
 select relname, attrnums as distribution_attributes from gp_distribution_policy p, pg_class c where p.localoid = c.oid and relname like 'tbl1_tbl_11257%' ;
                 relname                 | distribution_attributes 
@@ -3744,9 +3694,6 @@ partition p1 start (1) end (2)
  );
 NOTICE:  CREATE TABLE will create partition "tbl2_tbl_11257_1_prt_default_partition" for table "tbl2_tbl_11257"
 NOTICE:  CREATE TABLE will create partition "tbl2_tbl_11257_1_prt_p1" for table "tbl2_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl2_tbl_11257_pkey" for table "tbl2_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl2_tbl_11257_1_prt_default_partition_pkey" for table "tbl2_tbl_11257_1_prt_default_partition"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl2_tbl_11257_1_prt_p1_pkey" for table "tbl2_tbl_11257_1_prt_p1"
 insert into qp_misc_jiras.tbl2_tbl_11257 values(1,2,3);
 select * from qp_misc_jiras.tbl2_tbl_11257;
  a | b | c 
@@ -3777,9 +3724,7 @@ into (partition p2, partition default_partition);
 NOTICE:  exchanged partition "default_partition" of relation "tbl2_tbl_11257" with relation "pg_temp_37629"
 NOTICE:  dropped partition "default_partition" for relation "tbl2_tbl_11257"
 NOTICE:  CREATE TABLE will create partition "tbl2_tbl_11257_1_prt_p2" for table "tbl2_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl2_tbl_11257_1_prt_p2_pkey" for table "tbl2_tbl_11257_1_prt_p2"
 NOTICE:  CREATE TABLE will create partition "tbl2_tbl_11257_1_prt_default_partition" for table "tbl2_tbl_11257"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tbl2_tbl_11257_1_prt_default_partition_pkey1" for table "tbl2_tbl_11257_1_prt_default_partition"
 -- end_ignore
 select relname, attrnums as distribution_attributes from gp_distribution_policy p, pg_class c where p.localoid = c.oid and relname like 'tbl2_tbl_11257%' ;
                 relname                 | distribution_attributes 
@@ -3876,14 +3821,10 @@ explain analyze select count(*) from qp_misc_jiras.test_heap;
                                                                          QUERY PLAN                                                                         
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
  Aggregate  (cost=1176.32..1176.33 rows=1 width=8)
-   Rows out:  1 rows with 16 ms to end, start offset by 0.333 ms.
    ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=1176.25..1176.30 rows=1 width=8)
-         Rows out:  3 rows at destination with 16 ms to end, start offset by 0.334 ms.
          ->  Aggregate  (cost=1176.25..1176.26 rows=1 width=8)
-               Rows out:  Avg 1.0 rows x 3 workers.  Max 1 rows (seg0) with 15 ms to end, start offset by 0.621 ms.
                allstat: seg_firststart_total_ntuples/seg0_0.621 ms_15 ms_1/seg1_0.621 ms_15 ms_1/seg2_0.634 ms_15 ms_1//end
                ->  Seq Scan on test_heap  (cost=0.00..961.00 rows=28700 width=0)
-                     Rows out:  Avg 33333.7 rows x 3 workers.  Max 33350 rows (seg0) with 0.035 ms to first row, 7.878 ms to end, start offset by 0.622 ms.
                      allstat: seg_firststart_total_ntuples/seg0_0.622 ms_7.878 ms_33350/seg1_0.622 ms_7.850 ms_33336/seg2_0.634 ms_7.866 ms_33315//end
  Slice statistics:
    (slice0)    Executor memory: 382K bytes.
@@ -4009,26 +3950,21 @@ explain analyze select * from qp_misc_jiras.r,qp_misc_jiras.s where r.a=s.b;
                                                                           QUERY PLAN                                                                          
 --------------------------------------------------------------------------------------------------------------------------------------------------------------
  Gather Motion 3:1  (slice2; segments: 3)  (cost=25.50..73.50 rows=1000 width=16)
-   Rows out:  1000 rows at destination with 78 ms to first row, 127 ms to end, start offset by 0.204 ms.
    ->  Hash Join  (cost=25.50..73.50 rows=334 width=16)
          Hash Cond: s.b = r.a
-         Rows out:  Avg 333.3 rows x 3 workers.  Max 342 rows (seg1) with 86 ms to first row, 126 ms to end, start offset by 0.434 ms.
          Executor memory:  11K bytes avg, 11K bytes max (seg1).
          Work_mem used:  11K bytes avg, 11K bytes max (seg1). Workfile: (0 spilling, 0 reused)
          (seg1)   Hash chain length 1.0 avg, 1 max, using 342 of 8388619 buckets.
          allstat: seg_firststart_total_ntuples/seg0_0.408 ms_116 ms_321/seg1_0.434 ms_126 ms_342/seg2_0.446 ms_119 ms_337//end
          ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=0.00..33.00 rows=334 width=8)
                Hash Key: s.b
-               Rows out:  Avg 333.3 rows x 3 workers at destination.  Max 342 rows (seg1) with 0.114 ms to first row, 0.177 ms to end, start offset by 86 ms.
                allstat: seg_firststart_total_ntuples/seg0_78 ms_0.142 ms_321/seg1_86 ms_0.177 ms_342/seg2_80 ms_0.135 ms_337//end
                ->  Seq Scan on s  (cost=0.00..13.00 rows=334 width=8)
-                     Rows out:  Avg 333.3 rows x 3 workers.  Max 342 rows (seg1) with 1.982 ms to first row, 2.023 ms to end, start offset by 2.147 ms.
                      allstat: seg_firststart_total_ntuples/seg0_0.822 ms_2.413 ms_321/seg1_2.147 ms_2.023 ms_342/seg2_2.115 ms_1.947 ms_337//end
          ->  Hash  (cost=13.00..13.00 rows=334 width=8)
                Rows in:  Avg 333.3 rows x 3 workers.  Max 342 rows (seg1) with 0.247 ms to end, start offset by 86 ms.
                allstat: seg_firststart_total_ntuples/seg0_78 ms_0.215 ms_321/seg1_86 ms_0.247 ms_342/seg2_80 ms_0.173 ms_337//end
                ->  Seq Scan on r  (cost=0.00..13.00 rows=334 width=8)
-                     Rows out:  Avg 333.3 rows x 3 workers.  Max 342 rows (seg1) with 0.048 ms to first row, 0.099 ms to end, start offset by 86 ms.
                      allstat: seg_firststart_total_ntuples/seg0_78 ms_0.073 ms_321/seg1_86 ms_0.099 ms_342/seg2_80 ms_0.065 ms_337//end
  Slice statistics:
    (slice0)    Executor memory: 267K bytes.
@@ -4596,6 +4532,42 @@ select test();
  
 (1 row)
 
+--
+-- Test gp_enable_relsize_collection's effect on ORCA plan generation
+--
+create table tbl_z(x int) distributed by (x);
+set optimizer_metadata_caching to off;
+insert into tbl_z select i from generate_series(1,100) i;
+-- plan with no relsize collection
+explain select 1 as t1 where 1 <= ALL (select x from tbl_z);
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Result  (cost=10000000651.88..10000000651.89 rows=1 width=0)
+   One-Time Filter: (SubPlan 1)
+   SubPlan 1  (slice0)
+     ->  Materialize  (cost=10000000000.00..10000001544.50 rows=32100 width=4)
+           ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=10000000000.00..10000001063.00 rows=96300 width=4)
+                 ->  Seq Scan on tbl_z  (cost=10000000000.00..10000001063.00 rows=32100 width=4)
+ Optimizer: legacy query optimizer
+(7 rows)
+
+set gp_enable_relsize_collection = on;
+-- plan with relsize collection
+explain select 1 as t1 where 1 <= ALL (select x from tbl_z);
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Result  (cost=10000000006.52..10000000006.53 rows=1 width=0)
+   One-Time Filter: (SubPlan 1)
+   SubPlan 1  (slice0)
+     ->  Materialize  (cost=10000000000.00..10000000015.44 rows=321 width=4)
+           ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=10000000000.00..10000000010.63 rows=963 width=4)
+                 ->  Seq Scan on tbl_z  (cost=10000000000.00..10000000010.63 rows=321 width=4)
+ Optimizer: legacy query optimizer
+(7 rows)
+
+drop table if exists tbl_z;
+reset optimizer_metadata_caching;
+reset gp_enable_relsize_collection;
 -- start_ignore
 drop schema qp_misc_jiras cascade;
 NOTICE:  drop cascades to table qp_misc_jiras._tbl10050_test

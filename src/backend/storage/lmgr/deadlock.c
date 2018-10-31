@@ -7,12 +7,12 @@
  * detection and resolution algorithms.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/lmgr/deadlock.c,v 1.58 2010/01/02 16:57:52 momjian Exp $
+ *	  src/backend/storage/lmgr/deadlock.c
  *
  *	Interface:
  *
@@ -53,7 +53,7 @@ typedef struct
 } WAIT_ORDER;
 
 /*
- * Information saved about each edge in a detected deadlock cycle.	This
+ * Information saved about each edge in a detected deadlock cycle.  This
  * is used to print a diagnostic message upon failure.
  *
  * Note: because we want to examine this info after releasing the lock
@@ -121,7 +121,7 @@ static PGPROC *blocking_autovacuum_proc = NULL;
  * InitDeadLockChecking -- initialize deadlock checker during backend startup
  *
  * This does per-backend initialization of the deadlock checker; primarily,
- * allocation of working memory for DeadLockCheck.	We do this per-backend
+ * allocation of working memory for DeadLockCheck.  We do this per-backend
  * since there's no percentage in making the kernel do copy-on-write
  * inheritance of workspace from the postmaster.  We want to allocate the
  * space at startup because (a) the deadlock checker might be invoked when
@@ -296,10 +296,10 @@ GetBlockingAutoVacuumPgproc(void)
  * DeadLockCheckRecurse -- recursively search for valid orderings
  *
  * curConstraints[] holds the current set of constraints being considered
- * by an outer level of recursion.	Add to this each possible solution
+ * by an outer level of recursion.  Add to this each possible solution
  * constraint for any cycle detected at this level.
  *
- * Returns TRUE if no solution exists.	Returns FALSE if a deadlock-free
+ * Returns TRUE if no solution exists.  Returns FALSE if a deadlock-free
  * state is attainable, in which case waitOrders[] shows the required
  * rearrangements of lock wait queues (if any).
  */
@@ -434,7 +434,7 @@ TestConfiguration(PGPROC *startProc)
  *
  * Since we need to be able to check hypothetical configurations that would
  * exist after wait queue rearrangement, the routine pays attention to the
- * table of hypothetical queue orders in waitOrders[].	These orders will
+ * table of hypothetical queue orders in waitOrders[].  These orders will
  * be believed in preference to the actual ordering seen in the locktable.
  */
 static bool
@@ -455,6 +455,7 @@ FindLockCycleRecurse(PGPROC *checkProc,
 					 int *nSoftEdges)	/* output argument */
 {
 	PGPROC	   *proc;
+	PGXACT	   *pgxact;
 	LOCK	   *lock;
 	PROCLOCK   *proclock;
 	SHM_QUEUE  *procLocks;
@@ -510,7 +511,7 @@ FindLockCycleRecurse(PGPROC *checkProc,
 	conflictMask = lockMethodTable->conflictTab[checkProc->waitLockMode];
 
 	/*
-	 * Scan for procs that already hold conflicting locks.	These are "hard"
+	 * Scan for procs that already hold conflicting locks.  These are "hard"
 	 * edges in the waits-for graph.
 	 */
 	procLocks = &(lock->procLocks);
@@ -521,6 +522,7 @@ FindLockCycleRecurse(PGPROC *checkProc,
 	while (proclock)
 	{
 		proc = proclock->tag.myProc;
+		pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
 
 		/* A proc never blocks itself */
 		if (proc != checkProc)
@@ -567,7 +569,7 @@ FindLockCycleRecurse(PGPROC *checkProc,
 					 * ProcArrayLock.
 					 */
 					if (checkProc == MyProc &&
-						proc->vacuumFlags & PROC_IS_AUTOVACUUM)
+						pgxact->vacuumFlags & PROC_IS_AUTOVACUUM)
 						blocking_autovacuum_proc = proc;
 
 					/* We're done looking at this proclock */
@@ -708,7 +710,7 @@ ExpandConstraints(EDGE *constraints,
 	nWaitOrders = 0;
 
 	/*
-	 * Scan constraint list backwards.	This is because the last-added
+	 * Scan constraint list backwards.  This is because the last-added
 	 * constraint is the only one that could fail, and so we want to test it
 	 * for inconsistency first.
 	 */
@@ -762,7 +764,7 @@ ExpandConstraints(EDGE *constraints,
  * The initial queue ordering is taken directly from the lock's wait queue.
  * The output is an array of PGPROC pointers, of length equal to the lock's
  * wait queue length (the caller is responsible for providing this space).
- * The partial order is specified by an array of EDGE structs.	Each EDGE
+ * The partial order is specified by an array of EDGE structs.  Each EDGE
  * is one that we need to reverse, therefore the "waiter" must appear before
  * the "blocker" in the output array.  The EDGE array may well contain
  * edges associated with other locks; these should be ignored.
@@ -832,7 +834,7 @@ TopoSort(LOCK *lock,
 		afterConstraints[k] = i + 1;
 	}
 	/*--------------------
-	 * Now scan the topoProcs array backwards.	At each step, output the
+	 * Now scan the topoProcs array backwards.  At each step, output the
 	 * last proc that has no remaining before-constraints, and decrease
 	 * the beforeConstraints count of each of the procs it was constrained
 	 * against.
@@ -949,10 +951,12 @@ DeadLockReport(void)
 					  pgstat_get_backend_current_activity(info->pid, false));
 	}
 
+	pgstat_report_deadlock();
+
 	ereport(ERROR,
 			(errcode(ERRCODE_T_R_DEADLOCK_DETECTED),
 			 errmsg("deadlock detected"),
-			 errdetail("%s", clientbuf.data),
+			 errdetail_internal("%s", clientbuf.data),
 			 errdetail_log("%s", logbuf.data),
 			 errhint("See server log for query details.")));
 }

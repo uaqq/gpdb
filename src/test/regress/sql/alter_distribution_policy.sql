@@ -140,9 +140,6 @@ drop table atsdb, atsdb_1, atsdb_2;
 alter table pg_class set distributed by (relname);
 alter table pg_class set with(appendonly = true);
 
--- MPP-7770: allow testing of changing storage for now
-set gp_setwith_alter_storage = true;
-
 alter table pg_class set with(appendonly = true);
 
 -- WITH clause
@@ -311,12 +308,13 @@ alter table owner_test set with (reorganize = true) distributed by (i);
 select a.relname,
        x.rolname as relowner,
        y.rolname as toastowner,
-	   z.rolname as toastidxowner
-from pg_class a, pg_class b, pg_class c,
+       z.rolname as toastidxowner
+from pg_class a
+     inner join pg_class b on b.oid = a.reltoastrelid
+     inner join pg_index ti on ti.indrelid = b.oid
+     inner join pg_class c on c.oid = ti.indexrelid,
      pg_authid x, pg_authid y, pg_authid z
-where a.reltoastrelid = b.oid
-  and b.reltoastidxid=c.oid
-  and a.relname='owner_test'
+where a.relname='owner_test'
   and x.oid = a.relowner
   and y.oid = b.relowner
   and z.oid = c.relowner;
@@ -325,14 +323,13 @@ where a.reltoastrelid = b.oid
 select a.relname,
        x.rolname as relowner,
        y.rolname as toastowner,
-	   z.rolname as toastidxowner
-from gp_dist_random('pg_class') a,
-	 gp_dist_random('pg_class') b,
-	 gp_dist_random('pg_class') c,
+       z.rolname as toastidxowner
+from gp_dist_random('pg_class') a
+     inner join gp_dist_random('pg_class') b on b.oid = a.reltoastrelid
+     inner join pg_index ti on ti.indrelid = b.oid
+     inner join gp_dist_random('pg_class') c on c.oid = ti.indexrelid,
      pg_authid x, pg_authid y, pg_authid z
-where a.reltoastrelid=b.oid
-  and b.reltoastidxid=c.oid
-  and a.relname='owner_test'
+where a.relname='owner_test'
   and x.oid = a.relowner
   and y.oid = b.relowner
   and z.oid = c.relowner
@@ -348,14 +345,13 @@ alter table owner_test set with (reorganize = true) distributed by (i);
 select a.relname,
        x.rolname as relowner,
        y.rolname as toastowner,
-	   z.rolname as toastidxowner
-from gp_dist_random('pg_class') a,
-	 gp_dist_random('pg_class') b,
-	 gp_dist_random('pg_class') c,
+       z.rolname as toastidxowner
+from gp_dist_random('pg_class') a
+     inner join gp_dist_random('pg_class') b on b.oid = a.reltoastrelid
+     inner join pg_index ti on ti.indrelid = b.oid
+     inner join gp_dist_random('pg_class') c on c.oid = ti.indexrelid,
      pg_authid x, pg_authid y, pg_authid z
-where a.reltoastrelid=b.oid
-  and b.reltoastidxid=c.oid
-  and a.relname='owner_test'
+where a.relname='owner_test'
   and x.oid = a.relowner
   and y.oid = b.relowner
   and z.oid = c.relowner
@@ -371,10 +367,6 @@ create table abc (a int, b int, c int) distributed by (a);
 Alter table abc set distributed randomly;
 Alter table abc set with (reorganize=false) distributed randomly;
 drop table abc;
-
-
--- MPP-7770: disable changing storage options (default, for now)
-set gp_setwith_alter_storage = false;
 
 -- disallow, so fails
 create table atsdb (i int, j text) distributed by (j);
@@ -475,3 +467,11 @@ subpartition template
 ALTER TABLE mpp6489_1_prt_1_2_prt_5 set distributed randomly;
 ALTER TABLE "mpp6489" ALTER PARTITION FOR('M'::bpchar) alter PARTITION
 FOR(RANK(5)) set distributed by (id, gender, year);
+
+-- Altering distribution policy for temp tables
+create temp table atsdb (c1 int, c2 int) distributed randomly;
+select * from atsdb;
+alter table atsdb set distributed by (c1);
+select * from atsdb;
+alter table atsdb set distributed by (c2);
+select * from atsdb;

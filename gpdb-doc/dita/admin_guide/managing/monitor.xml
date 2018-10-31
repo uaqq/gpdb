@@ -27,7 +27,7 @@
       <p otherprops="pivotal">Pivotal Greenplum Command Center, an optional web-based interface,
         graphically displays the metrics collected in the <codeph>gpperfmon</codeph> database and
         provides additional system management tools. Download the Greenplum Command Center package
-        from <xref href="https://network.pivotal.io" scope="external" format="html">Pivotal
+        from <xref href="https://network.pivotal.io/products/pivotal-gpdb" scope="external" format="html">Pivotal
           Network</xref> and view the documentation at the <xref href="http://gpcc.docs.pivotal.io"
           scope="external" format="html">Greenplum Command Center Documentation</xref> web site.
       </p>
@@ -260,31 +260,19 @@ gp_email_to='gpdb_dba_group@example.com'
         <title id="kj168981">Testing Email Notifications</title>
         <body>
           <p>The Greenplum Database master host must be able to connect to the SMTP email server you
-            specify for the gp_email_smtp_server<ph> parameter</ph>. To test connectivity, use the
-              <codeph>ping</codeph> command:</p>
+            specify for the <codeph>gp_email_smtp_server</codeph> parameter. To test connectivity,
+            use the <codeph>ping</codeph> command:</p>
           <p>
-            <codeblock>$ ping my_email_server
-</codeblock>
+            <codeblock>$ ping &lt;<varname>my_email_server</varname>></codeblock>
           </p>
-          <p>If the master host can contact the SMTP server, log in to <codeph>psql</codeph> and
-            test email notifications with the following command:</p>
+          <p>If the master host can contact the SMTP server, run this <codeph>psql</codeph> command
+            to log into a database and test email notification with the <codeph>gp_elog</codeph>
+            function:</p>
           <p>
-            <codeblock>$ psql postgres
-=# SELECT gp_elog('Test GPDB Email',true); gp_elog
-</codeblock>
+            <codeblock>$ psql -d &lt;<varname>testdb</varname>> -U gpadmin -c "SELECT gp_elog('Test GPDB Email',true);"</codeblock>
           </p>
-          <p>The address you specified for the gp_email_to parameter should receive an email with
-            Test GPDB Email in the subject line.</p>
-          <p>You can also test email notifications by using a public SMTP server, such as Google's
-            Gmail SMTP server, and an external email address. For example:</p>
-          <p>
-            <codeblock>gp_email_smtp_server='smtp.gmail.com:25'
-#gp_email_smtp_userid=''
-#gp_email_smtp_password=''
-gp_email_from='gpadmin@example.com'
-gp_email_to='test_account@example.com'
-</codeblock>
-          </p>
+          <p>The address you specified for the <codeph>gp_email_to</codeph> parameter should receive
+            an email with <codeph>Test GPDB Email</codeph> in the subject line.</p>
           <note type="note">If you have difficulty sending and receiving email notifications, verify
             the security settings for you organization's email server and firewall. </note>
         </body>
@@ -589,10 +577,10 @@ Distributed by: (sale_id)
         <title>Creating the session_level_memory_consumption View</title>
         <body>
           <p>To create the <i>session_level_memory_consumption</i> view in a Greenplum Database, run
-            the script <codeph>$GPHOME/share/postgresql/contrib/gp_session_state.sql</codeph> once
+            the script <codeph>CREATE EXTENSION gp_internal_tools;</codeph> once
             for each database. For example, to install the view in the database
               <codeph>testdb</codeph>, use this
-            command:<codeblock>$ psql -d testdb -f $GPHOME/share/postgresql/contrib/gp_session_state.sql</codeblock></p>
+            command:<codeblock>$ psql -d testdb -c "CREATE EXTENSION gp_internal_tools;"</codeblock></p>
         </body>
       </topic>
       <topic id="topic7" xml:lang="en">

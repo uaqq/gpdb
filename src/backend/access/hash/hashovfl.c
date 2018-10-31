@@ -3,12 +3,12 @@
  * hashovfl.c
  *	  Overflow page management code for the Postgres hash access method
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/hash/hashovfl.c,v 1.69 2010/02/26 02:00:33 momjian Exp $
+ *	  src/backend/access/hash/hashovfl.c
  *
  * NOTES
  *	  Overflow pages look like ordinary relation pages.
@@ -18,7 +18,6 @@
 #include "postgres.h"
 
 #include "access/hash.h"
-#include "storage/bufmgr.h"
 #include "utils/rel.h"
 
 
@@ -81,7 +80,7 @@ blkno_to_bitno(HashMetaPage metap, BlockNumber ovflblkno)
  *
  *	Add an overflow page to the bucket whose last page is pointed to by 'buf'.
  *
- *	On entry, the caller must hold a pin but no lock on 'buf'.	The pin is
+ *	On entry, the caller must hold a pin but no lock on 'buf'.  The pin is
  *	dropped before exiting (we assume the caller is not interested in 'buf'
  *	anymore).  The returned overflow page will be pinned and write-locked;
  *	it is guaranteed to be empty.
@@ -90,12 +89,12 @@ blkno_to_bitno(HashMetaPage metap, BlockNumber ovflblkno)
  *	That buffer is returned in the same state.
  *
  *	The caller must hold at least share lock on the bucket, to ensure that
- *	no one else tries to compact the bucket meanwhile.	This guarantees that
+ *	no one else tries to compact the bucket meanwhile.  This guarantees that
  *	'buf' won't stop being part of the bucket while it's unlocked.
  *
  * NB: since this could be executed concurrently by multiple processes,
  * one should not assume that the returned overflow page will be the
- * immediate successor of the originally passed 'buf'.	Additional overflow
+ * immediate successor of the originally passed 'buf'.  Additional overflow
  * pages might have been added to the bucket chain in between.
  */
 Buffer
@@ -158,7 +157,7 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf)
 /*
  *	_hash_getovflpage()
  *
- *	Find an available overflow page and return it.	The returned buffer
+ *	Find an available overflow page and return it.  The returned buffer
  *	is pinned and write-locked, and has had _hash_pageinit() applied,
  *	but it is caller's responsibility to fill the special space.
  *
@@ -254,12 +253,12 @@ _hash_getovflpage(Relation rel, Buffer metabuf)
 		 * We create the new bitmap page with all pages marked "in use".
 		 * Actually two pages in the new bitmap's range will exist
 		 * immediately: the bitmap page itself, and the following page which
-		 * is the one we return to the caller.	Both of these are correctly
+		 * is the one we return to the caller.  Both of these are correctly
 		 * marked "in use".  Subsequent pages do not exist yet, but it is
 		 * convenient to pre-mark them as "in use" too.
 		 */
 		bit = metap->hashm_spares[splitnum];
-		_hash_initbitmap(rel, metap, bitno_to_blkno(metap, bit));
+		_hash_initbitmap(rel, metap, bitno_to_blkno(metap, bit), MAIN_FORKNUM);
 		metap->hashm_spares[splitnum]++;
 	}
 	else
@@ -280,12 +279,12 @@ _hash_getovflpage(Relation rel, Buffer metabuf)
 	 * with metapage write lock held; would be better to use a lock that
 	 * doesn't block incoming searches.
 	 */
-	newbuf = _hash_getnewbuf(rel, blkno);
+	newbuf = _hash_getnewbuf(rel, blkno, MAIN_FORKNUM);
 
 	metap->hashm_spares[splitnum]++;
 
 	/*
-	 * Adjust hashm_firstfree to avoid redundant searches.	But don't risk
+	 * Adjust hashm_firstfree to avoid redundant searches.  But don't risk
 	 * changing it if someone moved it while we were searching bitmap pages.
 	 */
 	if (metap->hashm_firstfree == orig_firstfree)
@@ -314,7 +313,7 @@ found:
 	blkno = bitno_to_blkno(metap, bit);
 
 	/*
-	 * Adjust hashm_firstfree to avoid redundant searches.	But don't risk
+	 * Adjust hashm_firstfree to avoid redundant searches.  But don't risk
 	 * changing it if someone moved it while we were searching bitmap pages.
 	 */
 	if (metap->hashm_firstfree == orig_firstfree)
@@ -392,7 +391,7 @@ _hash_freeovflpage(Relation rel, Buffer ovflbuf,
 	uint32		ovflbitno;
 	int32		bitmappage,
 				bitmapbit;
-	Bucket		bucket;
+	Bucket bucket PG_USED_FOR_ASSERTS_ONLY;
 
 	/* Get information from the doomed page */
 	_hash_checkpage(rel, ovflbuf, LH_OVERFLOW_PAGE);
@@ -495,7 +494,7 @@ _hash_freeovflpage(Relation rel, Buffer ovflbuf,
 /*
  *	_hash_initbitmap()
  *
- *	 Initialize a new bitmap page.	The metapage has a write-lock upon
+ *	 Initialize a new bitmap page.  The metapage has a write-lock upon
  *	 entering the function, and must be written by caller after return.
  *
  * 'blkno' is the block number of the new bitmap page.
@@ -503,7 +502,8 @@ _hash_freeovflpage(Relation rel, Buffer ovflbuf,
  * All bits in the new bitmap page are set to "1", indicating "in use".
  */
 void
-_hash_initbitmap(Relation rel, HashMetaPage metap, BlockNumber blkno)
+_hash_initbitmap(Relation rel, HashMetaPage metap, BlockNumber blkno,
+				 ForkNumber forkNum)
 {
 	Buffer		buf;
 	Page		pg;
@@ -520,7 +520,7 @@ _hash_initbitmap(Relation rel, HashMetaPage metap, BlockNumber blkno)
 	 * page while holding the metapage lock, but this path is taken so seldom
 	 * that it's not worth worrying about.
 	 */
-	buf = _hash_getnewbuf(rel, blkno);
+	buf = _hash_getnewbuf(rel, blkno, forkNum);
 	pg = BufferGetPage(buf);
 
 	/* initialize the page's special space */

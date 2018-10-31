@@ -1,12 +1,8 @@
 --
 -- Set up
 --
-drop table if exists x;
-drop table if exists y;
-drop table if exists z;
-drop table if exists t;
-drop table if exists t1;
-drop table if exists t2;
+create schema bfv_joins;
+set search_path='bfv_joins';
 
 create table x (a int, b int, c int);
 insert into x values (generate_series(1,10), generate_series(1,10), generate_series(1,10));
@@ -118,20 +114,6 @@ select * from x_part left join x_non_part on (a > e);
 select * from x_part right join x_non_part on (a > e);
 select * from x_part join x_non_part on (my_equality(a,e));
 
---
--- Clean up
---
-drop table if exists x;
-drop table if exists y;
-drop function func_x(int);
-drop table if exists z;
-drop table if exists bfv_joins_foo;
-drop table if exists bfv_joins_bar;
-drop table if exists t;
-drop table if exists x_non_part;
-drop table if exists x_part;
-drop function my_equality(int, int);
-
 
 -- Bug-fix verification for MPP-25537: PANIC when bitmap index used in ORCA select
 CREATE TABLE mpp25537_facttable1 (
@@ -192,3 +174,69 @@ select * from
   select * from fjtest_a a, fjtest_b b where (aid = bid)
 ) s
 full outer join fjtest_c on (s.aid = cid);
+
+-- Do not push down any implied predicates to the Left Outer Join
+CREATE TABLE member(member_id int NOT NULL, group_id int NOT NULL) DISTRIBUTED BY(member_id);
+CREATE TABLE member_group(group_id int NOT NULL) DISTRIBUTED BY(group_id);
+CREATE TABLE region(region_id char(4), county_name varchar(25)) DISTRIBUTED BY(region_id);
+CREATE TABLE member_subgroup(subgroup_id int NOT NULL, group_id int NOT NULL, subgroup_name text) DISTRIBUTED RANDOMLY;
+
+INSERT INTO region SELECT i, i FROM generate_series(1, 200) i;
+INSERT INTO member_group SELECT i FROM generate_series(1, 15) i;
+INSERT INTO member SELECT i, i%15 FROM generate_series(1, 10000) i;
+--start_ignore
+ANALYZE member;
+ANALYZE member_group;
+ANALYZE region;
+ANALYZE member_subgroup;
+--end_ignore
+EXPLAIN(COSTS OFF) SELECT member.member_id
+FROM member
+INNER JOIN member_group
+ON member.group_id = member_group.group_id
+INNER JOIN member_subgroup
+ON member_group.group_id = member_subgroup.group_id
+LEFT OUTER JOIN region
+ON (member_group.group_id IN (12,13,14,15) AND member_subgroup.subgroup_name = region.county_name);
+
+-- Test colocated equijoins on coerced distribution keys
+CREATE TABLE coercejoin (a varchar(10), b varchar(10)) DISTRIBUTED BY (a);
+-- Positive test, the join should be colocated as the implicit cast from the
+-- parse rewrite is a relabeling (varchar::text).
+EXPLAIN (costs off) SELECT * FROM coercejoin a, coercejoin b WHERE a.a=b.a;
+-- Negative test, the join should not be colocated since the cast is a coercion
+-- which cannot guarantee that the coerced value would hash to the same segment
+-- as the uncoerced tuple.
+EXPLAIN (costs off) SELECT * FROM coercejoin a, coercejoin b WHERE a.a::numeric=b.a::numeric;
+
+--
+-- Test NLJ with join conds on distr keys using equality, IS DISTINCT FROM & IS NOT DISTINCT FROM exprs
+--
+create table nlj1 (a int, b int);
+create table nlj2 (a int, b int);
+
+insert into nlj1 values (1, 1), (NULL, NULL);
+insert into nlj2 values (1, 5), (NULL, 6);
+
+set optimizer_enable_hashjoin=off;
+set enable_hashjoin=off; set enable_mergejoin=off; set enable_nestloop=on;
+
+explain select * from nlj1, nlj2 where nlj1.a = nlj2.a;
+select * from nlj1, nlj2 where nlj1.a = nlj2.a;
+
+explain select * from nlj1, nlj2 where nlj1.a is not distinct from nlj2.a;
+select * from nlj1, nlj2 where nlj1.a is not distinct from nlj2.a;
+
+explain select * from nlj1, (select NULL a, b from nlj2) other where nlj1.a is not distinct from other.a;
+select * from nlj1, (select NULL a, b from nlj2) other where nlj1.a is not distinct from other.a;
+
+explain select * from nlj1, nlj2 where nlj1.a is distinct from nlj2.a;
+select * from nlj1, nlj2 where nlj1.a is distinct from nlj2.a;
+
+reset optimizer_enable_hashjoin;
+reset enable_hashjoin; reset enable_mergejoin; reset enable_nestloop;
+
+-- Clean up. None of the objects we create are very interesting to keep around.
+reset search_path;
+set client_min_messages='warning';
+drop schema bfv_joins cascade;

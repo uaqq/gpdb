@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/unlisten.sgml,v 1.32 2010/04/03 07:23:02 petere Exp $
+doc/src/sgml/ref/unlisten.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-UNLISTEN">
+ <indexterm zone="sql-unlisten">
+  <primary>UNLISTEN</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>UNLISTEN</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>UNLISTEN</refname>
   <refpurpose>stop listening for a notification</refpurpose>
  </refnamediv>
-
- <indexterm zone="sql-unlisten">
-  <primary>UNLISTEN</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
@@ -111,8 +111,7 @@ Asynchronous notification "virtual" received from server process with PID 8448.
 UNLISTEN virtual;
 NOTIFY virtual;
 -- no NOTIFY event is received
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>

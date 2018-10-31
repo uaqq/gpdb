@@ -24,6 +24,7 @@
 #include "access/tuptoaster.h"
 
 #include "catalog/pg_attribute_encoding.h"
+#include "cdb/cdbappendonlyam.h"
 #include "cdb/cdbappendonlyblockdirectory.h"
 #include "cdb/cdbappendonlystoragelayer.h"
 #include "cdb/cdbappendonlystorageread.h"
@@ -369,7 +370,8 @@ init_datumstream_info(
 	/*
 	 * Adjust maxsz for Append-Only Storage.
 	 */
-	*maxAoBlockSize = AppendOnlyStorage_GetUsableBlockSize(maxsz);
+	Assert(maxsz <= MAX_APPENDONLY_BLOCK_SIZE);
+	*maxAoBlockSize = maxsz;
 
 	/*
 	 * Assume the folowing unless modified below.
@@ -477,7 +479,7 @@ determine_datumstream_compression_overflow(
 		 */
 		desiredOverflowBytes =
 			(int) (desiredCompSizeFunc) (maxAoBlockSize) - maxAoBlockSize;
-		Insist(desiredOverflowBytes >= 0);
+		Assert(desiredOverflowBytes >= 0);
 	}
 	ao_attr->overflowSize = desiredOverflowBytes;
 }
@@ -770,6 +772,8 @@ destroy_datumstreamread(DatumStreamRead * ds)
 
 	if (ds->large_object_buffer)
 		pfree(ds->large_object_buffer);
+	if (ds->datum_upgrade_buffer)
+		pfree(ds->datum_upgrade_buffer);
 
 	AppendOnlyStorageRead_FinishSession(&ds->ao_read);
 
@@ -782,7 +786,8 @@ destroy_datumstreamread(DatumStreamRead * ds)
 
 
 void
-datumstreamwrite_open_file(DatumStreamWrite * ds, char *fn, int64 eof, int64 eofUncompressed, RelFileNode relFileNode, int32 segmentFileNum, int version)
+datumstreamwrite_open_file(DatumStreamWrite *ds, char *fn, int64 eof, int64 eofUncompressed,
+						   RelFileNodeBackend *relFileNode, int32 segmentFileNum, int version)
 {
 	ds->eof = eof;
 	ds->eofUncompress = eofUncompressed;
@@ -799,7 +804,7 @@ datumstreamwrite_open_file(DatumStreamWrite * ds, char *fn, int64 eof, int64 eof
 	{
 		AppendOnlyStorageWrite_TransactionCreateFile(&ds->ao_write,
 													 fn,
-													 &relFileNode,
+													 relFileNode,
 													 segmentFileNum);
 	}
 
@@ -811,7 +816,7 @@ datumstreamwrite_open_file(DatumStreamWrite * ds, char *fn, int64 eof, int64 eof
 									version,
 									eof,
 									eofUncompressed,
-									&relFileNode,
+									relFileNode,
 									segmentFileNum);
 
 	ds->need_close_file = true;
@@ -1582,4 +1587,34 @@ datumstreamread_find_block(DatumStreamRead * datumStream,
 	}
 
 	return true;
+}
+
+/*
+ * Ensures that the stream's datum_upgrade_buffer is at least len bytes long.
+ * Returns a pointer to the (possibly newly allocated) upgrade buffer space. If
+ * additional space is needed, it will be allocated in the stream's memory
+ * context.
+ */
+void *
+datumstreamread_get_upgrade_space(DatumStreamRead *ds, size_t len)
+{
+	if (ds->datum_upgrade_buffer_size < len)
+	{
+		MemoryContext oldcontext = MemoryContextSwitchTo(ds->memctxt);
+
+		/*
+		 * FIXME: looks like at least one realloc() implementation can't handle
+		 * NULL pointers?
+		 */
+		if (ds->datum_upgrade_buffer)
+			ds->datum_upgrade_buffer = repalloc(ds->datum_upgrade_buffer, len);
+		else
+			ds->datum_upgrade_buffer = palloc(len);
+
+		ds->datum_upgrade_buffer_size = len;
+
+		MemoryContextSwitchTo(oldcontext);
+	}
+
+	return ds->datum_upgrade_buffer;
 }

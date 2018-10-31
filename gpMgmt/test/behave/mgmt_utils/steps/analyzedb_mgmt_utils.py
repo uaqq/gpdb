@@ -172,11 +172,16 @@ def impl(context, qualified_table):
         delete_table_from_state_files(context.dbname, qualified_table)
 
 
+@given('{num_rows} rows are inserted into table "{tablename}" in schema "{schemaname}" with column type list "{column_type_list}"')
+@then('{num_rows} rows are inserted into table "{tablename}" in schema "{schemaname}" with column type list "{column_type_list}"')
+@when('{num_rows} rows are inserted into table "{tablename}" in schema "{schemaname}" with column type list "{column_type_list}"')
+def impl(context, num_rows, tablename, schemaname, column_type_list):
+    insert_data_into_table(context.conn, schemaname, tablename, column_type_list, num_rows)
+
 @given('some data is inserted into table "{tablename}" in schema "{schemaname}" with column type list "{column_type_list}"')
 @when('some data is inserted into table "{tablename}" in schema "{schemaname}" with column type list "{column_type_list}"')
 def impl(context, tablename, schemaname, column_type_list):
     insert_data_into_table(context.conn, schemaname, tablename, column_type_list)
-
 
 @given('some ddl is performed on table "{tablename}" in schema "{schemaname}"')
 def impl(context, tablename, schemaname):
@@ -189,12 +194,6 @@ def impl(context, query, dbname):
     if 'long_lived_conn' not in context:
         create_long_lived_conn(context, dbname)
     dbconn.execSQL(context.long_lived_conn, 'BEGIN; %s' % query)
-
-
-@given('the user commits transaction')
-@when('the user commits transaction')
-def impl(context):
-    dbconn.execSQL(context.long_lived_conn, 'END;')
 
 
 @given('the user rollsback the transaction')
@@ -373,10 +372,10 @@ def create_table_with_column_list(conn, storage_type, schemaname, tablename, col
     conn.commit()
 
 
-def insert_data_into_table(conn, schemaname, tablename, col_type_list):
+def insert_data_into_table(conn, schemaname, tablename, col_type_list, num_rows="100"):
     col_type_list = col_type_list.strip().split(',')
     col_str = ','.join(["(random()*i)::%s" % x for x in col_type_list])
-    query = "INSERT INTO " + schemaname + '.' + tablename + " SELECT " + col_str + " FROM generate_series(1,100) i"
+    query = "INSERT INTO " + schemaname + '.' + tablename + " SELECT " + col_str + " FROM generate_series(1," + num_rows + ") i"
     dbconn.execSQL(conn, query)
     conn.commit()
 

@@ -3,11 +3,11 @@
  * tsearch2.c
  *		Backwards-compatibility package for old contrib/tsearch2 API
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/contrib/tsearch2/tsearch2.c,v 1.12 2010/02/08 20:39:51 tgl Exp $
+ *	  contrib/tsearch2/tsearch2.c
  *
  *-------------------------------------------------------------------------
  */
@@ -16,7 +16,6 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
-#include "fmgr.h"
 #include "tsearch/ts_utils.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -46,7 +45,7 @@ static Oid	current_parser_oid = InvalidOid;
 					 CStringGetDatum(text_to_cstring(text))))
 
 #define UNSUPPORTED_FUNCTION(name)						\
-	Datum name(PG_FUNCTION_ARGS);						\
+	PG_FUNCTION_INFO_V1(name);							\
 	Datum												\
 	name(PG_FUNCTION_ARGS)								\
 	{													\
@@ -58,29 +57,10 @@ static Oid	current_parser_oid = InvalidOid;
 		/* keep compiler quiet */						\
 		PG_RETURN_NULL();								\
 	}													\
-	PG_FUNCTION_INFO_V1(name)
+	extern int no_such_variable
 
 static Oid	GetCurrentDict(void);
 static Oid	GetCurrentParser(void);
-
-Datum		tsa_lexize_byname(PG_FUNCTION_ARGS);
-Datum		tsa_lexize_bycurrent(PG_FUNCTION_ARGS);
-Datum		tsa_set_curdict(PG_FUNCTION_ARGS);
-Datum		tsa_set_curdict_byname(PG_FUNCTION_ARGS);
-Datum		tsa_token_type_current(PG_FUNCTION_ARGS);
-Datum		tsa_set_curprs(PG_FUNCTION_ARGS);
-Datum		tsa_set_curprs_byname(PG_FUNCTION_ARGS);
-Datum		tsa_parse_current(PG_FUNCTION_ARGS);
-Datum		tsa_set_curcfg(PG_FUNCTION_ARGS);
-Datum		tsa_set_curcfg_byname(PG_FUNCTION_ARGS);
-Datum		tsa_to_tsvector_name(PG_FUNCTION_ARGS);
-Datum		tsa_to_tsquery_name(PG_FUNCTION_ARGS);
-Datum		tsa_plainto_tsquery_name(PG_FUNCTION_ARGS);
-Datum		tsa_headline_byname(PG_FUNCTION_ARGS);
-Datum		tsa_ts_stat(PG_FUNCTION_ARGS);
-Datum		tsa_tsearch2(PG_FUNCTION_ARGS);
-Datum		tsa_rewrite_accum(PG_FUNCTION_ARGS);
-Datum		tsa_rewrite_finish(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(tsa_lexize_byname);
 PG_FUNCTION_INFO_V1(tsa_lexize_bycurrent);
@@ -190,7 +170,7 @@ tsa_set_curdict_byname(PG_FUNCTION_ARGS)
 	text	   *name = PG_GETARG_TEXT_PP(0);
 	Oid			dict_oid;
 
-	dict_oid = TSDictionaryGetDictid(stringToQualifiedNameList(text_to_cstring(name)), false);
+	dict_oid = get_ts_dict_oid(stringToQualifiedNameList(text_to_cstring(name)), false);
 
 	current_dictionary_oid = dict_oid;
 
@@ -229,7 +209,7 @@ tsa_set_curprs_byname(PG_FUNCTION_ARGS)
 	text	   *name = PG_GETARG_TEXT_PP(0);
 	Oid			parser_oid;
 
-	parser_oid = TSParserGetPrsid(stringToQualifiedNameList(text_to_cstring(name)), false);
+	parser_oid = get_ts_parser_oid(stringToQualifiedNameList(text_to_cstring(name)), false);
 
 	current_parser_oid = parser_oid;
 
@@ -254,11 +234,8 @@ tsa_set_curcfg(PG_FUNCTION_ARGS)
 	name = DatumGetCString(DirectFunctionCall1(regconfigout,
 											   ObjectIdGetDatum(arg0)));
 
-	set_config_option("default_text_search_config", name,
-					  PGC_USERSET,
-					  PGC_S_SESSION,
-					  GUC_ACTION_SET,
-					  true);
+	SetConfigOption("default_text_search_config", name,
+					PGC_USERSET, PGC_S_SESSION);
 
 	PG_RETURN_VOID();
 }
@@ -272,11 +249,8 @@ tsa_set_curcfg_byname(PG_FUNCTION_ARGS)
 
 	name = text_to_cstring(arg0);
 
-	set_config_option("default_text_search_config", name,
-					  PGC_USERSET,
-					  PGC_S_SESSION,
-					  GUC_ACTION_SET,
-					  true);
+	SetConfigOption("default_text_search_config", name,
+					PGC_USERSET, PGC_S_SESSION);
 
 	PG_RETURN_VOID();
 }
@@ -569,6 +543,6 @@ static Oid
 GetCurrentParser(void)
 {
 	if (current_parser_oid == InvalidOid)
-		current_parser_oid = TSParserGetPrsid(stringToQualifiedNameList("pg_catalog.default"), false);
+		current_parser_oid = get_ts_parser_oid(stringToQualifiedNameList("pg_catalog.default"), false);
 	return current_parser_oid;
 }

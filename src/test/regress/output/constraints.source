@@ -7,6 +7,10 @@
 --  - UNIQUE clauses
 --  - EXCLUDE clauses
 --
+-- start_matchsubs
+-- m/DETAIL:  Failing row contains \(.*\)/
+-- s/DETAIL:  Failing row contains \(.*\)/DETAIL:  Failing row contains (#####)/
+-- end_matchsubs
 --
 -- DEFAULT syntax
 --
@@ -68,11 +72,14 @@ INSERT INTO CHECK_TBL VALUES (5);
 INSERT INTO CHECK_TBL VALUES (4);
 INSERT INTO CHECK_TBL VALUES (3);
 ERROR:  new row for relation "check_tbl" violates check constraint "check_con"
+DETAIL:  Failing row contains (3).
 INSERT INTO CHECK_TBL VALUES (2);
 ERROR:  new row for relation "check_tbl" violates check constraint "check_con"
+DETAIL:  Failing row contains (2).
 INSERT INTO CHECK_TBL VALUES (6);
 INSERT INTO CHECK_TBL VALUES (1);
 ERROR:  new row for relation "check_tbl" violates check constraint "check_con"
+DETAIL:  Failing row contains (1).
 SELECT '' AS three, * FROM CHECK_TBL;
  three | x 
 -------+---
@@ -88,12 +95,16 @@ CREATE TABLE CHECK2_TBL (x int, y text, z int,
 INSERT INTO CHECK2_TBL VALUES (4, 'check ok', -2);
 INSERT INTO CHECK2_TBL VALUES (1, 'x check failed', -2);
 ERROR:  new row for relation "check2_tbl" violates check constraint "sequence_con"
+DETAIL:  Failing row contains (1, x check failed, -2).
 INSERT INTO CHECK2_TBL VALUES (5, 'z check failed', 10);
 ERROR:  new row for relation "check2_tbl" violates check constraint "sequence_con"
+DETAIL:  Failing row contains (5, z check failed, 10).
 INSERT INTO CHECK2_TBL VALUES (0, 'check failed', -2);
 ERROR:  new row for relation "check2_tbl" violates check constraint "sequence_con"
+DETAIL:  Failing row contains (0, check failed, -2).
 INSERT INTO CHECK2_TBL VALUES (6, 'check failed', 11);
 ERROR:  new row for relation "check2_tbl" violates check constraint "sequence_con"
+DETAIL:  Failing row contains (6, check failed, 11).
 INSERT INTO CHECK2_TBL VALUES (7, 'check ok', 7);
 SELECT '' AS two, * from CHECK2_TBL;
  two | x |    y     | z  
@@ -110,9 +121,10 @@ CREATE TABLE INSERT_TBL (x INT DEFAULT nextval('insert_seq'),
 	y TEXT DEFAULT '-NULL-',
 	z INT DEFAULT -1 * (nextval('insert_seq')-1),
 	CONSTRAINT INSERT_CON CHECK (x >= 3 AND y <> 'check failed' AND x < 8),
-	CHECK (x + z = 0));
+	CHECK (x + z = 0)) DISTRIBUTED BY(y);
 INSERT INTO INSERT_TBL(x,z) VALUES (2, -2);
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"
+DETAIL:  Failing row contains (2, -NULL-, -2).
 SELECT '' AS zero, * FROM INSERT_TBL;
  zero | x | y | z 
 ------+---+---+---
@@ -126,12 +138,15 @@ SELECT 'one' AS one, nextval('insert_seq');
 
 INSERT INTO INSERT_TBL(y) VALUES ('Y');
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"
+DETAIL:  Failing row contains (2, Y, -2).
 INSERT INTO INSERT_TBL(y) VALUES ('Y');
 INSERT INTO INSERT_TBL(x,z) VALUES (1, -2);
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (1, -NULL-, -2).
 INSERT INTO INSERT_TBL(z,x) VALUES (-7,  7);
 INSERT INTO INSERT_TBL VALUES (5, 'check failed', -5);
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"
+DETAIL:  Failing row contains (5, check failed, -5).
 INSERT INTO INSERT_TBL VALUES (7, '!check failed', -7);
 INSERT INTO INSERT_TBL(y) VALUES ('-!NULL-');
 SELECT '' AS four, * FROM INSERT_TBL;
@@ -152,13 +167,17 @@ insert into insert_tbl values
   (4, '-!NULL-', -4);
 INSERT INTO INSERT_TBL(y,z) VALUES ('check failed', 4);
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (8, check failed, 4).
 INSERT INTO INSERT_TBL(x,y) VALUES (5, 'check failed');
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (5, check failed, -8).
 -- these fail on GPDB, because we cannot use currval in the z columns' DEFAULT like in upstream.
 INSERT INTO INSERT_TBL(x,y) VALUES (5, '!check failed');
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (5, !check failed, -9).
 INSERT INTO INSERT_TBL(y) VALUES ('-!NULL-');
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"
+DETAIL:  Failing row contains (11, -!NULL-, -11).
 -- GPDB: fix the table contents to match upstream again, so that the subsequent
 -- tests start with the same state as in upstream.
 insert into insert_tbl values
@@ -183,13 +202,14 @@ SELECT 'seven' AS one, nextval('insert_seq');
 
 INSERT INTO INSERT_TBL(y) VALUES ('Y');
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"
+DETAIL:  Failing row contains (14, Y, -14).
 SELECT 'eight' AS one, nextval('insert_seq');
   one  | nextval 
 -------+---------
  eight |      16
 (1 row)
 
--- According to SQL92, it is OK to insert a record that gives rise to NULL
+-- According to SQL, it is OK to insert a record that gives rise to NULL
 -- constraint-condition results.  Postgres used to reject this, but it
 -- was wrong:
 INSERT INTO INSERT_TBL VALUES (null, null, null);
@@ -206,6 +226,21 @@ SELECT '' AS nine, * FROM INSERT_TBL;
 (7 rows)
 
 --
+-- Check constraints on system columns
+--
+-- GPDB: tableoid is allowed in upstream, but not in GPDB.
+CREATE TABLE SYS_COL_CHECK_TBL (city text, state text, is_capital bool,
+                  altitude int,
+                  CHECK (NOT (is_capital AND tableoid::regclass::text = 'sys_col_check_tbl')));
+ERROR:  system column "tableoid" reference in check constraint is invalid
+--
+-- Check constraints on system columns other then TableOid should return error
+--
+CREATE TABLE SYS_COL_CHECK_TBL (city text, state text, is_capital bool,
+                  altitude int,
+				  CHECK (NOT (is_capital AND ctid::text = 'sys_col_check_tbl')));
+ERROR:  system column "ctid" reference in check constraint is invalid
+--
 -- Check inheritance of defaults and constraints
 --
 CREATE TABLE INSERT_CHILD (cx INT default 42,
@@ -214,10 +249,13 @@ CREATE TABLE INSERT_CHILD (cx INT default 42,
 INSERT INTO INSERT_CHILD(x,z,cy) VALUES (7,-7,11);
 INSERT INTO INSERT_CHILD(x,z,cy) VALUES (7,-7,6);
 ERROR:  new row for relation "insert_child" violates check constraint "insert_child_check"
+DETAIL:  Failing row contains (7, -NULL-, -7, 42, 6).
 INSERT INTO INSERT_CHILD(x,z,cy) VALUES (6,-7,7);
 ERROR:  new row for relation "insert_child" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (6, -NULL-, -7, 42, 7).
 INSERT INTO INSERT_CHILD(x,y,z,cy) VALUES (6,'check failed',-6,7);
 ERROR:  new row for relation "insert_child" violates check constraint "insert_con"
+DETAIL:  Failing row contains (6, check failed, -6, 42, 7).
 SELECT * FROM INSERT_CHILD;
  x |   y    | z  | cx | cy 
 ---+--------+----+----+----
@@ -225,6 +263,39 @@ SELECT * FROM INSERT_CHILD;
 (1 row)
 
 DROP TABLE INSERT_CHILD;
+--
+-- Check NO INHERIT type of constraints and inheritance
+--
+CREATE TABLE ATACC1 (TEST INT
+	CHECK (TEST > 0) NO INHERIT);
+CREATE TABLE ATACC2 (TEST2 INT) INHERITS (ATACC1);
+-- check constraint is not there on child
+INSERT INTO ATACC2 (TEST) VALUES (-3);
+-- check constraint is there on parent
+INSERT INTO ATACC1 (TEST) VALUES (-3);
+ERROR:  new row for relation "atacc1" violates check constraint "atacc1_test_check"
+DETAIL:  Failing row contains (-3).
+DROP TABLE ATACC1 CASCADE;
+NOTICE:  drop cascades to table atacc2
+CREATE TABLE ATACC1 (TEST INT, TEST2 INT
+	CHECK (TEST > 0), CHECK (TEST2 > 10) NO INHERIT);
+CREATE TABLE ATACC2 () INHERITS (ATACC1);
+-- check constraint is there on child
+INSERT INTO ATACC2 (TEST) VALUES (-3);
+ERROR:  new row for relation "atacc2" violates check constraint "atacc1_test_check"
+DETAIL:  Failing row contains (-3, null).
+-- check constraint is there on parent
+INSERT INTO ATACC1 (TEST) VALUES (-3);
+ERROR:  new row for relation "atacc1" violates check constraint "atacc1_test_check"
+DETAIL:  Failing row contains (-3, null).
+-- check constraint is not there on child
+INSERT INTO ATACC2 (TEST2) VALUES (3);
+-- check constraint is there on parent
+INSERT INTO ATACC1 (TEST2) VALUES (3);
+ERROR:  new row for relation "atacc1" violates check constraint "atacc1_test2_check"
+DETAIL:  Failing row contains (null, 3).
+DROP TABLE ATACC1 CASCADE;
+NOTICE:  drop cascades to table atacc2
 --
 -- Check constraints on INSERT INTO
 --
@@ -253,8 +324,10 @@ SELECT '' AS three, * FROM INSERT_TBL;
 INSERT INTO INSERT_TBL SELECT * FROM tmp WHERE yd = 'try again';
 INSERT INTO INSERT_TBL(y,z) SELECT yd, -7 FROM tmp WHERE yd = 'try again';
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (4, try again, -7).
 INSERT INTO INSERT_TBL(y,z) SELECT yd, -8 FROM tmp WHERE yd = 'try again';
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
+DETAIL:  Failing row contains (5, try again, -8).
 -- GPDB: Fixup
 INSERT INTO INSERT_TBL VALUES (7, 'try again', -7);
 SELECT '' AS four, * FROM INSERT_TBL;
@@ -271,12 +344,12 @@ DROP TABLE tmp;
 --
 -- Check constraints on UPDATE
 --
-ALTER TABLE insert_tbl SET DISTRIBUTED BY (y);
 UPDATE INSERT_TBL SET x = NULL WHERE x = 5;
 UPDATE INSERT_TBL SET x = 6 WHERE x = 6;
 UPDATE INSERT_TBL SET x = -z, z = -x;
 UPDATE INSERT_TBL SET x = z, z = x;
-ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"
+ERROR:  new row for relation "insert_tbl" violates check constraint "insert_con"  (seg0 172.17.0.2:25432 pid=308523)
+DETAIL:  Failing row contains (-4, Y, 4).
 SELECT * FROM INSERT_TBL;
  x |       y       | z  
 ---+---------------+----
@@ -304,6 +377,7 @@ SELECT '' AS two, * FROM COPY_TBL;
 
 COPY COPY_TBL FROM '@abs_srcdir@/data/constrf.data';
 ERROR:  new row for relation "copy_tbl" violates check constraint "copy_con"
+DETAIL:  Failing row contains (7, check failed, 6).
 CONTEXT:  COPY copy_tbl, line 2: "7	check failed	6"
 SELECT * FROM COPY_TBL;
  x |       y       | z 
@@ -316,7 +390,6 @@ SELECT * FROM COPY_TBL;
 -- Primary keys
 --
 CREATE TABLE PRIMARY_TBL (i int PRIMARY KEY, t text) DISTRIBUTED BY (i);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "primary_tbl_pkey" for table "primary_tbl"
 INSERT INTO PRIMARY_TBL VALUES (1, 'one');
 INSERT INTO PRIMARY_TBL VALUES (2, 'two');
 INSERT INTO PRIMARY_TBL VALUES (1, 'three');
@@ -326,6 +399,7 @@ INSERT INTO PRIMARY_TBL VALUES (4, 'three');
 INSERT INTO PRIMARY_TBL VALUES (5, 'one');
 INSERT INTO PRIMARY_TBL (t) VALUES ('six');
 ERROR:  null value in column "i" violates not-null constraint
+DETAIL:  Failing row contains (null, six).
 SELECT '' AS four, * FROM PRIMARY_TBL;
  four | i |   t   
 ------+---+-------
@@ -338,7 +412,6 @@ SELECT '' AS four, * FROM PRIMARY_TBL;
 DROP TABLE PRIMARY_TBL;
 CREATE TABLE PRIMARY_TBL (i int, t text,
 	PRIMARY KEY(i,t)) DISTRIBUTED BY (i);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "primary_tbl_pkey" for table "primary_tbl"
 INSERT INTO PRIMARY_TBL VALUES (1, 'one');
 INSERT INTO PRIMARY_TBL VALUES (2, 'two');
 INSERT INTO PRIMARY_TBL VALUES (1, 'three');
@@ -346,6 +419,7 @@ INSERT INTO PRIMARY_TBL VALUES (4, 'three');
 INSERT INTO PRIMARY_TBL VALUES (5, 'one');
 INSERT INTO PRIMARY_TBL (t) VALUES ('six');
 ERROR:  null value in column "i" violates not-null constraint
+DETAIL:  Failing row contains (null, six).
 SELECT '' AS three, * FROM PRIMARY_TBL;
  three | i |   t   
 -------+---+-------
@@ -361,7 +435,6 @@ DROP TABLE PRIMARY_TBL;
 -- Unique keys
 --
 CREATE TABLE UNIQUE_TBL (i int UNIQUE, t text) DISTRIBUTED BY (i);
-NOTICE:  CREATE TABLE / UNIQUE will create implicit index "unique_tbl_i_key" for table "unique_tbl"
 INSERT INTO UNIQUE_TBL VALUES (1, 'one');
 INSERT INTO UNIQUE_TBL VALUES (2, 'two');
 INSERT INTO UNIQUE_TBL VALUES (1, 'three');
@@ -385,7 +458,6 @@ SELECT '' AS five, * FROM UNIQUE_TBL;
 DROP TABLE UNIQUE_TBL;
 CREATE TABLE UNIQUE_TBL (i int, t text,
 	UNIQUE(i,t)) DISTRIBUTED BY (i);
-NOTICE:  CREATE TABLE / UNIQUE will create implicit index "unique_tbl_i_t_key" for table "unique_tbl"
 INSERT INTO UNIQUE_TBL VALUES (1, 'one');
 INSERT INTO UNIQUE_TBL VALUES (2, 'two');
 INSERT INTO UNIQUE_TBL VALUES (1, 'three');
@@ -409,7 +481,6 @@ DROP TABLE UNIQUE_TBL;
 -- Deferrable unique constraints
 --
 CREATE TABLE unique_tbl (i int UNIQUE DEFERRABLE, t text);
-NOTICE:  CREATE TABLE / UNIQUE will create implicit index "unique_tbl_i_key" for table "unique_tbl"
 INSERT INTO unique_tbl VALUES (0, 'one');
 INSERT INTO unique_tbl VALUES (1, 'two');
 INSERT INTO unique_tbl VALUES (2, 'tree');
@@ -418,11 +489,11 @@ INSERT INTO unique_tbl VALUES (4, 'five');
 BEGIN;
 -- default is immediate so this should fail right away
 UPDATE unique_tbl SET i = 1 WHERE i = 0;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+ERROR:  UPDATE on distributed key column not allowed on relation with update triggers
 ROLLBACK;
 -- check is done at end of statement, so this should succeed
 UPDATE unique_tbl SET i = i+1;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+ERROR:  UPDATE on distributed key column not allowed on relation with update triggers
 SELECT * FROM unique_tbl;
  i |  t   
 ---+------
@@ -457,12 +528,11 @@ SELECT * FROM unique_tbl;
 ALTER TABLE unique_tbl DROP CONSTRAINT unique_tbl_i_key;
 ALTER TABLE unique_tbl ADD CONSTRAINT unique_tbl_i_key
 	UNIQUE (i) DEFERRABLE INITIALLY DEFERRED;
-NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "unique_tbl_i_key" for table "unique_tbl"
 BEGIN;
 INSERT INTO unique_tbl VALUES (1, 'five');
 INSERT INTO unique_tbl VALUES (5, 'one');
 UPDATE unique_tbl SET i = 4 WHERE i = 2;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
+ERROR:  UPDATE on distributed key column not allowed on relation with update triggers
 UPDATE unique_tbl SET i = 2 WHERE i = 4 AND t = 'four';
 ERROR:  current transaction is aborted, commands ignored until end of transaction block
 DELETE FROM unique_tbl WHERE i = 1 AND t = 'one';
@@ -560,7 +630,6 @@ CREATE TABLE circles (
     (c1 WITH &&, (c2::circle) WITH &&)
     WHERE (circle_center(c1) <> '(0,0)')
 );
-NOTICE:  CREATE TABLE / EXCLUDE will create implicit index "circles_c1_c2_excl" for table "circles"
 -- these should succeed because they don't match the index predicate
 INSERT INTO circles VALUES('<(0,0), 5>', '<(0,0), 5>');
 -- In the original version of the postgres test, they create a different set of
@@ -583,16 +652,16 @@ INSERT INTO circles VALUES('<(20,20), 10>', '<(1,1), 5>');
 -- should fail on existing data without the WHERE clause
 ALTER TABLE circles ADD EXCLUDE USING gist
   (c1 WITH &&, (c2::circle) WITH ~=);
-NOTICE:  ALTER TABLE / ADD EXCLUDE will create implicit index "circles_c1_c2_excl1" for table "circles"
 ERROR:  could not create exclusion constraint "circles_c1_c2_excl1"
 DETAIL:  Key (c1, (c2::circle))=(<(0,0),5>, <(0,0),5>) conflicts with key (c1, (c2::circle))=(<(0,0),5>, <(0,0),5>).
+-- try reindexing an existing constraint
+REINDEX INDEX circles_c1_c2_excl;
 DROP TABLE circles;
 -- Check deferred exclusion constraint
 CREATE TABLE deferred_excl (
   f1 int,
   CONSTRAINT deferred_excl_con EXCLUDE (f1 WITH =) INITIALLY DEFERRED
 );
-NOTICE:  CREATE TABLE / EXCLUDE will create implicit index "deferred_excl_f1_excl" for table "deferred_excl"
 INSERT INTO deferred_excl VALUES(1);
 INSERT INTO deferred_excl VALUES(2);
 INSERT INTO deferred_excl VALUES(1); -- fail
@@ -612,7 +681,6 @@ DETAIL:  Key (f1)=(3) conflicts with existing key (f1)=(3).
 ALTER TABLE deferred_excl DROP CONSTRAINT deferred_excl_con;
 -- This should fail, but worth testing because of HOT updates
 UPDATE deferred_excl SET f1 = 3;
-ERROR:  Cannot parallelize an UPDATE statement that updates the distribution columns
 -- In the original postgres test, both the tuples in this table will be updated
 -- (probably by HOT update) in the previous statement, and would now be equal. In
 -- greenplum, the planner does not support updating distribution keys, so we need
@@ -622,7 +690,6 @@ ERROR:  Cannot parallelize an UPDATE statement that updates the distribution col
 INSERT INTO deferred_excl VALUES(3);
 INSERT INTO deferred_excl VALUES(3);
 ALTER TABLE deferred_excl ADD EXCLUDE (f1 WITH =);
-NOTICE:  ALTER TABLE / ADD EXCLUDE will create implicit index "deferred_excl_f1_excl" for table "deferred_excl"
 ERROR:  could not create exclusion constraint "deferred_excl_f1_excl"
 DETAIL:  Key (f1)=(3) conflicts with key (f1)=(3).
 DROP TABLE deferred_excl;
@@ -632,7 +699,6 @@ DROP TABLE deferred_excl;
 BEGIN;
 -- Test with two heap tables
 CREATE TABLE fkc_primary_table1(a int PRIMARY KEY, b text) DISTRIBUTED BY (a);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "fkc_primary_table1_pkey" for table "fkc_primary_table1"
 CREATE TABLE fkc_foreign_table1(a int REFERENCES fkc_primary_table1 ON DELETE RESTRICT ON UPDATE RESTRICT, b text) DISTRIBUTED BY (a);
 -- the following should succeed
 INSERT INTO fkc_primary_table1 VALUES (1, 'bar');
@@ -645,7 +711,6 @@ COMMIT;
 BEGIN;
 -- Test with an ao table and heap table
 CREATE TABLE fkc_primary_table2(a int PRIMARY KEY, b text) DISTRIBUTED BY (a);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "fkc_primary_table2_pkey" for table "fkc_primary_table2"
 CREATE TABLE fkc_foreign_table2(a int REFERENCES fkc_primary_table2 ON DELETE RESTRICT ON UPDATE RESTRICT,
                                 b text) WITH (APPENDONLY=TRUE) DISTRIBUTED BY (a);
 -- the following should succeed

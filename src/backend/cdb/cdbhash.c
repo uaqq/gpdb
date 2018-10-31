@@ -15,9 +15,13 @@
  */
 #include "postgres.h"
 
+#include <sys/socket.h>
+
 #include "access/tuptoaster.h"
+#include "commands/dbcommands.h"
 #include "utils/builtins.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_operator.h"
 #include "parser/parse_type.h"
 #include "utils/numeric.h"
 #include "utils/inet.h"
@@ -27,8 +31,10 @@
 #include "utils/cash.h"
 #include "utils/datetime.h"
 #include "utils/nabstime.h"
+#include "utils/rangetypes.h"
 #include "utils/varbit.h"
 #include "utils/uuid.h"
+#include "optimizer/clauses.h"
 #include "fmgr.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -36,6 +42,9 @@
 #include "utils/complex_type.h"
 #include "cdb/cdbhash.h"
 #include "cdb/cdbutil.h"
+
+
+static int MyDatabaseHashMethod = INVALID_HASH_METHOD;
 
 /* 32 bit FNV-1  non-zero initial basis */
 #define FNV1_32_INIT ((uint32)0x811c9dc5)
@@ -63,6 +72,8 @@ static uint32 fnv1_32_buf(void *buf, size_t len, uint32 hashval);
 static int	inet_getkey(inet *addr, unsigned char *inet_key, int key_size);
 static int	ignoreblanks(char *data, int len);
 static int	ispowof2(int numsegs);
+static inline void set_database_hash_method(void);
+static inline int32 jump_consistent_hash(uint64 key, int32 num_segments);
 
 
 /*================================================================
@@ -91,6 +102,15 @@ makeCdbHash(int numsegs)
 
 	Assert(numsegs > 0);		/* verify number of segments is legal. */
 
+	set_database_hash_method();
+
+	Assert(MyDatabaseHashMethod != INVALID_HASH_METHOD);
+
+	if (numsegs == __GP_POLICY_EVIL_NUMSEGMENTS)
+	{
+		Assert(!"what's the proper value of numsegments?");
+	}
+
 	/* Create a pointer to a CdbHash that includes the hash properties */
 	h = palloc(sizeof(CdbHash));
 
@@ -104,13 +124,18 @@ makeCdbHash(int numsegs)
 	 * set the reduction algorithm: If num_segs is power of 2 use bit mask,
 	 * else use lazy mod (h mod n)
 	 */
-	if (ispowof2(numsegs))
+	switch(MyDatabaseHashMethod)
 	{
-		h->reducealg = REDUCE_BITMASK;
-	}
-	else
-	{
-		h->reducealg = REDUCE_LAZYMOD;
+		case MODULO_HASH_METHOD:
+			h->reducealg = ispowof2(numsegs) ? REDUCE_BITMASK : REDUCE_LAZYMOD;
+			break;
+		case JUMP_HASH_METHOD:
+			h->reducealg = REDUCE_JUMP_HASH;
+			break;
+		default:
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid hash_method: %d", MyDatabaseHashMethod)));
 	}
 
 	/*
@@ -142,27 +167,8 @@ cdbhashinit(CdbHash *h)
 }
 
 /*
- * Implements datumHashFunction
- */
-static void
-addToCdbHash(void *cdbHash, void *buf, size_t len)
-{
-	CdbHash    *h = (CdbHash *) cdbHash;
-
-	h->hash = fnv1_32_buf(buf, len, h->hash);
-}
-
-/*
  * Add an attribute to the CdbHash calculation.
- */
-void
-cdbhash(CdbHash *h, Datum datum, Oid type)
-{
-	hashDatum(datum, type, addToCdbHash, (void *) h);
-}
-
-/*
- * Add an attribute to the hash calculation.
+ *
  * **IMPORTANT: any new hard coded support for a data type in here
  * must be added to isGreenplumDbHashable() below!
  *
@@ -170,12 +176,9 @@ cdbhash(CdbHash *h, Datum datum, Oid type)
  * of a domain type. It is quite expensive to call get_typtype() and
  * getBaseType() here since this function gets called a lot for the
  * same set of Datums.
- *
- * @param hashFn called to update the hash value.
- * @param clientData passed to hashFn.
  */
 void
-hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
+cdbhash(CdbHash *h, Datum datum, Oid type)
 {
 	void	   *buf = NULL;		/* pointer to the data */
 	size_t		len = 0;		/* length for the data buffer */
@@ -195,6 +198,8 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 	RelativeTime reltime_buf;
 	TimeInterval tinterval;
 	AbsoluteTime tinterval_len;
+
+	RangeType *range;
 
 	Numeric		num;
 	bool		bool_buf;
@@ -228,6 +233,8 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 	if (typeIsEnumType(type))
 		type = ANYENUMOID;
 
+	if (typeIsRangeType(type))
+		type = ANYRANGEOID;
 	/*
 	 * Select the hash to be performed according to the field type we are
 	 * adding to the hash.
@@ -294,7 +301,7 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 
 			num = DatumGetNumeric(datum);
 
-			if (NUMERIC_IS_NAN(num))
+			if (numeric_is_nan(num))
 			{
 				nanbuf = NAN_VAL;
 				buf = &nanbuf;
@@ -303,8 +310,8 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 			else
 				/* not a nan */
 			{
-				buf = num->n_data;
-				len = (VARSIZE(num) - NUMERIC_HDRSZ);
+				buf = numeric_digits(num);
+				len = numeric_len(num);
 			}
 
 			/*
@@ -367,6 +374,11 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 													 * hashing */
 			buf = &intbuf;
 			len = sizeof(intbuf);
+			break;
+		case ANYRANGEOID:
+			range = DatumGetRangeType(datum);
+			len = VARSIZE(range) - sizeof(RangeType);
+			buf = (void*)(range + 1);
 			break;
 
 		case TIDOID:			/* tuple id (6 bytes) */
@@ -544,7 +556,6 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 			 * (INSERT and COPY do so).
 			 */
 		case ANYARRAYOID:
-
 			arrbuf = DatumGetArrayTypeP(datum);
 			len = VARSIZE(arrbuf) - VARHDRSZ;
 			buf = VARDATA(arrbuf);
@@ -601,7 +612,7 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 	}							/* switch(type) */
 
 	/* do the hash using the selected algorithm */
-	hashFn(clientData, buf, len);
+	h->hash = fnv1_32_buf(buf, len, h->hash);
 	if (tofree)
 		pfree(tofree);
 }
@@ -612,24 +623,12 @@ hashDatum(Datum datum, Oid type, datumHashFunction hashFn, void *clientData)
 void
 cdbhashnull(CdbHash *h)
 {
-	hashNullDatum(addToCdbHash, (void *) h);
-}
-
-/*
- * Update the hash value for a null Datum
- *
- * @param hashFn called to update the hash value.
- * @param clientData passed to hashFn.
- */
-void
-hashNullDatum(datumHashFunction hashFn, void *clientData)
-{
 	uint32		nullbuf = NULL_VAL; /* stores the constant value that
 									 * represents a NULL */
 	void	   *buf = &nullbuf; /* stores the address of the buffer					*/
 	size_t		len = sizeof(nullbuf);	/* length of the value								*/
 
-	hashFn(clientData, buf, len);
+	h->hash = fnv1_32_buf(buf, len, h->hash);
 }
 
 /*
@@ -663,7 +662,9 @@ cdbhashreduce(CdbHash *h)
 								 * Database and therefore initialize to this
 								 * value for error checking? */
 
-	Assert(h->reducealg == REDUCE_BITMASK || h->reducealg == REDUCE_LAZYMOD);
+	Assert(h->reducealg == REDUCE_BITMASK ||
+		   h->reducealg == REDUCE_LAZYMOD ||
+		   h->reducealg == REDUCE_JUMP_HASH);
 
 	/*
 	 * Reduce our 32-bit hash value to a segment number
@@ -676,6 +677,10 @@ cdbhashreduce(CdbHash *h)
 
 		case REDUCE_LAZYMOD:
 			result = (h->hash) % (h->numsegs);	/* simple mod */
+			break;
+
+		case REDUCE_JUMP_HASH:
+			result = jump_consistent_hash(h->hash, h->numsegs);
 			break;
 	}
 
@@ -718,6 +723,26 @@ typeIsEnumType(Oid typeoid)
 }
 
 bool
+typeIsRangeType(Oid typeoid)
+{
+	Type		tup = typeidType(typeoid);
+	Form_pg_type typeform;
+	bool		res = false;
+
+	typeform = (Form_pg_type) GETSTRUCT(tup);
+
+	if (typeform->typtype == 'r' && typeform->typinput == F_RANGE_IN)
+		res = true;
+
+	ReleaseSysCache(tup);
+	return res;
+}
+
+/*
+ * isGreenplumDbHashable
+ * return true if a type is hashable in cdb hash
+ */
+bool
 isGreenplumDbHashable(Oid typid)
 {
 	/* we can hash all arrays */
@@ -730,6 +755,9 @@ isGreenplumDbHashable(Oid typid)
 
 	/* we can hash all enums */
 	if (typeIsEnumType(typid))
+		return true;
+
+	if (typeIsRangeType(typid))
 		return true;
 
 	/*
@@ -749,6 +777,16 @@ isGreenplumDbHashable(Oid typid)
 		case CHAROID:
 		case BPCHAROID:
 		case TEXTOID:
+		/*
+		 * GPDB_91_MERGE_FIXME:
+		 * "pg_node_tree" is introduced in PG 9.1 to be
+		 * the type for nodeToString output. It can be
+		 * coerced to, but not from, text.
+		 *
+		 * Make it GPDB hashable here to let gpcheckcat
+		 * pass.
+		 */
+		case PGNODETREEOID:
 		case VARCHAROID:
 		case BYTEAOID:
 		case NAMEOID:
@@ -785,6 +823,63 @@ isGreenplumDbHashable(Oid typid)
 			return false;
 	}
 }
+
+
+/*
+ * isGreenplumDbOprHashable
+ * return true if a operator is redistributable
+ */
+bool isGreenplumDbOprRedistributable(Oid oprid)
+{
+	switch(oprid)
+	{
+		case Int2EqualOperator:
+		case Int4EqualOperator:
+		case Int8EqualOperator:
+		case Int24EqualOperator:
+		case Int28EqualOperator:
+		case Int42EqualOperator:
+		case Int48EqualOperator:
+		case Int82EqualOperator:
+		case Int84EqualOperator:
+		case Float4EqualOperator:
+		case Float8EqualOperator:
+		case NumericEqualOperator:
+		case CharEqualOperator:
+		case BPCharEqualOperator:
+		case TextEqualOperator:
+		case ByteaEqualOperator:
+		case NameEqualOperator:
+		case OidEqualOperator:
+		case TIDEqualOperator:
+		case TimestampEqualOperator:
+		case TimestampTZEqualOperator:
+		case DateEqualOperator:
+		case TimeEqualOperator:
+		case TimeTZEqualOperator:
+		case IntervalEqualOperator:
+		case AbsTimeEqualOperator:
+		case RelTimeEqualOperator:
+		case TIntervalEqualOperator:
+		case InetEqualOperator:
+		case MacAddrEqualOperator:
+		case BitEqualOperator:
+		case VarbitEqualOperator:
+		case BooleanEqualOperator:
+		case OidVectEqualOperator:
+		case CashEqualOperator:
+		case UuidEqualOperator:
+		case ComplexEqualOperator:
+			return true;
+		case ARRAY_EQ_OP:
+		case Float48EqualOperator:
+		case Float84EqualOperator:
+			return false;
+		default:
+			return false;
+	}
+}
+
 
 /*
  * fnv1_32_buf - perform a 32 bit FNV 1 hash on a buffer
@@ -892,4 +987,33 @@ static int
 ispowof2(int numsegs)
 {
 	return !(numsegs & (numsegs - 1));
+}
+
+static inline void
+set_database_hash_method(void)
+{
+	Assert(MyDatabaseId != InvalidOid);
+
+	if (MyDatabaseHashMethod == INVALID_HASH_METHOD)
+		MyDatabaseHashMethod = get_database_hash_method(MyDatabaseId);
+}
+
+/*
+ * The following jump consistent hash algorithm is
+ * just the one from the original paper:
+ * https://arxiv.org/abs/1406.2294
+ */
+
+static inline int32
+jump_consistent_hash(uint64 key, int32 num_segments)
+{
+	int64 b = -1;
+	int64 j = 0;
+	while (j < num_segments)
+	{
+		b = j;
+		key = key * 2862933555777941757ULL + 1;
+		j = (b + 1) * ((double)(1LL << 31) / (double)((key >> 33) + 1));
+	}
+	return b;
 }

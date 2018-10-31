@@ -58,13 +58,10 @@ COPY country (code, name, continent, region, surfacearea, indepyear, population,
 COPY countrylanguage (countrycode, "language", isofficial, percentage) FROM stdin;
 ALTER TABLE ONLY city
     ADD CONSTRAINT city_pkey PRIMARY KEY (id);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "city_pkey" for table "city"
 ALTER TABLE ONLY country
     ADD CONSTRAINT country_pkey PRIMARY KEY (code);
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "country_pkey" for table "country"
 ALTER TABLE ONLY countrylanguage
     ADD CONSTRAINT countrylanguage_pkey PRIMARY KEY (countrycode, "language");
-NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "countrylanguage_pkey" for table "countrylanguage"
 COMMIT;
 ANALYZE city;
 ANALYZE country;
@@ -412,9 +409,9 @@ select
  city.name,city.population
  from                                                                                                                                
  city where city.countrycode='QAT';
- max_pop |    world_avg     | name | population 
----------+------------------+------+------------
-  355000 | 376916.466666667 | Doha |     355000
+ max_pop |      world_avg      | name | population 
+---------+---------------------+------+------------
+  355000 | 376916.466666666667 | Doha |     355000
 (1 row)
 
 --query6 using CTE in the select list with a qual
@@ -796,22 +793,22 @@ select CITY12,POPULATION12 from
   ) FOO2
 ) FOO1
 ) FOO0 group by city12 order by city12;-- negative cases where queries have duplicate names in CTEs
-   avg    |      city12      
-----------+------------------
-  8591309 | Ciudad de Mexico
-  7206704 | Delhi
-  8787958 | Istanbul
-  9604900 | Jakarta
-  9269265 | Karachi
-  7285000 | London
-  8389200 | Moscow
- 10500000 | Mumbai (Bombay)
-  8008278 | New York
-  7472000 | Peking
-  9968485 | Sao Paulo
-  9981619 | Seoul
-  9696300 | Shanghai
-  7980230 | Tokyo
+          avg          |      city12      
+-----------------------+------------------
+  8591309.000000000000 | Ciudad de Mexico
+  7206704.000000000000 | Delhi
+  8787958.000000000000 | Istanbul
+  9604900.000000000000 | Jakarta
+  9269265.000000000000 | Karachi
+  7285000.000000000000 | London
+  8389200.000000000000 | Moscow
+ 10500000.000000000000 | Mumbai (Bombay)
+  8008278.000000000000 | New York
+  7472000.000000000000 | Peking
+  9968485.000000000000 | Sao Paulo
+  9981619.000000000000 | Seoul
+  9696300.000000000000 | Shanghai
+  7980230.000000000000 | Tokyo
 (14 rows)
 
 --query1 having duplicates without specifying a column list. Should error out. 
@@ -3020,172 +3017,172 @@ select
 ( select max(CNT) from (select count(*) CNT,o1.name from official_languages o1, official_languages o2
   where o1.code = o2.code group by o1.name) FOO
 ),* from official_languages;
- ?column? | code |          name          |     language     
-----------+------+------------------------+------------------
-       16 | AFG  | Afghanistan            | Dari
-       16 | AFG  | Afghanistan            | Pashto
-       16 | ARM  | Armenia                | Armenian
-       16 | BIH  | Bosnia and Herzegovina | Serbo-Croatian
-       16 | BRA  | Brazil                 | Portuguese
-       16 | SLV  | El Salvador            | Spanish
-       16 | PHL  | Philippines            | Pilipino
-       16 | GLP  | Guadeloupe             | French
-       16 | HKG  | Hong Kong              | English
-       16 | IRN  | Iran                   | Persian
-       16 | ISL  | Iceland                | Icelandic
-       16 | AUT  | Austria                | German
-       16 | JOR  | Jordan                 | Arabic
-       16 | CHN  | China                  | Chinese
-       16 | COM  | Comoros                | Comorian
-       16 | CYP  | Cyprus                 | Turkish
-       16 | CYP  | Cyprus                 | Greek
-       16 | LVA  | Latvia                 | Latvian
-       16 | LBY  | Libyan Arab Jamahiriya | Arabic
-       16 | LIE  | Liechtenstein          | German
-       16 | MDG  | Madagascar             | French
-       16 | MDG  | Madagascar             | Malagasy
-       16 | MKD  | Macedonia              | Macedonian
-       16 | MWI  | Malawi                 | Chichewa
-       16 | MYS  | Malaysia               | Malay
-       16 | MLT  | Malta                  | English
-       16 | MLT  | Malta                  | Maltese
-       16 | MTQ  | Martinique             | French
-       16 | MEX  | Mexico                 | Spanish
-       16 | MDA  | Moldova                | Romanian
-       16 | MMR  | Myanmar                | Burmese
-       16 | FRA  | France                 | French
-       16 | SEN  | Senegal                | Wolof
-       16 | SGP  | Singapore              | Tamil
-       16 | SGP  | Singapore              | Malay
-       16 | SGP  | Singapore              | Chinese
-       16 | SVN  | Slovenia               | Slovene
-       16 | CHE  | Switzerland            | Romansh
-       16 | CHE  | Switzerland            | German
-       16 | CHE  | Switzerland            | Italian
-       16 | CHE  | Switzerland            | French
-       16 | TGO  | Togo                   | Kabye
-       16 | TGO  | Togo                   | Ewe
-       16 | TCD  | Chad                   | Arabic
-       16 | TUR  | Turkey                 | Turkish
-       16 | TKM  | Turkmenistan           | Turkmenian
-       16 | HUN  | Hungary                | Hungarian
-       16 | NCL  | New Caledonia          | French
-       16 | UZB  | Uzbekistan             | Uzbek
-       16 | VEN  | Venezuela              | Spanish
-       16 | RUS  | Russian Federation     | Russian
-       16 | NLD  | Netherlands            | Dutch
-       16 | ANT  | Netherlands Antilles   | Dutch
-       16 | ANT  | Netherlands Antilles   | Papiamento
-       16 | ALB  | Albania                | Albaniana
-       16 | ARG  | Argentina              | Spanish
-       16 | AZE  | Azerbaijan             | Azerbaijani
-       16 | BMU  | Bermuda                | English
-       16 | BOL  | Bolivia                | Ketdua
-       16 | BOL  | Bolivia                | Aimara
-       16 | BOL  | Bolivia                | Spanish
-       16 | BGR  | Bulgaria               | Bulgariana
-       16 | CYM  | Cayman Islands         | English
-       16 | CHL  | Chile                  | Spanish
-       16 | DOM  | Dominican Republic     | Spanish
-       16 | ECU  | Ecuador                | Spanish
-       16 | EGY  | Egypt                  | Arabic
-       16 | ZAF  | South Africa           | Afrikaans
-       16 | ZAF  | South Africa           | Xhosa
-       16 | ZAF  | South Africa           | English
-       16 | ZAF  | South Africa           | Zulu
-       16 | GUM  | Guam                   | Chamorro
-       16 | GUM  | Guam                   | English
-       16 | GTM  | Guatemala              | Spanish
-       16 | HTI  | Haiti                  | French
-       16 | IDN  | Indonesia              | Malay
-       16 | IRQ  | Iraq                   | Arabic
-       16 | IRL  | Ireland                | Irish
-       16 | IRL  | Ireland                | English
-       16 | KHM  | Cambodia               | Khmer
-       16 | KGZ  | Kyrgyzstan             | Kirgiz
-       16 | KGZ  | Kyrgyzstan             | Russian
-       16 | COL  | Colombia               | Spanish
-       16 | KOR  | South Korea            | Korean
-       16 | CUB  | Cuba                   | Spanish
-       16 | KWT  | Kuwait                 | Arabic
-       16 | LAO  | Laos                   | Lao
-       16 | LUX  | Luxembourg             | German
-       16 | LUX  | Luxembourg             | French
-       16 | LUX  | Luxembourg             | Luxembourgish
-       16 | NIC  | Nicaragua              | Spanish
-       16 | NOR  | Norway                 | Norwegian
-       16 | PAK  | Pakistan               | Urdu
-       16 | PER  | Peru                   | Spanish
-       16 | PER  | Peru                   | Aimara
-       16 | PER  | Peru                   | Ketdua
-       16 | PRT  | Portugal               | Portuguese
-       16 | LKA  | Sri Lanka              | Tamil
-       16 | LKA  | Sri Lanka              | Singali
-       16 | SYR  | Syria                  | Arabic
-       16 | TZA  | Tanzania               | Swahili
-       16 | CZE  | Czech Republic         | Czech
-       16 | URY  | Uruguay                | Spanish
-       16 | VNM  | Vietnam                | Vietnamese
-       16 | EST  | Estonia                | Estonian
-       16 | USA  | United States          | English
-       16 | DZA  | Algeria                | Arabic
-       16 | AND  | Andorra                | Catalan
-       16 | ARE  | United Arab Emirates   | Arabic
-       16 | AUS  | Australia              | English
-       16 | BHR  | Bahrain                | Arabic
-       16 | BGD  | Bangladesh             | Bengali
-       16 | BRB  | Barbados               | English
-       16 | BEL  | Belgium                | German
-       16 | BEL  | Belgium                | Dutch
-       16 | BEL  | Belgium                | French
-       16 | GBR  | United Kingdom         | English
-       16 | CRI  | Costa Rica             | Spanish
-       16 | ESP  | Spain                  | Spanish
-       16 | FJI  | Fiji Islands           | Fijian
-       16 | GEO  | Georgia                | Georgiana
-       16 | HND  | Honduras               | Spanish
-       16 | IND  | India                  | Hindi
-       16 | ISR  | Israel                 | Arabic
-       16 | ISR  | Israel                 | Hebrew
-       16 | ITA  | Italy                  | Italian
-       16 | JPN  | Japan                  | Japanese
-       16 | YEM  | Yemen                  | Arabic
-       16 | YUG  | Yugoslavia             | Serbo-Croatian
-       16 | CAN  | Canada                 | French
-       16 | CAN  | Canada                 | English
-       16 | KAZ  | Kazakstan              | Kazakh
-       16 | PRK  | North Korea            | Korean
-       16 | GRC  | Greece                 | Greek
-       16 | HRV  | Croatia                | Serbo-Croatian
-       16 | LBN  | Lebanon                | Arabic
-       16 | LTU  | Lithuania              | Lithuanian
-       16 | MAC  | Macao                  | Portuguese
-       16 | MAR  | Morocco                | Arabic
-       16 | NPL  | Nepal                  | Nepali
-       16 | PAN  | Panama                 | Spanish
-       16 | PRY  | Paraguay               | Guarani
-       16 | PRY  | Paraguay               | Spanish
-       16 | POL  | Poland                 | Polish
-       16 | ROM  | Romania                | Romani
-       16 | ROM  | Romania                | Romanian
-       16 | RWA  | Rwanda                 | French
-       16 | RWA  | Rwanda                 | Rwanda
-       16 | SWE  | Sweden                 | Swedish
-       16 | DEU  | Germany                | German
-       16 | SVK  | Slovakia               | Slovak
-       16 | SDN  | Sudan                  | Arabic
-       16 | FIN  | Finland                | Finnish
-       16 | FIN  | Finland                | Swedish
-       16 | TJK  | Tajikistan             | Tadzhik
-       16 | TWN  | Taiwan                 | Mandarin Chinese
-       16 | DNK  | Denmark                | Danish
-       16 | THA  | Thailand               | Thai
-       16 | TUN  | Tunisia                | Arabic
-       16 | UKR  | Ukraine                | Ukrainian
-       16 | NZL  | New Zealand            | English
-       16 | BLR  | Belarus                | Russian
-       16 | BLR  | Belarus                | Belorussian
-       16 | ZWE  | Zimbabwe               | English
+ max | code |          name          |     language     
+-----+------+------------------------+------------------
+  16 | AFG  | Afghanistan            | Dari
+  16 | ARM  | Armenia                | Armenian
+  16 | AUT  | Austria                | German
+  16 | BMU  | Bermuda                | English
+  16 | BRB  | Barbados               | English
+  16 | CHE  | Switzerland            | Romansh
+  16 | CHE  | Switzerland            | German
+  16 | COL  | Colombia               | Spanish
+  16 | CRI  | Costa Rica             | Spanish
+  16 | CZE  | Czech Republic         | Czech
+  16 | ECU  | Ecuador                | Spanish
+  16 | EGY  | Egypt                  | Arabic
+  16 | FIN  | Finland                | Finnish
+  16 | GTM  | Guatemala              | Spanish
+  16 | GUM  | Guam                   | Chamorro
+  16 | HND  | Honduras               | Spanish
+  16 | HRV  | Croatia                | Serbo-Croatian
+  16 | IDN  | Indonesia              | Malay
+  16 | IND  | India                  | Hindi
+  16 | IRQ  | Iraq                   | Arabic
+  16 | ISR  | Israel                 | Arabic
+  16 | KAZ  | Kazakstan              | Kazakh
+  16 | KOR  | South Korea            | Korean
+  16 | LIE  | Liechtenstein          | German
+  16 | LKA  | Sri Lanka              | Tamil
+  16 | LTU  | Lithuania              | Lithuanian
+  16 | MDG  | Madagascar             | French
+  16 | MKD  | Macedonia              | Macedonian
+  16 | MLT  | Malta                  | English
+  16 | MTQ  | Martinique             | French
+  16 | NCL  | New Caledonia          | French
+  16 | NIC  | Nicaragua              | Spanish
+  16 | PAN  | Panama                 | Spanish
+  16 | PHL  | Philippines            | Pilipino
+  16 | PRY  | Paraguay               | Guarani
+  16 | ROM  | Romania                | Romanian
+  16 | ROM  | Romania                | Romani
+  16 | RWA  | Rwanda                 | French
+  16 | SDN  | Sudan                  | Arabic
+  16 | SEN  | Senegal                | Wolof
+  16 | SGP  | Singapore              | Tamil
+  16 | SVK  | Slovakia               | Slovak
+  16 | SYR  | Syria                  | Arabic
+  16 | TUR  | Turkey                 | Turkish
+  16 | TWN  | Taiwan                 | Mandarin Chinese
+  16 | TZA  | Tanzania               | Swahili
+  16 | URY  | Uruguay                | Spanish
+  16 | VNM  | Vietnam                | Vietnamese
+  16 | ZAF  | South Africa           | Afrikaans
+  16 | ANT  | Netherlands Antilles   | Papiamento
+  16 | ARE  | United Arab Emirates   | Arabic
+  16 | AZE  | Azerbaijan             | Azerbaijani
+  16 | BEL  | Belgium                | French
+  16 | BIH  | Bosnia and Herzegovina | Serbo-Croatian
+  16 | BLR  | Belarus                | Belorussian
+  16 | BLR  | Belarus                | Russian
+  16 | BOL  | Bolivia                | Spanish
+  16 | BOL  | Bolivia                | Aimara
+  16 | BRA  | Brazil                 | Portuguese
+  16 | CAN  | Canada                 | French
+  16 | CAN  | Canada                 | English
+  16 | CHE  | Switzerland            | French
+  16 | CHL  | Chile                  | Spanish
+  16 | COM  | Comoros                | Comorian
+  16 | CYP  | Cyprus                 | Greek
+  16 | DEU  | Germany                | German
+  16 | DOM  | Dominican Republic     | Spanish
+  16 | DZA  | Algeria                | Arabic
+  16 | ESP  | Spain                  | Spanish
+  16 | HKG  | Hong Kong              | English
+  16 | HTI  | Haiti                  | French
+  16 | HUN  | Hungary                | Hungarian
+  16 | IRL  | Ireland                | English
+  16 | IRL  | Ireland                | Irish
+  16 | IRN  | Iran                   | Persian
+  16 | ISL  | Iceland                | Icelandic
+  16 | ITA  | Italy                  | Italian
+  16 | JOR  | Jordan                 | Arabic
+  16 | JPN  | Japan                  | Japanese
+  16 | KGZ  | Kyrgyzstan             | Russian
+  16 | LBY  | Libyan Arab Jamahiriya | Arabic
+  16 | LUX  | Luxembourg             | Luxembourgish
+  16 | LUX  | Luxembourg             | German
+  16 | LUX  | Luxembourg             | French
+  16 | MAR  | Morocco                | Arabic
+  16 | MDG  | Madagascar             | Malagasy
+  16 | MWI  | Malawi                 | Chichewa
+  16 | MYS  | Malaysia               | Malay
+  16 | NLD  | Netherlands            | Dutch
+  16 | NZL  | New Zealand            | English
+  16 | PER  | Peru                   | Ketdua
+  16 | PER  | Peru                   | Aimara
+  16 | PRT  | Portugal               | Portuguese
+  16 | PRY  | Paraguay               | Spanish
+  16 | RUS  | Russian Federation     | Russian
+  16 | RWA  | Rwanda                 | Rwanda
+  16 | SGP  | Singapore              | Malay
+  16 | SGP  | Singapore              | Chinese
+  16 | SLV  | El Salvador            | Spanish
+  16 | SWE  | Sweden                 | Swedish
+  16 | TCD  | Chad                   | Arabic
+  16 | TGO  | Togo                   | Kabye
+  16 | TGO  | Togo                   | Ewe
+  16 | TUN  | Tunisia                | Arabic
+  16 | USA  | United States          | English
+  16 | UZB  | Uzbekistan             | Uzbek
+  16 | ZAF  | South Africa           | English
+  16 | ZAF  | South Africa           | Zulu
+  16 | AFG  | Afghanistan            | Pashto
+  16 | ALB  | Albania                | Albaniana
+  16 | AND  | Andorra                | Catalan
+  16 | ANT  | Netherlands Antilles   | Dutch
+  16 | ARG  | Argentina              | Spanish
+  16 | AUS  | Australia              | English
+  16 | BEL  | Belgium                | German
+  16 | BEL  | Belgium                | Dutch
+  16 | BGD  | Bangladesh             | Bengali
+  16 | BGR  | Bulgaria               | Bulgariana
+  16 | BHR  | Bahrain                | Arabic
+  16 | BOL  | Bolivia                | Ketdua
+  16 | CHE  | Switzerland            | Italian
+  16 | CHN  | China                  | Chinese
+  16 | CUB  | Cuba                   | Spanish
+  16 | CYM  | Cayman Islands         | English
+  16 | CYP  | Cyprus                 | Turkish
+  16 | DNK  | Denmark                | Danish
+  16 | EST  | Estonia                | Estonian
+  16 | FIN  | Finland                | Swedish
+  16 | FJI  | Fiji Islands           | Fijian
+  16 | FRA  | France                 | French
+  16 | GBR  | United Kingdom         | English
+  16 | GEO  | Georgia                | Georgiana
+  16 | GLP  | Guadeloupe             | French
+  16 | GRC  | Greece                 | Greek
+  16 | GUM  | Guam                   | English
+  16 | ISR  | Israel                 | Hebrew
+  16 | KGZ  | Kyrgyzstan             | Kirgiz
+  16 | KHM  | Cambodia               | Khmer
+  16 | KWT  | Kuwait                 | Arabic
+  16 | LAO  | Laos                   | Lao
+  16 | LBN  | Lebanon                | Arabic
+  16 | LKA  | Sri Lanka              | Singali
+  16 | LVA  | Latvia                 | Latvian
+  16 | MAC  | Macao                  | Portuguese
+  16 | MDA  | Moldova                | Romanian
+  16 | MEX  | Mexico                 | Spanish
+  16 | MLT  | Malta                  | Maltese
+  16 | MMR  | Myanmar                | Burmese
+  16 | NOR  | Norway                 | Norwegian
+  16 | NPL  | Nepal                  | Nepali
+  16 | PAK  | Pakistan               | Urdu
+  16 | PER  | Peru                   | Spanish
+  16 | POL  | Poland                 | Polish
+  16 | PRK  | North Korea            | Korean
+  16 | SVN  | Slovenia               | Slovene
+  16 | THA  | Thailand               | Thai
+  16 | TJK  | Tajikistan             | Tadzhik
+  16 | TKM  | Turkmenistan           | Turkmenian
+  16 | UKR  | Ukraine                | Ukrainian
+  16 | VEN  | Venezuela              | Spanish
+  16 | YEM  | Yemen                  | Arabic
+  16 | YUG  | Yugoslavia             | Serbo-Croatian
+  16 | ZAF  | South Africa           | Xhosa
+  16 | ZWE  | Zimbabwe               | English
 (164 rows)
 
 --query 6 Use CTE in the main query and subqueries within the main query
@@ -3208,48 +3205,48 @@ where FOO.code = bad_headofstates.code and FOO.capital = city.id) OUTER_FOO
 group by region ) OUTERMOST_FOO,bad_headofstates,country 
 where country.code = bad_headofstates.code and country.region = OUTERMOST_FOO.region
 order by OUTERMOST_FOO.region,bad_headofstates.headofstate LIMIT 40;
-       avg        |          region           |           headofstate            
-------------------+---------------------------+----------------------------------
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Fidel Castro Ruz
- 744388.888888889 | Caribbean                 | George W. Bush
- 744388.888888889 | Caribbean                 | Jacques Chirac
-          7651000 | Central Africa            | Idriss Deby
-          2657500 | Central America           | Arnoldo Aleman Lacayo
-          2657500 | Central America           | Elisabeth II
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Jiang Zemin
+          avg          |          region           |           headofstate            
+-----------------------+---------------------------+----------------------------------
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Fidel Castro Ruz
+   744388.888888888889 | Caribbean                 | George W. Bush
+   744388.888888888889 | Caribbean                 | Jacques Chirac
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  2657500.000000000000 | Central America           | Arnoldo Aleman Lacayo
+  2657500.000000000000 | Central America           | Elisabeth II
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
 (40 rows)
 
 -- query 7 Use CTE in the main query, where clause and having clause
@@ -3326,246 +3323,246 @@ select
 ( select max(CNT) from (select count(*) CNT from official_languages) FOO	
 )
 ,* from official_languages order by official_languages.code,official_languages.language;
- ?column? | code |                 name                 |     language     
-----------+------+--------------------------------------+------------------
-      238 | ABW  | Aruba                                | Dutch
-      238 | AFG  | Afghanistan                          | Dari
-      238 | AFG  | Afghanistan                          | Pashto
-      238 | AIA  | Anguilla                             | English
-      238 | ALB  | Albania                              | Albaniana
-      238 | AND  | Andorra                              | Catalan
-      238 | ANT  | Netherlands Antilles                 | Dutch
-      238 | ANT  | Netherlands Antilles                 | Papiamento
-      238 | ARE  | United Arab Emirates                 | Arabic
-      238 | ARG  | Argentina                            | Spanish
-      238 | ARM  | Armenia                              | Armenian
-      238 | ASM  | American Samoa                       | English
-      238 | ASM  | American Samoa                       | Samoan
-      238 | ATG  | Antigua and Barbuda                  | English
-      238 | AUS  | Australia                            | English
-      238 | AUT  | Austria                              | German
-      238 | AZE  | Azerbaijan                           | Azerbaijani
-      238 | BDI  | Burundi                              | French
-      238 | BDI  | Burundi                              | Kirundi
-      238 | BEL  | Belgium                              | Dutch
-      238 | BEL  | Belgium                              | French
-      238 | BEL  | Belgium                              | German
-      238 | BGD  | Bangladesh                           | Bengali
-      238 | BGR  | Bulgaria                             | Bulgariana
-      238 | BHR  | Bahrain                              | Arabic
-      238 | BIH  | Bosnia and Herzegovina               | Serbo-Croatian
-      238 | BLR  | Belarus                              | Belorussian
-      238 | BLR  | Belarus                              | Russian
-      238 | BLZ  | Belize                               | English
-      238 | BMU  | Bermuda                              | English
-      238 | BOL  | Bolivia                              | Aimara
-      238 | BOL  | Bolivia                              | Ketdua
-      238 | BOL  | Bolivia                              | Spanish
-      238 | BRA  | Brazil                               | Portuguese
-      238 | BRB  | Barbados                             | English
-      238 | BRN  | Brunei                               | Malay
-      238 | BTN  | Bhutan                               | Dzongkha
-      238 | CAN  | Canada                               | English
-      238 | CAN  | Canada                               | French
-      238 | CCK  | Cocos (Keeling) Islands              | English
-      238 | CHE  | Switzerland                          | French
-      238 | CHE  | Switzerland                          | German
-      238 | CHE  | Switzerland                          | Italian
-      238 | CHE  | Switzerland                          | Romansh
-      238 | CHL  | Chile                                | Spanish
-      238 | CHN  | China                                | Chinese
-      238 | COK  | Cook Islands                         | Maori
-      238 | COL  | Colombia                             | Spanish
-      238 | COM  | Comoros                              | Comorian
-      238 | CPV  | Cape Verde                           | Portuguese
-      238 | CRI  | Costa Rica                           | Spanish
-      238 | CUB  | Cuba                                 | Spanish
-      238 | CXR  | Christmas Island                     | English
-      238 | CYM  | Cayman Islands                       | English
-      238 | CYP  | Cyprus                               | Greek
-      238 | CYP  | Cyprus                               | Turkish
-      238 | CZE  | Czech Republic                       | Czech
-      238 | DEU  | Germany                              | German
-      238 | DJI  | Djibouti                             | Arabic
-      238 | DNK  | Denmark                              | Danish
-      238 | DOM  | Dominican Republic                   | Spanish
-      238 | DZA  | Algeria                              | Arabic
-      238 | ECU  | Ecuador                              | Spanish
-      238 | EGY  | Egypt                                | Arabic
-      238 | ERI  | Eritrea                              | Tigrinja
-      238 | ESH  | Western Sahara                       | Arabic
-      238 | ESP  | Spain                                | Spanish
-      238 | EST  | Estonia                              | Estonian
-      238 | FIN  | Finland                              | Finnish
-      238 | FIN  | Finland                              | Swedish
-      238 | FJI  | Fiji Islands                         | Fijian
-      238 | FLK  | Falkland Islands                     | English
-      238 | FRA  | France                               | French
-      238 | FRO  | Faroe Islands                        | Danish
-      238 | FRO  | Faroe Islands                        | Faroese
-      238 | GBR  | United Kingdom                       | English
-      238 | GEO  | Georgia                              | Georgiana
-      238 | GIB  | Gibraltar                            | English
-      238 | GLP  | Guadeloupe                           | French
-      238 | GNB  | Guinea-Bissau                        | Portuguese
-      238 | GRC  | Greece                               | Greek
-      238 | GRL  | Greenland                            | Danish
-      238 | GRL  | Greenland                            | Greenlandic
-      238 | GTM  | Guatemala                            | Spanish
-      238 | GUM  | Guam                                 | Chamorro
-      238 | GUM  | Guam                                 | English
-      238 | HKG  | Hong Kong                            | English
-      238 | HND  | Honduras                             | Spanish
-      238 | HRV  | Croatia                              | Serbo-Croatian
-      238 | HTI  | Haiti                                | French
-      238 | HUN  | Hungary                              | Hungarian
-      238 | IDN  | Indonesia                            | Malay
-      238 | IND  | India                                | Hindi
-      238 | IRL  | Ireland                              | English
-      238 | IRL  | Ireland                              | Irish
-      238 | IRN  | Iran                                 | Persian
-      238 | IRQ  | Iraq                                 | Arabic
-      238 | ISL  | Iceland                              | Icelandic
-      238 | ISR  | Israel                               | Arabic
-      238 | ISR  | Israel                               | Hebrew
-      238 | ITA  | Italy                                | Italian
-      238 | JOR  | Jordan                               | Arabic
-      238 | JPN  | Japan                                | Japanese
-      238 | KAZ  | Kazakstan                            | Kazakh
-      238 | KGZ  | Kyrgyzstan                           | Kirgiz
-      238 | KGZ  | Kyrgyzstan                           | Russian
-      238 | KHM  | Cambodia                             | Khmer
-      238 | KIR  | Kiribati                             | Kiribati
-      238 | KNA  | Saint Kitts and Nevis                | English
-      238 | KOR  | South Korea                          | Korean
-      238 | KWT  | Kuwait                               | Arabic
-      238 | LAO  | Laos                                 | Lao
-      238 | LBN  | Lebanon                              | Arabic
-      238 | LBY  | Libyan Arab Jamahiriya               | Arabic
-      238 | LCA  | Saint Lucia                          | English
-      238 | LIE  | Liechtenstein                        | German
-      238 | LKA  | Sri Lanka                            | Singali
-      238 | LKA  | Sri Lanka                            | Tamil
-      238 | LSO  | Lesotho                              | English
-      238 | LSO  | Lesotho                              | Sotho
-      238 | LTU  | Lithuania                            | Lithuanian
-      238 | LUX  | Luxembourg                           | French
-      238 | LUX  | Luxembourg                           | German
-      238 | LUX  | Luxembourg                           | Luxembourgish
-      238 | LVA  | Latvia                               | Latvian
-      238 | MAC  | Macao                                | Portuguese
-      238 | MAR  | Morocco                              | Arabic
-      238 | MCO  | Monaco                               | French
-      238 | MDA  | Moldova                              | Romanian
-      238 | MDG  | Madagascar                           | French
-      238 | MDG  | Madagascar                           | Malagasy
-      238 | MDV  | Maldives                             | Dhivehi
-      238 | MEX  | Mexico                               | Spanish
-      238 | MHL  | Marshall Islands                     | English
-      238 | MHL  | Marshall Islands                     | Marshallese
-      238 | MKD  | Macedonia                            | Macedonian
-      238 | MLT  | Malta                                | English
-      238 | MLT  | Malta                                | Maltese
-      238 | MMR  | Myanmar                              | Burmese
-      238 | MNG  | Mongolia                             | Mongolian
-      238 | MNP  | Northern Mariana Islands             | English
-      238 | MSR  | Montserrat                           | English
-      238 | MTQ  | Martinique                           | French
-      238 | MWI  | Malawi                               | Chichewa
-      238 | MYS  | Malaysia                             | Malay
-      238 | MYT  | Mayotte                              | French
-      238 | NCL  | New Caledonia                        | French
-      238 | NFK  | Norfolk Island                       | English
-      238 | NIC  | Nicaragua                            | Spanish
-      238 | NIU  | Niue                                 | English
-      238 | NLD  | Netherlands                          | Dutch
-      238 | NOR  | Norway                               | Norwegian
-      238 | NPL  | Nepal                                | Nepali
-      238 | NRU  | Nauru                                | English
-      238 | NRU  | Nauru                                | Nauru
-      238 | NZL  | New Zealand                          | English
-      238 | OMN  | Oman                                 | Arabic
-      238 | PAK  | Pakistan                             | Urdu
-      238 | PAN  | Panama                               | Spanish
-      238 | PER  | Peru                                 | Aimara
-      238 | PER  | Peru                                 | Ketdua
-      238 | PER  | Peru                                 | Spanish
-      238 | PHL  | Philippines                          | Pilipino
-      238 | PLW  | Palau                                | English
-      238 | PLW  | Palau                                | Palau
-      238 | POL  | Poland                               | Polish
-      238 | PRI  | Puerto Rico                          | Spanish
-      238 | PRK  | North Korea                          | Korean
-      238 | PRT  | Portugal                             | Portuguese
-      238 | PRY  | Paraguay                             | Guarani
-      238 | PRY  | Paraguay                             | Spanish
-      238 | PYF  | French Polynesia                     | French
-      238 | QAT  | Qatar                                | Arabic
-      238 | ROM  | Romania                              | Romani
-      238 | ROM  | Romania                              | Romanian
-      238 | RUS  | Russian Federation                   | Russian
-      238 | RWA  | Rwanda                               | French
-      238 | RWA  | Rwanda                               | Rwanda
-      238 | SAU  | Saudi Arabia                         | Arabic
-      238 | SDN  | Sudan                                | Arabic
-      238 | SEN  | Senegal                              | Wolof
-      238 | SGP  | Singapore                            | Chinese
-      238 | SGP  | Singapore                            | Malay
-      238 | SGP  | Singapore                            | Tamil
-      238 | SHN  | Saint Helena                         | English
-      238 | SJM  | Svalbard and Jan Mayen               | Norwegian
-      238 | SLV  | El Salvador                          | Spanish
-      238 | SMR  | San Marino                           | Italian
-      238 | SOM  | Somalia                              | Arabic
-      238 | SOM  | Somalia                              | Somali
-      238 | SPM  | Saint Pierre and Miquelon            | French
-      238 | SVK  | Slovakia                             | Slovak
-      238 | SVN  | Slovenia                             | Slovene
-      238 | SWE  | Sweden                               | Swedish
-      238 | SWZ  | Swaziland                            | Swazi
-      238 | SYC  | Seychelles                           | English
-      238 | SYC  | Seychelles                           | French
-      238 | SYR  | Syria                                | Arabic
-      238 | TCA  | Turks and Caicos Islands             | English
-      238 | TCD  | Chad                                 | Arabic
-      238 | TGO  | Togo                                 | Ewe
-      238 | TGO  | Togo                                 | Kabye
-      238 | THA  | Thailand                             | Thai
-      238 | TJK  | Tajikistan                           | Tadzhik
-      238 | TKL  | Tokelau                              | English
-      238 | TKM  | Turkmenistan                         | Turkmenian
-      238 | TMP  | East Timor                           | Portuguese
-      238 | TON  | Tonga                                | English
-      238 | TON  | Tonga                                | Tongan
-      238 | TUN  | Tunisia                              | Arabic
-      238 | TUR  | Turkey                               | Turkish
-      238 | TUV  | Tuvalu                               | English
-      238 | TUV  | Tuvalu                               | Tuvalu
-      238 | TWN  | Taiwan                               | Mandarin Chinese
-      238 | TZA  | Tanzania                             | Swahili
-      238 | UKR  | Ukraine                              | Ukrainian
-      238 | UMI  | United States Minor Outlying Islands | English
-      238 | URY  | Uruguay                              | Spanish
-      238 | USA  | United States                        | English
-      238 | UZB  | Uzbekistan                           | Uzbek
-      238 | VAT  | Holy See (Vatican City State)        | Italian
-      238 | VCT  | Saint Vincent and the Grenadines     | English
-      238 | VEN  | Venezuela                            | Spanish
-      238 | VGB  | Virgin Islands, British              | English
-      238 | VIR  | Virgin Islands, U.S.                 | English
-      238 | VNM  | Vietnam                              | Vietnamese
-      238 | VUT  | Vanuatu                              | Bislama
-      238 | VUT  | Vanuatu                              | English
-      238 | VUT  | Vanuatu                              | French
-      238 | WSM  | Samoa                                | English
-      238 | WSM  | Samoa                                | Samoan
-      238 | YEM  | Yemen                                | Arabic
-      238 | YUG  | Yugoslavia                           | Serbo-Croatian
-      238 | ZAF  | South Africa                         | Afrikaans
-      238 | ZAF  | South Africa                         | English
-      238 | ZAF  | South Africa                         | Xhosa
-      238 | ZAF  | South Africa                         | Zulu
-      238 | ZWE  | Zimbabwe                             | English
+ max | code |                 name                 |     language     
+-----+------+--------------------------------------+------------------
+ 238 | ABW  | Aruba                                | Dutch
+ 238 | AFG  | Afghanistan                          | Dari
+ 238 | AFG  | Afghanistan                          | Pashto
+ 238 | AIA  | Anguilla                             | English
+ 238 | ALB  | Albania                              | Albaniana
+ 238 | AND  | Andorra                              | Catalan
+ 238 | ANT  | Netherlands Antilles                 | Dutch
+ 238 | ANT  | Netherlands Antilles                 | Papiamento
+ 238 | ARE  | United Arab Emirates                 | Arabic
+ 238 | ARG  | Argentina                            | Spanish
+ 238 | ARM  | Armenia                              | Armenian
+ 238 | ASM  | American Samoa                       | English
+ 238 | ASM  | American Samoa                       | Samoan
+ 238 | ATG  | Antigua and Barbuda                  | English
+ 238 | AUS  | Australia                            | English
+ 238 | AUT  | Austria                              | German
+ 238 | AZE  | Azerbaijan                           | Azerbaijani
+ 238 | BDI  | Burundi                              | French
+ 238 | BDI  | Burundi                              | Kirundi
+ 238 | BEL  | Belgium                              | Dutch
+ 238 | BEL  | Belgium                              | French
+ 238 | BEL  | Belgium                              | German
+ 238 | BGD  | Bangladesh                           | Bengali
+ 238 | BGR  | Bulgaria                             | Bulgariana
+ 238 | BHR  | Bahrain                              | Arabic
+ 238 | BIH  | Bosnia and Herzegovina               | Serbo-Croatian
+ 238 | BLR  | Belarus                              | Belorussian
+ 238 | BLR  | Belarus                              | Russian
+ 238 | BLZ  | Belize                               | English
+ 238 | BMU  | Bermuda                              | English
+ 238 | BOL  | Bolivia                              | Aimara
+ 238 | BOL  | Bolivia                              | Ketdua
+ 238 | BOL  | Bolivia                              | Spanish
+ 238 | BRA  | Brazil                               | Portuguese
+ 238 | BRB  | Barbados                             | English
+ 238 | BRN  | Brunei                               | Malay
+ 238 | BTN  | Bhutan                               | Dzongkha
+ 238 | CAN  | Canada                               | English
+ 238 | CAN  | Canada                               | French
+ 238 | CCK  | Cocos (Keeling) Islands              | English
+ 238 | CHE  | Switzerland                          | French
+ 238 | CHE  | Switzerland                          | German
+ 238 | CHE  | Switzerland                          | Italian
+ 238 | CHE  | Switzerland                          | Romansh
+ 238 | CHL  | Chile                                | Spanish
+ 238 | CHN  | China                                | Chinese
+ 238 | COK  | Cook Islands                         | Maori
+ 238 | COL  | Colombia                             | Spanish
+ 238 | COM  | Comoros                              | Comorian
+ 238 | CPV  | Cape Verde                           | Portuguese
+ 238 | CRI  | Costa Rica                           | Spanish
+ 238 | CUB  | Cuba                                 | Spanish
+ 238 | CXR  | Christmas Island                     | English
+ 238 | CYM  | Cayman Islands                       | English
+ 238 | CYP  | Cyprus                               | Greek
+ 238 | CYP  | Cyprus                               | Turkish
+ 238 | CZE  | Czech Republic                       | Czech
+ 238 | DEU  | Germany                              | German
+ 238 | DJI  | Djibouti                             | Arabic
+ 238 | DNK  | Denmark                              | Danish
+ 238 | DOM  | Dominican Republic                   | Spanish
+ 238 | DZA  | Algeria                              | Arabic
+ 238 | ECU  | Ecuador                              | Spanish
+ 238 | EGY  | Egypt                                | Arabic
+ 238 | ERI  | Eritrea                              | Tigrinja
+ 238 | ESH  | Western Sahara                       | Arabic
+ 238 | ESP  | Spain                                | Spanish
+ 238 | EST  | Estonia                              | Estonian
+ 238 | FIN  | Finland                              | Finnish
+ 238 | FIN  | Finland                              | Swedish
+ 238 | FJI  | Fiji Islands                         | Fijian
+ 238 | FLK  | Falkland Islands                     | English
+ 238 | FRA  | France                               | French
+ 238 | FRO  | Faroe Islands                        | Danish
+ 238 | FRO  | Faroe Islands                        | Faroese
+ 238 | GBR  | United Kingdom                       | English
+ 238 | GEO  | Georgia                              | Georgiana
+ 238 | GIB  | Gibraltar                            | English
+ 238 | GLP  | Guadeloupe                           | French
+ 238 | GNB  | Guinea-Bissau                        | Portuguese
+ 238 | GRC  | Greece                               | Greek
+ 238 | GRL  | Greenland                            | Danish
+ 238 | GRL  | Greenland                            | Greenlandic
+ 238 | GTM  | Guatemala                            | Spanish
+ 238 | GUM  | Guam                                 | Chamorro
+ 238 | GUM  | Guam                                 | English
+ 238 | HKG  | Hong Kong                            | English
+ 238 | HND  | Honduras                             | Spanish
+ 238 | HRV  | Croatia                              | Serbo-Croatian
+ 238 | HTI  | Haiti                                | French
+ 238 | HUN  | Hungary                              | Hungarian
+ 238 | IDN  | Indonesia                            | Malay
+ 238 | IND  | India                                | Hindi
+ 238 | IRL  | Ireland                              | English
+ 238 | IRL  | Ireland                              | Irish
+ 238 | IRN  | Iran                                 | Persian
+ 238 | IRQ  | Iraq                                 | Arabic
+ 238 | ISL  | Iceland                              | Icelandic
+ 238 | ISR  | Israel                               | Arabic
+ 238 | ISR  | Israel                               | Hebrew
+ 238 | ITA  | Italy                                | Italian
+ 238 | JOR  | Jordan                               | Arabic
+ 238 | JPN  | Japan                                | Japanese
+ 238 | KAZ  | Kazakstan                            | Kazakh
+ 238 | KGZ  | Kyrgyzstan                           | Kirgiz
+ 238 | KGZ  | Kyrgyzstan                           | Russian
+ 238 | KHM  | Cambodia                             | Khmer
+ 238 | KIR  | Kiribati                             | Kiribati
+ 238 | KNA  | Saint Kitts and Nevis                | English
+ 238 | KOR  | South Korea                          | Korean
+ 238 | KWT  | Kuwait                               | Arabic
+ 238 | LAO  | Laos                                 | Lao
+ 238 | LBN  | Lebanon                              | Arabic
+ 238 | LBY  | Libyan Arab Jamahiriya               | Arabic
+ 238 | LCA  | Saint Lucia                          | English
+ 238 | LIE  | Liechtenstein                        | German
+ 238 | LKA  | Sri Lanka                            | Singali
+ 238 | LKA  | Sri Lanka                            | Tamil
+ 238 | LSO  | Lesotho                              | English
+ 238 | LSO  | Lesotho                              | Sotho
+ 238 | LTU  | Lithuania                            | Lithuanian
+ 238 | LUX  | Luxembourg                           | French
+ 238 | LUX  | Luxembourg                           | German
+ 238 | LUX  | Luxembourg                           | Luxembourgish
+ 238 | LVA  | Latvia                               | Latvian
+ 238 | MAC  | Macao                                | Portuguese
+ 238 | MAR  | Morocco                              | Arabic
+ 238 | MCO  | Monaco                               | French
+ 238 | MDA  | Moldova                              | Romanian
+ 238 | MDG  | Madagascar                           | French
+ 238 | MDG  | Madagascar                           | Malagasy
+ 238 | MDV  | Maldives                             | Dhivehi
+ 238 | MEX  | Mexico                               | Spanish
+ 238 | MHL  | Marshall Islands                     | English
+ 238 | MHL  | Marshall Islands                     | Marshallese
+ 238 | MKD  | Macedonia                            | Macedonian
+ 238 | MLT  | Malta                                | English
+ 238 | MLT  | Malta                                | Maltese
+ 238 | MMR  | Myanmar                              | Burmese
+ 238 | MNG  | Mongolia                             | Mongolian
+ 238 | MNP  | Northern Mariana Islands             | English
+ 238 | MSR  | Montserrat                           | English
+ 238 | MTQ  | Martinique                           | French
+ 238 | MWI  | Malawi                               | Chichewa
+ 238 | MYS  | Malaysia                             | Malay
+ 238 | MYT  | Mayotte                              | French
+ 238 | NCL  | New Caledonia                        | French
+ 238 | NFK  | Norfolk Island                       | English
+ 238 | NIC  | Nicaragua                            | Spanish
+ 238 | NIU  | Niue                                 | English
+ 238 | NLD  | Netherlands                          | Dutch
+ 238 | NOR  | Norway                               | Norwegian
+ 238 | NPL  | Nepal                                | Nepali
+ 238 | NRU  | Nauru                                | English
+ 238 | NRU  | Nauru                                | Nauru
+ 238 | NZL  | New Zealand                          | English
+ 238 | OMN  | Oman                                 | Arabic
+ 238 | PAK  | Pakistan                             | Urdu
+ 238 | PAN  | Panama                               | Spanish
+ 238 | PER  | Peru                                 | Aimara
+ 238 | PER  | Peru                                 | Ketdua
+ 238 | PER  | Peru                                 | Spanish
+ 238 | PHL  | Philippines                          | Pilipino
+ 238 | PLW  | Palau                                | English
+ 238 | PLW  | Palau                                | Palau
+ 238 | POL  | Poland                               | Polish
+ 238 | PRI  | Puerto Rico                          | Spanish
+ 238 | PRK  | North Korea                          | Korean
+ 238 | PRT  | Portugal                             | Portuguese
+ 238 | PRY  | Paraguay                             | Guarani
+ 238 | PRY  | Paraguay                             | Spanish
+ 238 | PYF  | French Polynesia                     | French
+ 238 | QAT  | Qatar                                | Arabic
+ 238 | ROM  | Romania                              | Romani
+ 238 | ROM  | Romania                              | Romanian
+ 238 | RUS  | Russian Federation                   | Russian
+ 238 | RWA  | Rwanda                               | French
+ 238 | RWA  | Rwanda                               | Rwanda
+ 238 | SAU  | Saudi Arabia                         | Arabic
+ 238 | SDN  | Sudan                                | Arabic
+ 238 | SEN  | Senegal                              | Wolof
+ 238 | SGP  | Singapore                            | Chinese
+ 238 | SGP  | Singapore                            | Malay
+ 238 | SGP  | Singapore                            | Tamil
+ 238 | SHN  | Saint Helena                         | English
+ 238 | SJM  | Svalbard and Jan Mayen               | Norwegian
+ 238 | SLV  | El Salvador                          | Spanish
+ 238 | SMR  | San Marino                           | Italian
+ 238 | SOM  | Somalia                              | Arabic
+ 238 | SOM  | Somalia                              | Somali
+ 238 | SPM  | Saint Pierre and Miquelon            | French
+ 238 | SVK  | Slovakia                             | Slovak
+ 238 | SVN  | Slovenia                             | Slovene
+ 238 | SWE  | Sweden                               | Swedish
+ 238 | SWZ  | Swaziland                            | Swazi
+ 238 | SYC  | Seychelles                           | English
+ 238 | SYC  | Seychelles                           | French
+ 238 | SYR  | Syria                                | Arabic
+ 238 | TCA  | Turks and Caicos Islands             | English
+ 238 | TCD  | Chad                                 | Arabic
+ 238 | TGO  | Togo                                 | Ewe
+ 238 | TGO  | Togo                                 | Kabye
+ 238 | THA  | Thailand                             | Thai
+ 238 | TJK  | Tajikistan                           | Tadzhik
+ 238 | TKL  | Tokelau                              | English
+ 238 | TKM  | Turkmenistan                         | Turkmenian
+ 238 | TMP  | East Timor                           | Portuguese
+ 238 | TON  | Tonga                                | English
+ 238 | TON  | Tonga                                | Tongan
+ 238 | TUN  | Tunisia                              | Arabic
+ 238 | TUR  | Turkey                               | Turkish
+ 238 | TUV  | Tuvalu                               | English
+ 238 | TUV  | Tuvalu                               | Tuvalu
+ 238 | TWN  | Taiwan                               | Mandarin Chinese
+ 238 | TZA  | Tanzania                             | Swahili
+ 238 | UKR  | Ukraine                              | Ukrainian
+ 238 | UMI  | United States Minor Outlying Islands | English
+ 238 | URY  | Uruguay                              | Spanish
+ 238 | USA  | United States                        | English
+ 238 | UZB  | Uzbekistan                           | Uzbek
+ 238 | VAT  | Holy See (Vatican City State)        | Italian
+ 238 | VCT  | Saint Vincent and the Grenadines     | English
+ 238 | VEN  | Venezuela                            | Spanish
+ 238 | VGB  | Virgin Islands, British              | English
+ 238 | VIR  | Virgin Islands, U.S.                 | English
+ 238 | VNM  | Vietnam                              | Vietnamese
+ 238 | VUT  | Vanuatu                              | Bislama
+ 238 | VUT  | Vanuatu                              | English
+ 238 | VUT  | Vanuatu                              | French
+ 238 | WSM  | Samoa                                | English
+ 238 | WSM  | Samoa                                | Samoan
+ 238 | YEM  | Yemen                                | Arabic
+ 238 | YUG  | Yugoslavia                           | Serbo-Croatian
+ 238 | ZAF  | South Africa                         | Afrikaans
+ 238 | ZAF  | South Africa                         | English
+ 238 | ZAF  | South Africa                         | Xhosa
+ 238 | ZAF  | South Africa                         | Zulu
+ 238 | ZWE  | Zimbabwe                             | English
 (238 rows)
 
 -- queries with CTEs using index scans 
@@ -8540,22 +8537,22 @@ select CITY,POPULATION from
   ) FOO2
 ) FOO1 order by city
 ) FOO0 group by city order by city;
-   avg    |       city       
-----------+------------------
-  8591309 | Ciudad de Mexico
-  7206704 | Delhi
-  8787958 | Istanbul
-  9604900 | Jakarta
-  9269265 | Karachi
-  7285000 | London
-  8389200 | Moscow
- 10500000 | Mumbai (Bombay)
-  8008278 | New York
-  7472000 | Peking
-  9968485 | Sao Paulo
-  9981619 | Seoul
-  9696300 | Shanghai
-  7980230 | Tokyo
+          avg          |       city       
+-----------------------+------------------
+  8591309.000000000000 | Ciudad de Mexico
+  7206704.000000000000 | Delhi
+  8787958.000000000000 | Istanbul
+  9604900.000000000000 | Jakarta
+  9269265.000000000000 | Karachi
+  7285000.000000000000 | London
+  8389200.000000000000 | Moscow
+ 10500000.000000000000 | Mumbai (Bombay)
+  8008278.000000000000 | New York
+  7472000.000000000000 | Peking
+  9968485.000000000000 | Sao Paulo
+  9981619.000000000000 | Seoul
+  9696300.000000000000 | Shanghai
+  7980230.000000000000 | Tokyo
 (14 rows)
 
 --query 2 deeply nested CTEs with shared scans in the plan 
@@ -8609,22 +8606,22 @@ select CITY,POPULATION from
   ) FOO2
 ) FOO1 order by city
 ) FOO0 group by city order by city;
-   avg    |       city       
-----------+------------------
-  8591309 | Ciudad de Mexico
-  7206704 | Delhi
-  8787958 | Istanbul
-  9604900 | Jakarta
-  9269265 | Karachi
-  7285000 | London
-  8389200 | Moscow
- 10500000 | Mumbai (Bombay)
-  8008278 | New York
-  7472000 | Peking
-  9968485 | Sao Paulo
-  9981619 | Seoul
-  9696300 | Shanghai
-  7980230 | Tokyo
+          avg          |       city       
+-----------------------+------------------
+  8591309.000000000000 | Ciudad de Mexico
+  7206704.000000000000 | Delhi
+  8787958.000000000000 | Istanbul
+  9604900.000000000000 | Jakarta
+  9269265.000000000000 | Karachi
+  7285000.000000000000 | London
+  8389200.000000000000 | Moscow
+ 10500000.000000000000 | Mumbai (Bombay)
+  8008278.000000000000 | New York
+  7472000.000000000000 | Peking
+  9968485.000000000000 | Sao Paulo
+  9981619.000000000000 | Seoul
+  9696300.000000000000 | Shanghai
+  7980230.000000000000 | Tokyo
 (14 rows)
 
 -- query 3 deeply nested CTEs using every CTE defined 
@@ -8689,28 +8686,28 @@ select CITY,POPULATION from
 ) FOO1 order by city
 ) FOO0 group by city order by avg_p,city
 LIMIT 20;
- avg_p  |      city      
---------+----------------
- 410000 | Port Harcourt
- 410102 | Alberton
- 410407 | Xiangfan
- 410775 | Pingdingshan
- 411542 | Bhubaneswar
- 411822 | General Santos
- 412639 | Kaunas
- 415346 | San Salvador
- 415466 | Panzhihua
- 416100 | al-Taif
- 416289 | Bikaner
- 416428 | Matamoros
- 416474 | Atlanta
- 416988 | Szczecin
- 417517 | Kisangani
- 417597 | Sialkot
- 417610 | Suez
- 417748 | Rasht
- 417810 | Kolwezi
- 418624 | Kirkuk
+        avg_p        |      city      
+---------------------+----------------
+ 410000.000000000000 | Port Harcourt
+ 410102.000000000000 | Alberton
+ 410407.000000000000 | Xiangfan
+ 410775.000000000000 | Pingdingshan
+ 411542.000000000000 | Bhubaneswar
+ 411822.000000000000 | General Santos
+ 412639.000000000000 | Kaunas
+ 415346.000000000000 | San Salvador
+ 415466.000000000000 | Panzhihua
+ 416100.000000000000 | al-Taif
+ 416289.000000000000 | Bikaner
+ 416428.000000000000 | Matamoros
+ 416474.000000000000 | Atlanta
+ 416988.000000000000 | Szczecin
+ 417517.000000000000 | Kisangani
+ 417597.000000000000 | Sialkot
+ 417610.000000000000 | Suez
+ 417748.000000000000 | Rasht
+ 417810.000000000000 | Kolwezi
+ 418624.000000000000 | Kirkuk
 (20 rows)
 
 -- sanity tests with queries using CTEs in insert,update,delete and create
@@ -8739,48 +8736,48 @@ order by OUTERMOST_FOO.region,bad_headofstates.headofstate LIMIT 40
 );
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause. Creating a NULL policy entry.
 select * from bad_headofstates order by region,headofstate;
-       avg        |          region           |           headofstate            
-------------------+---------------------------+----------------------------------
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Fidel Castro Ruz
- 744388.888888889 | Caribbean                 | George W. Bush
- 744388.888888889 | Caribbean                 | Jacques Chirac
-          7651000 | Central Africa            | Idriss Deby
-          2657500 | Central America           | Arnoldo Aleman Lacayo
-          2657500 | Central America           | Elisabeth II
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Jiang Zemin
+          avg          |          region           |           headofstate            
+-----------------------+---------------------------+----------------------------------
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Fidel Castro Ruz
+   744388.888888888889 | Caribbean                 | George W. Bush
+   744388.888888888889 | Caribbean                 | Jacques Chirac
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  2657500.000000000000 | Central America           | Arnoldo Aleman Lacayo
+  2657500.000000000000 | Central America           | Elisabeth II
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
 (40 rows)
 
 --query 2 insert using CTE
@@ -8807,88 +8804,88 @@ where country.code = bad_headofstates.code and country.region = OUTERMOST_FOO.re
 order by OUTERMOST_FOO.region,bad_headofstates.headofstate LIMIT 40
 );
 select * from bad_headofstates order by region,headofstate;
-       avg        |          region           |           headofstate            
-------------------+---------------------------+----------------------------------
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Beatrix
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Elisabeth II
- 744388.888888889 | Caribbean                 | Fidel Castro Ruz
- 744388.888888889 | Caribbean                 | Fidel Castro Ruz
- 744388.888888889 | Caribbean                 | George W. Bush
- 744388.888888889 | Caribbean                 | George W. Bush
- 744388.888888889 | Caribbean                 | Jacques Chirac
- 744388.888888889 | Caribbean                 | Jacques Chirac
-          7651000 | Central Africa            | Idriss Deby
-          7651000 | Central Africa            | Idriss Deby
-          2657500 | Central America           | Arnoldo Aleman Lacayo
-          2657500 | Central America           | Arnoldo Aleman Lacayo
-          2657500 | Central America           | Elisabeth II
-          2657500 | Central America           | Elisabeth II
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Jiang Zemin
-         34288500 | Eastern Asia              | Jiang Zemin
+          avg          |          region           |           headofstate            
+-----------------------+---------------------------+----------------------------------
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Beatrix
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Elisabeth II
+   744388.888888888889 | Caribbean                 | Fidel Castro Ruz
+   744388.888888888889 | Caribbean                 | Fidel Castro Ruz
+   744388.888888888889 | Caribbean                 | George W. Bush
+   744388.888888888889 | Caribbean                 | George W. Bush
+   744388.888888888889 | Caribbean                 | Jacques Chirac
+   744388.888888888889 | Caribbean                 | Jacques Chirac
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  2657500.000000000000 | Central America           | Arnoldo Aleman Lacayo
+  2657500.000000000000 | Central America           | Arnoldo Aleman Lacayo
+  2657500.000000000000 | Central America           | Elisabeth II
+  2657500.000000000000 | Central America           | Elisabeth II
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
 (80 rows)
 
 --query3 update using CTE
@@ -8919,88 +8916,88 @@ order by OUTERMOST_FOO.region
 where bad_headofstates.region = 'Caribbean';
  
 select * from bad_headofstates order by avg,region,headofstate;
-       avg        |          region           |           headofstate            
-------------------+---------------------------+----------------------------------
- 744388.888888889 | Central America           | Beatrix
- 744388.888888889 | Central America           | Beatrix
- 744388.888888889 | Central America           | Beatrix
- 744388.888888889 | Central America           | Beatrix
- 744388.888888889 | Central America           | Beatrix
- 744388.888888889 | Central America           | Beatrix
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Elisabeth II
- 744388.888888889 | Central America           | Fidel Castro Ruz
- 744388.888888889 | Central America           | Fidel Castro Ruz
- 744388.888888889 | Central America           | George W. Bush
- 744388.888888889 | Central America           | George W. Bush
- 744388.888888889 | Central America           | Jacques Chirac
- 744388.888888889 | Central America           | Jacques Chirac
-          2657500 | Central America           | Arnoldo Aleman Lacayo
-          2657500 | Central America           | Arnoldo Aleman Lacayo
-          2657500 | Central America           | Elisabeth II
-          2657500 | Central America           | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
-          7651000 | Central Africa            | Idriss Deby
-          7651000 | Central Africa            | Idriss Deby
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Jiang Zemin
-         34288500 | Eastern Asia              | Jiang Zemin
+          avg          |          region           |           headofstate            
+-----------------------+---------------------------+----------------------------------
+   744388.888888888889 | Central America           | Beatrix
+   744388.888888888889 | Central America           | Beatrix
+   744388.888888888889 | Central America           | Beatrix
+   744388.888888888889 | Central America           | Beatrix
+   744388.888888888889 | Central America           | Beatrix
+   744388.888888888889 | Central America           | Beatrix
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Elisabeth II
+   744388.888888888889 | Central America           | Fidel Castro Ruz
+   744388.888888888889 | Central America           | Fidel Castro Ruz
+   744388.888888888889 | Central America           | George W. Bush
+   744388.888888888889 | Central America           | George W. Bush
+   744388.888888888889 | Central America           | Jacques Chirac
+   744388.888888888889 | Central America           | Jacques Chirac
+  2657500.000000000000 | Central America           | Arnoldo Aleman Lacayo
+  2657500.000000000000 | Central America           | Arnoldo Aleman Lacayo
+  2657500.000000000000 | Central America           | Elisabeth II
+  2657500.000000000000 | Central America           | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  7651000.000000000000 | Central Africa            | Idriss Deby
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
 (80 rows)
 
 --query4 delete using CTE
@@ -9030,52 +9027,52 @@ order by OUTERMOST_FOO.region
 ) as  cm
 where bad_headofstates.region = cm.region;
 select * from bad_headofstates order by region,headofstate;
-       avg        |          region           |           headofstate            
-------------------+---------------------------+----------------------------------
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          4550620 | Australia and New Zealand | Elisabeth II
-          7651000 | Central Africa            | Idriss Deby
-          7651000 | Central Africa            | Idriss Deby
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Abdiqassim Salad Hassan
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | Bakili Muluzi
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | France-Albert Rene
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Ismail Omar Guelleh
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Jacques Chirac
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Paul Kagame
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Pierre Buyoya
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
- 5982809.52380952 | Eastern Africa            | Robert G. Mugabe
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Akihito
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Chen Shui-bian
-         34288500 | Eastern Asia              | Jiang Zemin
-         34288500 | Eastern Asia              | Jiang Zemin
+          avg          |          region           |           headofstate            
+-----------------------+---------------------------+----------------------------------
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  7651000.000000000000 | Central Africa            | Idriss Deby
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Abdiqassim Salad Hassan
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | Bakili Muluzi
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | France-Albert Rene
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Isayas Afewerki [Isaias Afwerki]
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Ismail Omar Guelleh
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Jacques Chirac
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Paul Kagame
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Pierre Buyoya
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+  5982809.523809523810 | Eastern Africa            | Robert G. Mugabe
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
 (44 rows)
 
 -- delete using CTE in its subplan
@@ -9103,24 +9100,24 @@ and OUTERMOST_FOO.region = 'Australia and New Zealand' or OUTERMOST_FOO.region =
 order by OUTERMOST_FOO.region
 );
 select * from bad_headofstates order by region,headofstate;
-   avg    |          region           |  headofstate   
-----------+---------------------------+----------------
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
-  4550620 | Australia and New Zealand | Elisabeth II
- 34288500 | Eastern Asia              | Akihito
- 34288500 | Eastern Asia              | Akihito
- 34288500 | Eastern Asia              | Chen Shui-bian
- 34288500 | Eastern Asia              | Chen Shui-bian
- 34288500 | Eastern Asia              | Jiang Zemin
- 34288500 | Eastern Asia              | Jiang Zemin
+          avg          |          region           |  headofstate   
+-----------------------+---------------------------+----------------
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+  4550620.000000000000 | Australia and New Zealand | Elisabeth II
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Akihito
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Chen Shui-bian
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
+ 34288500.000000000000 | Eastern Asia              | Jiang Zemin
 (16 rows)
 
 drop table bad_headofstates;
@@ -9206,37 +9203,92 @@ and country.indepyear > 1900
  region              | text             |           | extended | 
 View definition:
  WITH longlivingregions AS (
-         SELECT foo."REGION_POP", foo."REGION_GNP", foo."REGION_LIFETIME", foo.region, count(DISTINCT countrylanguage.language) AS lang_count
-           FROM ( SELECT sum(country.population) AS "REGION_POP", sum(country.gnp) AS "REGION_GNP", avg(country.lifeexpectancy) AS "REGION_LIFETIME", country.region
-                   FROM country
-                  GROUP BY country.region) foo, countrylanguage, country
+         SELECT foo."REGION_POP",
+            foo."REGION_GNP",
+            foo."REGION_LIFETIME",
+            foo.region,
+            count(DISTINCT countrylanguage.language) AS lang_count
+           FROM ( SELECT sum(country_1.population) AS "REGION_POP",
+                    sum(country_1.gnp) AS "REGION_GNP",
+                    avg(country_1.lifeexpectancy) AS "REGION_LIFETIME",
+                    country_1.region
+                   FROM country country_1
+                  GROUP BY country_1.region) foo,
+            countrylanguage,
+            country
           WHERE country.code = countrylanguage.countrycode AND foo.region = country.region
           GROUP BY foo.region, foo."REGION_POP", foo."REGION_GNP", foo."REGION_LIFETIME"
         ), denseregions AS (
-         SELECT foo."REGION_POP", foo."REGION_GNP", foo.region, count(DISTINCT countrylanguage.language) AS lang_count, sum(country.surfacearea) AS "REGION_SURFACE_AREA"
-           FROM ( SELECT sum(country.population) AS "REGION_POP", sum(country.gnp) AS "REGION_GNP", country.region
-                   FROM country
-                  GROUP BY country.region) foo, countrylanguage, country
+         SELECT foo."REGION_POP",
+            foo."REGION_GNP",
+            foo.region,
+            count(DISTINCT countrylanguage.language) AS lang_count,
+            sum(country.surfacearea) AS "REGION_SURFACE_AREA"
+           FROM ( SELECT sum(country_1.population) AS "REGION_POP",
+                    sum(country_1.gnp) AS "REGION_GNP",
+                    country_1.region
+                   FROM country country_1
+                  GROUP BY country_1.region) foo,
+            countrylanguage,
+            country
           WHERE country.code = countrylanguage.countrycode AND foo.region = country.region AND foo."REGION_POP" <> 0
           GROUP BY foo.region, foo."REGION_POP", foo."REGION_GNP"
           ORDER BY sum(country.surfacearea) / foo."REGION_POP"::numeric DESC
         ), allcountrystats AS (
-         SELECT country.code, country.name, count(DISTINCT city.id) AS city_cnt, count(DISTINCT countrylanguage.language) AS lang_cnt
-           FROM country, city, countrylanguage
+         SELECT country.code,
+            country.name,
+            count(DISTINCT city.id) AS city_cnt,
+            count(DISTINCT countrylanguage.language) AS lang_cnt
+           FROM country,
+            city,
+            countrylanguage
           WHERE country.code = city.countrycode AND country.code = countrylanguage.countrycode
           GROUP BY country.code, country.name
         )
-        (         SELECT allcountrystats.city_cnt, allcountrystats.lang_cnt, allcountrystats.name, denseregions."REGION_SURFACE_AREA", longlivingregions."REGION_LIFETIME", longlivingregions."REGION_POP", longlivingregions.lang_count, longlivingregions."REGION_GNP", longlivingregions.region
-                   FROM longlivingregions, denseregions, allcountrystats, country
-                  WHERE longlivingregions.region = denseregions.region AND allcountrystats.code = country.code AND country.region = longlivingregions.region AND country.indepyear >= 1800 AND country.indepyear <= 1850
-        UNION ALL 
-                 SELECT allcountrystats.city_cnt, allcountrystats.lang_cnt, allcountrystats.name, denseregions."REGION_SURFACE_AREA", longlivingregions."REGION_LIFETIME", longlivingregions."REGION_POP", longlivingregions.lang_count, longlivingregions."REGION_GNP", longlivingregions.region
-                   FROM longlivingregions, denseregions, allcountrystats, country
-                  WHERE longlivingregions.region = denseregions.region AND allcountrystats.code = country.code AND country.region = longlivingregions.region AND country.indepyear >= 1850 AND country.indepyear <= 1900)
-UNION ALL 
-         SELECT allcountrystats.city_cnt, allcountrystats.lang_cnt, allcountrystats.name, denseregions."REGION_SURFACE_AREA", longlivingregions."REGION_LIFETIME", longlivingregions."REGION_POP", longlivingregions.lang_count, longlivingregions."REGION_GNP", longlivingregions.region
-           FROM longlivingregions, denseregions, allcountrystats, country
-          WHERE longlivingregions.region = denseregions.region AND allcountrystats.code = country.code AND country.region = longlivingregions.region AND country.indepyear > 1900;
+ SELECT allcountrystats.city_cnt,
+    allcountrystats.lang_cnt,
+    allcountrystats.name,
+    denseregions."REGION_SURFACE_AREA",
+    longlivingregions."REGION_LIFETIME",
+    longlivingregions."REGION_POP",
+    longlivingregions.lang_count,
+    longlivingregions."REGION_GNP",
+    longlivingregions.region
+   FROM longlivingregions,
+    denseregions,
+    allcountrystats,
+    country
+  WHERE longlivingregions.region = denseregions.region AND allcountrystats.code = country.code AND country.region = longlivingregions.region AND country.indepyear >= 1800 AND country.indepyear <= 1850
+UNION ALL
+ SELECT allcountrystats.city_cnt,
+    allcountrystats.lang_cnt,
+    allcountrystats.name,
+    denseregions."REGION_SURFACE_AREA",
+    longlivingregions."REGION_LIFETIME",
+    longlivingregions."REGION_POP",
+    longlivingregions.lang_count,
+    longlivingregions."REGION_GNP",
+    longlivingregions.region
+   FROM longlivingregions,
+    denseregions,
+    allcountrystats,
+    country
+  WHERE longlivingregions.region = denseregions.region AND allcountrystats.code = country.code AND country.region = longlivingregions.region AND country.indepyear >= 1850 AND country.indepyear <= 1900
+UNION ALL
+ SELECT allcountrystats.city_cnt,
+    allcountrystats.lang_cnt,
+    allcountrystats.name,
+    denseregions."REGION_SURFACE_AREA",
+    longlivingregions."REGION_LIFETIME",
+    longlivingregions."REGION_POP",
+    longlivingregions.lang_count,
+    longlivingregions."REGION_GNP",
+    longlivingregions.region
+   FROM longlivingregions,
+    denseregions,
+    allcountrystats,
+    country
+  WHERE longlivingregions.region = denseregions.region AND allcountrystats.code = country.code AND country.region = longlivingregions.region AND country.indepyear > 1900;
 
 select city_cnt,lang_cnt,name,region from view_with_shared_scans order by name LIMIT 50;
  city_cnt | lang_cnt |                 name                  |          region           
@@ -9382,7 +9434,7 @@ INSERT INTO foo SELECT i, i % 10 from generate_series(1, 100) i;
 CREATE TABLE bar(bar_key INTEGER, bar_value INTEGER);
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'bar_key' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
-INSERT INTO bar SELECT i, i % 5 FROM generate_series(1, 100000) i;
+INSERT INTO bar SELECT i, i % 5 FROM generate_series(1, 1000) i;
 SET enable_hashjoin = OFF;
 SET enable_mergejoin = OFF;
 SET enable_nestloop = ON;
@@ -10287,7 +10339,7 @@ SET gp_cte_sharing = ON;
 CREATE TABLE emp (ename CHARACTER VARYING(50), empno INTEGER, mgr INTEGER, deptno INTEGER);
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'ename' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
-INSERT INTO emp SELECT i || 'NAME', i, i%6, i%16 FROM generate_series(1, 10000) i;
+INSERT INTO emp SELECT i || 'NAME', i, i%6, i%16 FROM generate_series(1, 100) i;
 CREATE TABLE manager (dept_mgr_no INTEGER);
 NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'dept_mgr_no' as the Greenplum Database data distribution key for this table.
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
@@ -10317,26 +10369,26 @@ WHERE  e.deptno = dc.deptno
 ORDER BY 1, 2 DESC LIMIT 20;
  employee_name | emp_dept_count 
 ---------------+----------------
- 10000NAME     |            625
- 1000NAME      |            625
- 1001NAME      |            625
- 1002NAME      |            625
- 1003NAME      |            625
- 1004NAME      |            625
- 1005NAME      |            625
- 1006NAME      |            625
- 1007NAME      |            625
- 1008NAME      |            625
- 1009NAME      |            625
- 100NAME       |            625
- 1010NAME      |            625
- 1011NAME      |            625
- 1012NAME      |            625
- 1013NAME      |            625
- 1014NAME      |            625
- 1015NAME      |            625
- 1016NAME      |            625
- 1017NAME      |            625
+ 100NAME       |              7
+ 10NAME        |              6
+ 11NAME        |              6
+ 12NAME        |              6
+ 13NAME        |              6
+ 14NAME        |              6
+ 15NAME        |              6
+ 16NAME        |              6
+ 17NAME        |              7
+ 18NAME        |              7
+ 19NAME        |              7
+ 1NAME         |              7
+ 20NAME        |              7
+ 21NAME        |              6
+ 22NAME        |              6
+ 23NAME        |              6
+ 24NAME        |              6
+ 25NAME        |              6
+ 26NAME        |              6
+ 27NAME        |              6
 (20 rows)
 
 -- The sharing of CTE is enabled
@@ -10358,26 +10410,26 @@ WHERE  e.deptno = dc.deptno
 ORDER BY 1, 2 DESC LIMIT 20;
  employee_name | emp_dept_count 
 ---------------+----------------
- 10000NAME     |            625
- 1000NAME      |            625
- 1001NAME      |            625
- 1002NAME      |            625
- 1003NAME      |            625
- 1004NAME      |            625
- 1005NAME      |            625
- 1006NAME      |            625
- 1007NAME      |            625
- 1008NAME      |            625
- 1009NAME      |            625
- 100NAME       |            625
- 1010NAME      |            625
- 1011NAME      |            625
- 1012NAME      |            625
- 1013NAME      |            625
- 1014NAME      |            625
- 1015NAME      |            625
- 1016NAME      |            625
- 1017NAME      |            625
+ 100NAME       |              7
+ 10NAME        |              6
+ 11NAME        |              6
+ 12NAME        |              6
+ 13NAME        |              6
+ 14NAME        |              6
+ 15NAME        |              6
+ 16NAME        |              6
+ 17NAME        |              7
+ 18NAME        |              7
+ 19NAME        |              7
+ 1NAME         |              7
+ 20NAME        |              7
+ 21NAME        |              6
+ 22NAME        |              6
+ 23NAME        |              6
+ 24NAME        |              6
+ 25NAME        |              6
+ 26NAME        |              6
+ 27NAME        |              6
 (20 rows)
 
 -------------------
@@ -10418,31 +10470,31 @@ WHERE e.deptno = dc1.deptno AND
 ORDER BY 1, 2, 3, 4 DESC LIMIT 25;
  employee_name | emp_dept_count | manager_name | mgr_dept_count 
 ---------------+----------------+--------------+----------------
- 10000NAME     |            625 | 4NAME        |            625
- 1000NAME      |            625 | 4NAME        |            625
- 1001NAME      |            625 | 5NAME        |            625
- 1003NAME      |            625 | 1NAME        |            625
- 1004NAME      |            625 | 2NAME        |            625
- 1005NAME      |            625 | 3NAME        |            625
- 1006NAME      |            625 | 4NAME        |            625
- 1007NAME      |            625 | 5NAME        |            625
- 1009NAME      |            625 | 1NAME        |            625
- 100NAME       |            625 | 4NAME        |            625
- 1010NAME      |            625 | 2NAME        |            625
- 1011NAME      |            625 | 3NAME        |            625
- 1012NAME      |            625 | 4NAME        |            625
- 1013NAME      |            625 | 5NAME        |            625
- 1015NAME      |            625 | 1NAME        |            625
- 1016NAME      |            625 | 2NAME        |            625
- 1017NAME      |            625 | 3NAME        |            625
- 1018NAME      |            625 | 4NAME        |            625
- 1019NAME      |            625 | 5NAME        |            625
- 101NAME       |            625 | 5NAME        |            625
- 1021NAME      |            625 | 1NAME        |            625
- 1022NAME      |            625 | 2NAME        |            625
- 1023NAME      |            625 | 3NAME        |            625
- 1024NAME      |            625 | 4NAME        |            625
- 1025NAME      |            625 | 5NAME        |            625
+ 100NAME       |              7 | 4NAME        |              7
+ 10NAME        |              6 | 4NAME        |              7
+ 11NAME        |              6 | 5NAME        |              6
+ 13NAME        |              6 | 1NAME        |              7
+ 14NAME        |              6 | 2NAME        |              7
+ 15NAME        |              6 | 3NAME        |              7
+ 16NAME        |              6 | 4NAME        |              7
+ 17NAME        |              7 | 5NAME        |              6
+ 19NAME        |              7 | 1NAME        |              7
+ 1NAME         |              7 | 1NAME        |              7
+ 20NAME        |              7 | 2NAME        |              7
+ 21NAME        |              6 | 3NAME        |              7
+ 22NAME        |              6 | 4NAME        |              7
+ 23NAME        |              6 | 5NAME        |              6
+ 25NAME        |              6 | 1NAME        |              7
+ 26NAME        |              6 | 2NAME        |              7
+ 27NAME        |              6 | 3NAME        |              7
+ 28NAME        |              6 | 4NAME        |              7
+ 29NAME        |              6 | 5NAME        |              6
+ 2NAME         |              7 | 2NAME        |              7
+ 31NAME        |              6 | 1NAME        |              7
+ 32NAME        |              6 | 2NAME        |              7
+ 33NAME        |              7 | 3NAME        |              7
+ 34NAME        |              7 | 4NAME        |              7
+ 35NAME        |              7 | 5NAME        |              6
 (25 rows)
 
 -- The sharing of CTE is enabled
@@ -10480,31 +10532,31 @@ WHERE e.deptno = dc1.deptno AND
 ORDER BY 1, 2, 3, 4 DESC LIMIT 25;
  employee_name | emp_dept_count | manager_name | mgr_dept_count 
 ---------------+----------------+--------------+----------------
- 10000NAME     |            625 | 4NAME        |            625
- 1000NAME      |            625 | 4NAME        |            625
- 1001NAME      |            625 | 5NAME        |            625
- 1003NAME      |            625 | 1NAME        |            625
- 1004NAME      |            625 | 2NAME        |            625
- 1005NAME      |            625 | 3NAME        |            625
- 1006NAME      |            625 | 4NAME        |            625
- 1007NAME      |            625 | 5NAME        |            625
- 1009NAME      |            625 | 1NAME        |            625
- 100NAME       |            625 | 4NAME        |            625
- 1010NAME      |            625 | 2NAME        |            625
- 1011NAME      |            625 | 3NAME        |            625
- 1012NAME      |            625 | 4NAME        |            625
- 1013NAME      |            625 | 5NAME        |            625
- 1015NAME      |            625 | 1NAME        |            625
- 1016NAME      |            625 | 2NAME        |            625
- 1017NAME      |            625 | 3NAME        |            625
- 1018NAME      |            625 | 4NAME        |            625
- 1019NAME      |            625 | 5NAME        |            625
- 101NAME       |            625 | 5NAME        |            625
- 1021NAME      |            625 | 1NAME        |            625
- 1022NAME      |            625 | 2NAME        |            625
- 1023NAME      |            625 | 3NAME        |            625
- 1024NAME      |            625 | 4NAME        |            625
- 1025NAME      |            625 | 5NAME        |            625
+ 100NAME       |              7 | 4NAME        |              7
+ 10NAME        |              6 | 4NAME        |              7
+ 11NAME        |              6 | 5NAME        |              6
+ 13NAME        |              6 | 1NAME        |              7
+ 14NAME        |              6 | 2NAME        |              7
+ 15NAME        |              6 | 3NAME        |              7
+ 16NAME        |              6 | 4NAME        |              7
+ 17NAME        |              7 | 5NAME        |              6
+ 19NAME        |              7 | 1NAME        |              7
+ 1NAME         |              7 | 1NAME        |              7
+ 20NAME        |              7 | 2NAME        |              7
+ 21NAME        |              6 | 3NAME        |              7
+ 22NAME        |              6 | 4NAME        |              7
+ 23NAME        |              6 | 5NAME        |              6
+ 25NAME        |              6 | 1NAME        |              7
+ 26NAME        |              6 | 2NAME        |              7
+ 27NAME        |              6 | 3NAME        |              7
+ 28NAME        |              6 | 4NAME        |              7
+ 29NAME        |              6 | 5NAME        |              6
+ 2NAME         |              7 | 2NAME        |              7
+ 31NAME        |              6 | 1NAME        |              7
+ 32NAME        |              6 | 2NAME        |              7
+ 33NAME        |              7 | 3NAME        |              7
+ 34NAME        |              7 | 4NAME        |              7
+ 35NAME        |              7 | 5NAME        |              6
 (25 rows)
 
 -------------------
@@ -10537,26 +10589,26 @@ WHERE  e.deptno = dc1.deptno AND
 ORDER BY 1, 2, 3 ASC LIMIT 20;
  employee_name | emp_dept_count | manager_name 
 ---------------+----------------+--------------
- 10000NAME     |            625 | 4NAME
- 1000NAME      |            625 | 4NAME
- 1001NAME      |            625 | 5NAME
- 1003NAME      |            625 | 1NAME
- 1004NAME      |            625 | 2NAME
- 1005NAME      |            625 | 3NAME
- 1006NAME      |            625 | 4NAME
- 1007NAME      |            625 | 5NAME
- 1009NAME      |            625 | 1NAME
- 100NAME       |            625 | 4NAME
- 1010NAME      |            625 | 2NAME
- 1011NAME      |            625 | 3NAME
- 1012NAME      |            625 | 4NAME
- 1013NAME      |            625 | 5NAME
- 1015NAME      |            625 | 1NAME
- 1016NAME      |            625 | 2NAME
- 1017NAME      |            625 | 3NAME
- 1018NAME      |            625 | 4NAME
- 1019NAME      |            625 | 5NAME
- 101NAME       |            625 | 5NAME
+ 100NAME       |              7 | 4NAME
+ 10NAME        |              6 | 4NAME
+ 11NAME        |              6 | 5NAME
+ 13NAME        |              6 | 1NAME
+ 14NAME        |              6 | 2NAME
+ 15NAME        |              6 | 3NAME
+ 16NAME        |              6 | 4NAME
+ 17NAME        |              7 | 5NAME
+ 19NAME        |              7 | 1NAME
+ 1NAME         |              7 | 1NAME
+ 20NAME        |              7 | 2NAME
+ 21NAME        |              6 | 3NAME
+ 22NAME        |              6 | 4NAME
+ 23NAME        |              6 | 5NAME
+ 25NAME        |              6 | 1NAME
+ 26NAME        |              6 | 2NAME
+ 27NAME        |              6 | 3NAME
+ 28NAME        |              6 | 4NAME
+ 29NAME        |              6 | 5NAME
+ 2NAME         |              7 | 2NAME
 (20 rows)
 
 -- The sharing of CTE is enabled
@@ -10586,26 +10638,26 @@ WHERE  e.deptno = dc1.deptno AND
 ORDER BY 1, 2, 3 ASC LIMIT 20;
  employee_name | emp_dept_count | manager_name 
 ---------------+----------------+--------------
- 10000NAME     |            625 | 4NAME
- 1000NAME      |            625 | 4NAME
- 1001NAME      |            625 | 5NAME
- 1003NAME      |            625 | 1NAME
- 1004NAME      |            625 | 2NAME
- 1005NAME      |            625 | 3NAME
- 1006NAME      |            625 | 4NAME
- 1007NAME      |            625 | 5NAME
- 1009NAME      |            625 | 1NAME
- 100NAME       |            625 | 4NAME
- 1010NAME      |            625 | 2NAME
- 1011NAME      |            625 | 3NAME
- 1012NAME      |            625 | 4NAME
- 1013NAME      |            625 | 5NAME
- 1015NAME      |            625 | 1NAME
- 1016NAME      |            625 | 2NAME
- 1017NAME      |            625 | 3NAME
- 1018NAME      |            625 | 4NAME
- 1019NAME      |            625 | 5NAME
- 101NAME       |            625 | 5NAME
+ 100NAME       |              7 | 4NAME
+ 10NAME        |              6 | 4NAME
+ 11NAME        |              6 | 5NAME
+ 13NAME        |              6 | 1NAME
+ 14NAME        |              6 | 2NAME
+ 15NAME        |              6 | 3NAME
+ 16NAME        |              6 | 4NAME
+ 17NAME        |              7 | 5NAME
+ 19NAME        |              7 | 1NAME
+ 1NAME         |              7 | 1NAME
+ 20NAME        |              7 | 2NAME
+ 21NAME        |              6 | 3NAME
+ 22NAME        |              6 | 4NAME
+ 23NAME        |              6 | 5NAME
+ 25NAME        |              6 | 1NAME
+ 26NAME        |              6 | 2NAME
+ 27NAME        |              6 | 3NAME
+ 28NAME        |              6 | 4NAME
+ 29NAME        |              6 | 5NAME
+ 2NAME         |              7 | 2NAME
 (20 rows)
 
 -------------------
@@ -10650,31 +10702,31 @@ WHERE  e.deptno = dc1.deptno AND
 ORDER BY 1, 2, 3, 4 DESC LIMIT 25;
  employee_name | emp_dept_count | manager_name | mgr_dept_count 
 ---------------+----------------+--------------+----------------
- 10000NAME     |            625 | 4NAME        |              1
- 1000NAME      |            625 | 4NAME        |              1
- 1001NAME      |            625 | 5NAME        |              1
- 1003NAME      |            625 | 1NAME        |              1
- 1004NAME      |            625 | 2NAME        |              1
- 1005NAME      |            625 | 3NAME        |              1
- 1006NAME      |            625 | 4NAME        |              1
- 1007NAME      |            625 | 5NAME        |              1
- 1009NAME      |            625 | 1NAME        |              1
- 100NAME       |            625 | 4NAME        |              1
- 1010NAME      |            625 | 2NAME        |              1
- 1011NAME      |            625 | 3NAME        |              1
- 1012NAME      |            625 | 4NAME        |              1
- 1013NAME      |            625 | 5NAME        |              1
- 1015NAME      |            625 | 1NAME        |              1
- 1016NAME      |            625 | 2NAME        |              1
- 1017NAME      |            625 | 3NAME        |              1
- 1018NAME      |            625 | 4NAME        |              1
- 1019NAME      |            625 | 5NAME        |              1
- 101NAME       |            625 | 5NAME        |              1
- 1021NAME      |            625 | 1NAME        |              1
- 1022NAME      |            625 | 2NAME        |              1
- 1023NAME      |            625 | 3NAME        |              1
- 1024NAME      |            625 | 4NAME        |              1
- 1025NAME      |            625 | 5NAME        |              1
+ 100NAME       |              7 | 4NAME        |              1
+ 10NAME        |              6 | 4NAME        |              1
+ 11NAME        |              6 | 5NAME        |              1
+ 13NAME        |              6 | 1NAME        |              1
+ 14NAME        |              6 | 2NAME        |              1
+ 15NAME        |              6 | 3NAME        |              1
+ 16NAME        |              6 | 4NAME        |              1
+ 17NAME        |              7 | 5NAME        |              1
+ 19NAME        |              7 | 1NAME        |              1
+ 1NAME         |              7 | 1NAME        |              1
+ 20NAME        |              7 | 2NAME        |              1
+ 21NAME        |              6 | 3NAME        |              1
+ 22NAME        |              6 | 4NAME        |              1
+ 23NAME        |              6 | 5NAME        |              1
+ 25NAME        |              6 | 1NAME        |              1
+ 26NAME        |              6 | 2NAME        |              1
+ 27NAME        |              6 | 3NAME        |              1
+ 28NAME        |              6 | 4NAME        |              1
+ 29NAME        |              6 | 5NAME        |              1
+ 2NAME         |              7 | 2NAME        |              1
+ 31NAME        |              6 | 1NAME        |              1
+ 32NAME        |              6 | 2NAME        |              1
+ 33NAME        |              7 | 3NAME        |              1
+ 34NAME        |              7 | 4NAME        |              1
+ 35NAME        |              7 | 5NAME        |              1
 (25 rows)
 
 -- The sharing of CTE is enabled
@@ -10716,31 +10768,31 @@ WHERE  e.deptno = dc1.deptno AND
 ORDER BY 1, 2, 3, 4 DESC LIMIT 25;
  employee_name | emp_dept_count | manager_name | mgr_dept_count 
 ---------------+----------------+--------------+----------------
- 10000NAME     |            625 | 4NAME        |              1
- 1000NAME      |            625 | 4NAME        |              1
- 1001NAME      |            625 | 5NAME        |              1
- 1003NAME      |            625 | 1NAME        |              1
- 1004NAME      |            625 | 2NAME        |              1
- 1005NAME      |            625 | 3NAME        |              1
- 1006NAME      |            625 | 4NAME        |              1
- 1007NAME      |            625 | 5NAME        |              1
- 1009NAME      |            625 | 1NAME        |              1
- 100NAME       |            625 | 4NAME        |              1
- 1010NAME      |            625 | 2NAME        |              1
- 1011NAME      |            625 | 3NAME        |              1
- 1012NAME      |            625 | 4NAME        |              1
- 1013NAME      |            625 | 5NAME        |              1
- 1015NAME      |            625 | 1NAME        |              1
- 1016NAME      |            625 | 2NAME        |              1
- 1017NAME      |            625 | 3NAME        |              1
- 1018NAME      |            625 | 4NAME        |              1
- 1019NAME      |            625 | 5NAME        |              1
- 101NAME       |            625 | 5NAME        |              1
- 1021NAME      |            625 | 1NAME        |              1
- 1022NAME      |            625 | 2NAME        |              1
- 1023NAME      |            625 | 3NAME        |              1
- 1024NAME      |            625 | 4NAME        |              1
- 1025NAME      |            625 | 5NAME        |              1
+ 100NAME       |              7 | 4NAME        |              1
+ 10NAME        |              6 | 4NAME        |              1
+ 11NAME        |              6 | 5NAME        |              1
+ 13NAME        |              6 | 1NAME        |              1
+ 14NAME        |              6 | 2NAME        |              1
+ 15NAME        |              6 | 3NAME        |              1
+ 16NAME        |              6 | 4NAME        |              1
+ 17NAME        |              7 | 5NAME        |              1
+ 19NAME        |              7 | 1NAME        |              1
+ 1NAME         |              7 | 1NAME        |              1
+ 20NAME        |              7 | 2NAME        |              1
+ 21NAME        |              6 | 3NAME        |              1
+ 22NAME        |              6 | 4NAME        |              1
+ 23NAME        |              6 | 5NAME        |              1
+ 25NAME        |              6 | 1NAME        |              1
+ 26NAME        |              6 | 2NAME        |              1
+ 27NAME        |              6 | 3NAME        |              1
+ 28NAME        |              6 | 4NAME        |              1
+ 29NAME        |              6 | 5NAME        |              1
+ 2NAME         |              7 | 2NAME        |              1
+ 31NAME        |              6 | 1NAME        |              1
+ 32NAME        |              6 | 2NAME        |              1
+ 33NAME        |              7 | 3NAME        |              1
+ 34NAME        |              7 | 4NAME        |              1
+ 35NAME        |              7 | 5NAME        |              1
 (25 rows)
 
 -- Test that SharedInputScan within the same slice is always executed 

@@ -32,7 +32,6 @@ from gppylib.operations.rebalanceSegments import GpSegmentRebalanceOperation
 from gppylib.programs import programIoUtils
 from gppylib.system import configurationInterface as configInterface
 from gppylib.system.environment import GpMasterEnvironment
-from gppylib.testold.testUtils import *
 from gppylib.parseutils import line_reader, parse_gprecoverseg_line, canonicalize_address
 from gppylib.utils import ParsedConfigFile, ParsedConfigFileRow, writeLinesToFile, \
      normalizeAndValidateInputPath, TableLogger
@@ -252,7 +251,7 @@ class GpRecoverSegmentProgram:
         self._output_segments_with_persistent_mirroring_disabled(segs_with_persistent_mirroring_disabled)
 
         return GpMirrorListToBuild(segs, self.__pool, self.__options.quiet,
-                                   self.__options.parallelDegree)
+                                   self.__options.parallelDegree, forceoverwrite=True)
 
     def findAndValidatePeersForFailedSegments(self, gpArray, failedSegments):
         dbIdToPeerMap = gpArray.getDbIdToPeerMap()
@@ -387,7 +386,8 @@ class GpRecoverSegmentProgram:
 
         return GpMirrorListToBuild(segs, self.__pool, self.__options.quiet,
                                    self.__options.parallelDegree,
-                                   interfaceHostnameWarnings)
+                                   interfaceHostnameWarnings,
+                                   forceoverwrite=True)
 
     def _output_segments_with_persistent_mirroring_disabled(self, segs_persistent_mirroring_disabled=None):
         if segs_persistent_mirroring_disabled:

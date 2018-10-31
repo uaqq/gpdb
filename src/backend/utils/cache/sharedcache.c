@@ -18,7 +18,9 @@
 
 #include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
+#include "lib/ilist.h"
 #include "port/atomics.h"
+#include "storage/shmem.h"
 #include "utils/memutils.h"
 #include "utils/sharedcache.h"
 
@@ -239,12 +241,11 @@ Cache_SurrenderClientEntries(Cache *cache)
 
 	uint32 nAcquiredEntries = 0;
 	uint32 nCachedEntries = 0;
-	Dlelem *elt = NULL;
 
 	/* Surrender all owned entries */
-	while (NULL != (elt = DLRemHead(cache->ownedEntries)))
+	while (cache->ownedEntries != NIL)
 	{
-		CacheEntry *entry = DLE_VAL(elt);
+		CacheEntry *entry = (CacheEntry *) linitial(cache->ownedEntries);
 
 		switch(entry->state)
 		{
@@ -262,7 +263,7 @@ Cache_SurrenderClientEntries(Cache *cache)
 		}
 
 		/* Free linked list element */
-		DLFreeElem(elt);
+		cache->ownedEntries = list_delete_first(cache->ownedEntries);		
 	}
 
 	if (nAcquiredEntries > 0 || nCachedEntries > 0)
@@ -287,7 +288,7 @@ Cache_RegisterCleanup(Cache *cache, CacheEntry *entry, bool isCachedEntry)
 	Assert(NULL != entry);
 
 	MemoryContext oldcxt = MemoryContextSwitchTo(TopMemoryContext);
-	DLAddHead(cache->ownedEntries, DLNewElem(entry));
+	cache->ownedEntries = lcons(entry, cache->ownedEntries);
 	MemoryContextSwitchTo(oldcxt);
 }
 
@@ -298,21 +299,10 @@ Cache_RegisterCleanup(Cache *cache, CacheEntry *entry, bool isCachedEntry)
 static void
 Cache_UnregisterCleanup(Cache *cache, CacheEntry *entry)
 {
-	Assert(NULL != cache);
-	Assert(NULL != entry);
+	Assert(list_member_ptr(cache->ownedEntries, entry));
 
-	Dlelem *crtElem = DLGetHead(cache->ownedEntries);
-	while (NULL != crtElem && DLE_VAL(crtElem) != entry)
-	{
-		crtElem = DLGetSucc(crtElem);
-	}
-
-	Assert(NULL != crtElem && "could not locate element");
-
-	/* Found matching element. Remove and free. Note that entry is untouched */
-	DLRemove(crtElem);
-	DLFreeElem(crtElem);
-
+	/* Find and remove the entry. Note that the entry is not free'd. */
+	cache->ownedEntries = list_delete_ptr(cache->ownedEntries, entry);
 }
 
 /*
@@ -350,7 +340,7 @@ Cache_Create(CacheCtl *cacheCtl)
 	cache->cleanupEntry = cacheCtl->cleanupEntry;
 	cache->populateEntry = cacheCtl->populateEntry;
 	/* Create new linked lists in top memory context for cleanup */
-	cache->ownedEntries = DLNewList();
+	cache->ownedEntries = NIL;
 	cache->cacheName = pstrdup(cacheCtl->cacheName);
 	Cache_InitHashtable(cacheCtl, cache);
 	Cache_InitSharedMem(cacheCtl, cache);
@@ -601,7 +591,8 @@ Cache_Insert(Cache *cache, CacheEntry *entry)
 	 * This should never happen since the SyncHT has as many entries as the SharedCache,
 	 * and we'll run out of SharedCache entries before we fill up the SyncHT
 	 */
-	insist_log(NULL != anchor, "Could not insert in the cache: SyncHT full");
+	if (anchor == NULL)
+		elog(ERROR, "Could not insert in the cache: SyncHT full");
 
 	/* Acquire anchor lock to touch the chain */
 	SpinLockAcquire(&anchor->spinlock);

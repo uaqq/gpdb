@@ -11,16 +11,18 @@
 *.dll
 *.a
 *.mo
+*.pot
 objfiles.txt
 .deps/
 *.log
-*.vcproj
 *.gcno
 *.gcda
 *.gcov
 *.gcov.out
 lcov.info
+coverage/
 *.vcproj
+*.vcxproj
 win32ver.rc
 *.exe
 lib*dll.defautom4te.cache
@@ -48,10 +50,16 @@ build.sh
 GPATH
 GRTAGS
 GTAGS
+lib*dll.def
+lib*.pc
 
 # Local excludes in root directory
 /GNUmakefile
 /config.log
 /config.status
 /VERSION
+/pgsql.sln
+/pgsql.sln.cache
+/Debug/
+/Release/
 /CMakeLists.txt

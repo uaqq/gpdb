@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/drop_group.sgml,v 1.16 2010/04/03 07:23:00 petere Exp $
+doc/src/sgml/ref/drop_group.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPGROUP">
+ <indexterm zone="sql-dropgroup">
+  <primary>DROP GROUP</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP GROUP</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>DROP GROUP</refname>
   <refpurpose>remove a database role</refpurpose>
  </refnamediv>
-
- <indexterm zone="sql-dropgroup">
-  <primary>DROP GROUP</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>

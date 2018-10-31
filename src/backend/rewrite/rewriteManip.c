@@ -4,12 +4,12 @@
  *
  * Portions Copyright (c) 2006-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/rewrite/rewriteManip.c,v 1.127 2010/02/26 02:00:59 momjian Exp $
+ *	  src/backend/rewrite/rewriteManip.c
  *
  *-------------------------------------------------------------------------
  */
@@ -18,6 +18,7 @@
 #include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/plannodes.h"
 #include "optimizer/clauses.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
@@ -59,7 +60,7 @@ static Relids adjust_relid_set(Relids relids, int oldrelid, int newrelid);
  *	specified query level.
  *
  * The objective of this routine is to detect whether there are aggregates
- * belonging to the given query level.	Aggregates belonging to subqueries
+ * belonging to the given query level.  Aggregates belonging to subqueries
  * or outer queries do NOT cause a true result.  We must recurse into
  * subqueries to detect outer-reference aggregates that logically belong to
  * the specified query level.
@@ -114,7 +115,7 @@ contain_aggs_of_level_walker(Node *node,
  *	  Find the parse location of any aggregate of the specified query level.
  *
  * Returns -1 if no such agg is in the querytree, or if they all have
- * unknown parse location.	(The former case is probably caller error,
+ * unknown parse location.  (The former case is probably caller error,
  * but we don't bother to distinguish it from the latter case.)
  *
  * Note: it might seem appropriate to merge this functionality into
@@ -209,7 +210,7 @@ contain_windowfuncs_walker(Node *node, void *context)
  *	  Find the parse location of any windowfunc of the current query level.
  *
  * Returns -1 if no such windowfunc is in the querytree, or if they all have
- * unknown parse location.	(The former case is probably caller error,
+ * unknown parse location.  (The former case is probably caller error,
  * but we don't bother to distinguish it from the latter case.)
  *
  * Note: it might seem appropriate to merge this functionality into
@@ -288,11 +289,11 @@ checkExprHasSubLink_walker(Node *node, void *context)
  *
  * Find all Var nodes in the given tree with varlevelsup == sublevels_up,
  * and increment their varno fields (rangetable indexes) by 'offset'.
- * The varnoold fields are adjusted similarly.	Also, adjust other nodes
+ * The varnoold fields are adjusted similarly.  Also, adjust other nodes
  * that contain rangetable indexes, such as RangeTblRef and JoinExpr.
  *
  * NOTE: although this has the form of a walker, we cheat and modify the
- * nodes in-place.	The given expression tree should have been copied
+ * nodes in-place.  The given expression tree should have been copied
  * earlier to ensure that no unwanted side-effects occur!
  */
 
@@ -366,8 +367,11 @@ OffsetVarNodes_walker(Node *node, OffsetVarNodes_context *context)
 		/* fall through to examine children */
 	}
 	/* Shouldn't need to handle other planner auxiliary nodes here */
+	Assert(!IsA(node, PlanRowMark));
 	Assert(!IsA(node, SpecialJoinInfo));
+	Assert(!IsA(node, LateralJoinInfo));
 	Assert(!IsA(node, PlaceHolderInfo));
+	Assert(!IsA(node, MinMaxAggInfo));
 
 	if (IsA(node, Query))
 	{
@@ -447,11 +451,11 @@ offset_relid_set(Relids relids, int offset)
  *
  * Find all Var nodes in the given tree belonging to a specific relation
  * (identified by sublevels_up and rt_index), and change their varno fields
- * to 'new_index'.	The varnoold fields are changed too.  Also, adjust other
+ * to 'new_index'.  The varnoold fields are changed too.  Also, adjust other
  * nodes that contain rangetable indexes, such as RangeTblRef and JoinExpr.
  *
  * NOTE: although this has the form of a walker, we cheat and modify the
- * nodes in-place.	The given expression tree should have been copied
+ * nodes in-place.  The given expression tree should have been copied
  * earlier to ensure that no unwanted side-effects occur!
  */
 
@@ -519,6 +523,19 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 		}
 		/* fall through to examine children */
 	}
+	if (IsA(node, PlanRowMark))
+	{
+		PlanRowMark *rowmark = (PlanRowMark *) node;
+
+		if (context->sublevels_up == 0)
+		{
+			if (rowmark->rti == context->rt_index)
+				rowmark->rti = context->new_index;
+			if (rowmark->prti == context->rt_index)
+				rowmark->prti = context->new_index;
+		}
+		return false;
+	}
 	if (IsA(node, AppendRelInfo))
 	{
 		AppendRelInfo *appinfo = (AppendRelInfo *) node;
@@ -534,7 +551,9 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 	}
 	/* Shouldn't need to handle other planner auxiliary nodes here */
 	Assert(!IsA(node, SpecialJoinInfo));
+	Assert(!IsA(node, LateralJoinInfo));
 	Assert(!IsA(node, PlaceHolderInfo));
+	Assert(!IsA(node, MinMaxAggInfo));
 
 	if (IsA(node, Query))
 	{
@@ -629,7 +648,7 @@ adjust_relid_set(Relids relids, int oldrelid, int newrelid)
  * Likewise for other nodes containing levelsup fields, such as Aggref.
  *
  * NOTE: although this has the form of a walker, we cheat and modify the
- * Var nodes in-place.	The given expression tree should have been copied
+ * Var nodes in-place.  The given expression tree should have been copied
  * earlier to ensure that no unwanted side-effects occur!
  */
 
@@ -846,9 +865,12 @@ rangeTableEntry_used_walker(Node *node,
 	}
 	/* Shouldn't need to handle planner auxiliary nodes here */
 	Assert(!IsA(node, PlaceHolderVar));
+	Assert(!IsA(node, PlanRowMark));
 	Assert(!IsA(node, SpecialJoinInfo));
+	Assert(!IsA(node, LateralJoinInfo));
 	Assert(!IsA(node, AppendRelInfo));
 	Assert(!IsA(node, PlaceHolderInfo));
+	Assert(!IsA(node, MinMaxAggInfo));
 
 	if (IsA(node, Query))
 	{
@@ -879,70 +901,6 @@ rangeTableEntry_used(Node *node, int rt_index, int sublevels_up)
 	 */
 	return query_or_expression_tree_walker(node,
 										   rangeTableEntry_used_walker,
-										   (void *) &context,
-										   0);
-}
-
-
-/*
- * attribute_used -
- *	Check if a specific attribute number of a RTE is used
- *	somewhere in the query or expression.
- */
-
-typedef struct
-{
-	int			rt_index;
-	int			attno;
-	int			sublevels_up;
-} attribute_used_context;
-
-static bool
-attribute_used_walker(Node *node,
-					  attribute_used_context *context)
-{
-	if (node == NULL)
-		return false;
-	if (IsA(node, Var))
-	{
-		Var		   *var = (Var *) node;
-
-		if (var->varlevelsup == context->sublevels_up &&
-			var->varno == context->rt_index &&
-			var->varattno == context->attno)
-			return true;
-		return false;
-	}
-	if (IsA(node, Query))
-	{
-		/* Recurse into subselects */
-		bool		result;
-
-		context->sublevels_up++;
-		result = query_tree_walker((Query *) node, attribute_used_walker,
-								   (void *) context, 0);
-		context->sublevels_up--;
-		return result;
-	}
-	return expression_tree_walker(node, attribute_used_walker,
-								  (void *) context);
-}
-
-bool
-attribute_used(Node *node, int rt_index, int attno, int sublevels_up)
-{
-	attribute_used_context context;
-
-	context.rt_index = rt_index;
-	context.attno = attno;
-	context.sublevels_up = sublevels_up;
-
-	/*
-	 * Must be prepared to start with a Query or a bare expression tree; if
-	 * it's a Query, we don't want to increment sublevels_up.
-	 */
-	return query_or_expression_tree_walker(node,
-										   attribute_used_walker,
 										   (void *) &context,
 										   0);
 }
@@ -1348,12 +1306,16 @@ map_variable_attnos(Node *node,
 
 
 /*
- * ResolveNew - replace Vars with corresponding items from a targetlist
+ * ReplaceVarsFromTargetList - replace Vars with items from a targetlist
  *
  * Vars matching target_varno and sublevels_up are replaced by the
  * entry with matching resno from targetlist, if there is one.
- * If not, we either change the unmatched Var's varno to update_varno
- * (when event == CMD_UPDATE) or replace it with a constant NULL.
+ *
+ * If there is no matching resno for such a Var, the action depends on the
+ * nomatch_option:
+ *	REPLACEVARS_REPORT_ERROR: throw an error
+ *	REPLACEVARS_CHANGE_VARNO: change Var's varno to nomatch_varno
+ *	REPLACEVARS_SUBSTITUTE_NULL: replace Var with a NULL Const of same type
  *
  * The caller must also provide target_rte, the RTE describing the target
  * relation.  This is needed to handle whole-row Vars referencing the target.
@@ -1366,15 +1328,15 @@ typedef struct
 {
 	RangeTblEntry *target_rte;
 	List	   *targetlist;
-	int			event;
-	int			update_varno;
-} ResolveNew_context;
+	ReplaceVarsNoMatchOption nomatch_option;
+	int			nomatch_varno;
+} ReplaceVarsFromTargetList_context;
 
 static Node *
-ResolveNew_callback(Var *var,
-					replace_rte_variables_context *context)
+ReplaceVarsFromTargetList_callback(Var *var,
+								   replace_rte_variables_context *context)
 {
-	ResolveNew_context *rcon = (ResolveNew_context *) context->callback_arg;
+	ReplaceVarsFromTargetList_context *rcon = (ReplaceVarsFromTargetList_context *) context->callback_arg;
 	TargetEntry *tle;
 
 	if (var->varattno == InvalidAttrNumber)
@@ -1411,30 +1373,40 @@ ResolveNew_callback(Var *var,
 	/* Normal case referencing one targetlist element */
 	tle = get_tle_by_resno(rcon->targetlist, var->varattno);
 
-	if (tle == NULL)
+	if (tle == NULL || tle->resjunk)
 	{
-		/* Failed to find column in insert/update tlist */
-		if (rcon->event == CMD_UPDATE)
+		/* Failed to find column in targetlist */
+		switch (rcon->nomatch_option)
 		{
-			/* For update, just change unmatched var's varno */
-			var = (Var *) copyObject(var);
-			var->varno = rcon->update_varno;
-			var->varnoold = rcon->update_varno;
-			return (Node *) var;
+			case REPLACEVARS_REPORT_ERROR:
+				/* fall through, throw error below */
+				break;
+
+			case REPLACEVARS_CHANGE_VARNO:
+				var = (Var *) copyObject(var);
+				var->varno = rcon->nomatch_varno;
+				var->varnoold = rcon->nomatch_varno;
+				return (Node *) var;
+
+			case REPLACEVARS_SUBSTITUTE_NULL:
+
+				/*
+				 * If Var is of domain type, we should add a CoerceToDomain
+				 * node, in case there is a NOT NULL domain constraint.
+				 */
+				return coerce_to_domain((Node *) makeNullConst(var->vartype,
+															   var->vartypmod,
+															 var->varcollid),
+										InvalidOid, -1,
+										var->vartype,
+										COERCE_IMPLICIT_CAST,
+										-1,
+										false,
+										false);
 		}
-		else
-		{
-			/* Otherwise replace unmatched var with a null */
-			/* need coerce_to_domain in case of NOT NULL domain constraint */
-			return coerce_to_domain((Node *) makeNullConst(var->vartype,
-														   var->vartypmod),
-									InvalidOid, -1,
-									var->vartype,
-									COERCE_IMPLICIT_CAST,
-									-1,
-									false,
-									false);
-		}
+		elog(ERROR, "could not find replacement targetlist entry for attno %d",
+			 var->varattno);
+		return NULL;			/* keep compiler quiet */
 	}
 	else
 	{
@@ -1450,20 +1422,23 @@ ResolveNew_callback(Var *var,
 }
 
 Node *
-ResolveNew(Node *node, int target_varno, int sublevels_up,
-		   RangeTblEntry *target_rte,
-		   List *targetlist, int event, int update_varno,
-		   bool *outer_hasSubLinks)
+ReplaceVarsFromTargetList(Node *node,
+						  int target_varno, int sublevels_up,
+						  RangeTblEntry *target_rte,
+						  List *targetlist,
+						  ReplaceVarsNoMatchOption nomatch_option,
+						  int nomatch_varno,
+						  bool *outer_hasSubLinks)
 {
-	ResolveNew_context context;
+	ReplaceVarsFromTargetList_context context;
 
 	context.target_rte = target_rte;
 	context.targetlist = targetlist;
-	context.event = event;
-	context.update_varno = update_varno;
+	context.nomatch_option = nomatch_option;
+	context.nomatch_varno = nomatch_varno;
 
 	return replace_rte_variables(node, target_varno, sublevels_up,
-								 ResolveNew_callback,
+								 ReplaceVarsFromTargetList_callback,
 								 (void *) &context,
 								 outer_hasSubLinks);
 }

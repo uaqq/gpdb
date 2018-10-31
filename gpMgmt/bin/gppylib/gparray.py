@@ -1036,8 +1036,8 @@ class GpArray:
             (dbid, content, role, preferred_role, mode, status, hostname,
              address, port, datadir) = row
 
-            # Check if mirrors exist
-            if preferred_role == ROLE_MIRROR:
+            # Check if segment mirrors exist
+            if preferred_role == ROLE_MIRROR and content != -1:
                 hasMirrors = True
 
             # If we have segments which have recovered, record them.
@@ -1488,7 +1488,7 @@ class GpArray:
                     if segPair.mirrorDB and segPair.mirrorDB.dbid in self.recoveredSegmentDbids:
                         recovered_contents.append((segPair.primaryDB.content, segPair.primaryDB.dbid, segPair.mirrorDB.dbid))
 
-        conn = dbconn.connect(dbURL, True, allowSystemTableMods = 'dml')
+        conn = dbconn.connect(dbURL, True, allowSystemTableMods = True)
         for (content_id, primary_dbid, mirror_dbid) in recovered_contents:
             sql = "UPDATE gp_segment_configuration SET role=preferred_role where content = %d" % content_id
             dbconn.executeUpdateOrInsert(conn, sql, 2)

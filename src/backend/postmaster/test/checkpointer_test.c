@@ -8,6 +8,7 @@
 #include "postgres.h"
 
 #define MAX_BGW_REQUESTS 5
+
 void
 init_request_queue(void)
 {
@@ -17,6 +18,8 @@ init_request_queue(void)
 	CheckpointerShmem->checkpointer_pid = 1234;
 	CheckpointerShmem->max_requests = MAX_BGW_REQUESTS;
 	IsUnderPostmaster = true;
+	ProcGlobal = (PROC_HDR *) malloc(sizeof(PROC_HDR));
+	ProcGlobal->checkpointerLatch = NULL;
 }
 
 /*
@@ -30,10 +33,11 @@ test__ForwardFsyncRequest_enqueue(void **state)
 	int i;
 	RelFileNode dummy = {1,1,1};
 	init_request_queue();
-	expect_value(LWLockAcquire, lockid, CheckpointerCommLock);
+	ProcGlobal->checkpointerLatch = NULL;
+	expect_value(LWLockAcquire, l, CheckpointerCommLock);
 	expect_value(LWLockAcquire, mode, LW_EXCLUSIVE);
-	will_be_called(LWLockAcquire);
-	expect_value(LWLockRelease, lockid, CheckpointerCommLock);
+	will_return(LWLockAcquire, true);
+	expect_value(LWLockRelease, l, CheckpointerCommLock);
 	will_be_called(LWLockRelease);
 	/* basic enqueue */
 	ret = ForwardFsyncRequest(dummy, MAIN_FORKNUM, 1);
@@ -42,21 +46,21 @@ test__ForwardFsyncRequest_enqueue(void **state)
 	/* fill up the queue */
 	for (i=2; i<=MAX_BGW_REQUESTS; i++)
 	{
-		expect_value(LWLockAcquire, lockid, CheckpointerCommLock);
+		expect_value(LWLockAcquire, l, CheckpointerCommLock);
 		expect_value(LWLockAcquire, mode, LW_EXCLUSIVE);
-		will_be_called(LWLockAcquire);
-		expect_value(LWLockRelease, lockid, CheckpointerCommLock);
+		will_return(LWLockAcquire, true);
+		expect_value(LWLockRelease, l, CheckpointerCommLock);
 		will_be_called(LWLockRelease);
 		ret = ForwardFsyncRequest(dummy, MAIN_FORKNUM, i);
 		assert_true(ret);
 	}
-	expect_value(LWLockAcquire, lockid, CheckpointerCommLock);
+	expect_value(LWLockAcquire, l, CheckpointerCommLock);
 	expect_value(LWLockAcquire, mode, LW_EXCLUSIVE);
-	will_be_called(LWLockAcquire);
-	expect_value(LWLockRelease, lockid, CheckpointerCommLock);
+	will_return(LWLockAcquire, true);
+	expect_value(LWLockRelease, l, CheckpointerCommLock);
 	will_be_called(LWLockRelease);
 #ifdef USE_ASSERT_CHECKING
-	expect_value(LWLockHeldByMe, lockid, CheckpointerCommLock);
+	expect_value(LWLockHeldByMe, l, CheckpointerCommLock);
 	will_return(LWLockHeldByMe, true);
 #endif
 	/*

@@ -4,16 +4,16 @@
  *	  Routines to support bitmapped scans of relations
  *
  * NOTE: it is critical that this plan type only be used with MVCC-compliant
- * snapshots (ie, regular snapshots, not SnapshotNow or one of the other
+ * snapshots (ie, regular snapshots, not Snapshotany or one of the other
  * special snapshots).	The reason is that since index and heap scans are
  * decoupled, there can be no assurance that the index tuple prompting a
  * visit to a particular heap TID still exists when the visit is made.
  * Therefore the tuple might not exist anymore either (which is OK because
  * heap_fetch will cope) --- but worse, the tuple slot could have been
  * re-used for a newer tuple.  With an MVCC snapshot the newer tuple is
- * certain to fail the time qual and so it will not be mistakenly returned.
- * With SnapshotNow we might return a tuple that doesn't meet the required
- * index qual conditions.
+ * certain to fail the time qual and so it will not be mistakenly returned,
+ * but with anything else we might return a tuple that doesn't meet the
+ * required index qual conditions.
  *
  * Portions Copyright (c) 2014-Present Pivotal Software, Inc.
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
@@ -48,8 +48,6 @@
 #include "cdb/cdbvars.h" /* gp_select_invisible */
 #include "nodes/tidbitmap.h"
 #include "cdb/cdbpartition.h"
-
-#define BITMAPTABLESCAN_NSLOTS 2
 
 /*
  * Initializes the BitmapTableScanState, including creation of the
@@ -96,11 +94,6 @@ ExecBitmapTableScan(BitmapTableScanState *node)
 	TupleTableSlot *slot = DynamicScan_GetNextTuple(scanState, BitmapTableScanBeginPartition,
 			BitmapTableScanEndPartition, BitmapTableScanReScanPartition, BitmapTableScanFetchNext);
 
-	if (TupIsNull(slot) && !scanState->ps.delayEagerFree)
-	{
-		ExecEagerFreeBitmapTableScan(node);
-	}
-
 	return slot;
 }
 
@@ -108,14 +101,14 @@ ExecBitmapTableScan(BitmapTableScanState *node)
  * Prepares the BitmapTableScanState for a re-scan.
  */
 void
-ExecBitmapTableReScan(BitmapTableScanState *node, ExprContext *exprCtxt)
+ExecReScanBitmapTable(BitmapTableScanState *node)
 {
-	BitmapTableScanReScan(node, exprCtxt);
+	BitmapTableScanReScan(node);
 	/*
 	 * Always rescan the input immediately, to ensure we can pass down any
 	 * outer tuple that might be used in index quals.
 	 */
-	ExecReScan(outerPlanState(node), exprCtxt);
+	ExecReScan(outerPlanState(node));
 }
 
 /* Cleans up once scanning is finished */

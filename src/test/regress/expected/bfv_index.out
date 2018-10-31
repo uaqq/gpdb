@@ -160,25 +160,25 @@ AND ft.id = dt1.id;
                                  Hash Cond: ft.id = dt1.id
                                  ->  Append  (cost=0.00..20.20 rows=7 width=6)
                                        ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_dflt ft  (cost=0.00..1.00 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_2 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_3 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_4 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_5 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_6 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_7 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_8 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_9 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_10 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_11 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_12 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_13 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_14 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_15 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_16 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_17 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_18 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_19 ft  (cost=0.00..1.01 rows=1 width=6)
-                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_20 ft  (cost=0.00..1.02 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_2 ft_1  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_3 ft_2  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_4 ft_3  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_5 ft_4  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_6 ft_5  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_7 ft_6  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_8 ft_7  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_9 ft_8  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_10 ft_9  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_11 ft_10  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_12 ft_11  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_13 ft_12  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_14 ft_13  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_15 ft_14  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_16 ft_15  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_17 ft_16  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_18 ft_17  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_19 ft_18  (cost=0.00..1.01 rows=1 width=6)
+                                       ->  Append-only Columnar Scan on bfv_tab2_facttable1_1_prt_20 ft_19  (cost=0.00..2.02 rows=1 width=6)
                                  ->  Hash  (cost=3.35..3.35 rows=7 width=4)
                                        ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..3.35 rows=7 width=4)
                                              ->  Seq Scan on bfv_tab2_dimtabl1 dt1  (cost=0.00..3.07 rows=3 width=4)
@@ -437,7 +437,7 @@ select * from Tbl23383_partitioned where c='1';
 drop table Tbl23383_partitioned;
 -- end_ignore
 reset enable_seqscan;
--- when optimizer is on PG exception raised during DXL->PlStmt translation for IndexScan query
+-- negative test: due to non compatible cast and CXformGet2TableScan disabled no index plan possible, fallback to planner
 -- start_ignore
 drop table if exists tbl_ab;
 NOTICE:  table "tbl_ab" does not exist, skipping
@@ -560,3 +560,120 @@ SELECT * FROM bpchar_ops WHERE v = 'row '::char(20);
 (1 row)
 
 DROP TABLE bpchar_ops;
+--
+-- Test index rechecks with AO and AOCS tables (and heaps as well, for good measure)
+--
+create table shape_heap (c circle) with (appendonly=false);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause, and no column type is suitable for a distribution key. Creating a NULL policy entry.
+create table shape_ao (c circle) with (appendonly=true, orientation=row);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause, and no column type is suitable for a distribution key. Creating a NULL policy entry.
+create table shape_aocs (c circle) with (appendonly=true, orientation=column);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause, and no column type is suitable for a distribution key. Creating a NULL policy entry.
+insert into shape_heap values ('<(0,0), 5>');
+insert into shape_ao   values ('<(0,0), 5>');
+insert into shape_aocs values ('<(0,0), 5>');
+create index shape_heap_bb_idx on shape_heap using gist(c);
+create index shape_ao_bb_idx   on shape_ao   using gist(c);
+create index shape_aocs_bb_idx on shape_aocs using gist(c);
+select c && '<(5,5), 1>'::circle,
+       c && '<(5,5), 2>'::circle,
+       c && '<(5,5), 3>'::circle
+from shape_heap;
+ ?column? | ?column? | ?column? 
+----------+----------+----------
+ f        | f        | t
+(1 row)
+
+-- Test the same values with (bitmap) index scans
+--
+-- The first two values don't overlap with the value in the tables, <(0,0), 5>,
+-- but their bounding boxes do. In a GiST index scan that uses the bounding
+-- boxes, these will fetch the row from the index, but filtered out by the
+-- recheck using the actual overlap operator. The third entry is sanity check
+-- that the index returns any rows.
+set enable_seqscan=off;
+set enable_indexscan=off;
+set enable_bitmapscan=on;
+-- Use EXPLAIN to verify that these use a bitmap index scan
+explain select * from shape_heap where c && '<(5,5), 1>'::circle;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=101.26..201.27 rows=1 width=24)
+   ->  Bitmap Heap Scan on shape_heap  (cost=101.26..201.27 rows=1 width=24)
+         Recheck Cond: c && '<(5,5),1>'::circle
+         ->  Bitmap Index Scan on shape_heap_bb_idx  (cost=0.00..101.26 rows=1 width=0)
+               Index Cond: c && '<(5,5),1>'::circle
+ Optimizer: legacy query optimizer
+(6 rows)
+
+explain select * from shape_ao   where c && '<(5,5), 1>'::circle;
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=101.26..201.27 rows=1 width=24)
+   ->  Bitmap Append-Only Row-Oriented Scan on shape_ao  (cost=101.26..201.27 rows=1 width=24)
+         Recheck Cond: c && '<(5,5),1>'::circle
+         ->  Bitmap Index Scan on shape_ao_bb_idx  (cost=0.00..101.26 rows=1 width=0)
+               Index Cond: c && '<(5,5),1>'::circle
+ Optimizer: legacy query optimizer
+(6 rows)
+
+explain select * from shape_aocs where c && '<(5,5), 1>'::circle;
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=101.26..201.27 rows=1 width=24)
+   ->  Bitmap Append-Only Column-Oriented Scan on shape_aocs  (cost=101.26..201.27 rows=1 width=24)
+         Recheck Cond: c && '<(5,5),1>'::circle
+         ->  Bitmap Index Scan on shape_aocs_bb_idx  (cost=0.00..101.26 rows=1 width=0)
+               Index Cond: c && '<(5,5),1>'::circle
+ Optimizer: legacy query optimizer
+(6 rows)
+
+-- Test that they return correct results.
+select * from shape_heap where c && '<(5,5), 1>'::circle;
+ c 
+---
+(0 rows)
+
+select * from shape_ao   where c && '<(5,5), 1>'::circle;
+ c 
+---
+(0 rows)
+
+select * from shape_aocs where c && '<(5,5), 1>'::circle;
+ c 
+---
+(0 rows)
+
+select * from shape_heap where c && '<(5,5), 2>'::circle;
+ c 
+---
+(0 rows)
+
+select * from shape_ao   where c && '<(5,5), 2>'::circle;
+ c 
+---
+(0 rows)
+
+select * from shape_aocs where c && '<(5,5), 2>'::circle;
+ c 
+---
+(0 rows)
+
+select * from shape_heap where c && '<(5,5), 3>'::circle;
+     c     
+-----------
+ <(0,0),5>
+(1 row)
+
+select * from shape_ao   where c && '<(5,5), 3>'::circle;
+     c     
+-----------
+ <(0,0),5>
+(1 row)
+
+select * from shape_aocs where c && '<(5,5), 3>'::circle;
+     c     
+-----------
+ <(0,0),5>
+(1 row)
+

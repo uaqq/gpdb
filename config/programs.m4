@@ -1,4 +1,4 @@
-# $PostgreSQL: pgsql/config/programs.m4,v 1.28 2010/02/22 21:16:50 momjian Exp $
+# config/programs.m4
 
 
 # PGAC_PATH_BISON
@@ -23,19 +23,19 @@ if test "$BISON"; then
 *** Bison version 1.875 or later is required, but this is $pgac_bison_version.])
     BISON=""
   fi
- # Bison >=3.0 issues warnings about %name-prefix="base_yy", instead
- # of the now preferred %name-prefix "base_yy", but the latter
- # doesn't work with Bison 2.3 or less.  So for now we silence the
- # deprecation warnings.
- if echo "$pgac_bison_version" | $AWK '{ if ([$]4 >= 3) exit 0; else exit 1;}'
- then
-   BISONFLAGS="$BISONFLAGS -Wno-deprecated"
- fi
+  # Bison >=3.0 issues warnings about %name-prefix="base_yy", instead
+  # of the now preferred %name-prefix "base_yy", but the latter
+  # doesn't work with Bison 2.3 or less.  So for now we silence the
+  # deprecation warnings.
+  if echo "$pgac_bison_version" | $AWK '{ if ([$]4 >= 3) exit 0; else exit 1;}'
+  then
+    BISONFLAGS="$BISONFLAGS -Wno-deprecated"
+  fi
 fi
 
 if test -z "$BISON"; then
   AC_MSG_WARN([
-*** Without Bison you will not be able to build PostgreSQL from CVS nor
+*** Without Bison you will not be able to build PostgreSQL from Git nor
 *** change any of the parser definition files.  You can obtain Bison from
 *** a GNU mirror site.  (If you are using the official distribution of
 *** PostgreSQL then you do not need to worry about this, because the Bison
@@ -97,7 +97,7 @@ fi
 
 if test x"$pgac_cv_path_flex" = x"no"; then
   AC_MSG_WARN([
-*** Without Flex you will not be able to build PostgreSQL from CVS nor
+*** Without Flex you will not be able to build PostgreSQL from Git nor
 *** change any of the scanner definition files.  You can obtain Flex from
 *** a GNU mirror site.  (If you are using the official distribution of
 *** PostgreSQL then you do not need to worry about this because the Flex
@@ -125,7 +125,7 @@ AC_SUBST(FLEXFLAGS)
 AC_DEFUN([PGAC_CHECK_READLINE],
 [AC_REQUIRE([AC_CANONICAL_HOST])
 
-AC_CACHE_VAL([pgac_cv_check_readline],
+AC_CACHE_CHECK([for library containing readline], [pgac_cv_check_readline],
 [pgac_cv_check_readline=no
 pgac_save_LIBS=$LIBS
 if test x"$with_libedit_preferred" != x"yes"
@@ -133,7 +133,6 @@ then	READLINE_ORDER="-lreadline -ledit"
 else	READLINE_ORDER="-ledit -lreadline"
 fi
 for pgac_rllib in $READLINE_ORDER ; do
-  AC_MSG_CHECKING([for ${pgac_rllib}])
   for pgac_lib in "" " -ltermcap" " -lncurses" " -lcurses" ; do
     LIBS="${pgac_rllib}${pgac_lib} $pgac_save_LIBS"
     AC_TRY_LINK_FUNC([readline], [[
@@ -152,14 +151,11 @@ for pgac_rllib in $READLINE_ORDER ; do
     ]])
   done
   if test "$pgac_cv_check_readline" != no ; then
-    AC_MSG_RESULT([yes ($pgac_cv_check_readline)])
     break
-  else
-    AC_MSG_RESULT(no)
   fi
 done
 LIBS=$pgac_save_LIBS
-])[]dnl AC_CACHE_VAL
+])[]dnl AC_CACHE_CHECK
 
 if test "$pgac_cv_check_readline" != no ; then
   LIBS="$pgac_cv_check_readline $LIBS"
@@ -175,8 +171,8 @@ fi
 # Readline versions < 2.1 don't have rl_completion_append_character
 
 AC_DEFUN([PGAC_VAR_RL_COMPLETION_APPEND_CHARACTER],
-[AC_MSG_CHECKING([for rl_completion_append_character])
-AC_TRY_LINK([#include <stdio.h>
+[AC_CACHE_CHECK([for rl_completion_append_character], pgac_cv_var_rl_completion_append_character,
+[AC_TRY_LINK([#include <stdio.h>
 #ifdef HAVE_READLINE_READLINE_H
 # include <readline/readline.h>
 #elif defined(HAVE_READLINE_H)
@@ -184,10 +180,12 @@ AC_TRY_LINK([#include <stdio.h>
 #endif
 ],
 [rl_completion_append_character = 'x';],
-[AC_MSG_RESULT(yes)
+[pgac_cv_var_rl_completion_append_character=yes],
+[pgac_cv_var_rl_completion_append_character=no])])
+if test x"$pgac_cv_var_rl_completion_append_character" = x"yes"; then
 AC_DEFINE(HAVE_RL_COMPLETION_APPEND_CHARACTER, 1,
-          [Define to 1 if you have the global variable 'rl_completion_append_character'.])],
-[AC_MSG_RESULT(no)])])# PGAC_VAR_RL_COMPLETION_APPEND_CHARACTER
+          [Define to 1 if you have the global variable 'rl_completion_append_character'.])
+fi])# PGAC_VAR_RL_COMPLETION_APPEND_CHARACTER
 
 
 
@@ -207,6 +205,11 @@ AC_DEFUN([PGAC_CHECK_GETTEXT],
   if test -z "$MSGFMT"; then
     AC_MSG_ERROR([msgfmt is required for NLS])
   fi
+  AC_CACHE_CHECK([for msgfmt flags], pgac_cv_msgfmt_flags,
+[if test x"$MSGFMT" != x"" && "$MSGFMT" --version 2>&1 | grep "GNU" >/dev/null; then
+    pgac_cv_msgfmt_flags=-c
+fi])
+  AC_SUBST(MSGFMT_FLAGS, $pgac_cv_msgfmt_flags)
   AC_CHECK_PROGS(MSGMERGE, msgmerge)
   AC_CHECK_PROGS(XGETTEXT, xgettext)
 ])# PGAC_CHECK_GETTEXT
@@ -228,9 +231,19 @@ AC_DEFUN([PGAC_CHECK_STRIP],
     STRIP_SHARED_LIB="$STRIP --strip-unneeded"
     AC_MSG_RESULT(yes)
   else
-    STRIP_STATIC_LIB=:
-    STRIP_SHARED_LIB=:
-    AC_MSG_RESULT(no)
+    case $host_os in
+      darwin*)
+        STRIP="$STRIP -x"
+        STRIP_STATIC_LIB=$STRIP
+        STRIP_SHARED_LIB=$STRIP
+        AC_MSG_RESULT(yes)
+        ;;
+      *)
+        STRIP_STATIC_LIB=:
+        STRIP_SHARED_LIB=:
+        AC_MSG_RESULT(no)
+        ;;
+    esac
   fi
   AC_SUBST(STRIP_STATIC_LIB)
   AC_SUBST(STRIP_SHARED_LIB)

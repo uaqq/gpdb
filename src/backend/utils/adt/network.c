@@ -1,7 +1,7 @@
 /*
  *	PostgreSQL type definitions for the INET and CIDR types.
  *
- *	$PostgreSQL: pgsql/src/backend/utils/adt/network.c,v 1.75 2009/10/08 04:46:21 heikki Exp $
+ *	src/backend/utils/adt/network.c
  *
  *	Jon Postel RIP 16 Oct 1998
  */
@@ -23,58 +23,9 @@
 
 
 static int32 network_cmp_internal(inet *a1, inet *a2);
-static int	bitncmp(void *l, void *r, int n);
 static bool addressOK(unsigned char *a, int bits, int family);
-static int	ip_addrsize(inet *inetptr);
 static inet *internal_inetpl(inet *ip, int64 addend);
 
-/*
- *	Access macros.	We use VARDATA_ANY so that we can process short-header
- *	varlena values without detoasting them.  This requires a trick:
- *	VARDATA_ANY assumes the varlena header is already filled in, which is
- *	not the case when constructing a new value (until SET_INET_VARSIZE is
- *	called, which we typically can't do till the end).  Therefore, we
- *	always initialize the newly-allocated value to zeroes (using palloc0).
- *	A zero length word will look like the not-1-byte case to VARDATA_ANY,
- *	and so we correctly construct an uncompressed value.
- *
- *	Note that ip_maxbits() and SET_INET_VARSIZE() require
- *	the family field to be set correctly.
- */
-
-#define ip_family(inetptr) \
-	(((inet_struct *) VARDATA_ANY(inetptr))->family)
-
-#define ip_bits(inetptr) \
-	(((inet_struct *) VARDATA_ANY(inetptr))->bits)
-
-#define ip_addr(inetptr) \
-	(((inet_struct *) VARDATA_ANY(inetptr))->ipaddr)
-
-#define ip_maxbits(inetptr) \
-	(ip_family(inetptr) == PGSQL_AF_INET ? 32 : 128)
-
-#define SET_INET_VARSIZE(dst) \
-	SET_VARSIZE(dst, VARHDRSZ + offsetof(inet_struct, ipaddr) + \
-				ip_addrsize(dst))
-
-
-/*
- * Return the number of bytes of address storage needed for this data type.
- */
-static int
-ip_addrsize(inet *inetptr)
-{
-	switch (ip_family(inetptr))
-	{
-		case PGSQL_AF_INET:
-			return 4;
-		case PGSQL_AF_INET6:
-			return 16;
-		default:
-			return 0;
-	}
-}
 
 /*
  * Common INET/CIDR input routine
@@ -88,7 +39,7 @@ network_in(char *src, bool is_cidr)
 	dst = (inet *) palloc0(sizeof(inet));
 
 	/*
-	 * First, check to see if this is an IPv6 or IPv4 address.	IPv6 addresses
+	 * First, check to see if this is an IPv6 or IPv4 address.  IPv6 addresses
 	 * will have a : somewhere in them (several, in fact) so if there is one
 	 * present, assume it's V6, otherwise assume it's V4.
 	 */
@@ -193,7 +144,7 @@ cidr_out(PG_FUNCTION_ARGS)
  * family, bits, is_cidr, address length, address in network byte order.
  *
  * Presence of is_cidr is largely for historical reasons, though it might
- * allow some code-sharing on the client side.	We send it correctly on
+ * allow some code-sharing on the client side.  We send it correctly on
  * output, but ignore the value on input.
  */
 static inet *
@@ -319,7 +270,7 @@ inet_to_cidr(PG_FUNCTION_ARGS)
 	inet	   *src = PG_GETARG_INET_PP(0);
 	inet	   *dst;
 	int			bits;
-	int byte;
+	int			byte;
 	int			nbits;
 	int			maxbytes;
 
@@ -340,15 +291,15 @@ inet_to_cidr(PG_FUNCTION_ARGS)
 	/* clear the first byte, this might be a partial byte */
 	if (nbits != 0)
 	{
-		ip_addr(dst)[byte] &=~(0xFF >> nbits);
-		byte	  ++;
+		ip_addr(dst)[byte] &= ~(0xFF >> nbits);
+		byte++;
 	}
 	/* clear remaining bytes */
 	maxbytes = ip_addrsize(dst);
-	while (byte <maxbytes)
+	while (byte < maxbytes)
 	{
 		ip_addr(dst)[byte] = 0;
-		byte	  ++;
+		byte++;
 	}
 
 	PG_RETURN_INET_P(dst);
@@ -384,7 +335,7 @@ cidr_set_masklen(PG_FUNCTION_ARGS)
 	inet	   *src = PG_GETARG_INET_PP(0);
 	int			bits = PG_GETARG_INT32(1);
 	inet	   *dst;
-	int byte;
+	int			byte;
 	int			nbits;
 	int			maxbytes;
 
@@ -409,15 +360,15 @@ cidr_set_masklen(PG_FUNCTION_ARGS)
 	/* clear the first byte, this might be a partial byte */
 	if (nbits != 0)
 	{
-		ip_addr(dst)[byte] &=~(0xFF >> nbits);
-		byte	  ++;
+		ip_addr(dst)[byte] &= ~(0xFF >> nbits);
+		byte++;
 	}
 	/* clear remaining bytes */
 	maxbytes = ip_addrsize(dst);
-	while (byte <maxbytes)
+	while (byte < maxbytes)
 	{
 		ip_addr(dst)[byte] = 0;
-		byte	  ++;
+		byte++;
 	}
 
 	PG_RETURN_INET_P(dst);
@@ -544,8 +495,8 @@ network_sub(PG_FUNCTION_ARGS)
 
 	if (ip_family(a1) == ip_family(a2))
 	{
-		PG_RETURN_BOOL(ip_bits(a1) > ip_bits(a2)
-					 && bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a2)) == 0);
+		PG_RETURN_BOOL(ip_bits(a1) > ip_bits(a2) &&
+					   bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a2)) == 0);
 	}
 
 	PG_RETURN_BOOL(false);
@@ -559,8 +510,8 @@ network_subeq(PG_FUNCTION_ARGS)
 
 	if (ip_family(a1) == ip_family(a2))
 	{
-		PG_RETURN_BOOL(ip_bits(a1) >= ip_bits(a2)
-					 && bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a2)) == 0);
+		PG_RETURN_BOOL(ip_bits(a1) >= ip_bits(a2) &&
+					   bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a2)) == 0);
 	}
 
 	PG_RETURN_BOOL(false);
@@ -574,8 +525,8 @@ network_sup(PG_FUNCTION_ARGS)
 
 	if (ip_family(a1) == ip_family(a2))
 	{
-		PG_RETURN_BOOL(ip_bits(a1) < ip_bits(a2)
-					 && bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a1)) == 0);
+		PG_RETURN_BOOL(ip_bits(a1) < ip_bits(a2) &&
+					   bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a1)) == 0);
 	}
 
 	PG_RETURN_BOOL(false);
@@ -589,8 +540,23 @@ network_supeq(PG_FUNCTION_ARGS)
 
 	if (ip_family(a1) == ip_family(a2))
 	{
-		PG_RETURN_BOOL(ip_bits(a1) <= ip_bits(a2)
-					 && bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a1)) == 0);
+		PG_RETURN_BOOL(ip_bits(a1) <= ip_bits(a2) &&
+					   bitncmp(ip_addr(a1), ip_addr(a2), ip_bits(a1)) == 0);
+	}
+
+	PG_RETURN_BOOL(false);
+}
+
+Datum
+network_overlap(PG_FUNCTION_ARGS)
+{
+	inet	   *a1 = PG_GETARG_INET_PP(0);
+	inet	   *a2 = PG_GETARG_INET_PP(1);
+
+	if (ip_family(a1) == ip_family(a2))
+	{
+		PG_RETURN_BOOL(bitncmp(ip_addr(a1), ip_addr(a2),
+							   Min(ip_bits(a1), ip_bits(a2))) == 0);
 	}
 
 	PG_RETURN_BOOL(false);
@@ -651,7 +617,7 @@ network_show(PG_FUNCTION_ARGS)
 Datum
 inet_abbrev(PG_FUNCTION_ARGS)
 {
-	inet	   *ip = PG_GETARG_INET_P(0);
+	inet	   *ip = PG_GETARG_INET_PP(0);
 	char	   *dst;
 	char		tmp[sizeof("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:255.255.255.255/128")];
 
@@ -716,7 +682,7 @@ network_broadcast(PG_FUNCTION_ARGS)
 {
 	inet	   *ip = PG_GETARG_INET_PP(0);
 	inet	   *dst;
-	int byte;
+	int			byte;
 	int			bits;
 	int			maxbytes;
 	unsigned char mask;
@@ -735,7 +701,7 @@ network_broadcast(PG_FUNCTION_ARGS)
 	a = ip_addr(ip);
 	b = ip_addr(dst);
 
-	for (byte = 0; byte <maxbytes; byte ++)
+	for (byte = 0; byte < maxbytes; byte++)
 	{
 		if (bits >= 8)
 		{
@@ -750,7 +716,7 @@ network_broadcast(PG_FUNCTION_ARGS)
 			bits = 0;
 		}
 
-		b[byte] = a[byte] |mask;
+		b[byte] = a[byte] | mask;
 	}
 
 	ip_family(dst) = ip_family(ip);
@@ -765,7 +731,7 @@ network_network(PG_FUNCTION_ARGS)
 {
 	inet	   *ip = PG_GETARG_INET_PP(0);
 	inet	   *dst;
-	int byte;
+	int			byte;
 	int			bits;
 	unsigned char mask;
 	unsigned char *a,
@@ -793,8 +759,8 @@ network_network(PG_FUNCTION_ARGS)
 			bits = 0;
 		}
 
-		b[byte] = a[byte] &mask;
-		byte	  ++;
+		b[byte] = a[byte] & mask;
+		byte++;
 	}
 
 	ip_family(dst) = ip_family(ip);
@@ -809,7 +775,7 @@ network_netmask(PG_FUNCTION_ARGS)
 {
 	inet	   *ip = PG_GETARG_INET_PP(0);
 	inet	   *dst;
-	int byte;
+	int			byte;
 	int			bits;
 	unsigned char mask;
 	unsigned char *b;
@@ -836,7 +802,7 @@ network_netmask(PG_FUNCTION_ARGS)
 		}
 
 		b[byte] = mask;
-		byte	  ++;
+		byte++;
 	}
 
 	ip_family(dst) = ip_family(ip);
@@ -851,7 +817,7 @@ network_hostmask(PG_FUNCTION_ARGS)
 {
 	inet	   *ip = PG_GETARG_INET_PP(0);
 	inet	   *dst;
-	int byte;
+	int			byte;
 	int			bits;
 	int			maxbytes;
 	unsigned char mask;
@@ -884,7 +850,7 @@ network_hostmask(PG_FUNCTION_ARGS)
 		}
 
 		b[byte] = mask;
-		byte	  --;
+		byte--;
 	}
 
 	ip_family(dst) = ip_family(ip);
@@ -955,17 +921,17 @@ convert_network_to_scalar(Datum value, Oid typid)
  * bitncmp(l, r, n)
  *		compare bit masks l and r, for n bits.
  * return:
- *		-1, 1, or 0 in the libc tradition.
+ *		<0, >0, or 0 in the libc tradition.
  * note:
  *		network byte order assumed.  this means 192.5.5.240/28 has
  *		0x11110000 in its fourth octet.
  * author:
  *		Paul Vixie (ISC), June 1996
  */
-static int
-bitncmp(void *l, void *r, int n)
+int
+bitncmp(const unsigned char *l, const unsigned char *r, int n)
 {
-	u_int		lb,
+	unsigned int lb,
 				rb;
 	int			x,
 				b;
@@ -975,8 +941,8 @@ bitncmp(void *l, void *r, int n)
 	if (x || (n % 8) == 0)
 		return x;
 
-	lb = ((const u_char *) l)[b];
-	rb = ((const u_char *) r)[b];
+	lb = l[b];
+	rb = r[b];
 	for (b = n % 8; b > 0; b--)
 	{
 		if (IS_HIGHBIT_SET(lb) != IS_HIGHBIT_SET(rb))
@@ -991,10 +957,53 @@ bitncmp(void *l, void *r, int n)
 	return 0;
 }
 
+/*
+ * bitncommon: compare bit masks l and r, for up to n bits.
+ *
+ * Returns the number of leading bits that match (0 to n).
+ */
+int
+bitncommon(const unsigned char *l, const unsigned char *r, int n)
+{
+	int			byte,
+				nbits;
+
+	/* number of bits to examine in last byte */
+	nbits = n % 8;
+
+	/* check whole bytes */
+	for (byte = 0; byte < n / 8; byte++)
+	{
+		if (l[byte] != r[byte])
+		{
+			/* at least one bit in the last byte is not common */
+			nbits = 7;
+			break;
+		}
+	}
+
+	/* check bits in last partial byte */
+	if (nbits != 0)
+	{
+		/* calculate diff of first non-matching bytes */
+		unsigned int diff = l[byte] ^ r[byte];
+
+		/* compare the bits from the most to the least */
+		while ((diff >> (8 - nbits)) != 0)
+			nbits--;
+	}
+
+	return (8 * byte) + nbits;
+}
+
+
+/*
+ * Verify a CIDR address is OK (doesn't have bits set past the masklen)
+ */
 static bool
 addressOK(unsigned char *a, int bits, int family)
 {
-	int byte;
+	int			byte;
 	int			nbits;
 	int			maxbits;
 	int			maxbytes;
@@ -1022,12 +1031,12 @@ addressOK(unsigned char *a, int bits, int family)
 	if (bits != 0)
 		mask >>= nbits;
 
-	while (byte <maxbytes)
+	while (byte < maxbytes)
 	{
-		if ((a[byte] &mask) != 0)
+		if ((a[byte] & mask) != 0)
 			return false;
 		mask = 0xff;
-		byte	  ++;
+		byte++;
 	}
 
 	return true;
@@ -1093,7 +1102,7 @@ inet_client_addr(PG_FUNCTION_ARGS)
 							 remote_host, sizeof(remote_host),
 							 NULL, 0,
 							 NI_NUMERICHOST | NI_NUMERICSERV);
-	if (ret)
+	if (ret != 0)
 		PG_RETURN_NULL();
 
 	clean_ipv6_addr(port->raddr.addr.ss_family, remote_host);
@@ -1132,7 +1141,7 @@ inet_client_port(PG_FUNCTION_ARGS)
 							 NULL, 0,
 							 remote_port, sizeof(remote_port),
 							 NI_NUMERICHOST | NI_NUMERICSERV);
-	if (ret)
+	if (ret != 0)
 		PG_RETURN_NULL();
 
 	PG_RETURN_DATUM(DirectFunctionCall1(int4in, CStringGetDatum(remote_port)));
@@ -1169,7 +1178,7 @@ inet_server_addr(PG_FUNCTION_ARGS)
 							 local_host, sizeof(local_host),
 							 NULL, 0,
 							 NI_NUMERICHOST | NI_NUMERICSERV);
-	if (ret)
+	if (ret != 0)
 		PG_RETURN_NULL();
 
 	clean_ipv6_addr(port->laddr.addr.ss_family, local_host);
@@ -1208,7 +1217,7 @@ inet_server_port(PG_FUNCTION_ARGS)
 							 NULL, 0,
 							 local_port, sizeof(local_port),
 							 NI_NUMERICHOST | NI_NUMERICSERV);
-	if (ret)
+	if (ret != 0)
 		PG_RETURN_NULL();
 
 	PG_RETURN_DATUM(DirectFunctionCall1(int4in, CStringGetDatum(local_port)));
@@ -1392,11 +1401,11 @@ inetmi(PG_FUNCTION_ARGS)
 		/*
 		 * We form the difference using the traditional complement, increment,
 		 * and add rule, with the increment part being handled by starting the
-		 * carry off at 1.	If you don't think integer arithmetic is done in
+		 * carry off at 1.  If you don't think integer arithmetic is done in
 		 * two's complement, too bad.
 		 */
 		int			nb = ip_addrsize(ip);
-		int byte = 0;
+		int			byte = 0;
 		unsigned char *pip = ip_addr(ip);
 		unsigned char *pip2 = ip_addr(ip2);
 		int			carry = 1;
@@ -1407,14 +1416,14 @@ inetmi(PG_FUNCTION_ARGS)
 
 			carry = pip[nb] + (~pip2[nb] & 0xFF) + carry;
 			lobyte = carry & 0xFF;
-			if (byte <sizeof(int64))
+			if (byte < sizeof(int64))
 			{
-				res |= ((int64) lobyte) << (byte *8);
+				res |= ((int64) lobyte) << (byte * 8);
 			}
 			else
 			{
 				/*
-				 * Input wider than int64: check for overflow.	All bytes to
+				 * Input wider than int64: check for overflow.  All bytes to
 				 * the left of what will fit should be 0 or 0xFF, depending on
 				 * sign of the now-complete result.
 				 */
@@ -1424,15 +1433,15 @@ inetmi(PG_FUNCTION_ARGS)
 							 errmsg("result is out of range")));
 			}
 			carry >>= 8;
-			byte	  ++;
+			byte++;
 		}
 
 		/*
 		 * If input is narrower than int64, overflow is not possible, but we
 		 * have to do proper sign extension.
 		 */
-		if (carry == 0 && byte <sizeof(int64))
-			res |= ((int64) -1) << (byte *8);
+		if (carry == 0 && byte < sizeof(int64))
+			res |= ((int64) -1) << (byte * 8);
 	}
 
 	PG_RETURN_INT64(res);

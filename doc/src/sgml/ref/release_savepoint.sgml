@@ -1,9 +1,18 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/release_savepoint.sgml,v 1.9 2010/04/03 07:23:02 petere Exp $
+doc/src/sgml/ref/release_savepoint.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-RELEASE-SAVEPOINT">
+ <indexterm zone="sql-release-savepoint">
+  <primary>RELEASE SAVEPOINT</primary>
+ </indexterm>
+
+ <indexterm zone="sql-release-savepoint">
+  <primary>savepoints</primary>
+  <secondary>releasing</secondary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>RELEASE SAVEPOINT</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,21 +24,12 @@ PostgreSQL documentation
   <refpurpose>destroy a previously defined savepoint</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-release-savepoint">
-  <primary>RELEASE SAVEPOINT</primary>
- </indexterm>
-
- <indexterm zone="sql-release-savepoint">
-  <primary>savepoints</primary>
-  <secondary>releasing</secondary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 RELEASE [ SAVEPOINT ] <replaceable>savepoint_name</replaceable>
 </synopsis>
  </refsynopsisdiv>
-  
+
  <refsect1>
   <title>Description</title>
 
@@ -107,7 +107,7 @@ COMMIT;
 
  <refsect1>
   <title>Compatibility</title>
-  
+
   <para>
    This command conforms to the <acronym>SQL</> standard.  The standard
    specifies that the key word <literal>SAVEPOINT</literal> is

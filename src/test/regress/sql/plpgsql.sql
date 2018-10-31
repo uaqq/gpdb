@@ -1420,7 +1420,7 @@ insert into IFace values ('IF', 'orion', 'ethernet_interface_name_too_long', '')
 
 --
 -- The following tests are unrelated to the scenario outlined above;
--- they merely exercise specific parts of PL/PgSQL
+-- they merely exercise specific parts of PL/pgSQL
 --
 
 --
@@ -1731,7 +1731,12 @@ begin
 		when data_exception then  -- category match
 			raise notice 'caught data_exception';
 			x := -1;
-		when NUMERIC_VALUE_OUT_OF_RANGE OR CARDINALITY_VIOLATION then
+		-- start_ignore
+		-- GPDB_92_MERGE_FIXME: ORCA really should generate an error code of
+		-- CARDINALITY_VIOLATION in CException::m_rgerrcode
+		-- (libgpos/src/error/CException.cpp)
+		-- end_ignore
+		when NUMERIC_VALUE_OUT_OF_RANGE OR CARDINALITY_VIOLATION OR TOO_MANY_ROWS then
 			raise notice 'caught numeric_value_out_of_range or cardinality_violation';
 			x := -2;
 	end;
@@ -1946,6 +1951,129 @@ select refcursor_test2(20000, 20000) as "Should be false",
        refcursor_test2(20, 20) as "Should be true";
 
 --
+-- tests for cursors with named parameter arguments
+--
+create function namedparmcursor_test1(int, int) returns boolean as $$
+declare
+    c1 cursor (param1 int, param12 int) for select * from rc_test where a > param1 and b > param12;
+    nonsense record;
+begin
+    open c1(param12 := $2, param1 := $1);
+    fetch c1 into nonsense;
+    close c1;
+    if found then
+        return true;
+    else
+        return false;
+    end if;
+end
+$$ language plpgsql;
+
+select namedparmcursor_test1(20000, 20000) as "Should be false",
+       namedparmcursor_test1(20, 20) as "Should be true";
+
+-- mixing named and positional argument notations
+create function namedparmcursor_test2(int, int) returns boolean as $$
+declare
+    c1 cursor (param1 int, param2 int) for select * from rc_test where a > param1 and b > param2;
+    nonsense record;
+begin
+    open c1(param1 := $1, $2);
+    fetch c1 into nonsense;
+    close c1;
+    if found then
+        return true;
+    else
+        return false;
+    end if;
+end
+$$ language plpgsql;
+select namedparmcursor_test2(20, 20);
+
+-- mixing named and positional: param2 is given twice, once in named notation
+-- and second time in positional notation. Should throw an error at parse time
+create function namedparmcursor_test3() returns void as $$
+declare
+    c1 cursor (param1 int, param2 int) for select * from rc_test where a > param1 and b > param2;
+begin
+    open c1(param2 := 20, 21);
+end
+$$ language plpgsql;
+
+-- mixing named and positional: same as previous test, but param1 is duplicated
+create function namedparmcursor_test4() returns void as $$
+declare
+    c1 cursor (param1 int, param2 int) for select * from rc_test where a > param1 and b > param2;
+begin
+    open c1(20, param1 := 21);
+end
+$$ language plpgsql;
+
+-- duplicate named parameter, should throw an error at parse time
+create function namedparmcursor_test5() returns void as $$
+declare
+  c1 cursor (p1 int, p2 int) for
+    select * from tenk1 where thousand = p1 and tenthous = p2;
+begin
+  open c1 (p2 := 77, p2 := 42);
+end
+$$ language plpgsql;
+
+-- not enough parameters, should throw an error at parse time
+create function namedparmcursor_test6() returns void as $$
+declare
+  c1 cursor (p1 int, p2 int) for
+    select * from tenk1 where thousand = p1 and tenthous = p2;
+begin
+  open c1 (p2 := 77);
+end
+$$ language plpgsql;
+
+-- division by zero runtime error, the context given in the error message
+-- should be sensible
+create function namedparmcursor_test7() returns void as $$
+declare
+  c1 cursor (p1 int, p2 int) for
+    select * from tenk1 where thousand = p1 and tenthous = p2;
+begin
+  open c1 (p2 := 77, p1 := 42/0);
+end $$ language plpgsql;
+select namedparmcursor_test7();
+
+-- check that line comments work correctly within the argument list (there
+-- is some special handling of this case in the code: the newline after the
+-- comment must be preserved when the argument-evaluating query is
+-- constructed, otherwise the comment effectively comments out the next
+-- argument, too)
+create function namedparmcursor_test8() returns int4 as $$
+declare
+  c1 cursor (p1 int, p2 int) for
+    select count(*) from tenk1 where thousand = p1 and tenthous = p2;
+  n int4;
+begin
+  open c1 (77 -- test
+  , 42);
+  fetch c1 into n;
+  return n;
+end $$ language plpgsql;
+select namedparmcursor_test8();
+
+-- cursor parameter name can match plpgsql variable or unreserved keyword
+create function namedparmcursor_test9(p1 int) returns int4 as $$
+declare
+  c1 cursor (p1 int, p2 int, debug int) for
+    select count(*) from tenk1 where thousand = p1 and tenthous = p2
+      and four = debug;
+  p2 int4 := 1006;
+  n int4;
+begin
+  open c1 (p1 := p1, p2 := p2, debug := 2);
+  fetch c1 into n;
+  return n;
+end $$ language plpgsql;
+select namedparmcursor_test9(6);
+
+--
 -- tests for "raise" processing
 --
 create function raise_test1(int) returns int as $$
@@ -1965,6 +2093,31 @@ end;
 $$ language plpgsql;
 
 select raise_test2(10);
+
+-- Test re-RAISE inside a nested exception block.  This case is allowed
+-- by Oracle's PL/SQL but was handled differently by PG before 9.1.
+
+CREATE FUNCTION reraise_test() RETURNS void AS $$
+BEGIN
+   BEGIN
+       RAISE syntax_error;
+   EXCEPTION
+       WHEN syntax_error THEN
+           BEGIN
+               raise notice 'exception % thrown in inner block, reraising', sqlerrm;
+               RAISE;
+           EXCEPTION
+               WHEN OTHERS THEN
+                   raise notice 'RIGHT - exception % caught in inner block', sqlerrm;
+           END;
+   END;
+EXCEPTION
+   WHEN OTHERS THEN
+       raise notice 'WRONG - exception % caught in outer block', sqlerrm;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT reraise_test();
 
 --
 -- reject function definitions that contain malformed SQL queries at
@@ -2067,7 +2220,7 @@ create function excpt_test2() returns void as $$
 begin
     begin
         begin
-    	    raise notice '% %', sqlstate, sqlerrm;
+            raise notice '% %', sqlstate, sqlerrm;
         end;
     end;
 end; $$ language plpgsql;
@@ -2077,7 +2230,7 @@ select excpt_test2();
 create function excpt_test3() returns void as $$
 begin
     begin
-    	raise exception 'user exception';
+        raise exception 'user exception';
     exception when others then
 	    raise notice 'caught exception % %', sqlstate, sqlerrm;
 	    begin
@@ -2160,13 +2313,19 @@ begin
   end loop;
 
   raise notice '---5---';
-  for _r in select * from conttesttbl loop
+  -- select from a heap table, the order is uncertain.
+  -- the test framework does not sort NOTICE
+  -- so we add `order by` here.
+  for _r in select * from conttesttbl order by v loop
     continue when _r.v <= 20;
     raise notice '%', _r.v;
   end loop;
 
   raise notice '---6---';
-  for _r in execute 'select * from conttesttbl' loop
+  -- select from a heap table, the order is uncertain.
+  -- the test framework does not sort NOTICE
+  -- so we add `order by` here.
+  for _r in execute 'select * from conttesttbl order by v' loop
     continue when _r.v <= 20;
     raise notice '%', _r.v;
   end loop;
@@ -2448,6 +2607,197 @@ select footest();
 
 drop function footest();
 
+-- test printing parameters after failure due to STRICT
+
+set plpgsql.print_strict_params to true;
+
+create or replace function footest() returns void as $$
+declare
+x record;
+p1 int := 2;
+p3 text := 'foo';
+begin
+  -- no rows
+  select * from foo where f1 = p1 and f1::text = p3 into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+create or replace function footest() returns void as $$
+declare
+x record;
+p1 int := 2;
+p3 text := 'foo';
+begin
+  -- too many rows
+  select * from foo where f1 > p1 or f1::text = p3  into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+create or replace function footest() returns void as $$
+declare x record;
+begin
+  -- too many rows, no params
+  select * from foo where f1 > 3 into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+create or replace function footest() returns void as $$
+declare x record;
+begin
+  -- no rows
+  execute 'select * from foo where f1 = $1 or f1::text = $2' using 0, 'foo' into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+create or replace function footest() returns void as $$
+declare x record;
+begin
+  -- too many rows
+  execute 'select * from foo where f1 > $1' using 1 into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+create or replace function footest() returns void as $$
+declare x record;
+begin
+  -- too many rows, no parameters
+  execute 'select * from foo where f1 > 3' into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+create or replace function footest() returns void as $$
+-- override the global
+#print_strict_params off
+declare
+x record;
+p1 int := 2;
+p3 text := 'foo';
+begin
+  -- too many rows
+  select * from foo where f1 > p1 or f1::text = p3  into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+reset plpgsql.print_strict_params;
+
+create or replace function footest() returns void as $$
+-- override the global
+#print_strict_params on
+declare
+x record;
+p1 int := 2;
+p3 text := 'foo';
+begin
+  -- too many rows
+  select * from foo where f1 > p1 or f1::text = p3  into strict x;
+  raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
+end$$ language plpgsql;
+
+select footest();
+
+-- test warnings and errors
+set plpgsql.extra_warnings to 'all';
+set plpgsql.extra_warnings to 'none';
+set plpgsql.extra_errors to 'all';
+set plpgsql.extra_errors to 'none';
+
+-- test warnings when shadowing a variable
+
+set plpgsql.extra_warnings to 'shadowed_variables';
+
+-- simple shadowing of input and output parameters
+create or replace function shadowtest(in1 int)
+	returns table (out1 int) as $$
+declare
+in1 int;
+out1 int;
+begin
+end
+$$ language plpgsql;
+select shadowtest(1);
+
+set plpgsql.extra_warnings to 'shadowed_variables';
+select shadowtest(1);
+create or replace function shadowtest(in1 int)
+	returns table (out1 int) as $$
+declare
+in1 int;
+out1 int;
+begin
+end
+$$ language plpgsql;
+select shadowtest(1);
+drop function shadowtest(int);
+
+-- shadowing in a second DECLARE block
+create or replace function shadowtest()
+	returns void as $$
+declare
+f1 int;
+begin
+	declare
+	f1 int;
+	begin
+	end;
+end$$ language plpgsql;
+drop function shadowtest();
+
+-- several levels of shadowing
+create or replace function shadowtest(in1 int)
+	returns void as $$
+declare
+in1 int;
+begin
+	declare
+	in1 int;
+	begin
+	end;
+end$$ language plpgsql;
+drop function shadowtest(int);
+
+-- shadowing in cursor definitions
+create or replace function shadowtest()
+	returns void as $$
+declare
+f1 int;
+c1 cursor (f1 int) for select 1;
+begin
+end$$ language plpgsql;
+drop function shadowtest();
+
+-- test errors when shadowing a variable
+
+set plpgsql.extra_errors to 'shadowed_variables';
+
+create or replace function shadowtest(f1 int)
+	returns boolean as $$
+declare f1 int; begin return 1; end $$ language plpgsql;
+
+select shadowtest(1);
+
+reset plpgsql.extra_errors;
+reset plpgsql.extra_warnings;
+
+create or replace function shadowtest(f1 int)
+	returns boolean as $$
+declare f1 int; begin return 1; end $$ language plpgsql;
+
+select shadowtest(1);
+
 -- test scrollable cursor support
 
 create function sc_test() returns setof integer as $$
@@ -2641,7 +2991,7 @@ select exc_using(5, 'foobar');
 drop function exc_using(int, text);
 
 create or replace function exc_using(int) returns void as $$
-declare 
+declare
   c refcursor;
   i int;
 begin
@@ -2652,7 +3002,7 @@ begin
     raise notice '%', i;
   end loop;
   close c;
-  return;  
+  return;
 end;
 $$ language plpgsql;
 
@@ -2798,7 +3148,119 @@ select * from returnqueryf();
 drop function returnqueryf();
 drop table tabwithcols;
 
+--
+-- Tests for composite-type results
+--
+
+create type compostype as (x int, y varchar);
+
+-- test: use of variable of composite type in return statement
+create or replace function compos() returns compostype as $$
+declare
+  v compostype;
+begin
+  v := (1, 'hello');
+  return v;
+end;
+$$ language plpgsql;
+
+select compos();
+
+-- test: use of variable of record type in return statement
+create or replace function compos() returns compostype as $$
+declare
+  v record;
+begin
+  v := (1, 'hello'::varchar);
+  return v;
+end;
+$$ language plpgsql;
+
+select compos();
+
+-- test: use of row expr in return statement
+create or replace function compos() returns compostype as $$
+begin
+  return (1, 'hello'::varchar);
+end;
+$$ language plpgsql;
+
+select compos();
+
+-- this does not work currently (no implicit casting)
+create or replace function compos() returns compostype as $$
+begin
+  return (1, 'hello');
+end;
+$$ language plpgsql;
+
+select compos();
+
+-- ... but this does
+create or replace function compos() returns compostype as $$
+begin
+  return (1, 'hello')::compostype;
+end;
+$$ language plpgsql;
+
+select compos();
+
+drop function compos();
+
+-- test: return a row expr as record.
+create or replace function composrec() returns record as $$
+declare
+  v record;
+begin
+  v := (1, 'hello');
+  return v;
+end;
+$$ language plpgsql;
+
+select composrec();
+
+-- test: return row expr in return statement.
+create or replace function composrec() returns record as $$
+begin
+  return (1, 'hello');
+end;
+$$ language plpgsql;
+
+select composrec();
+
+drop function composrec();
+
+-- test: row expr in RETURN NEXT statement.
+create or replace function compos() returns setof compostype as $$
+begin
+  for i in 1..3
+  loop
+    return next (1, 'hello'::varchar);
+  end loop;
+  return next null::compostype;
+  return next (2, 'goodbye')::compostype;
+end;
+$$ language plpgsql;
+
+select * from compos();
+
+drop function compos();
+
+-- test: use invalid expr in return statement.
+create or replace function compos() returns compostype as $$
+begin
+  return 1 + 1;
+end;
+$$ language plpgsql;
+
+select compos();
+
+drop function compos();
+drop type compostype;
+
+--
 -- Tests for 8.4's new RAISE features
+--
 
 create or replace function raise_test() returns void as $$
 begin
@@ -2925,6 +3387,76 @@ $$ language plpgsql;
 
 select raise_test();
 
+-- test access to exception data
+create function zero_divide() returns int as $$
+declare v int := 0;
+begin
+  return 10 / v;
+end;
+$$ language plpgsql;
+
+create or replace function raise_test() returns void as $$
+begin
+  raise exception 'custom exception'
+     using detail = 'some detail of custom exception',
+           hint = 'some hint related to custom exception';
+end;
+$$ language plpgsql;
+
+create function stacked_diagnostics_test() returns void as $$
+declare _sqlstate text;
+        _message text;
+        _context text;
+begin
+  perform zero_divide();
+exception when others then
+  get stacked diagnostics
+        _sqlstate = returned_sqlstate,
+        _message = message_text,
+        _context = pg_exception_context;
+  raise notice 'sqlstate: %, message: %, context: [%]',
+    _sqlstate, _message, replace(_context, E'\n', ' <- ');
+end;
+$$ language plpgsql;
+
+select stacked_diagnostics_test();
+
+create or replace function stacked_diagnostics_test() returns void as $$
+declare _detail text;
+        _hint text;
+        _message text;
+begin
+  perform raise_test();
+exception when others then
+  get stacked diagnostics
+        _message = message_text,
+        _detail = pg_exception_detail,
+        _hint = pg_exception_hint;
+  raise notice 'message: %, detail: %, hint: %', _message, _detail, _hint;
+end;
+$$ language plpgsql;
+
+select stacked_diagnostics_test();
+
+-- fail, cannot use stacked diagnostics statement outside handler
+create or replace function stacked_diagnostics_test() returns void as $$
+declare _detail text;
+        _hint text;
+        _message text;
+begin
+  get stacked diagnostics
+        _message = message_text,
+        _detail = pg_exception_detail,
+        _hint = pg_exception_hint;
+  raise notice 'message: %, detail: %, hint: %', _message, _detail, _hint;
+end;
+$$ language plpgsql;
+
+select stacked_diagnostics_test();
+
+drop function zero_divide();
+drop function stacked_diagnostics_test();
+
 -- check cases where implicit SQLSTATE variable could be confused with
 -- SQLSTATE as a keyword, cf bug #5524
 create or replace function raise_test() returns void as $$
@@ -2940,6 +3472,38 @@ $$ language plpgsql;
 select raise_test();
 
 drop function raise_test();
+
+-- test passing column_name, constraint_name, datatype_name, table_name
+-- and schema_name error fields
+
+create or replace function stacked_diagnostics_test() returns void as $$
+declare _column_name text;
+        _constraint_name text;
+        _datatype_name text;
+        _table_name text;
+        _schema_name text;
+begin
+  raise exception using
+    column = '>>some column name<<',
+    constraint = '>>some constraint name<<',
+    datatype = '>>some datatype name<<',
+    table = '>>some table name<<',
+    schema = '>>some schema name<<';
+exception when others then
+  get stacked diagnostics
+        _column_name = column_name,
+        _constraint_name = constraint_name,
+        _datatype_name = pg_datatype_name,
+        _table_name = table_name,
+        _schema_name = schema_name;
+  raise notice 'column %, constraint %, type %, table %, schema %',
+    _column_name, _constraint_name, _datatype_name, _table_name, _schema_name;
+end;
+$$ language plpgsql;
+
+select stacked_diagnostics_test();
+
+drop function stacked_diagnostics_test();
 
 -- test CASE statement
 
@@ -3216,6 +3780,19 @@ rollback;
 drop function error2(p_name_table text);
 drop function error1(text);
 
+-- Test for consistent reporting of error context
+
+create function fail() returns int language plpgsql as $$
+begin
+  return 1/0;
+end
+$$;
+
+select fail();
+select fail();
+
+drop function fail();
+
 -- Test handling of string literals.
 
 set standard_conforming_strings = off;
@@ -3379,3 +3956,260 @@ $$ language plpgsql;
 select unreserved_test();
 
 drop function unreserved_test();
+
+--
+-- Test FOREACH over arrays
+--
+
+create function foreach_test(anyarray)
+returns void as $$
+declare x int;
+begin
+  foreach x in array $1
+  loop
+    raise notice '%', x;
+  end loop;
+  end;
+$$ language plpgsql;
+
+select foreach_test(ARRAY[1,2,3,4]);
+select foreach_test(ARRAY[[1,2],[3,4]]);
+
+create or replace function foreach_test(anyarray)
+returns void as $$
+declare x int;
+begin
+  foreach x slice 1 in array $1
+  loop
+    raise notice '%', x;
+  end loop;
+  end;
+$$ language plpgsql;
+
+-- should fail
+select foreach_test(ARRAY[1,2,3,4]);
+select foreach_test(ARRAY[[1,2],[3,4]]);
+
+create or replace function foreach_test(anyarray)
+returns void as $$
+declare x int[];
+begin
+  foreach x slice 1 in array $1
+  loop
+    raise notice '%', x;
+  end loop;
+  end;
+$$ language plpgsql;
+
+select foreach_test(ARRAY[1,2,3,4]);
+select foreach_test(ARRAY[[1,2],[3,4]]);
+
+-- higher level of slicing
+create or replace function foreach_test(anyarray)
+returns void as $$
+declare x int[];
+begin
+  foreach x slice 2 in array $1
+  loop
+    raise notice '%', x;
+  end loop;
+  end;
+$$ language plpgsql;
+
+-- should fail
+select foreach_test(ARRAY[1,2,3,4]);
+-- ok
+select foreach_test(ARRAY[[1,2],[3,4]]);
+select foreach_test(ARRAY[[[1,2]],[[3,4]]]);
+
+create type xy_tuple AS (x int, y int);
+
+-- iteration over array of records
+create or replace function foreach_test(anyarray)
+returns void as $$
+declare r record;
+begin
+  foreach r in array $1
+  loop
+    raise notice '%', r;
+  end loop;
+  end;
+$$ language plpgsql;
+
+select foreach_test(ARRAY[(10,20),(40,69),(35,78)]::xy_tuple[]);
+select foreach_test(ARRAY[[(10,20),(40,69)],[(35,78),(88,76)]]::xy_tuple[]);
+
+create or replace function foreach_test(anyarray)
+returns void as $$
+declare x int; y int;
+begin
+  foreach x, y in array $1
+  loop
+    raise notice 'x = %, y = %', x, y;
+  end loop;
+  end;
+$$ language plpgsql;
+
+select foreach_test(ARRAY[(10,20),(40,69),(35,78)]::xy_tuple[]);
+select foreach_test(ARRAY[[(10,20),(40,69)],[(35,78),(88,76)]]::xy_tuple[]);
+
+-- slicing over array of composite types
+create or replace function foreach_test(anyarray)
+returns void as $$
+declare x xy_tuple[];
+begin
+  foreach x slice 1 in array $1
+  loop
+    raise notice '%', x;
+  end loop;
+  end;
+$$ language plpgsql;
+
+select foreach_test(ARRAY[(10,20),(40,69),(35,78)]::xy_tuple[]);
+select foreach_test(ARRAY[[(10,20),(40,69)],[(35,78),(88,76)]]::xy_tuple[]);
+
+drop function foreach_test(anyarray);
+drop type xy_tuple;
+
+--
+-- Assorted tests for array subscript assignment
+--
+
+create temp table rtype (id int, ar text[]);
+
+create function arrayassign1() returns text[] language plpgsql as $$
+declare
+ r record;
+begin
+  r := row(12, '{foo,bar,baz}')::rtype;
+  r.ar[2] := 'replace';
+  return r.ar;
+end$$;
+
+select arrayassign1();
+select arrayassign1(); -- try again to exercise internal caching
+
+create domain orderedarray as int[2]
+  constraint sorted check (value[1] < value[2]);
+
+select '{1,2}'::orderedarray;
+select '{2,1}'::orderedarray;  -- fail
+
+create function testoa(x1 int, x2 int, x3 int) returns orderedarray
+language plpgsql as $$
+declare res orderedarray;
+begin
+  res := array[x1, x2];
+  res[2] := x3;
+  return res;
+end$$;
+
+select testoa(1,2,3);
+select testoa(1,2,3); -- try again to exercise internal caching
+select testoa(2,1,3); -- fail at initial assign
+select testoa(1,2,1); -- fail at update
+
+drop function arrayassign1();
+drop function testoa(x1 int, x2 int, x3 int);
+
+-- access to call stack
+create function inner_func(int)
+returns int as $$
+declare _context text;
+begin
+  get diagnostics _context = pg_context;
+  raise notice '***%***', _context;
+  -- lets do it again, just for fun..
+  get diagnostics _context = pg_context;
+  raise notice '***%***', _context;
+  raise notice 'lets make sure we didnt break anything';
+  return 2 * $1;
+end;
+$$ language plpgsql;
+
+create or replace function outer_func(int)
+returns int as $$
+declare
+  myresult int;
+begin
+  raise notice 'calling down into inner_func()';
+  myresult := inner_func($1);
+  raise notice 'inner_func() done';
+  return myresult;
+end;
+$$ language plpgsql;
+
+create or replace function outer_outer_func(int)
+returns int as $$
+declare
+  myresult int;
+begin
+  raise notice 'calling down into outer_func()';
+  myresult := outer_func($1);
+  raise notice 'outer_func() done';
+  return myresult;
+end;
+$$ language plpgsql;
+
+select outer_outer_func(10);
+-- repeated call should to work
+select outer_outer_func(20);
+
+drop function outer_outer_func(int);
+drop function outer_func(int);
+drop function inner_func(int);
+
+-- access to call stack from exception
+create function inner_func(int)
+returns int as $$
+declare
+  _context text;
+  sx int := 5;
+begin
+  begin
+    perform sx / 0;
+  exception
+    when division_by_zero then
+      get diagnostics _context = pg_context;
+      raise notice '***%***', _context;
+  end;
+
+  -- lets do it again, just for fun..
+  get diagnostics _context = pg_context;
+  raise notice '***%***', _context;
+  raise notice 'lets make sure we didnt break anything';
+  return 2 * $1;
+end;
+$$ language plpgsql;
+
+create or replace function outer_func(int)
+returns int as $$
+declare
+  myresult int;
+begin
+  raise notice 'calling down into inner_func()';
+  myresult := inner_func($1);
+  raise notice 'inner_func() done';
+  return myresult;
+end;
+$$ language plpgsql;
+
+create or replace function outer_outer_func(int)
+returns int as $$
+declare
+  myresult int;
+begin
+  raise notice 'calling down into outer_func()';
+  myresult := outer_func($1);
+  raise notice 'outer_func() done';
+  return myresult;
+end;
+$$ language plpgsql;
+
+select outer_outer_func(10);
+-- repeated call should to work
+select outer_outer_func(20);
+
+drop function outer_outer_func(int);
+drop function outer_func(int);
+drop function inner_func(int);

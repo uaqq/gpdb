@@ -1,24 +1,19 @@
 /*
  * GiST support for ltree
  * Teodor Sigaev <teodor@stack.net>
- * $PostgreSQL: pgsql/contrib/ltree/ltree_gist.c,v 1.26 2010/02/24 18:02:24 tgl Exp $
+ * contrib/ltree/ltree_gist.c
  */
 #include "postgres.h"
 
 #include "access/gist.h"
-#include "access/nbtree.h"
 #include "access/skey.h"
-#include "utils/array.h"
 #include "crc32.h"
 #include "ltree.h"
 
 #define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
 
 PG_FUNCTION_INFO_V1(ltree_gist_in);
-Datum		ltree_gist_in(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_gist_out);
-Datum		ltree_gist_out(PG_FUNCTION_ARGS);
 
 Datum
 ltree_gist_in(PG_FUNCTION_ARGS)
@@ -39,25 +34,12 @@ ltree_gist_out(PG_FUNCTION_ARGS)
 }
 
 PG_FUNCTION_INFO_V1(ltree_compress);
-Datum		ltree_compress(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_decompress);
-Datum		ltree_decompress(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_same);
-Datum		ltree_same(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_union);
-Datum		ltree_union(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_penalty);
-Datum		ltree_penalty(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_picksplit);
-Datum		ltree_picksplit(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ltree_consistent);
-Datum		ltree_consistent(PG_FUNCTION_ARGS);
 
 #define ISEQ(a,b)	( (a)->numlevel == (b)->numlevel && ltree_compare(a,b)==0 )
 #define GETENTRY(vec,pos) ((ltree_gist *) DatumGetPointer((vec)->vector[(pos)].key))
@@ -72,7 +54,7 @@ ltree_compress(PG_FUNCTION_ARGS)
 	{							/* ltree */
 		ltree_gist *key;
 		ltree	   *val = (ltree *) DatumGetPointer(PG_DETOAST_DATUM(entry->key));
-		int4		len = LTG_HDRSIZE + VARSIZE(val);
+		int32		len = LTG_HDRSIZE + VARSIZE(val);
 
 		key = (ltree_gist *) palloc(len);
 		SET_VARSIZE(key, len);
@@ -120,7 +102,7 @@ ltree_same(PG_FUNCTION_ARGS)
 		*result = (ISEQ(LTG_NODE(a), LTG_NODE(b))) ? true : false;
 	else
 	{
-		int4		i;
+		int32		i;
 		BITVECP		sa = LTG_SIGN(a),
 					sb = LTG_SIGN(b);
 
@@ -171,7 +153,7 @@ ltree_union(PG_FUNCTION_ARGS)
 	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
 	int		   *size = (int *) PG_GETARG_POINTER(1);
 	BITVEC		base;
-	int4		i,
+	int32		i,
 				j;
 	ltree_gist *result,
 			   *cur;
@@ -255,7 +237,7 @@ ltree_penalty(PG_FUNCTION_ARGS)
 	ltree_gist *origval = (ltree_gist *) DatumGetPointer(((GISTENTRY *) PG_GETARG_POINTER(0))->key);
 	ltree_gist *newval = (ltree_gist *) DatumGetPointer(((GISTENTRY *) PG_GETARG_POINTER(1))->key);
 	float	   *penalty = (float *) PG_GETARG_POINTER(2);
-	int4		cmpr,
+	int32		cmpr,
 				cmpl;
 
 	cmpl = ltree_compare(LTG_GETLNODE(origval), LTG_GETLNODE(newval));
@@ -277,8 +259,8 @@ static int
 treekey_cmp(const void *a, const void *b)
 {
 	return ltree_compare(
-						 ((RIX *) a)->r,
-						 ((RIX *) b)->r
+						 ((const RIX *) a)->r,
+						 ((const RIX *) b)->r
 		);
 }
 
@@ -289,7 +271,7 @@ ltree_picksplit(PG_FUNCTION_ARGS)
 	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
 	GIST_SPLITVEC *v = (GIST_SPLITVEC *) PG_GETARG_POINTER(1);
 	OffsetNumber j;
-	int4		i;
+	int32		i;
 	RIX		   *array;
 	OffsetNumber maxoff;
 	int			nbytes;
@@ -443,7 +425,7 @@ ltree_picksplit(PG_FUNCTION_ARGS)
 static bool
 gist_isparent(ltree_gist *key, ltree *query)
 {
-	int4		numlevel = query->numlevel;
+	int32		numlevel = query->numlevel;
 	int			i;
 
 	for (i = query->numlevel; i >= 0; i--)
@@ -546,7 +528,7 @@ gist_tqcmp(ltree *t, lquery *q)
 	while (an > 0 && bn > 0)
 	{
 		bl = LQL_FIRST(ql);
-		if ((res = strncmp(al->name, bl->name, Min(al->len, bl->len))) == 0)
+		if ((res = memcmp(al->name, bl->name, Min(al->len, bl->len))) == 0)
 		{
 			if (al->len != bl->len)
 				return al->len - bl->len;
@@ -606,7 +588,7 @@ arrq_cons(ltree_gist *key, ArrayType *_query)
 		ereport(ERROR,
 				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
 				 errmsg("array must be one-dimensional")));
-	if (ARR_HASNULL(_query))
+	if (array_contains_nulls(_query))
 		ereport(ERROR,
 				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				 errmsg("array must not contain nulls")));

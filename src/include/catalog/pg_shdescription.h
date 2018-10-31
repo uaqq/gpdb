@@ -7,15 +7,15 @@
  * NOTE: an object is identified by the OID of the row that primarily
  * defines the object, plus the OID of the table that that row appears in.
  * For example, a database is identified by the OID of its pg_database row
- * plus the pg_class OID of table pg_database.	This allows unique
+ * plus the pg_class OID of table pg_database.  This allows unique
  * identification of objects without assuming that OIDs are unique
  * across tables.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/catalog/pg_shdescription.h,v 1.9 2010/01/05 01:06:57 tgl Exp $
+ * src/include/catalog/pg_shdescription.h
  *
  * NOTES
  *		the genbki.pl script reads this file and generates .bki
@@ -32,7 +32,7 @@
 #include "catalog/genbki.h"
 
 /* ----------------
- *		pg_shdescription definition.	cpp turns this into
+ *		pg_shdescription definition.    cpp turns this into
  *		typedef struct FormData_pg_shdescription
  * ----------------
  */
@@ -42,7 +42,10 @@ CATALOG(pg_shdescription,2396) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 {
 	Oid			objoid;			/* OID of object itself */
 	Oid			classoid;		/* OID of table containing object */
+
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		description;	/* description of object */
+#endif
 } FormData_pg_shdescription;
 
 /* GPDB added foreign key definitions for gpcheckcat. */

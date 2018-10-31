@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/contrib/hstore/hstore_compat.c,v 1.2 2010/02/26 02:00:32 momjian Exp $
+ * contrib/hstore/hstore_compat.c
  *
  * Notes on old/new hstore format disambiguation.
  *
@@ -83,7 +83,6 @@
  */
 #include "postgres.h"
 
-#include "funcapi.h"
 
 #include "hstore.h"
 
@@ -95,7 +94,7 @@
  * etc. are compatible.
  *
  * If the above statement isn't true on some bizarre platform, we're
- * a bit hosed (see Assert in hstoreValidOldFormat).
+ * a bit hosed (see StaticAssertStmt in hstoreValidOldFormat).
  */
 typedef struct
 {
@@ -180,7 +179,9 @@ hstoreValidOldFormat(HStore *hs)
 	if (hs->size_ & HS_FLAG_NEWVERSION)
 		return 0;
 
-	Assert(sizeof(HOldEntry) == sizeof(HEntry));
+	/* New format uses an HEntry for key and another for value */
+	StaticAssertStmt(sizeof(HOldEntry) == 2 * sizeof(HEntry),
+					 "old hstore format is not upward-compatible");
 
 	if (count == 0)
 		return 2;
@@ -356,7 +357,6 @@ hstoreUpgrade(Datum orig)
 
 
 PG_FUNCTION_INFO_V1(hstore_version_diag);
-Datum		hstore_version_diag(PG_FUNCTION_ARGS);
 Datum
 hstore_version_diag(PG_FUNCTION_ARGS)
 {

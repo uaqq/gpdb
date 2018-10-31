@@ -1,8 +1,12 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/load.sgml,v 1.27 2010/04/03 07:23:01 petere Exp $
+doc/src/sgml/ref/load.sgml
 -->
 
 <refentry id="SQL-LOAD">
+ <indexterm zone="sql-load">
+  <primary>LOAD</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>LOAD</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -13,10 +17,6 @@ $PostgreSQL: pgsql/doc/src/sgml/ref/load.sgml,v 1.27 2010/04/03 07:23:01 petere 
   <refname>LOAD</refname>
   <refpurpose>load a shared library file</refpurpose>
  </refnamediv>
-
- <indexterm zone="sql-load">
-  <primary>LOAD</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>

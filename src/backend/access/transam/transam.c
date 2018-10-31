@@ -3,12 +3,12 @@
  * transam.c
  *	  postgres transaction log interface routines
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/transam/transam.c,v 1.80 2010/01/02 16:57:35 momjian Exp $
+ *	  src/backend/access/transam/transam.c
  *
  * NOTES
  *	  This file contains the high level access-method interface to the
@@ -22,8 +22,8 @@
 #include "access/clog.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
+#include "cdb/cdbvars.h"
 #include "utils/snapmgr.h"
-
 
 /*
  * Single-item cache for results of TransactionLogFetch.  It's worth having
@@ -34,9 +34,6 @@
 static TransactionId cachedFetchXid = InvalidTransactionId;
 static XidStatus cachedFetchXidStatus;
 static XLogRecPtr cachedCommitLSN;
-
-/* Handy constant for an invalid xlog recptr */
-static const XLogRecPtr InvalidXLogRecPtr = {0, 0};
 
 /* Local functions */
 static XidStatus TransactionLogFetch(TransactionId transactionId);
@@ -149,7 +146,7 @@ TransactionIdDidCommit(TransactionId transactionId)
 	 * be a window just after database startup where we do not have complete
 	 * knowledge in pg_subtrans of the transactions after TransactionXmin.
 	 * StartupSUBTRANS() has ensured that any missing information will be
-	 * zeroed.	Since this case should not happen under normal conditions, it
+	 * zeroed.  Since this case should not happen under normal conditions, it
 	 * seems reasonable to emit a WARNING for it.
 	 */
 	if (xidstatus == TRANSACTION_STATUS_SUB_COMMITTED)
@@ -221,6 +218,28 @@ TransactionIdDidAbort(TransactionId transactionId)
 	 * It's not aborted.
 	 */
 	return false;
+}
+
+/*
+ * A QE reader uses this interface to determine commit status of a
+ * subtransaction ID that is known to be our own subtransaction.  This is used
+ * only in the case that subtransaction ID cache maintained in writer's PGPROC
+ * has overflown.  It's possible to use TransactionIdDidAbort() instead but it
+ * is not necessary to walk up the transaction tree and determine if a parent
+ * has aborted.  If status of the our own subtransaction is SUB_COMMITTED, it
+ * cannot have an aborted parent because upon subtransaction abort, status of
+ * the entire tree is marked as aborted in clog.  Note that this interface is
+ * used to check status of only those subtransactions that are known to be
+ * children of the top transaction that the reader backend is executing.
+ */
+bool
+TransactionIdDidAbortForReader(TransactionId transactionId)
+{
+	Assert(!Gp_is_writer);
+	XidStatus status = TransactionLogFetch(transactionId);
+	/* we must be dealing with a subtransaction */
+	Assert(status != TRANSACTION_STATUS_COMMITTED);
+	return status == TRANSACTION_STATUS_ABORTED;
 }
 
 /*
@@ -305,7 +324,7 @@ TransactionIdPrecedes(TransactionId id1, TransactionId id2)
 {
 	/*
 	 * If either ID is a permanent XID then we can just do unsigned
-	 * comparison.	If both are normal, do a modulo-2^31 comparison.
+	 * comparison.  If both are normal, do a modulo-2^32 comparison.
 	 */
 	int32		diff;
 

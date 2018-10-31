@@ -3,7 +3,7 @@
  * findtimezone.c
  *	  Functions for determining the default timezone to use.
  *
- * Portions Copyright (c) 1996-2011, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/bin/initdb/findtimezone.c
@@ -68,7 +68,7 @@ pg_open_tzfile(const char *name, char *canonname)
 	if (canonname)
 		strlcpy(canonname, name, TZ_STRLEN_MAX + 1);
 
-	strcpy(fullname, pg_TZDIR());
+	strlcpy(fullname, pg_TZDIR(), sizeof(fullname));
 	if (strlen(fullname) + 1 + strlen(name) >= MAXPGPATH)
 		return -1;				/* not gonna fit */
 	strcat(fullname, "/");
@@ -99,7 +99,7 @@ pg_load_tz(const char *name)
 	 */
 	if (strcmp(name, "GMT") == 0)
 	{
-		if (tzparse(name, &tz.state, TRUE) != 0)
+		if (!tzparse(name, &tz.state, TRUE))
 		{
 			/* This really, really should not happen ... */
 			return NULL;
@@ -107,7 +107,7 @@ pg_load_tz(const char *name)
 	}
 	else if (tzload(name, NULL, &tz.state, TRUE) != 0)
 	{
-		if (name[0] == ':' || tzparse(name, &tz.state, FALSE) != 0)
+		if (name[0] == ':' || !tzparse(name, &tz.state, FALSE))
 		{
 			return NULL;		/* unknown timezone */
 		}
@@ -375,7 +375,7 @@ identify_system_timezone(void)
 	}
 
 	/* Search for the best-matching timezone file */
-	strcpy(tmptzdir, pg_TZDIR());
+	strlcpy(tmptzdir, pg_TZDIR(), sizeof(tmptzdir));
 	bestscore = -1;
 	resultbuf[0] = '\0';
 	scan_available_timezones(tmptzdir, tmptzdir + strlen(tmptzdir) + 1,
@@ -471,7 +471,7 @@ identify_system_timezone(void)
 		return resultbuf;
 
 	/*
-	 * Did not find the timezone.  Fallback to use a GMT zone.	Note that the
+	 * Did not find the timezone.  Fallback to use a GMT zone.  Note that the
 	 * Olson timezone database names the GMT-offset zones in POSIX style: plus
 	 * is west of Greenwich.  It's unfortunate that this is opposite of SQL
 	 * conventions.  Should we therefore change the names? Probably not...
@@ -490,7 +490,7 @@ identify_system_timezone(void)
  * Recursively scan the timezone database looking for the best match to
  * the system timezone behavior.
  *
- * tzdir points to a buffer of size MAXPGPATH.	On entry, it holds the
+ * tzdir points to a buffer of size MAXPGPATH.  On entry, it holds the
  * pathname of a directory containing TZ files.  We internally modify it
  * to hold pathnames of sub-directories and files, but must restore it
  * to its original contents before exit.
@@ -571,7 +571,6 @@ scan_available_timezones(char *tzdir, char *tzdirsub, struct tztry * tt,
 
 	pgfnames_cleanup(names);
 }
-
 #else							/* WIN32 */
 
 static const struct
@@ -658,9 +657,10 @@ static const struct
 		"Cen. Australia Standard Time", "Cen. Australia Daylight Time",
 		"Australia/Adelaide"
 	},							/* (GMT+09:30) Adelaide */
+	/* Central America (other than Mexico) generally does not observe DST */
 	{
 		"Central America Standard Time", "Central America Daylight Time",
-		"CST6CDT"
+		"CST6"
 	},							/* (GMT-06:00) Central America */
 	{
 		"Central Asia Standard Time", "Central Asia Daylight Time",

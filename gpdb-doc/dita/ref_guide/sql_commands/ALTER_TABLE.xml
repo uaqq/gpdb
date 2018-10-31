@@ -14,9 +14,10 @@ ALTER TABLE <varname>name</varname> RENAME TO <varname>new_name</varname>
 ALTER TABLE <varname>name</varname> SET SCHEMA <varname>new_schema</varname>
 
 ALTER TABLE [ONLY] <varname>name</varname> SET 
-     DISTRIBUTED BY (<varname>column</varname>, [ ... ] ) 
-   | DISTRIBUTED RANDOMLY 
-   | WITH (REORGANIZE=true|false)
+     WITH (REORGANIZE=true|false)
+   | DISTRIBUTED BY (<varname>column</varname>, [ ... ] ) 
+   | DISTRIBUTED RANDOMLY
+   | DISTRIBUTED REPLICATED 
  
 ALTER TABLE [ONLY] <varname>name</varname> <varname>action</varname> [, ... ]
 
@@ -25,8 +26,9 @@ ALTER TABLE <varname>name</varname>
    | FOR (<varname>value</varname>) } <varname>partition_action</varname> [...] ] 
    <varname>partition_action</varname></codeblock>
                         <p>where <varname>action</varname> is one of:</p>
-                        <codeblock>  ADD [COLUMN] <varname>column_name type</varname>
+                        <codeblock>  ADD [COLUMN] <varname>column_name type</varname> [ DEFAULT <varname>default_expr</varname> ]
       [<varname>column_constraint</varname> [ ... ]]
+      [ ENCODING ( <varname>storage_directive</varname> [,...] ) ]
   DROP [COLUMN] <varname>column</varname> [RESTRICT | CASCADE]
   ALTER [COLUMN] <varname>column</varname> TYPE <varname>type</varname> [USING <varname>expression</varname>]
   ALTER [COLUMN] <varname>column</varname> SET DEFAULT <varname>expression</varname>
@@ -111,10 +113,11 @@ ALTER TABLE <varname>name</varname>
                                 There are several subforms: </p>
                         <ul>
                                 <li id="ay136723"><b>ADD COLUMN</b> — Adds a new column to the
-                                        table, using the same syntax as <codeph>CREATE
-                                                TABLE</codeph>. When adding a column to an
-                                        append-optimized table a <codeph>DEFAULT</codeph> clause is
-                                        required. </li>
+                                        table, using the same syntax as <codeph><xref
+                                                  href="CREATE_TABLE.xml">CREATE
+                                                TABLE</xref></codeph>. The <codeph>ENCODING</codeph>
+                                        clause is valid only for append-optimized, column-oriented
+                                        tables.</li>
                                 <li><b>DROP COLUMN</b> — Drops a column from a table. Note that if
                                         you drop table columns that are being used as the Greenplum
                                         Database distribution key, the distribution policy for the
@@ -203,10 +206,11 @@ ALTER TABLE <varname>name</varname>
                                         fillfactors are appropriate. Note that the table contents
                                         will not be modified immediately by this command. You will
                                         need to rewrite the table to get the desired effects.</li>
-                                <li id="ay141947"><b>SET DISTRIBUTED</b> —Changes the distribution
-                                        policy of a table. Changes to a hash distribution policy
-                                        will cause the table data to be physically redistributed on
-                                        disk, which can be resource intensive.</li>
+                                <li id="ay141947"><b>SET DISTRIBUTED</b> — Changes the distribution
+                                        policy of a table. Changing a hash distribution policy, or
+                                        changing to or from a  replicated policy, will cause the
+                                        table data to be physically redistributed on disk, which can
+                                        be resource intensive.</li>
                                 <li id="ay137232"><b>INHERIT <varname>parent_table</varname> / NO
                                                 INHERIT <varname>parent_table</varname></b> — Adds
                                         or removes the target table as a child of the specified
@@ -215,12 +219,12 @@ ALTER TABLE <varname>name</varname>
                                         target table must already contain all the same columns as
                                         the parent (it could have additional columns, too). The
                                         columns must have matching data types, and if they have
-                                                <codeph>NOT</codeph><codeph>NULL</codeph>
-                                        constraints in the parent then they must also have
-                                                <codeph>NOT NULL</codeph> constraints in the child.
-                                        There must also be matching child-table constraints for all
-                                                <codeph>CHECK</codeph> constraints of the
-                                        parent.</li>
+                                                <codeph>NOT NULL</codeph> constraints in the parent
+                                        then they must also have <codeph>NOT NULL</codeph>
+                                        constraints in the child. There must also be matching
+                                        child-table constraints for all <codeph>CHECK</codeph>
+                                        constraints of the parent. Neither the target table nor the
+                                        parent table may be replicated tables.</li>
                                 <li id="ay137262"><b>OWNER</b> — Changes the owner of the table,
                                         sequence, or view to the specified user. </li>
                                 <li id="ay137271"><b>SET TABLESPACE</b> — Changes the table's
@@ -410,15 +414,16 @@ ALTER TABLE <varname>name</varname>
                                 </plentry>
                                 <plentry>
                                         <pt>DISTRIBUTED BY (<varname>column</varname>) | DISTRIBUTED
-                                                RANDOMLY</pt>
+                                                RANDOMLY | DISTRIBUTED REPLICATED</pt>
                                         <pd>Specifies the distribution policy for a table. Changing
-                                                a hash distribution policy will cause the table data
-                                                to be physically redistributed on disk, which can be
-                                                resource intensive. If you declare the same hash
-                                                distribution policy or change from hash to random
-                                                distribution, data will not be redistributed unless
-                                                you declare <codeph>SET WITH
-                                                  (REORGANIZE=true)</codeph>.</pd>
+                                                a hash distribution policy causes the table data to
+                                                be physically redistributed, which can be resource
+                                                intensive. If you declare the same hash distribution
+                                                policy or change from hash to random distribution,
+                                                data will not be redistributed unless you declare
+                                                  <codeph>SET WITH (REORGANIZE=true)</codeph>.</pd>
+                                        <pd>Changing to or from a replicated distribution policy
+                                                causes the table data to be redistributed.</pd>
                                 </plentry>
                                 <plentry>
                                         <pt>REORGANIZE=true|false</pt>
@@ -581,7 +586,9 @@ ALTER TABLE <varname>name</varname>
                                                 You can exchange a table where the table data is
                                                 stored in the database. For example, the table is
                                                 created with the <codeph>CREATE TABLE</codeph>
-                                                command. </pd>
+                                                command. The table must have the same number of
+                                                columns, column order, column names, column types,
+                                                and distribution policy as the parent table.</pd>
                                         <pd>With the <codeph>EXCHANGE PARTITION</codeph> clause, you
                                                 can also exchange a readable external table (created
                                                 with the <codeph>CREATE EXTERNAL TABLE</codeph>
@@ -706,12 +713,10 @@ ALTER TABLE <varname>name</varname>
                         <p>When a column is added with <codeph>ADD COLUMN</codeph>, all existing
                                 rows in the table are initialized with the column's default value,
                                 or <codeph>NULL</codeph> if no <codeph>DEFAULT</codeph> clause is
-                                specified. (Note that adding a column to an append-optimized table
-                                without specifying a default value is not allowed.) Adding a column
-                                with a non-null default or changing the type of an existing column
-                                will require the entire table to be rewritten. This may take a
-                                significant amount of time for a large table; and it will
-                                temporarily require double the disk space.</p>
+                                specified. Adding a column with a non-null default or changing the
+                                type of an existing column will require the entire table to be
+                                rewritten. This may take a significant amount of time for a large
+                                table; and it will temporarily require double the disk space.</p>
                         <p>You can specify multiple changes in a single <codeph>ALTER TABLE</codeph>
                                 command, which will be done in a single pass over the table. </p>
                         <p>The <codeph>DROP COLUMN</codeph> form does not physically remove the
@@ -754,7 +759,7 @@ ALTER TABLE <varname>name</varname>
                                 can recurse only for <codeph>CHECK</codeph> constraints.</p>
                         <p>These <codeph>ALTER PARTITION</codeph> operations are supported if no
                                 data is changed on a partitioned table that contains a leaf child
-                                partition that has been exchanged to use an external table
+                                partition that has been exchanged to use an external table.
                                 Otherwise, an error is returned.<ul id="ul_hcw_mrn_qs">
                                         <li>Adding or dropping a column.</li>
                                         <li>Changing the data type of column.</li>
@@ -788,6 +793,8 @@ ALTER TABLE <varname>name</varname>
 (char_length(zipcode) = 5);</codeblock>
                         <p>Move a table to a different schema:</p>
                         <codeblock>ALTER TABLE myschema.distributors SET SCHEMA yourschema;</codeblock>
+                        <p>Change the distribution policy of a table to replicated:</p>
+                        <codeblock>ALTER TABLE myschema.distributors SET DISTRIBUTED REPLICATED;</codeblock>
                         <p>Add a new partition to a partitioned table:</p>
                         <codeblock>ALTER TABLE sales ADD PARTITION 
             START (date '2017-02-01') INCLUSIVE 

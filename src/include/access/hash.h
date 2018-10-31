@@ -4,10 +4,10 @@
  *	  header file for postgres hash access method implementation
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/access/hash.h,v 1.96 2010/01/02 16:58:00 momjian Exp $
+ * src/include/access/hash.h
  *
  * NOTES
  *		modeled after Margo Seltzer's hash implementation for unix.
@@ -22,6 +22,7 @@
 #include "access/sdir.h"
 #include "access/xlog.h"
 #include "fmgr.h"
+#include "storage/bufmgr.h"
 #include "storage/lock.h"
 #include "utils/relcache.h"
 
@@ -184,7 +185,7 @@ typedef HashMetaPageData *HashMetaPage;
 #define ALL_SET					((uint32) ~0)
 
 /*
- * Bitmap pages do not contain tuples.	They do contain the standard
+ * Bitmap pages do not contain tuples.  They do contain the standard
  * page headers and trailers; however, everything in between is a
  * giant bit array.  The number of bits that fit on a page obviously
  * depends on the page size and the header/trailer overhead.  We require
@@ -242,6 +243,7 @@ typedef HashMetaPageData *HashMetaPage;
 /* public routines */
 
 extern Datum hashbuild(PG_FUNCTION_ARGS);
+extern Datum hashbuildempty(PG_FUNCTION_ARGS);
 extern Datum hashinsert(PG_FUNCTION_ARGS);
 extern Datum hashbeginscan(PG_FUNCTION_ARGS);
 extern Datum hashgettuple(PG_FUNCTION_ARGS);
@@ -291,7 +293,7 @@ extern Buffer _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf);
 extern BlockNumber _hash_freeovflpage(Relation rel, Buffer ovflbuf,
 				   BufferAccessStrategy bstrategy);
 extern void _hash_initbitmap(Relation rel, HashMetaPage metap,
-				 BlockNumber blkno);
+				 BlockNumber blkno, ForkNumber forkNum);
 extern void _hash_squeezebucket(Relation rel,
 					Bucket bucket, BlockNumber bucket_blkno,
 					BufferAccessStrategy bstrategy);
@@ -303,7 +305,8 @@ extern void _hash_droplock(Relation rel, BlockNumber whichlock, int access);
 extern Buffer _hash_getbuf(Relation rel, BlockNumber blkno,
 			 int access, int flags);
 extern Buffer _hash_getinitbuf(Relation rel, BlockNumber blkno);
-extern Buffer _hash_getnewbuf(Relation rel, BlockNumber blkno);
+extern Buffer _hash_getnewbuf(Relation rel, BlockNumber blkno,
+				ForkNumber forkNum);
 extern Buffer _hash_getbuf_with_strategy(Relation rel, BlockNumber blkno,
 						   int access, int flags,
 						   BufferAccessStrategy bstrategy);
@@ -312,7 +315,8 @@ extern void _hash_dropbuf(Relation rel, Buffer buf);
 extern void _hash_wrtbuf(Relation rel, Buffer buf);
 extern void _hash_chgbufaccess(Relation rel, Buffer buf, int from_access,
 				   int to_access);
-extern uint32 _hash_metapinit(Relation rel, double num_tuples);
+extern uint32 _hash_metapinit(Relation rel, double num_tuples,
+				ForkNumber forkNum);
 extern void _hash_pageinit(Page page, Size size);
 extern void _hash_expandtable(Relation rel, Buffer metabuf);
 
@@ -330,7 +334,7 @@ extern bool _hash_step(IndexScanDesc scan, Buffer *bufP, ScanDirection dir);
 /* hashsort.c */
 typedef struct HSpool HSpool;	/* opaque struct in hashsort.c */
 
-extern HSpool *_h_spoolinit(Relation index, uint32 num_buckets);
+extern HSpool *_h_spoolinit(Relation heap, Relation index, uint32 num_buckets);
 extern void _h_spooldestroy(HSpool *hspool);
 extern void _h_spool(IndexTuple itup, HSpool *hspool);
 extern void _h_indexbuild(HSpool *hspool);
@@ -351,6 +355,6 @@ extern OffsetNumber _hash_binsearch_last(Page page, uint32 hash_value);
 
 /* hash.c */
 extern void hash_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record);
-extern void hash_desc(StringInfo buf, XLogRecPtr beginLoc, XLogRecord *record);
+extern void hash_desc(StringInfo buf, XLogRecord *record);
 
 #endif   /* HASH_H */

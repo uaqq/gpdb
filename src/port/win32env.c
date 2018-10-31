@@ -5,12 +5,12 @@
  *	  environment and the cached versions in (potentially multiple)
  *	  MSVCRT.
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/port/win32env.c,v 1.8 2010/02/26 02:01:38 momjian Exp $
+ *	  src/port/win32env.c
  *
  *-------------------------------------------------------------------------
  */
@@ -60,6 +60,12 @@ pgwin32_putenv(const char *envval)
 		{
 			"msvcr90", 0, NULL
 		},						/* Visual Studio 2008 */
+		{
+			"msvcr100", 0, NULL
+		},						/* Visual Studio 2010 */
+		{
+			"msvcr110", 0, NULL
+		},						/* Visual Studio 2012 */
 		{
 			NULL, 0, NULL
 		}
@@ -115,9 +121,14 @@ pgwin32_putenv(const char *envval)
 	 * Need a copy of the string so we can modify it.
 	 */
 	envcpy = strdup(envval);
+	if (!envcpy)
+		return -1;
 	cp = strchr(envcpy, '=');
 	if (cp == NULL)
+	{
+		free(envcpy);
 		return -1;
+	}
 	*cp = '\0';
 	cp++;
 	if (strlen(cp))

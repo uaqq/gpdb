@@ -541,7 +541,7 @@ GRANT SELECT ON TABLE gp_toolkit.gp_pgdatabase_invalid TO public;
 --        gp_toolkit.gp_skew_details_t
 --
 -- @doc:
---        Type to accomodate skew details
+--        Type to accommodate skew details
 --
 --------------------------------------------------------------------------------
 CREATE TYPE gp_toolkit.gp_skew_details_t
@@ -642,7 +642,7 @@ GRANT EXECUTE ON FUNCTION gp_toolkit.gp_skew_details(oid) TO public;
 --        gp_toolkit.gp_skew_analysis_t
 --
 -- @doc:
---        Type to accomodate skew analysis
+--        Type to accommodate skew analysis
 --
 --------------------------------------------------------------------------------
 CREATE TYPE gp_toolkit.gp_skew_analysis_t
@@ -960,6 +960,12 @@ AS
                     FROM gp_toolkit.__gp_is_append_only
                     WHERE iaooid = pgc.oid AND iaotype = 't'
                 )
+                AND NOT EXISTS
+                (
+                    SELECT parrelid
+                    FROM pg_partition
+                    WHERE parrelid = pgc.oid
+                )
             )
             AS pgc
         LEFT OUTER JOIN
@@ -1079,7 +1085,7 @@ GRANT SELECT ON TABLE gp_toolkit.gp_bloat_diag TO public;
 CREATE VIEW gp_toolkit.gp_resq_activity
 AS
     SELECT
-        psa.procpid as resqprocpid,
+        psa.pid as resqprocpid,
         psa.usename as resqrole,
         resq.resqoid,
         resq.rsqname as resqname,
@@ -1102,8 +1108,8 @@ AS
         WHERE
             pgl.objid = pgrq.oid
     ) as resq
-    ON resqprocid = procpid
-    WHERE current_query != '<IDLE>'
+    ON resqprocid = pid
+    WHERE query != '<IDLE>'
     ORDER BY resqstart;
 
 GRANT SELECT ON TABLE gp_toolkit.gp_resq_activity TO public;
@@ -1172,11 +1178,11 @@ AS
         rpb.rqpcommand,
         rpb.rqppriority,
         rpb.rqpweight,
-        psa.current_query AS rqpquery
+        psa.query AS rqpquery
     FROM
         gp_toolkit.gp_resq_priority_backend rpb
         JOIN pg_stat_activity psa ON (rpb.rqpsession = psa.sess_id)
-    WHERE psa.current_query != '<IDLE>';
+    WHERE psa.query != '<IDLE>';
 
 GRANT SELECT ON TABLE gp_toolkit.gp_resq_priority_statement TO public;
 
@@ -1227,7 +1233,7 @@ AS
     FROM pg_catalog.pg_stat_activity pgsa
 
     JOIN pg_catalog.pg_locks pgl
-    ON (pgsa.procpid = pgl.pid)
+    ON (pgsa.pid = pgl.pid)
 
     JOIN pg_catalog.pg_resqueue pgrq
     ON (pgl.objid = pgrq.oid);
@@ -1254,14 +1260,14 @@ AS
         pgl.pid            AS lorpid,
         pgl.mode           AS lormode,
         pgl.granted        AS lorgranted,
-        pgsa.current_query AS lorcurrentquery
+        pgsa.query AS lorcurrentquery
     FROM pg_catalog.pg_locks pgl
 
     JOIN pg_catalog.pg_class pgc
     ON (pgl.relation = pgc.oid)
 
     JOIN pg_catalog.pg_stat_activity pgsa
-    ON (pgl.pid = pgsa.procpid)
+    ON (pgl.pid = pgsa.pid)
 
     ORDER BY
         pgc.relname
@@ -1763,37 +1769,31 @@ GRANT SELECT ON gp_toolkit.gp_resqueue_status TO public;
 --------------------------------------------------------------------------------
 
 CREATE VIEW gp_toolkit.gp_resgroup_config AS
-    SELECT
-        G.oid        AS groupid,
-        G.rsgname    AS groupname,
-        G.memauditor AS memauditor,
-        T1.value     AS concurrency,
-        T1.proposed  AS proposed_concurrency,
-        T2.value     AS cpu_rate_limit,
-        T3.value     AS memory_limit,
-        T3.proposed  AS proposed_memory_limit,
-        T4.value     AS memory_shared_quota,
-        T4.proposed  AS proposed_memory_shared_quota,
-        T5.value     AS memory_spill_ratio,
-        T5.proposed  AS proposed_memory_spill_ratio
-    FROM
-        pg_resgroup G,
-        pg_resgroupcapability T1,
-        pg_resgroupcapability T2,
-        pg_resgroupcapability T3,
-        pg_resgroupcapability T4,
-        pg_resgroupcapability T5
-    WHERE
-        G.oid = T1.resgroupid
-    AND G.oid = T2.resgroupid
-    AND G.oid = T3.resgroupid
-    AND G.oid = T4.resgroupid
-    AND G.oid = T5.resgroupid
-    AND T1.reslimittype = 1
-    AND T2.reslimittype = 2
-    AND T3.reslimittype = 3
-    AND T4.reslimittype = 4
-    AND T5.reslimittype = 5
+    SELECT G.oid       AS groupid
+         , G.rsgname   AS groupname
+         , T1.value    AS concurrency
+         , T1.proposed AS proposed_concurrency
+         , T2.value    AS cpu_rate_limit
+         , T3.value    AS memory_limit
+         , T3.proposed AS proposed_memory_limit
+         , T4.value    AS memory_shared_quota
+         , T4.proposed AS proposed_memory_shared_quota
+         , T5.value    AS memory_spill_ratio
+         , T5.proposed AS proposed_memory_spill_ratio
+         , CASE WHEN T6.value IS NULL THEN 'vmtracker'
+                WHEN T6.value='0'     THEN 'vmtracker'
+                WHEN T6.value='1'     THEN 'cgroup'
+                ELSE 'unknown'
+           END         AS memory_auditor
+         , T7.value    AS cpuset
+    FROM pg_resgroup G
+         JOIN pg_resgroupcapability T1 ON G.oid = T1.resgroupid AND T1.reslimittype = 1
+         JOIN pg_resgroupcapability T2 ON G.oid = T2.resgroupid AND T2.reslimittype = 2
+         JOIN pg_resgroupcapability T3 ON G.oid = T3.resgroupid AND T3.reslimittype = 3
+         JOIN pg_resgroupcapability T4 ON G.oid = T4.resgroupid AND T4.reslimittype = 4
+         JOIN pg_resgroupcapability T5 ON G.oid = T5.resgroupid AND T5.reslimittype = 5
+    LEFT JOIN pg_resgroupcapability T6 ON G.oid = T6.resgroupid AND T6.reslimittype = 6
+    LEFT JOIN pg_resgroupcapability T7 ON G.oid = T7.resgroupid AND T7.reslimittype = 7
     ;
 
 GRANT SELECT ON gp_toolkit.gp_resgroup_config TO public;
@@ -1819,7 +1819,7 @@ GRANT SELECT ON gp_toolkit.gp_resgroup_status TO public;
 -- AO/CO diagnostics functions
 --------------------------------------------------------------------------------
 
-CREATE FUNCTION gp_toolkit.__gp_aoseg_history(oid)
+CREATE FUNCTION gp_toolkit.__gp_aoseg_history(regclass)
 RETURNS TABLE(gp_tid tid,
     gp_xmin integer,
     gp_xmin_status text,
@@ -1840,9 +1840,9 @@ RETURNS TABLE(gp_tid tid,
     state smallint)
 AS '$libdir/gp_ao_co_diagnostics', 'gp_aoseg_history_wrapper'
 LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aoseg_history(oid) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aoseg_history(regclass) TO public;
 
-CREATE FUNCTION gp_toolkit.__gp_aocsseg(oid)
+CREATE FUNCTION gp_toolkit.__gp_aocsseg(regclass)
 RETURNS TABLE(gp_tid tid,
     segno integer,
     column_num smallint,
@@ -1855,24 +1855,9 @@ RETURNS TABLE(gp_tid tid,
     state smallint)
 AS '$libdir/gp_ao_co_diagnostics', 'gp_aocsseg_wrapper'
 LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aocsseg(oid) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aocsseg(regclass) TO public;
 
-CREATE FUNCTION gp_toolkit.__gp_aocsseg_name(text)
-RETURNS TABLE (gp_tid tid,
-    segno integer,
-    column_num smallint,
-    physical_segno integer,
-    tupcount bigint,
-    eof bigint,
-    eof_uncompressed bigint,
-    modcount bigint,
-    formatversion smallint,
-    state smallint)
-AS '$libdir/gp_ao_co_diagnostics', 'gp_aocsseg_name_wrapper'
-LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aocsseg_name(text) TO public;
-
-CREATE FUNCTION gp_toolkit.__gp_aocsseg_history(oid)
+CREATE FUNCTION gp_toolkit.__gp_aocsseg_history(regclass)
 RETURNS TABLE(gp_tid tid,
     gp_xmin integer,
     gp_xmin_status text,
@@ -1895,58 +1880,34 @@ RETURNS TABLE(gp_tid tid,
     state smallint)
 AS '$libdir/gp_ao_co_diagnostics' , 'gp_aocsseg_history_wrapper'
 LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aocsseg_history(oid) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aocsseg_history(regclass) TO public;
 
-CREATE FUNCTION gp_toolkit.__gp_aovisimap(oid)
+CREATE FUNCTION gp_toolkit.__gp_aovisimap(regclass)
 RETURNS TABLE (tid tid,
     segno int,
     row_num bigint)
 AS '$libdir/gp_ao_co_diagnostics', 'gp_aovisimap_wrapper'
 LANGUAGE C IMMUTABLE;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap(oid) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap(regclass) TO public;
 
-CREATE FUNCTION gp_toolkit.__gp_aovisimap_name(text)
-RETURNS TABLE (tid tid,
-    segno integer,
-    row_num bigint)
-AS '$libdir/gp_ao_co_diagnostics', 'gp_aovisimap_name_wrapper'
-LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_name(text) TO public;
-
-CREATE FUNCTION gp_toolkit.__gp_aovisimap_hidden_info(oid)
+CREATE FUNCTION gp_toolkit.__gp_aovisimap_hidden_info(regclass)
 RETURNS TABLE (segno integer,
     hidden_tupcount bigint,
     total_tupcount bigint)
 AS '$libdir/gp_ao_co_diagnostics', 'gp_aovisimap_hidden_info_wrapper'
 LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_hidden_info(oid) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_hidden_info(regclass) TO public;
 
-CREATE FUNCTION gp_toolkit.__gp_aovisimap_hidden_info_name(text)
-RETURNS TABLE (segno integer,
-    hidden_tupcount bigint,
-    total_tupcount bigint)
-AS '$libdir/gp_ao_co_diagnostics', 'gp_aovisimap_hidden_info_name_wrapper'
-LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_hidden_info_name(text) TO public;
-
-CREATE FUNCTION gp_toolkit.__gp_aovisimap_entry(oid)
+CREATE FUNCTION gp_toolkit.__gp_aovisimap_entry(regclass)
 RETURNS TABLE(segno integer,
     first_row_num bigint,
     hidden_tupcount int,
     bitmap text)
 AS '$libdir/gp_ao_co_diagnostics','gp_aovisimap_entry_wrapper'
 LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_entry(oid) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_entry(regclass) TO public;
 
-CREATE FUNCTION gp_toolkit.__gp_aovisimap_entry_name(text)
-RETURNS TABLE(segno integer,
-    first_row_num bigint,
-    hidden_tupcount int,
-    bitmap text)
-AS '$libdir/gp_ao_co_diagnostics', 'gp_aovisimap_entry_name_wrapper' LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aovisimap_entry_name(text) TO public;
-
-CREATE FUNCTION gp_toolkit.__gp_aoseg_name(text)
+CREATE FUNCTION gp_toolkit.__gp_aoseg(regclass)
 RETURNS TABLE (segno integer, eof bigint,
     tupcount bigint,
     varblockcount bigint,
@@ -1954,9 +1915,9 @@ RETURNS TABLE (segno integer, eof bigint,
     modcount bigint,
     formatversion smallint,
     state smallint)
-AS '$libdir/gp_ao_co_diagnostics', 'gp_aoseg_name_wrapper'
+AS '$libdir/gp_ao_co_diagnostics', 'gp_aoseg_wrapper'
 LANGUAGE C STRICT;
-GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aoseg_name(text) TO public;
+GRANT EXECUTE ON FUNCTION gp_toolkit.__gp_aoseg(regclass) TO public;
 
 CREATE TYPE gp_toolkit.__gp_aovisimap_hidden_t AS (seg int, hidden bigint, total bigint);
 CREATE FUNCTION gp_toolkit.__gp_aovisimap_hidden_typed(oid)
@@ -1995,6 +1956,24 @@ BEGIN
     RETURN;
 END;
 $$ LANGUAGE plpgsql;
+
+-- gp_toolkit.__gp_remove_ao_entry_from_cache
+--   Helper function to evict an entry from AppendOnlyHash cache that is
+--   suspected of not being correct (e.g. segment files having wrong states).
+--   This should only be used for troubleshooting purposes.
+CREATE OR REPLACE FUNCTION gp_toolkit.__gp_remove_ao_entry_from_cache(oid)
+RETURNS VOID
+AS '$libdir/gp_ao_co_diagnostics', 'gp_remove_ao_entry_from_cache'
+LANGUAGE C IMMUTABLE STRICT NO SQL;
+
+CREATE OR REPLACE FUNCTION gp_toolkit.__gp_get_ao_entry_from_cache(ao_oid oid,
+       OUT segno smallint, OUT total_tupcount bigint, OUT tuples_added bigint,
+       OUT inserting_transaction xid, OUT latest_committed_inserting_dxid xid,
+       OUT state smallint, OUT format_version smallint, OUT is_full boolean,
+       OUT aborted boolean)
+RETURNS SETOF RECORD
+AS '$libdir/gp_ao_co_diagnostics', 'gp_get_ao_entry_from_cache'
+LANGUAGE C IMMUTABLE STRICT NO SQL;
 
 -- Workfile views
 --------------------------------------------------------------------------------
@@ -2082,11 +2061,11 @@ WITH all_entries AS (
             numfiles int
           ))
 SELECT S.datname,
-       (CASE WHEN (C.state = 1) THEN S.procpid ELSE NULL END) AS procpid,
+       (CASE WHEN (C.state = 1) THEN S.pid ELSE NULL END) AS pid,
        C.sessionid as sess_id,
        C.commandid as command_cnt,
        S.usename,
-       (CASE WHEN (C.state = 1) THEN S.current_query ELSE NULL END) as current_query,
+       (CASE WHEN (C.state = 1) THEN S.query ELSE NULL END) as query,
        C.segid,
        C.slice,
        C.optype,
@@ -2133,10 +2112,10 @@ GRANT SELECT ON gp_toolkit.gp_workfile_usage_per_segment TO public;
 --------------------------------------------------------------------------------
 
 CREATE VIEW gp_toolkit.gp_workfile_usage_per_query AS
-SELECT datname, procpid, sess_id, command_cnt, usename, current_query, segid, state,
+SELECT datname, pid, sess_id, command_cnt, usename, query, segid, state,
     SUM(size) AS size, SUM(numfiles) AS numfiles
 FROM gp_toolkit.gp_workfile_entries
-GROUP BY (datname, procpid, sess_id, command_cnt, usename, current_query, segid, state);
+GROUP BY (datname, pid, sess_id, command_cnt, usename, query, segid, state);
 
 GRANT SELECT ON gp_toolkit.gp_workfile_usage_per_query TO public;
 

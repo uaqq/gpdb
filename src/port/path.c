@@ -3,17 +3,21 @@
  * path.c
  *	  portable path handling routines
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/port/path.c,v 1.80 2010/01/02 16:58:13 momjian Exp $
+ *	  src/port/path.c
  *
  *-------------------------------------------------------------------------
  */
 
+#ifndef FRONTEND
 #include "postgres.h"
+#else
+#include "postgres_fe.h"
+#endif
 
 #include <ctype.h>
 #include <sys/stat.h>
@@ -34,15 +38,9 @@
 #include "pg_config_paths.h"
 
 #ifndef WIN32
-#define IS_DIR_SEP(ch)	((ch) == '/')
+#define IS_PATH_VAR_SEP(ch) ((ch) == ':')
 #else
-#define IS_DIR_SEP(ch)	((ch) == '/' || (ch) == '\\')
-#endif
-
-#ifndef WIN32
-#define IS_PATH_SEP(ch) ((ch) == ':')
-#else
-#define IS_PATH_SEP(ch) ((ch) == ';')
+#define IS_PATH_VAR_SEP(ch) ((ch) == ';')
 #endif
 
 /*
@@ -82,7 +80,7 @@ static void trim_trailing_separator(char *path);
 /*
  * skip_drive
  *
- * On Windows, a path may begin with "C:" or "//network/".	Advance over
+ * On Windows, a path may begin with "C:" or "//network/".  Advance over
  * this and point to the effective start of the path.
  */
 #ifdef WIN32
@@ -108,6 +106,24 @@ skip_drive(const char *path)
 #endif
 
 /*
+ *	has_drive_prefix
+ *
+ * Return true if the given pathname has a drive prefix.
+ *
+ * GPDB_92_MERGE_FIXEME: To keep compiler happy, return
+ * false directly if not WIN32.
+ */
+bool
+has_drive_prefix(const char *path)
+{
+#ifdef WIN32
+	return skip_drive(path) != path;
+#else
+	return false;
+#endif
+}
+
+/*
  *	first_dir_separator
  *
  * Find the location of the first directory separator, return
@@ -125,19 +141,19 @@ first_dir_separator(const char *filename)
 }
 
 /*
- *	first_path_separator
+ *	first_path_var_separator
  *
  * Find the location of the first path separator (i.e. ':' on
  * Unix, ';' on Windows), return NULL if not found.
  */
 char *
-first_path_separator(const char *pathlist)
+first_path_var_separator(const char *pathlist)
 {
 	const char *p;
 
 	/* skip_drive is not needed */
 	for (p = pathlist; *p; p++)
-		if (IS_PATH_SEP(*p))
+		if (IS_PATH_VAR_SEP(*p))
 			return (char *) p;
 	return NULL;
 }
@@ -297,7 +313,7 @@ canonicalize_path(char *path)
 	 * Remove any trailing uses of "." and process ".." ourselves
 	 *
 	 * Note that "/../.." should reduce to just "/", while "../.." has to be
-	 * kept as-is.	In the latter case we put back mistakenly trimmed ".."
+	 * kept as-is.  In the latter case we put back mistakenly trimmed ".."
 	 * components below.  Also note that we want a Windows drive spec to be
 	 * visible to trim_directory(), but it's not part of the logic that's
 	 * looking at the name components; hence distinction between path and
@@ -326,7 +342,7 @@ canonicalize_path(char *path)
 		}
 		else if (pending_strips > 0 && *spath != '\0')
 		{
-			/* trim a regular directory name cancelled by ".." */
+			/* trim a regular directory name canceled by ".." */
 			trim_directory(path);
 			pending_strips--;
 			/* foo/.. should become ".", not empty */
@@ -381,6 +397,40 @@ path_contains_parent_reference(const char *path)
 }
 
 /*
+ * Detect whether a path is only in or below the current working directory.
+ * An absolute path that matches the current working directory should
+ * return false (we only want relative to the cwd).  We don't allow
+ * "/../" even if that would keep us under the cwd (it is too hard to
+ * track that).
+ */
+bool
+path_is_relative_and_below_cwd(const char *path)
+{
+	if (is_absolute_path(path))
+		return false;
+	/* don't allow anything above the cwd */
+	else if (path_contains_parent_reference(path))
+		return false;
+#ifdef WIN32
+
+	/*
+	 * On Win32, a drive letter _not_ followed by a slash, e.g. 'E:abc', is
+	 * relative to the cwd on that drive, or the drive's root directory if
+	 * that drive has no cwd.  Because the path itself cannot tell us which is
+	 * the case, we have to assume the worst, i.e. that it is not below the
+	 * cwd.  We could use GetFullPathName() to find the full path but that
+	 * could change if the current directory for the drive changes underneath
+	 * us, so we just disallow it.
+	 */
+	else if (isalpha((unsigned char) path[0]) && path[1] == ':' &&
+			 !IS_DIR_SEP(path[2]))
+		return false;
+#endif
+	else
+		return true;
+}
+
+/*
  * Detect whether path1 is a prefix of path2 (including equality).
  *
  * This is pretty trivial, but it seems better to export a function than
@@ -421,7 +471,7 @@ get_progname(const char *argv0)
 	if (progname == NULL)
 	{
 		fprintf(stderr, "%s: out of memory\n", nodir_name);
-		exit(1);				/* This could exit the postmaster */
+		abort();				/* This could exit the postmaster */
 	}
 
 #if defined(__CYGWIN__) || defined(WIN32)
@@ -538,6 +588,114 @@ make_relative_path(char *ret_path, const char *target_path,
 no_match:
 	strlcpy(ret_path, target_path, MAXPGPATH);
 	canonicalize_path(ret_path);
+}
+
+
+/*
+ * make_absolute_path
+ *
+ * If the given pathname isn't already absolute, make it so, interpreting
+ * it relative to the current working directory.
+ *
+ * Also canonicalizes the path.  The result is always a malloc'd copy.
+ *
+ * In backend, failure cases result in ereport(ERROR); in frontend,
+ * we write a complaint on stderr and return NULL.
+ *
+ * Note: interpretation of relative-path arguments during postmaster startup
+ * should happen before doing ChangeToDataDir(), else the user will probably
+ * not like the results.
+ */
+char *
+make_absolute_path(const char *path)
+{
+	char	   *new;
+
+	/* Returning null for null input is convenient for some callers */
+	if (path == NULL)
+		return NULL;
+
+	if (!is_absolute_path(path))
+	{
+		char	   *buf;
+		size_t		buflen;
+
+		buflen = MAXPGPATH;
+		for (;;)
+		{
+			buf = malloc(buflen);
+			if (!buf)
+			{
+#ifndef FRONTEND
+				ereport(ERROR,
+						(errcode(ERRCODE_OUT_OF_MEMORY),
+						 errmsg("out of memory")));
+#else
+				fprintf(stderr, _("out of memory\n"));
+				return NULL;
+#endif
+			}
+
+			if (getcwd(buf, buflen))
+				break;
+			else if (errno == ERANGE)
+			{
+				free(buf);
+				buflen *= 2;
+				continue;
+			}
+			else
+			{
+				int			save_errno = errno;
+
+				free(buf);
+				errno = save_errno;
+#ifndef FRONTEND
+				elog(ERROR, "could not get current working directory: %m");
+#else
+				fprintf(stderr, _("could not get current working directory: %s\n"),
+						strerror(errno));
+				return NULL;
+#endif
+			}
+		}
+
+		new = malloc(strlen(buf) + strlen(path) + 2);
+		if (!new)
+		{
+			free(buf);
+#ifndef FRONTEND
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+#else
+			fprintf(stderr, _("out of memory\n"));
+			return NULL;
+#endif
+		}
+		sprintf(new, "%s/%s", buf, path);
+		free(buf);
+	}
+	else
+	{
+		new = strdup(path);
+		if (!new)
+		{
+#ifndef FRONTEND
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+#else
+			fprintf(stderr, _("out of memory\n"));
+			return NULL;
+#endif
+		}
+	}
+
+	/* Make sure punctuation is canonical, too */
+	canonicalize_path(new);
+
+	return new;
 }
 
 

@@ -21,24 +21,41 @@
 #include "storage/ipc.h"		/* For proc_exit_inprogress */
 #include "tcop/tcopprot.h"
 #include "cdb/cdbdisp.h"
-#include "cdb/cdbdisp_thread.h"
 #include "cdb/cdbdisp_async.h"
 #include "cdb/cdbdispatchresult.h"
+#include "executor/execUtils.h"
 #include "libpq-fe.h"
 #include "libpq-int.h"
 #include "cdb/cdbfts.h"
 #include "cdb/cdbgang.h"
 #include "cdb/cdbsreh.h"
 #include "cdb/cdbvars.h"
+#include "utils/resowner.h"
+
+static int numNonExtendedDispatcherState = 0;
+
+typedef struct dispatcher_handle_t
+{
+	struct CdbDispatcherState *dispatcherState;
+
+	ResourceOwner owner;	/* owner of this handle */
+	struct dispatcher_handle_t *next;
+	struct dispatcher_handle_t *prev;
+} dispatcher_handle_t;
+
+static dispatcher_handle_t *open_dispatcher_handles;
+static void cleanup_dispatcher_handle(dispatcher_handle_t *h);
+
+static dispatcher_handle_t *find_dispatcher_handle(CdbDispatcherState *ds);
+static dispatcher_handle_t *allocate_dispatcher_handle(void);
+static void destroy_dispatcher_handle(dispatcher_handle_t *h);
 
 /*
  * default directed-dispatch parameters: don't direct anything.
  */
 CdbDispatchDirectDesc default_dispatch_direct_desc = {false, 0, {0}};
 
-static void cdbdisp_clearGangActiveFlag(CdbDispatcherState *ds);
-
-static DispatcherInternalFuncs *pDispatchFuncs = NULL;
+static DispatcherInternalFuncs *pDispatchFuncs = &DispatcherAsyncFuncs;
 
 /*
  * cdbdisp_dispatchToGang:
@@ -46,9 +63,7 @@ static DispatcherInternalFuncs *pDispatchFuncs = NULL;
  * specified by the gang parameter. cancelOnError indicates whether an error
  * occurring on one of the qExec segdbs should cause all still-executing commands to cancel
  * on other qExecs. Normally this would be true. The commands are sent over the libpq
- * connections that were established during cdblink_setup.	They are run inside of threads.
- * The number of segdbs handled by any one thread is determined by the
- * guc variable gp_connections_per_thread.
+ * connections that were established during cdblink_setup.
  *
  * The caller must provide a CdbDispatchResults object having available
  * resultArray slots sufficient for the number of QEs to be dispatched:
@@ -56,7 +71,7 @@ static DispatcherInternalFuncs *pDispatchFuncs = NULL;
  * assign one resultArray slot per QE of the Gang, paralleling the Gang's
  * db_descriptors array. Success or failure of each QE will be noted in
  * the QE's CdbDispatchResult entry; but before examining the results, the
- * caller must wait for execution to end by calling CdbCheckDispatchResult().
+ * caller must wait for execution to end by calling cdbdisp_checkDispatchResult().
  *
  * The CdbDispatchResults object owns some malloc'ed storage, so the caller
  * must make certain to free it by calling cdbdisp_destroyDispatcherState().
@@ -72,8 +87,7 @@ static DispatcherInternalFuncs *pDispatchFuncs = NULL;
 void
 cdbdisp_dispatchToGang(struct CdbDispatcherState *ds,
 					   struct Gang *gp,
-					   int sliceIndex,
-					   CdbDispatchDirectDesc *disp_direct)
+					   int sliceIndex)
 {
 	struct CdbDispatchResults *dispatchResults = ds->primaryResults;
 
@@ -81,37 +95,19 @@ cdbdisp_dispatchToGang(struct CdbDispatcherState *ds,
 	Assert(gp && gp->size > 0);
 	Assert(dispatchResults && dispatchResults->resultArray);
 
-	if (dispatchResults->writer_gang)
-	{
-		/*
-		 * Are we dispatching to the writer-gang when it is already busy ?
-		 */
-		if (gp == dispatchResults->writer_gang)
-		{
-			if (dispatchResults->writer_gang->dispatcherActive)
-			{
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("query plan with multiple segworker groups is not supported"),
-						 errhint("likely caused by a function that reads or modifies data in a distributed table")));
-			}
-
-			dispatchResults->writer_gang->dispatcherActive = true;
-		}
-	}
+	(pDispatchFuncs->dispatchToGang) (ds, gp, sliceIndex);
 
 	/*
-	 * WIP: will use a function pointer for implementation later, currently
-	 * just use an internal function to move dispatch thread related code into
-	 * a separate file.
+	 * If dtmPreCommand says we need two phase commit, record those segments
+	 * who actually get involved in current global transaction
 	 */
-	(pDispatchFuncs->dispatchToGang) (ds, gp, sliceIndex, disp_direct);
+	addToGxactTwophaseSegments(gp);
 }
 
 /*
  * For asynchronous dispatcher, we have to wait all dispatch to finish before we move on to query execution,
  * otherwise we may get into a deadlock situation, e.g, gather motion node waiting for data,
- * while segments waiting for plan. This is skipped in threaded dispatcher as data is sent in blocking style.
+ * while segments waiting for plan.
  */
 void
 cdbdisp_waitDispatchFinish(struct CdbDispatcherState *ds)
@@ -121,7 +117,7 @@ cdbdisp_waitDispatchFinish(struct CdbDispatcherState *ds)
 }
 
 /*
- * CdbCheckDispatchResult:
+ * cdbdisp_checkDispatchResult:
  *
  * Waits for completion of threads launched by cdbdisp_dispatchToGang().
  *
@@ -129,21 +125,10 @@ cdbdisp_waitDispatchFinish(struct CdbDispatcherState *ds)
  * will be canceled/finished according to waitMode.
  */
 void
-CdbCheckDispatchResult(struct CdbDispatcherState *ds,
+cdbdisp_checkDispatchResult(struct CdbDispatcherState *ds,
 					   DispatchWaitMode waitMode)
 {
-	PG_TRY();
-	{
-		(pDispatchFuncs->checkResults) (ds, waitMode);
-	}
-	PG_CATCH();
-	{
-		cdbdisp_clearGangActiveFlag(ds);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-
-	cdbdisp_clearGangActiveFlag(ds);
+	(pDispatchFuncs->checkResults) (ds, waitMode);
 
 	if (log_dispatch_stats)
 		ShowUsage("DISPATCH STATISTICS");
@@ -190,9 +175,6 @@ cdbdisp_getDispatchResults(struct CdbDispatcherState *ds, ErrorData **qeError)
 		return NULL;
 	}
 
-	/* wait QEs to return results or report errors */
-	CdbCheckDispatchResult(ds, DISPATCH_WAIT_NONE);
-
 	/* check if any error reported */
 	errorcode = ds->primaryResults->errcode;
 
@@ -206,81 +188,15 @@ cdbdisp_getDispatchResults(struct CdbDispatcherState *ds, ErrorData **qeError)
 }
 
 /*
- * Wait for all QEs to finish, then report any errors from the given
- * CdbDispatchResults objects and free them. If not all QEs in the
- * associated gang(s) executed the command successfully, throws an
- * error and does not return. No-op if both CdbDispatchResults ptrs are NULL.
- * This is a convenience function; callers with unusual requirements may
- * instead call CdbCheckDispatchResult(), etc., directly.
- */
-void
-cdbdisp_finishCommand(struct CdbDispatcherState *ds)
-{
-	ErrorData *qeError;
-	CdbDispatchResults *pr = NULL;
-
-	/*
-	 * If cdbdisp_dispatchToGang() wasn't called, don't wait.
-	 */
-	if (!ds || !ds->primaryResults)
-		return;
-
-	/*
-	 * If we are called in the dying sequence, don't touch QE connections.
-	 * Anything below could cause ERROR in which case we would miss a chance
-	 * to clean up shared memory as this is from AbortTransaction. QE may stay
-	 * a bit longer, but since we can consider QD as libpq client to QE, they
-	 * will notice that we as a client do not appear anymore and will finish
-	 * soon. Also ERROR report doesn't go to the client anyway since we are in
-	 * proc_exit.
-	 */
-	if (proc_exit_inprogress)
-		return;
-
-	/*
-	 * Wait for all QEs to finish. Don't cancel them.
-	 */
-	PG_TRY();
-	{
-		pr = cdbdisp_getDispatchResults(ds, &qeError);
-
-		if (!pr)
-		{
-			if (!qeError)
-				elog(ERROR, "dispatch failed with no error message");
-
-			ReThrowError(qeError);
-
-			/*
-			 * Assuming the error was really an error, and not e.g. a warning,
-			 * we should not get here. But just in case..
-			 */
-			elog(ERROR, "dispatch failed");
-		}
-	}
-	PG_CATCH();
-	{
-		cdbdisp_destroyDispatcherState(ds);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-
-	/*
-	 * If no errors, free the CdbDispatchResults objects and return.
-	 */
-	cdbdisp_destroyDispatcherState(ds);
-}
-
-/*
  * CdbDispatchHandleError
  *
  * When caller catches an error, the PG_CATCH handler can use this
  * function instead of cdbdisp_finishCommand to wait for all QEs
- * to finish, clean up, and report QE errors if appropriate.
+ * to finish, and report QE errors if appropriate.
  * This function should be called only from PG_CATCH handlers.
  *
- * This function destroys and frees the given CdbDispatchResults objects.
- * It is a no-op if both CdbDispatchResults ptrs are NULL.
+ * This function doesn't cleanup dispatcher state, dispatcher state
+ * will be destroyed as part of the resource owner cleanup.
  *
  * On return, the caller is expected to finish its own cleanup and
  * exit via PG_RE_THROW().
@@ -288,10 +204,9 @@ cdbdisp_finishCommand(struct CdbDispatcherState *ds)
 void
 CdbDispatchHandleError(struct CdbDispatcherState *ds)
 {
-	int			qderrcode;
+	int		qderrcode;
 	bool		useQeError = false;
-
-	qderrcode = elog_geterrcode();
+	ErrorData *error = NULL;
 
 	/*
 	 * If cdbdisp_dispatchToGang() wasn't called, don't wait.
@@ -305,7 +220,7 @@ CdbDispatchHandleError(struct CdbDispatcherState *ds)
 	 * results from the async command executions. Cancel any QEs still
 	 * running.
 	 */
-	CdbCheckDispatchResult(ds, DISPATCH_WAIT_CANCEL);
+	cdbdisp_cancelDispatch(ds);
 
 	/*
 	 * When a QE stops executing a command due to an error, as a consequence
@@ -314,6 +229,7 @@ CdbDispatchHandleError(struct CdbDispatcherState *ds)
 	 * So if we are handling an interconnect error, and a QE hit a more
 	 * interesting error, we'll let the QE's error report take precedence.
 	 */
+	qderrcode = elog_geterrcode();
 	if (qderrcode == ERRCODE_GP_INTERCONNECTION_ERROR)
 	{
 		bool		qd_lost_flag = false;
@@ -352,7 +268,9 @@ CdbDispatchHandleError(struct CdbDispatcherState *ds)
 
 		PG_TRY();
 		{
-			cdbdisp_finishCommand(ds);
+			cdbdisp_getDispatchResults(ds, &error);
+			if (error != NULL)
+				ReThrowError(error);
 		}
 		PG_CATCH();
 		{
@@ -361,16 +279,8 @@ CdbDispatchHandleError(struct CdbDispatcherState *ds)
 
 		MemoryContextSwitchTo(oldcontext);
 	}
-	else
-	{
-		/*
-		 * Discard any remaining results from QEs; don't confuse matters by
-		 * throwing a new error. Any results of interest presumably should
-		 * have been examined before raising the error that the caller is
-		 * currently handling.
-		 */
-		cdbdisp_destroyDispatcherState(ds);
-	}
+
+	cdbdisp_destroyDispatcherState(ds);
 }
 
 
@@ -379,32 +289,51 @@ CdbDispatchHandleError(struct CdbDispatcherState *ds)
  * Allocate memory and initialize CdbDispatcherState.
  *
  * Call cdbdisp_destroyDispatcherState to free it.
- *
- *	 maxSlices: max number of slices of the query/command.
  */
+CdbDispatcherState *
+cdbdisp_makeDispatcherState(bool isExtendedQuery)
+{
+	dispatcher_handle_t *handle;
+
+	if (!isExtendedQuery)
+	{
+		if (numNonExtendedDispatcherState == 1)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("query plan with multiple segworker groups is not supported"),
+					 errhint("likely caused by a function that reads or modifies data in a distributed table")));
+
+
+		}
+
+		numNonExtendedDispatcherState++;	
+	}
+
+	handle = allocate_dispatcher_handle();
+	handle->dispatcherState->destroyGang = false;
+	handle->dispatcherState->isExtendedQuery = isExtendedQuery;
+	handle->dispatcherState->allocatedGangs = NIL;
+	handle->dispatcherState->largestGangSize = 0;
+
+	return handle->dispatcherState;
+}
+
 void
-cdbdisp_makeDispatcherState(CdbDispatcherState *ds,
+cdbdisp_makeDispatchParams(CdbDispatcherState *ds,
 							int maxSlices,
-							bool cancelOnError,
 							char *queryText,
 							int queryTextLen)
 {
-	MemoryContext oldContext = NULL;
+	MemoryContext oldContext;
+	void *dispatchParams;
 
-	Assert(ds != NULL);
-	Assert(ds->dispatchParams == NULL);
-	Assert(ds->primaryResults == NULL);
+	Assert(DispatcherContext);
+	oldContext = MemoryContextSwitchTo(DispatcherContext);
 
-	if (ds->dispatchStateContext == NULL)
-		ds->dispatchStateContext = AllocSetContextCreate(TopMemoryContext,
-														 "Dispatch Context",
-														 ALLOCSET_DEFAULT_MINSIZE,
-														 ALLOCSET_DEFAULT_INITSIZE,
-														 ALLOCSET_DEFAULT_MAXSIZE);
+	dispatchParams = (pDispatchFuncs->makeDispatchParams) (maxSlices, ds->largestGangSize, queryText, queryTextLen);
 
-	oldContext = MemoryContextSwitchTo(ds->dispatchStateContext);
-	ds->primaryResults = cdbdisp_makeDispatchResults(maxSlices, cancelOnError);
-	ds->dispatchParams = (pDispatchFuncs->makeDispatchParams) (maxSlices, queryText, queryTextLen);
+	ds->dispatchParams = dispatchParams;
 
 	MemoryContextSwitchTo(oldContext);
 }
@@ -417,10 +346,21 @@ cdbdisp_makeDispatcherState(CdbDispatcherState *ds,
 void
 cdbdisp_destroyDispatcherState(CdbDispatcherState *ds)
 {
+	ListCell *lc;
+	CdbDispatchResults *results;
+	dispatcher_handle_t *h;
+
 	if (!ds)
 		return;
 
-	CdbDispatchResults *results = ds->primaryResults;
+	if (!ds->isExtendedQuery)
+	{
+		numNonExtendedDispatcherState--;	
+		Assert(numNonExtendedDispatcherState == 0);
+	}
+
+	results = ds->primaryResults;
+	h = find_dispatcher_handle(ds);
 
 	if (results != NULL && results->resultArray != NULL)
 	{
@@ -433,34 +373,27 @@ cdbdisp_destroyDispatcherState(CdbDispatcherState *ds)
 		results->resultArray = NULL;
 	}
 
-	if (ds->dispatchStateContext != NULL)
+	/* Recycle or destroy gang accordingly */
+	foreach(lc, ds->allocatedGangs)
 	{
-		MemoryContextDelete(ds->dispatchStateContext);
-		ds->dispatchStateContext = NULL;
+		Gang *gp = lfirst(lc);
+
+		RecycleGang(gp, ds->destroyGang);
 	}
 
-	ds->dispatchStateContext = NULL;
+	ds->allocatedGangs = NIL;
 	ds->dispatchParams = NULL;
 	ds->primaryResults = NULL;
+	ds->largestGangSize= 0;
+
+	if (h != NULL)
+		destroy_dispatcher_handle(h);
 }
 
 void
 cdbdisp_cancelDispatch(CdbDispatcherState *ds)
 {
-	CdbCheckDispatchResult(ds, DISPATCH_WAIT_CANCEL);
-}
-
-/*
- * Clear our "active" flags; so that we know that the writer gangs are busy -- and don't stomp on
- * internal dispatcher structures.
- */
-static void
-cdbdisp_clearGangActiveFlag(CdbDispatcherState *ds)
-{
-	if (ds && ds->primaryResults && ds->primaryResults->writer_gang)
-	{
-		ds->primaryResults->writer_gang->dispatcherActive = false;
-	}
+	cdbdisp_checkDispatchResult(ds, DISPATCH_WAIT_CANCEL);
 }
 
 bool
@@ -493,18 +426,178 @@ cdbdisp_getWaitSocketFd(CdbDispatcherState *ds)
 	return (pDispatchFuncs->getWaitSocketFd) (ds);
 }
 
-void
-cdbdisp_onProcExit(void)
+dispatcher_handle_t *
+allocate_dispatcher_handle(void)
 {
-	if (pDispatchFuncs != NULL && pDispatchFuncs->procExitCallBack != NULL)
-		(pDispatchFuncs->procExitCallBack) ();
+	dispatcher_handle_t	*h;
+
+	if (DispatcherContext == NULL)
+		DispatcherContext = AllocSetContextCreate(TopMemoryContext,
+												 "Dispatch Context",
+												 ALLOCSET_DEFAULT_MINSIZE,
+												 ALLOCSET_DEFAULT_INITSIZE,
+												 ALLOCSET_DEFAULT_MAXSIZE);
+
+
+	h = MemoryContextAllocZero(DispatcherContext, sizeof(dispatcher_handle_t));
+
+	h->dispatcherState = MemoryContextAllocZero(DispatcherContext, sizeof(CdbDispatcherState));
+	h->owner = CurrentResourceOwner;
+	h->next = open_dispatcher_handles;
+	h->prev = NULL;
+	if (open_dispatcher_handles)
+		open_dispatcher_handles->prev = h;
+	open_dispatcher_handles = h;
+
+	return h;
+}
+
+static void
+destroy_dispatcher_handle(dispatcher_handle_t *h)
+{
+	h->dispatcherState = NULL;
+
+	/* unlink from linked list first */
+	if (h->prev)
+		h->prev->next = h->next;
+	else
+		open_dispatcher_handles = h->next;
+	if (h->next)
+		h->next->prev = h->prev;
+
+	pfree(h);
+
+	if (open_dispatcher_handles == NULL)
+		MemoryContextReset(DispatcherContext);
+}
+
+static dispatcher_handle_t *
+find_dispatcher_handle(CdbDispatcherState *ds)
+{
+	dispatcher_handle_t *head = open_dispatcher_handles;
+	while (head != NULL)
+	{
+		if (head->dispatcherState == ds)
+			return head;
+		head = head->next;
+	}
+	return NULL;
+}
+
+static void
+cleanup_dispatcher_handle(dispatcher_handle_t *h)
+{
+	if (h->dispatcherState == NULL)
+	{
+		destroy_dispatcher_handle(h);
+		return;
+	}
+
+	cdbdisp_cancelDispatch(h->dispatcherState);
+	cdbdisp_destroyDispatcherState(h->dispatcherState);
+}
+
+/*
+ * Cleanup all dispatcher state that belong to
+ * current resource owner and its childrens
+ */
+void
+AtAbort_DispatcherState(void)
+{
+	if (Gp_role != GP_ROLE_DISPATCH)
+		return;
+
+	if (CurrentGangCreating != NULL)
+	{
+		RecycleGang(CurrentGangCreating, true);
+		CurrentGangCreating = NULL;
+	}
+
+	/*
+	 * Cleanup all outbound dispatcher states belong to
+	 * current resource owner and its children
+	 */
+	CdbResourceOwnerWalker(CurrentResourceOwner, cdbdisp_cleanupDispatcherHandle);
+
+	Assert(open_dispatcher_handles == NULL);
+
+	/*
+	 * If primary writer gang is destroyed in current Gxact
+	 * reset session and drop temp files
+	 */
+	if (currentGxactWriterGangLost())
+	{
+		DisconnectAndDestroyAllGangs(true);
+		CheckForResetSession();
+	}
 }
 
 void
-cdbdisp_setAsync(bool async)
+AtSubAbort_DispatcherState(void)
 {
-	if (async)
-		pDispatchFuncs = &DispatcherAsyncFuncs;
+	if (Gp_role != GP_ROLE_DISPATCH)
+		return;
+
+	if (CurrentGangCreating != NULL)
+	{
+		RecycleGang(CurrentGangCreating, true);
+		CurrentGangCreating = NULL;
+	}
+
+	CdbResourceOwnerWalker(CurrentResourceOwner, cdbdisp_cleanupDispatcherHandle);
+}
+
+void
+cdbdisp_cleanupDispatcherHandle(const struct ResourceOwnerData *owner)
+{
+	dispatcher_handle_t *curr;
+	dispatcher_handle_t *next;
+
+	next = open_dispatcher_handles;
+	while (next)
+	{
+		curr = next;
+		next = curr->next;
+
+		if (curr->owner == owner)
+		{
+			cleanup_dispatcher_handle(curr);
+		}
+	}
+}
+
+/*
+ * Called by CdbDispatchSetCommand(), SET command can not be dispatched
+ * to named portal (like CURSOR). On the one hand, it might be in a busy
+ * status, on the other hand, SET command should not affect running CURSOR
+ * like 'search_path' etc; 
+ *
+ * Meanwhile when a dispatcher state of named portal is destroyed, its
+ * gang should not be recycled because its guc was not set, so need to
+ * mark those gangs destroyed when dispatcher state is destroyed.
+ */
+void
+cdbdisp_markNamedPortalGangsDestroyed(void)
+{
+	dispatcher_handle_t *head = open_dispatcher_handles;
+	while (head != NULL)
+	{
+		if (!head->dispatcherState->isExtendedQuery)
+			head->dispatcherState->destroyGang = true;
+		head = head->next;
+	}
+}
+
+char*
+segmentsToContentStr(List *segments)
+{
+	int size = list_length(segments);
+	if (size == 0)
+		return "ALL contents";
+	else if (size == 1)
+		return "SINGLE content";
+	else if (size < getgpsegmentCount())
+		return "PARTIAL contents";
 	else
-		pDispatchFuncs = &DispatcherSyncFuncs;
+		return "ALL contents";
 }

@@ -1,5 +1,5 @@
 /*
- * $PostgreSQL: pgsql/src/include/regex/regerrs.h,v 1.5 2008/01/03 20:47:55 tgl Exp $
+ * src/include/regex/regerrs.h
  */
 
 {
@@ -76,4 +76,12 @@
 
 {
 	REG_ETOOBIG, "REG_ETOOBIG", "nfa has too many states"
+},
+
+{
+	REG_ECOLORS, "REG_ECOLORS", "too many colors"
+},
+
+{
+	REG_CANCEL, "REG_CANCEL", "operation cancelled"
 },

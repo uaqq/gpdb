@@ -6,10 +6,10 @@
  *
  * Portions Copyright (c) 2007-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/storage/fd.h,v 1.68 2010/02/26 02:01:27 momjian Exp $
+ * src/include/storage/fd.h
  *
  *-------------------------------------------------------------------------
  */
@@ -56,6 +56,11 @@ typedef int File;
 /* GUC parameter */
 extern int	max_files_per_process;
 
+/*
+ * This is private to fd.c, but exported for save/restore_backend_variables()
+ */
+extern int	max_safe_fds;
+
 
 /*
  * prototypes for functions in fd.c
@@ -69,7 +74,6 @@ extern File OpenNamedTemporaryFile(const char *fileName,
 								   bool delOnClose,
 								   bool interXact);
 extern File OpenTemporaryFile(bool interXact, const char *filePrefix);
-
 extern void FileClose(File file);
 extern int	FilePrefetch(File file, off_t offset, int amount);
 extern int	FileRead(File file, char *buffer, int amount);
@@ -84,6 +88,10 @@ extern int64 FileDiskSize(File file);
 /* Operations that allow use of regular stdio --- USE WITH CAUTION */
 extern FILE *AllocateFile(const char *name, const char *mode);
 extern int	FreeFile(FILE *file);
+
+/* Operations that allow use of pipe streams (popen/pclose) */
+extern FILE *OpenPipeStream(const char *command, const char *mode);
+extern int	ClosePipeStream(FILE *file);
 
 /* Operations to allow use of the <dirent.h> library routines */
 extern DIR *AllocateDir(const char *dirname);
@@ -114,6 +122,7 @@ extern int	pg_fsync_no_writethrough(int fd);
 extern int	pg_fsync_writethrough(int fd);
 extern int	pg_fdatasync(int fd);
 extern int	pg_flush_data(int fd, off_t offset, off_t amount);
+extern void fsync_fname(char *fname, bool isdir);
 
 extern int gp_retry_close(int fd);
 

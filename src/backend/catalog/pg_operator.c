@@ -3,12 +3,12 @@
  * pg_operator.c
  *	  routines to support manipulation of the pg_operator relation
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_operator.c,v 1.111 2010/02/14 18:42:13 rhaas Exp $
+ *	  src/backend/catalog/pg_operator.c
  *
  * NOTES
  *	  these routines moved here from commands/define.c and somewhat cleaned up.
@@ -18,10 +18,12 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
@@ -91,11 +93,11 @@ validOperatorName(const char *name)
 		return false;
 
 	/*
-	 * For SQL92 compatibility, '+' and '-' cannot be the last char of a
-	 * multi-char operator unless the operator contains chars that are not in
-	 * SQL92 operators. The idea is to lex '=-' as two operators, but not to
-	 * forbid operator names like '?-' that could not be sequences of SQL92
-	 * operators.
+	 * For SQL standard compatibility, '+' and '-' cannot be the last char of
+	 * a multi-char operator unless the operator contains chars that are not
+	 * in SQL operators. The idea is to lex '=-' as two operators, but not to
+	 * forbid operator names like '?-' that could not be sequences of standard
+	 * SQL operators.
 	 */
 	if (len > 1 &&
 		(name[len - 1] == '+' ||
@@ -234,22 +236,21 @@ OperatorShellMake(const char *operatorName,
 	 * initialize values[] with the operator name and input data types. Note
 	 * that oprcode is set to InvalidOid, indicating it's a shell.
 	 */
-	i = 0;
 	namestrcpy(&oname, operatorName);
-	values[i++] = NameGetDatum(&oname); /* oprname */
-	values[i++] = ObjectIdGetDatum(operatorNamespace);	/* oprnamespace */
-	values[i++] = ObjectIdGetDatum(GetUserId());		/* oprowner */
-	values[i++] = CharGetDatum(leftTypeId ? (rightTypeId ? 'b' : 'r') : 'l');	/* oprkind */
-	values[i++] = BoolGetDatum(false);	/* oprcanmerge */
-	values[i++] = BoolGetDatum(false);	/* oprcanhash */
-	values[i++] = ObjectIdGetDatum(leftTypeId); /* oprleft */
-	values[i++] = ObjectIdGetDatum(rightTypeId);		/* oprright */
-	values[i++] = ObjectIdGetDatum(InvalidOid); /* oprresult */
-	values[i++] = ObjectIdGetDatum(InvalidOid); /* oprcom */
-	values[i++] = ObjectIdGetDatum(InvalidOid); /* oprnegate */
-	values[i++] = ObjectIdGetDatum(InvalidOid); /* oprcode */
-	values[i++] = ObjectIdGetDatum(InvalidOid); /* oprrest */
-	values[i++] = ObjectIdGetDatum(InvalidOid); /* oprjoin */
+	values[Anum_pg_operator_oprname - 1] = NameGetDatum(&oname);
+	values[Anum_pg_operator_oprnamespace - 1] = ObjectIdGetDatum(operatorNamespace);
+	values[Anum_pg_operator_oprowner - 1] = ObjectIdGetDatum(GetUserId());
+	values[Anum_pg_operator_oprkind - 1] = CharGetDatum(leftTypeId ? (rightTypeId ? 'b' : 'r') : 'l');
+	values[Anum_pg_operator_oprcanmerge - 1] = BoolGetDatum(false);
+	values[Anum_pg_operator_oprcanhash - 1] = BoolGetDatum(false);
+	values[Anum_pg_operator_oprleft - 1] = ObjectIdGetDatum(leftTypeId);
+	values[Anum_pg_operator_oprright - 1] = ObjectIdGetDatum(rightTypeId);
+	values[Anum_pg_operator_oprresult - 1] = ObjectIdGetDatum(InvalidOid);
+	values[Anum_pg_operator_oprcom - 1] = ObjectIdGetDatum(InvalidOid);
+	values[Anum_pg_operator_oprnegate - 1] = ObjectIdGetDatum(InvalidOid);
+	values[Anum_pg_operator_oprcode - 1] = ObjectIdGetDatum(InvalidOid);
+	values[Anum_pg_operator_oprrest - 1] = ObjectIdGetDatum(InvalidOid);
+	values[Anum_pg_operator_oprjoin - 1] = ObjectIdGetDatum(InvalidOid);
 
 	/*
 	 * open pg_operator
@@ -273,6 +274,9 @@ OperatorShellMake(const char *operatorName,
 	makeOperatorDependencies(tup);
 
 	heap_freetuple(tup);
+
+	/* Post creation hook for new shell operator */
+	InvokeObjectPostCreateHook(OperatorRelationId, operatorObjectId, 0);
 
 	/*
 	 * Make sure the tuple is visible for subsequent lookups/updates.
@@ -312,7 +316,7 @@ OperatorShellMake(const char *operatorName,
  * specify operators that do not exist.  For example, if operator
  * "op" is being defined, the negator operator "negop" and the
  * commutator "commop" can also be defined without specifying
- * any information other than their names.	Since in order to
+ * any information other than their names.  Since in order to
  * add "op" to the PG_OPERATOR catalog, all the Oid's for these
  * operators must be placed in the fields of "op", a forward
  * declaration is done on the commutator and negator operators.
@@ -322,7 +326,7 @@ OperatorShellMake(const char *operatorName,
  * Forward declaration is used only for this purpose, it is
  * not available to the user as it is for type definition.
  */
-void
+Oid
 OperatorCreate(const char *operatorName,
 			   Oid operatorNamespace,
 			   Oid leftTypeId,
@@ -430,7 +434,7 @@ OperatorCreate(const char *operatorName,
 					   operatorName);
 
 	/*
-	 * Set up the other operators.	If they do not currently exist, create
+	 * Set up the other operators.  If they do not currently exist, create
 	 * shells in order to get ObjectId's.
 	 */
 
@@ -488,22 +492,21 @@ OperatorCreate(const char *operatorName,
 		nulls[i] = false;
 	}
 
-	i = 0;
 	namestrcpy(&oname, operatorName);
-	values[i++] = NameGetDatum(&oname); /* oprname */
-	values[i++] = ObjectIdGetDatum(operatorNamespace);	/* oprnamespace */
-	values[i++] = ObjectIdGetDatum(GetUserId());		/* oprowner */
-	values[i++] = CharGetDatum(leftTypeId ? (rightTypeId ? 'b' : 'r') : 'l');	/* oprkind */
-	values[i++] = BoolGetDatum(canMerge);		/* oprcanmerge */
-	values[i++] = BoolGetDatum(canHash);		/* oprcanhash */
-	values[i++] = ObjectIdGetDatum(leftTypeId); /* oprleft */
-	values[i++] = ObjectIdGetDatum(rightTypeId);		/* oprright */
-	values[i++] = ObjectIdGetDatum(operResultType);		/* oprresult */
-	values[i++] = ObjectIdGetDatum(commutatorId);		/* oprcom */
-	values[i++] = ObjectIdGetDatum(negatorId);	/* oprnegate */
-	values[i++] = ObjectIdGetDatum(procedureId);		/* oprcode */
-	values[i++] = ObjectIdGetDatum(restrictionId);		/* oprrest */
-	values[i++] = ObjectIdGetDatum(joinId);		/* oprjoin */
+	values[Anum_pg_operator_oprname - 1] = NameGetDatum(&oname);
+	values[Anum_pg_operator_oprnamespace - 1] = ObjectIdGetDatum(operatorNamespace);
+	values[Anum_pg_operator_oprowner - 1] = ObjectIdGetDatum(GetUserId());
+	values[Anum_pg_operator_oprkind - 1] = CharGetDatum(leftTypeId ? (rightTypeId ? 'b' : 'r') : 'l');
+	values[Anum_pg_operator_oprcanmerge - 1] = BoolGetDatum(canMerge);
+	values[Anum_pg_operator_oprcanhash - 1] = BoolGetDatum(canHash);
+	values[Anum_pg_operator_oprleft - 1] = ObjectIdGetDatum(leftTypeId);
+	values[Anum_pg_operator_oprright - 1] = ObjectIdGetDatum(rightTypeId);
+	values[Anum_pg_operator_oprresult - 1] = ObjectIdGetDatum(operResultType);
+	values[Anum_pg_operator_oprcom - 1] = ObjectIdGetDatum(commutatorId);
+	values[Anum_pg_operator_oprnegate - 1] = ObjectIdGetDatum(negatorId);
+	values[Anum_pg_operator_oprcode - 1] = ObjectIdGetDatum(procedureId);
+	values[Anum_pg_operator_oprrest - 1] = ObjectIdGetDatum(restrictionId);
+	values[Anum_pg_operator_oprjoin - 1] = ObjectIdGetDatum(joinId);
 
 	pg_operator_desc = heap_open(OperatorRelationId, RowExclusiveLock);
 
@@ -540,6 +543,9 @@ OperatorCreate(const char *operatorName,
 	/* Add dependencies for the entry */
 	makeOperatorDependencies(tup);
 
+	/* Post creation hook for new operator */
+	InvokeObjectPostCreateHook(OperatorRelationId, operatorObjectId, 0);
+
 	heap_close(pg_operator_desc, RowExclusiveLock);
 
 	/*
@@ -558,6 +564,8 @@ OperatorCreate(const char *operatorName,
 
 	if (OidIsValid(commutatorId) || OidIsValid(negatorId))
 		OperatorUpd(operatorObjectId, commutatorId, negatorId);
+
+	return operatorObjectId;
 }
 
 /*
@@ -772,7 +780,7 @@ makeOperatorDependencies(HeapTuple tuple)
 	 * In case we are updating a shell, delete any existing entries, except
 	 * for extension membership which should remain the same.
 	 */
-	deleteDependencyRecordsFor(myself.classId, myself.objectId, false);
+	deleteDependencyRecordsFor(myself.classId, myself.objectId, true);
 	deleteSharedDependencyRecordsFor(myself.classId, myself.objectId, 0);
 
 	/* Dependency on namespace */
@@ -850,6 +858,7 @@ makeOperatorDependencies(HeapTuple tuple)
 	/* Dependency on owner */
 	recordDependencyOnOwner(OperatorRelationId, HeapTupleGetOid(tuple),
 							oper->oprowner);
-	/* dependency on extension */
-	recordDependencyOnCurrentExtension(&myself, false);
+
+	/* Dependency on extension */
+	recordDependencyOnCurrentExtension(&myself, true);
 }

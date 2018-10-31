@@ -9,10 +9,10 @@
  *
  * Portions Copyright (c) 2007-2008, Greenplum inc
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/memutils.h,v 1.66 2010/01/02 16:58:10 momjian Exp $
+ * src/include/utils/memutils.h
  *
  *-------------------------------------------------------------------------
  */
@@ -24,19 +24,21 @@
 
 
 /*
- * MaxAllocSize
- *		Quasi-arbitrary limit on size of allocations.
+ * MaxAllocSize, MaxAllocHugeSize
+ *		Quasi-arbitrary limits on size of allocations.
  *
  * Note:
- *		There is no guarantee that allocations smaller than MaxAllocSize
- *		will succeed.  Allocation requests larger than MaxAllocSize will
- *		be summarily denied.
+ *		There is no guarantee that smaller allocations will succeed, but
+ *		larger requests will be summarily denied.
  *
- * XXX This is deliberately chosen to correspond to the limiting size
- * of varlena objects under TOAST.	See VARATT_MASK_SIZE in postgres.h.
- *
- * XXX Also, various places in aset.c assume they can compute twice an
- * allocation's size without overflow, so beware of raising this.
+ * palloc() enforces MaxAllocSize, chosen to correspond to the limiting size
+ * of varlena objects under TOAST.  See VARSIZE_4B() and related macros in
+ * postgres.h.  Many datatypes assume that any allocatable size can be
+ * represented in a varlena header.  This limit also permits a caller to use
+ * an "int" variable for an index into or length of an allocation.  Callers
+ * careful to avoid these hazards can access the higher limit with
+ * MemoryContextAllocHuge().  Both limits permit code to assume that it may
+ * compute twice an allocation's size without overflow.
  */
 #define MaxAllocSize	((Size) 0x3fffffff)		/* 1 gigabyte - 1 */
 
@@ -63,12 +65,16 @@ typedef struct SharedChunkHeader
 	struct SharedChunkHeader *next;
 } SharedChunkHeader;
 
+#define MaxAllocHugeSize	((Size) -1 >> 1)	/* SIZE_MAX / 2 */
+
+#define AllocHugeSizeIsValid(size)	((Size) (size) <= MaxAllocHugeSize)
+
 /*
  * All chunks allocated by any memory context manager are required to be
  * preceded by a StandardChunkHeader at a spacing of STANDARDCHUNKHEADERSIZE.
  * A currently-allocated chunk must contain a backpointer to its owning
- * context as well as the allocated size of the chunk.	The backpointer is
- * used by pfree() and repalloc() to find the context to call.	The allocated
+ * context as well as the allocated size of the chunk.  The backpointer is
+ * used by pfree() and repalloc() to find the context to call.  The allocated
  * size is not absolutely essential, but it's expected to be needed by any
  * reasonable implementation.
  */
@@ -132,11 +138,11 @@ typedef struct AllocChunkData *AllocChunk;
 /*
  * AllocSetContext is our standard implementation of MemoryContext.
  *
- * Note: isReset means there is nothing for AllocSetReset to do.  This is
- * different from the aset being physically empty (empty blocks list) because
- * we may still have a keeper block.  It's also different from the set being
- * logically empty, because we don't attempt to detect pfree'ing the last
- * active chunk.
+ * Note: header.isReset means there is nothing for AllocSetReset to do.
+ * This is different from the aset being physically empty (empty blocks list)
+ * because we may still have a keeper block.  It's also different from the set
+ * being logically empty, because we don't attempt to detect pfree'ing the
+ * last active chunk.
  */
 typedef struct AllocSetContext
 {
@@ -144,7 +150,6 @@ typedef struct AllocSetContext
 	/* Info about storage allocated in this context: */
 	AllocBlock	blocks;			/* head of list of blocks in this set */
 	AllocChunk	freelist[ALLOCSET_NUM_FREELISTS];		/* free chunk lists */
-	bool		isReset;		/* T = no space alloced since last reset */
 	/* Allocation parameters for this context: */
 	Size		initBlockSize;	/* initial block size */
 	Size		maxBlockSize;	/* maximum block size */
@@ -183,6 +188,8 @@ extern PGDLLIMPORT MemoryContext TopTransactionContext;
 extern PGDLLIMPORT MemoryContext CurTransactionContext;
 extern PGDLLIMPORT MemoryContext MemoryAccountMemoryContext;
 extern PGDLLIMPORT MemoryContext MemoryAccountDebugContext;
+extern PGDLLIMPORT MemoryContext DispatcherContext;
+extern PGDLLIMPORT MemoryContext InterconnectContext;
 
 /* This is a transient link to the active portal's memory context: */
 extern PGDLLIMPORT MemoryContext PortalContext;
@@ -196,8 +203,11 @@ extern void MemoryContextReset(MemoryContext context);
 extern void MemoryContextResetChildren(MemoryContext context);
 extern void MemoryContextDeleteChildren(MemoryContext context);
 extern void MemoryContextResetAndDeleteChildren(MemoryContext context);
+extern void MemoryContextSetParent(MemoryContext context,
+					   MemoryContext new_parent);
 extern Size GetMemoryChunkSpace(void *pointer);
 extern MemoryContext GetMemoryChunkContext(void *pointer);
+extern MemoryContext MemoryContextGetParent(MemoryContext context);
 extern bool MemoryContextIsEmpty(MemoryContext context);
 
 /* Statistics */
@@ -230,7 +240,8 @@ __declspec(noreturn)
 extern void MemoryContextError(int errorcode, MemoryContext context,
                                const char *sfile, int sline,
                                const char *fmt, ...)
-                              __attribute__((__noreturn__));
+                              __attribute__((__noreturn__))
+                              __attribute__((format(PG_PRINTF_ATTRIBUTE, 5, 6)));
 
 /*
  * This routine handles the context-type-independent part of memory

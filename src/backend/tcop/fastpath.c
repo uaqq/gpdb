@@ -3,12 +3,12 @@
  * fastpath.c
  *	  routines to handle function requests from the frontend
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/fastpath.c,v 1.105 2010/07/06 19:18:57 momjian Exp $
+ *	  src/backend/tcop/fastpath.c
  *
  * NOTES
  *	  This cruft is the server side of PQfn.
@@ -20,7 +20,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "access/htup_details.h"
 #include "access/xact.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_proc.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
@@ -29,7 +31,6 @@
 #include "tcop/fastpath.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
-#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -43,8 +44,8 @@
  * each fastpath call as a separate transaction command, and so the
  * cached data could never actually have been reused.  If it had worked
  * as intended, it would have had problems anyway with dangling references
- * in the FmgrInfo struct.	So, forget about caching and just repeat the
- * syscache fetches on each usage.	They're not *that* expensive.
+ * in the FmgrInfo struct.  So, forget about caching and just repeat the
+ * syscache fetches on each usage.  They're not *that* expensive.
  */
 struct fp_info
 {
@@ -204,7 +205,7 @@ fetch_fp_info(Oid func_id, struct fp_info * fip)
 
 	/*
 	 * Since the validity of this structure is determined by whether the
-	 * funcid is OK, we clear the funcid here.	It must not be set to the
+	 * funcid is OK, we clear the funcid here.  It must not be set to the
 	 * correct value until we are about to return with a good struct fp_info,
 	 * since we can be interrupted (i.e., with an ereport(ERROR, ...)) at any
 	 * time.  [No longer really an issue since we don't save the struct
@@ -256,7 +257,7 @@ fetch_fp_info(Oid func_id, struct fp_info * fip)
  * RETURNS:
  *		0 if successful completion, EOF if frontend connection lost.
  *
- * Note: All ordinary errors result in ereport(ERROR,...).	However,
+ * Note: All ordinary errors result in ereport(ERROR,...).  However,
  * if we lose the frontend connection there is no one to ereport to,
  * and no use in proceeding...
  *
@@ -286,9 +287,22 @@ HandleFunctionRequest(StringInfo msgBuf)
 	{
 		if (GetOldFunctionMessage(msgBuf))
 		{
-			ereport(COMMERROR,
-					(errcode(ERRCODE_PROTOCOL_VIOLATION),
-					 errmsg("unexpected EOF on client connection")));
+			if (IsTransactionState())
+				ereport(COMMERROR,
+						(errcode(ERRCODE_CONNECTION_FAILURE),
+						 errmsg("unexpected EOF on client connection with an open transaction")));
+			else
+			{
+				/*
+				 * Can't send DEBUG log messages to client at this point.
+				 * Since we're disconnecting right away, we don't need to
+				 * restore whereToSendOutput.
+				 */
+				whereToSendOutput = DestNone;
+				ereport(DEBUG1,
+						(errcode(ERRCODE_CONNECTION_DOES_NOT_EXIST),
+						 errmsg("unexpected EOF on client connection")));
+			}
 			return EOF;
 		}
 	}
@@ -342,26 +356,22 @@ HandleFunctionRequest(StringInfo msgBuf)
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 					   get_namespace_name(fip->namespace));
+	InvokeNamespaceSearchHook(fip->namespace, true);
 
 	aclresult = pg_proc_aclcheck(fid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, ACL_KIND_PROC,
 					   get_func_name(fid));
-
-	/*
-	 * Restrict access to pg_get_expr(). This reflects the hack in
-	 * transformFuncCall() in parse_expr.c, see comments there for an
-	 * explanation.
-	 */
-	if ((fid == F_PG_GET_EXPR || fid == F_PG_GET_EXPR_EXT) && !superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-		errmsg("argument to pg_get_expr() must come from system catalogs")));
+	InvokeFunctionExecuteHook(fid);
 
 	/*
 	 * Prepare function call info block and insert arguments.
+	 *
+	 * Note: for now we pass collation = InvalidOid, so collation-sensitive
+	 * functions can't be called this way.  Perhaps we should pass
+	 * DEFAULT_COLLATION_OID, instead?
 	 */
-	InitFunctionCallInfoData(fcinfo, &fip->flinfo, 0, NULL, NULL);
+	InitFunctionCallInfoData(fcinfo, &fip->flinfo, 0, InvalidOid, NULL, NULL);
 
 	if (PG_PROTOCOL_MAJOR(FrontendProtocol) >= 3)
 		rformat = parse_fcall_arguments(msgBuf, fip, &fcinfo);
@@ -516,7 +526,7 @@ parse_fcall_arguments(StringInfo msgBuf, struct fp_info * fip,
 
 			/*
 			 * Since stringinfo.c keeps a trailing null in place even for
-			 * binary data, the contents of abuf are a valid C string.	We
+			 * binary data, the contents of abuf are a valid C string.  We
 			 * have to do encoding conversion before calling the typinput
 			 * routine, though.
 			 */

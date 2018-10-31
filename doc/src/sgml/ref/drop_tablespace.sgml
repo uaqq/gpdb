@@ -1,9 +1,13 @@
 <!--
-$PostgreSQL: pgsql/doc/src/sgml/ref/drop_tablespace.sgml,v 1.10 2010/04/03 07:23:01 petere Exp $
+doc/src/sgml/ref/drop_tablespace.sgml
 PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPTABLESPACE">
+ <indexterm zone="sql-droptablespace">
+  <primary>DROP TABLESPACE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP TABLESPACE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,13 +19,9 @@ PostgreSQL documentation
   <refpurpose>remove a tablespace</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-droptablespace">
-  <primary>DROP TABLESPACE</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
-DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">tablespace_name</replaceable>
+DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -53,14 +53,14 @@ DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">tablespace_name</re
     <term><literal>IF EXISTS</literal></term>
     <listitem>
      <para>
-      Do not throw an error if the tablespace does not exist. A notice is issued 
+      Do not throw an error if the tablespace does not exist. A notice is issued
       in this case.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="PARAMETER">tablespace_name</replaceable></term>
+    <term><replaceable class="PARAMETER">name</replaceable></term>
     <listitem>
      <para>
       The name of a tablespace.
@@ -86,8 +86,7 @@ DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">tablespace_name</re
    To remove tablespace <literal>mystuff</literal> from the system:
 <programlisting>
 DROP TABLESPACE mystuff;
-</programlisting>
-  </para>
+</programlisting></para>
  </refsect1>
 
  <refsect1>

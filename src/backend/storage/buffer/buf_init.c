@@ -3,18 +3,23 @@
  * buf_init.c
  *	  buffer manager initialization routines
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/buffer/buf_init.c,v 1.84 2010/01/02 16:57:51 momjian Exp $
+ *	  src/backend/storage/buffer/buf_init.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include <sys/mman.h>
+
+#ifdef MPROTECT_BUFFERS
+#include <sys/mman.h>
+#include "miscadmin.h"
+#endif
 
 #include "storage/bufmgr.h"
 #include "storage/buf_internals.h"
@@ -24,6 +29,28 @@ BufferDesc *BufferDescriptors;
 char	   *BufferBlocks;
 int32	   *PrivateRefCount;
 
+#ifdef MPROTECT_BUFFERS
+/*
+ * Protect the entire shared buffers region such that neither read nor write
+ * is allowed.  Protection will change for specific buffers when accessed
+ * through buffer manager's interface.  The intent is to catch violation of
+ * buffer access rules.
+ */
+static void
+ProtectMemoryPoolBuffers()
+{
+	Size bufferBlocksTotalSize = mul_size((Size)NBuffers, (Size) BLCKSZ);
+	if (IsUnderPostmaster && IsNormalProcessingMode() &&
+		mprotect(BufferBlocks, bufferBlocksTotalSize, PROT_NONE))
+	{
+		ereport(ERROR,
+				(errmsg("unable to set memory level to %d, error %d, "
+						"allocation size %ud, ptr %ld", PROT_NONE,
+						errno, (unsigned int) bufferBlocksTotalSize,
+						(long int) BufferBlocks)));
+	}
+}
+#endif
 
 /*
  * Data Structures:
@@ -46,7 +73,7 @@ int32	   *PrivateRefCount;
  *
  * IO_IN_PROGRESS -- this is a flag in the buffer descriptor.
  *		It must be set when an IO is initiated and cleared at
- *		the end of the IO.	It is there to make sure that one
+ *		the end of the IO.  It is there to make sure that one
  *		process doesn't start to use a buffer while another is
  *		faulting it in.  see WaitIO and related routines.
  *
@@ -56,26 +83,13 @@ int32	   *PrivateRefCount;
  *
  * PrivateRefCount -- Each buffer also has a private refcount that keeps
  *		track of the number of times the buffer is pinned in the current
- *		process.	This is used for two purposes: first, if we pin a
+ *		process.    This is used for two purposes: first, if we pin a
  *		a buffer more than once, we only need to change the shared refcount
  *		once, thus only lock the shared state once; second, when a transaction
  *		aborts, it should only unpin the buffers exactly the number of times it
  *		has pinned them, so that it will not blow away buffers of another
  *		backend.
  */
-
-static void
-ProtectMemoryPoolBuffers()
-{
-	Size bufferBlocksTotalSize = mul_size((Size)NBuffers, (Size) BLCKSZ);
-	if ( ShouldMemoryProtectBufferPool() &&
-         mprotect(BufferBlocks, bufferBlocksTotalSize, PROT_NONE ))
-    {
-        ereport(ERROR,
-                (errmsg("Unable to set memory level to %d, error %d, allocation size %ud, ptr %ld", PROT_NONE,
-                errno, (unsigned int) bufferBlocksTotalSize, (long int) BufferBlocks)));
-    }
-}
 
 /*
  * Initialize shared buffer pool
@@ -143,7 +157,9 @@ InitBufferPool(void)
 		BufferDescriptors[NBuffers - 1].freeNext = FREENEXT_END_OF_LIST;
 	}
 
+#ifdef MPROTECT_BUFFERS
     ProtectMemoryPoolBuffers();
+#endif
 
 	/* Init other shared buffer-management stuff */
 	StrategyInitialize(!foundDescs);
@@ -164,8 +180,9 @@ InitBufferPool(void)
 void
 InitBufferPoolAccess(void)
 {
+#ifdef MPROTECT_BUFFERS
 	ProtectMemoryPoolBuffers();
-	
+#endif
 	/*
 	 * Allocate and zero local arrays of per-buffer info.
 	 */

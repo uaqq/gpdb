@@ -17,6 +17,8 @@
 #include "nodes/plannodes.h"
 #include "storage/s_lock.h"
 
+struct Gang;
+
 /**
  * DTX states, used to track the state of the distributed transaction
  *   from the QD's point of view.
@@ -230,10 +232,10 @@ typedef struct TMGXACT
 
 	bool						badPrepareGangs;
 
-	int							debugIndex;
+	bool						writerGangLost;
 
-	bool						directTransaction;
-	uint16						directTransactionContentId;
+	Bitmapset					*twophaseSegmentsMap;
+	List						*twophaseSegments;
 }	TMGXACT;
 
 typedef struct TMGXACTSTATUS
@@ -257,7 +259,6 @@ typedef struct TMGALLXACTSTATUS
 typedef struct TmControlBlock
 {
 	LWLockId					ControlLock;
-	slock_t 					ControlSeqnoLock;
 
 	bool						recoverred;
 	DistributedTransactionTimeStamp	distribTimeStamp;
@@ -279,6 +280,7 @@ extern DtxContext DistributedTransactionContext;
 /* state variables for how much of the log file has been flushed */
 extern volatile bool *shmDtmStarted;
 extern volatile DistributedTransactionTimeStamp *shmDistribTimeStamp;
+extern volatile DistributedTransactionId *shmGIDSeq;
 extern uint32 *shmNextSnapshotId;
 extern TMGXACT_LOG *shmCommittedGxactArray;
 extern volatile int *shmNumCommittedGxacts;
@@ -301,7 +303,6 @@ extern void getDtxLogInfo(TMGXACT_LOG *gxact_log);
 extern bool notifyCommittedDtxTransactionIsNeeded(void);
 extern void notifyCommittedDtxTransaction(void);
 extern void	rollbackDtxTransaction(void);
-extern DistributedTransactionId getMaxDistributedXid(void);
 
 extern bool includeInCheckpointIsNeeded(TMGXACT *gxact);
 extern void insertingDistributedCommitted(void);
@@ -310,8 +311,6 @@ extern void insertedDistributedCommitted(void);
 extern void redoDtxCheckPoint(TMGXACT_CHECKPOINT *gxact_checkpoint);
 extern void redoDistributedCommitRecord(TMGXACT_LOG *gxact_log);
 extern void redoDistributedForgetCommitRecord(TMGXACT_LOG *gxact_log);
-extern void descDistributedCommitRecord(StringInfo buf, TMGXACT_LOG *gxact_log);
-extern void descDistributedForgetCommitRecord(StringInfo buf, TMGXACT_LOG *gxact_log);
 
 /* @param stmt used because some plans are annotated with dispatch details which the DTM needs. */
 extern void dtmPreCommand(const char *debugCaller, const char *debugDetail, PlannedStmt *stmt,
@@ -332,7 +331,6 @@ extern void verify_shared_snapshot_ready(void);
 int			mppTxnOptions(bool needTwoPhase);
 int			mppTxOptions_IsoLevel(int txnOptions);
 bool		isMppTxOptions_ReadOnly(int txnOptions);
-void		unpackMppTxnOptions(int txnOptions, int *isoLevel, bool *readOnly);
 bool		isMppTxOptions_NeedTwoPhase(int txnOptions);
 bool		isMppTxOptions_ExplicitBegin(int txnOptions);
 
@@ -349,5 +347,11 @@ extern void UtilityModeFindOrCreateDtmRedoFile(void);
 extern void UtilityModeCloseDtmRedoFile(void);
 
 extern bool doDispatchSubtransactionInternalCmd(DtxProtocolCommand cmdType);
+
+extern void markCurrentGxactWriterGangLost(void);
+
+extern bool currentGxactWriterGangLost(void);
+
+extern void addToGxactTwophaseSegments(struct Gang* gp);
 
 #endif   /* CDBTM_H */

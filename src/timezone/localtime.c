@@ -16,11 +16,7 @@
 
 #include <fcntl.h>
 
-/*
- * GPDB_92_MERGE_FIXME: Remove timestamp.h and include datatype/timestamp.h
- * instead when a7801b62f21bd051444bd1119cd3745ecc8e14ec has been merged.
- */
-#include "timestamp.h"
+#include "datatype/timestamp.h"
 #include "pgtz.h"
 
 #include "private.h"
@@ -30,15 +26,15 @@
 #ifndef WILDABBR
 /*
  * Someone might make incorrect use of a time zone abbreviation:
- *	1.	They might reference tzname[0] before calling tzset (explicitly
+ *	1.  They might reference tzname[0] before calling tzset (explicitly
  *		or implicitly).
- *	2.	They might reference tzname[1] before calling tzset (explicitly
+ *	2.  They might reference tzname[1] before calling tzset (explicitly
  *		or implicitly).
- *	3.	They might reference tzname[1] after setting to a time zone
+ *	3.  They might reference tzname[1] after setting to a time zone
  *		in which Daylight Saving Time is never observed.
- *	4.	They might reference tzname[0] after setting to a time zone
+ *	4.  They might reference tzname[0] after setting to a time zone
  *		in which Standard Time is never observed.
- *	5.	They might reference tm.TM_ZONE after calling offtime.
+ *	5.  They might reference tm.TM_ZONE after calling offtime.
  * What's best to do in the above cases is open to debate;
  * for now, we just set things up so that in any of the five cases
  * WILDABBR is used. Another possibility: initialize tzname[0] to the
@@ -64,9 +60,8 @@ static int	tzdefrules_loaded = 0;
 /*
  * The DST rules to use if TZ has no rules and we can't load TZDEFRULES.
  * Default to US rules as of 2017-05-07.
- * POSIX 1003.1 section 8.1.1 says that the default DST rules are
- * implementation dependent; for historical reasons, US rules are a
- * common default.
+ * POSIX does not specify the default DST rules;
+ * for historical reasons, US rules are a common default.
  */
 #define TZDEFRULESTRING ",M3.2.0,M11.1.0"
 
@@ -1162,10 +1157,11 @@ tzparse(const char *name, struct state *sp, bool lastditch)
 				else
 				{
 					/*
-					 * If summer time is in effect, and the transition time
-					 * was not specified as standard time, add the summer time
-					 * offset to the transition time; otherwise, add the
-					 * standard time offset to the transition time.
+					 * If daylight saving time is in effect, and the
+					 * transition time was not specified as standard time, add
+					 * the daylight saving time offset to the transition time;
+					 * otherwise, add the standard time offset to the
+					 * transition time.
 					 */
 
 					/*

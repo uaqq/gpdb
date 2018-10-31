@@ -7,6 +7,7 @@
 
 #include "postgres.h"
 
+#include "catalog/pg_collation.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/walkers.h"
@@ -200,6 +201,13 @@ plan_tree_walker(Node *node,
 				return true;
 			break;
 
+		case T_MergeAppend:
+			if (walk_plan_node_fields((Plan *) node, walker, context))
+				return true;
+			if (walker((Node *) ((MergeAppend *) node)->mergeplans, context))
+				return true;
+			break;
+
 		case T_RecursiveUnion:
 			if (walk_plan_node_fields((Plan *) node, walker, context))
 				return true;
@@ -231,22 +239,32 @@ plan_tree_walker(Node *node,
 
 		case T_SeqScan:
 		case T_ExternalScan:
-		case T_AppendOnlyScan:
-		case T_AOCSScan:
-		case T_TableScan:
 		case T_DynamicTableScan:
 		case T_BitmapHeapScan:
 		case T_BitmapAppendOnlyScan:
 		case T_BitmapTableScan:
-		case T_TableFunctionScan:
-		case T_ValuesScan:
 		case T_WorkTableScan:
+		case T_ForeignScan:
+			if (walk_scan_node_fields((Scan *) node, walker, context))
+				return true;
+			break;
+
+		case T_ValuesScan:
+			if (walker((Node *) ((ValuesScan *) node)->values_lists, context))
+				return true;
+			if (walk_scan_node_fields((Scan *) node, walker, context))
+				return true;
+			break;
+
+		case T_TableFunctionScan:
+			if (walker((Node *) ((TableFunctionScan *) node)->function, context))
+				return true;
 			if (walk_scan_node_fields((Scan *) node, walker, context))
 				return true;
 			break;
 
 		case T_FunctionScan:
-			if (walker((Node *) ((FunctionScan *) node)->funcexpr, context))
+			if (walker((Node *) ((FunctionScan *) node)->functions, context))
 				return true;
 			if (walk_scan_node_fields((Scan *) node, walker, context))
 				return true;
@@ -259,6 +277,13 @@ plan_tree_walker(Node *node,
 			if (walker((Node *) ((IndexScan *) node)->indexqual, context))
 				return true;
 			/* Other fields are lists of basic items, nothing to walk. */
+			break;
+
+		case T_IndexOnlyScan:
+			if (walk_scan_node_fields((Scan *) node, walker, context))
+				return true;
+			if (walker((Node *) ((IndexOnlyScan *) node)->indexqual, context))
+				return true;
 			break;
 
 		case T_BitmapIndexScan:
@@ -441,6 +466,8 @@ plan_tree_walker(Node *node,
 				return true;
 			if (walker((Node *) ((ModifyTable *) node)->plans, context))
 				return true;
+			if (walker((Node *) ((ModifyTable *) node)->withCheckOptionLists, context))
+				return true;
 			break;
 
 		case T_LockRows:
@@ -450,6 +477,7 @@ plan_tree_walker(Node *node,
 
 		case T_DML:
 		case T_SplitUpdate:
+		case T_Reshuffle:
 		case T_RowTrigger:
 		case T_AssertOp:
 			if (walk_plan_node_fields((Plan *) node, walker, context))
@@ -768,3 +796,158 @@ find_nodes_walker(Node *node, find_nodes_context *context)
 
 	return expression_tree_walker(node, find_nodes_walker, (void *) context);
 }
+
+/**
+ * GPDB_91_MERGE_FIXME: collation
+ * Look for nodes with non-default collation; return 1 if any exist, -1
+ * otherwise.
+ */
+typedef struct check_collation_context
+{
+	int foundNonDefaultCollation;
+} check_collation_context;
+
+static bool check_collation_walker(Node *node, check_collation_context *context);
+
+int check_collation(Node *node)
+{
+	check_collation_context context;
+	Assert(NULL != node);
+	context.foundNonDefaultCollation = -1;
+	check_collation_walker(node, &context);
+
+	return context.foundNonDefaultCollation;
+}
+
+
+static void
+check_collation_in_list(List *colllist, check_collation_context *context)
+{
+	ListCell *lc;
+	foreach (lc, colllist)
+	{
+		Oid coll = lfirst_oid(lc);
+		if (InvalidOid != coll && DEFAULT_COLLATION_OID != coll)
+		{
+			context->foundNonDefaultCollation = 1;
+			break;
+		}
+	}
+}
+
+static bool
+check_collation_walker(Node *node, check_collation_context *context)
+{
+	Oid collation, inputCollation;
+
+	if (NULL == node)
+	{
+		return false;
+	}
+
+	if (IsA(node, Query))
+	{
+		/* Recurse into subselects */
+		return query_tree_walker((Query *) node, check_collation_walker, (void *) context, 0 /* flags */);
+	}
+
+	switch (nodeTag(node))
+	{
+		case T_Var:
+		case T_Const:
+		case T_OpExpr:
+		case T_ScalarArrayOpExpr:
+		case T_DistinctExpr:
+		case T_BoolExpr:
+		case T_BooleanTest:
+		case T_CaseExpr:
+		case T_CaseTestExpr:
+		case T_CoalesceExpr:
+		case T_MinMaxExpr:
+		case T_FuncExpr:
+		case T_Aggref:
+		case T_WindowFunc:
+		case T_NullTest:
+		case T_NullIfExpr:
+		case T_RelabelType:
+		case T_CoerceToDomain:
+		case T_CoerceViaIO:
+		case T_ArrayCoerceExpr:
+		case T_SubLink:
+		case T_ArrayExpr:
+		case T_ArrayRef:
+		case T_RowExpr:
+		case T_RowCompareExpr:
+		case T_FieldSelect:
+		case T_FieldStore:
+		case T_GroupId:
+		case T_CoerceToDomainValue:
+		case T_CurrentOfExpr:
+		case T_NamedArgExpr:
+		case T_ConvertRowtypeExpr:
+		case T_CollateExpr:
+		case T_TableValueExpr:
+		case T_XmlExpr:
+		case T_SetToDefault:
+		case T_PlaceHolderVar:
+		case T_Param:
+		case T_SubPlan:
+		case T_AlternativeSubPlan:
+		case T_GroupingFunc:
+		case T_Grouping:
+		case T_DMLActionExpr:
+		case T_PartBoundExpr:
+			collation = exprCollation(node);
+			inputCollation = exprInputCollation(node);
+			if ((InvalidOid != collation && DEFAULT_COLLATION_OID != collation) ||
+				(InvalidOid != inputCollation && DEFAULT_COLLATION_OID != inputCollation))
+			{
+				context->foundNonDefaultCollation = 1;
+			}
+			break;
+		case T_CollateClause:
+			/* unsupported */
+			context->foundNonDefaultCollation = 1;
+			break;
+		case T_ColumnDef:
+			collation = ((ColumnDef *) node)->collOid;
+			if (InvalidOid != collation && DEFAULT_COLLATION_OID != collation)
+			{
+				context->foundNonDefaultCollation = 1;
+			}
+			break;
+		case T_IndexElem:
+			if (NIL != ((IndexElem *) node)->collation)
+			{
+				context->foundNonDefaultCollation = 1;
+			}
+			break;
+		case T_RangeTblEntry:
+			check_collation_in_list(((RangeTblEntry *) node)->values_collations, context);
+			check_collation_in_list(((RangeTblEntry *) node)->ctecolcollations, context);
+			break;
+		case T_RangeTblFunction:
+			check_collation_in_list(((RangeTblFunction *) node)->funccolcollations, context);
+			break;
+		case T_CommonTableExpr:
+			check_collation_in_list(((CommonTableExpr *) node)->ctecolcollations, context);
+			break;
+		case T_SetOperationStmt:
+			check_collation_in_list(((SetOperationStmt *) node)->colCollations, context);
+			break;
+		default:
+			/* make compiler happy */
+			break;
+	}
+
+	if (context->foundNonDefaultCollation == 1)
+	{
+		/* end recursion */
+		return true;
+	}
+	else
+	{
+		return expression_tree_walker(node, check_collation_walker, (void *) context);
+	}
+}
+

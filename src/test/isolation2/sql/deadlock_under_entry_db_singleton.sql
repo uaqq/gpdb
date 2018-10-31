@@ -13,14 +13,17 @@ CREATE EXTENSION IF NOT EXISTS gp_inject_fault;
 -- QD may wait for ENTRY_DB_SINGLETON and we will have a wait cycle,
 -- causing deadlock.
 --
--- This test creates one such scenario using a volatile funciton.  It
+-- This test creates one such scenario using a volatile function.  It
 -- is critical that the function be volatile, otherwise,
 -- ENTRY_DB_SIGNLETON reader is not spawned to execute the query.
 --
 -- This thread on gpdb-dev has more details:
 -- https://groups.google.com/a/greenplum.org/d/msg/gpdb-dev/OS1-ODIK0P4/ZIzayBbMBwAJ
+-- Since global deadlock detector has been added into gpdb, UPDATE on heap
+-- table does not acquire an Exclusive Relation Lock on QD. Therefore, we change
+-- the table to ao table here.
 
-CREATE TABLE deadlock_entry_db_singleton_table (c int, d int);
+CREATE TABLE deadlock_entry_db_singleton_table (c int, d int) WITH (appendonly=true);
 INSERT INTO deadlock_entry_db_singleton_table select i, i+1 from generate_series(1,10) i;
 
 -- Function that needs ExclusiveLock on a table.  Use a non-SQL
@@ -37,7 +40,7 @@ LANGUAGE plpgsql VOLATILE MODIFIES SQL DATA;
 
 -- inject fault on QD
 select gp_inject_fault('transaction_start_under_entry_db_singleton', 'reset', 1);
-select gp_inject_fault('transaction_start_under_entry_db_singleton', 'suspend', 1);
+select gp_inject_fault_infinite('transaction_start_under_entry_db_singleton', 'suspend', 1);
 
 -- The QD should already hold RowExclusiveLock and ExclusiveLock on
 -- deadlock_entry_db_singleton_table and the QE ENTRY_DB_SINGLETON

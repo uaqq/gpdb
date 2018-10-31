@@ -11,18 +11,18 @@ insert into co_nestloop_idxscan.bar values (1);
 create index foo_id_idx on co_nestloop_idxscan.foo(id);
 -- test with hash join
 explain select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id = b.id;
-                                         QUERY PLAN                                          
----------------------------------------------------------------------------------------------
- Gather Motion 2:1  (slice2; segments: 2)  (cost=0.00..431.09 rows=1 width=8)
-   ->  Nested Loop  (cost=0.00..431.09 rows=1 width=8)
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.00 rows=1 width=8)
+   ->  Nested Loop  (cost=0.00..862.00 rows=1 width=8)
          Join Filter: true
          ->  Table Scan on bar  (cost=0.00..431.00 rows=1 width=8)
-         ->  Bitmap Table Scan on foo  (cost=0.00..0.09 rows=1 width=8)
-               Recheck Cond: foo.id = bar.id
+         ->  Bitmap Table Scan on foo  (cost=0.00..431.00 rows=1 width=8)
+               Recheck Cond: id = bar.id
                ->  Bitmap Index Scan on foo_id_idx  (cost=0.00..0.00 rows=0 width=0)
-                     Index Cond: foo.id = bar.id
- Settings:  optimizer=on; optimizer_segments=3
-(10 rows)
+                     Index Cond: id = bar.id
+ Optimizer: PQO version 2.64.0
+(9 rows)
 
 select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id = b.id;
  id 
@@ -33,19 +33,20 @@ select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id
 -- test with nested loop join
 set optimizer_enable_hashjoin = off;
 set enable_hashjoin=off;
+set enable_nestloop=on;
 explain select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id = b.id;
-                                         QUERY PLAN                                          
----------------------------------------------------------------------------------------------
- Gather Motion 2:1  (slice2; segments: 2)  (cost=0.00..431.09 rows=1 width=8)
-   ->  Nested Loop  (cost=0.00..431.09 rows=1 width=8)
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.00 rows=1 width=8)
+   ->  Nested Loop  (cost=0.00..862.00 rows=1 width=8)
          Join Filter: true
          ->  Table Scan on bar  (cost=0.00..431.00 rows=1 width=8)
-         ->  Bitmap Table Scan on foo  (cost=0.00..0.09 rows=1 width=8)
-               Recheck Cond: foo.id = bar.id
+         ->  Bitmap Table Scan on foo  (cost=0.00..431.00 rows=1 width=8)
+               Recheck Cond: id = bar.id
                ->  Bitmap Index Scan on foo_id_idx  (cost=0.00..0.00 rows=0 width=0)
-                     Index Cond: foo.id = bar.id
- Settings:  enable_hashjoin=off; optimizer=on; optimizer_segments=3
-(10 rows)
+                     Index Cond: id = bar.id
+ Optimizer: PQO version 2.64.0
+(9 rows)
 
 select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id = b.id;
  id 
@@ -58,19 +59,19 @@ set enable_seqscan = off;
 -- start_ignore
 -- Known_opt_diff: OPT-929
 -- end_ignore
-explain select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id = b.id;
-                                         QUERY PLAN                                          
----------------------------------------------------------------------------------------------
- Gather Motion 2:1  (slice2; segments: 2)  (cost=0.00..431.09 rows=1 width=8)
-   ->  Nested Loop  (cost=0.00..431.09 rows=1 width=8)
+explain select f.id from co_nestloop_idxscan.bar b, co_nestloop_idxscan.foo f where f.id = b.id;
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.00 rows=1 width=8)
+   ->  Nested Loop  (cost=0.00..862.00 rows=1 width=8)
          Join Filter: true
          ->  Table Scan on bar  (cost=0.00..431.00 rows=1 width=8)
-         ->  Bitmap Table Scan on foo  (cost=0.00..0.09 rows=1 width=8)
-               Recheck Cond: foo.id = bar.id
+         ->  Bitmap Table Scan on foo  (cost=0.00..431.00 rows=1 width=8)
+               Recheck Cond: id = bar.id
                ->  Bitmap Index Scan on foo_id_idx  (cost=0.00..0.00 rows=0 width=0)
-                     Index Cond: foo.id = bar.id
- Settings:  enable_hashjoin=off; enable_seqscan=off; optimizer=on; optimizer_segments=3
-(10 rows)
+                     Index Cond: id = bar.id
+ Optimizer: PQO version 2.64.0
+(9 rows)
 
 select f.id from co_nestloop_idxscan.foo f, co_nestloop_idxscan.bar b where f.id = b.id;
  id 

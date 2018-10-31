@@ -107,6 +107,18 @@ select A.i, B.i, C.j from A, B, C where A.j = any(select sum(C.j) from C where C
 select A.i, B.i, C.j from A, B, C where A.j in ( select C.j from C where exists(select C.i from C,A where C.i = A.i and C.i =10)) order by A.i, B.i, C.j limit 10;
 select A.i, B.i, C.j from A, B, C where A.j in (select C.j from C where C.j = A.j and not exists (select sum(B.i) from B where C.i = B.i and C.i !=10)) order by A.i, B.i, C.j limit 10;
 
+
+-- Test for sublink pull-up based on both left-hand and right-hand input
+explain (costs off)
+select * from A where exists (select * from B where A.i in (select C.i from C where C.i = B.i));
+select * from A where exists (select * from B where A.i in (select C.i from C where C.i = B.i));
+
+
+-- Test for ALL_SUBLINK pull-up based on both left-hand and right-hand input
+explain (costs off)
+select * from A,B where exists (select * from C where B.i not in (select C.i from C where C.i != 10));
+select * from A,B where exists (select * from C where B.i not in (select C.i from C where C.i != 10));
+
 -- -- -- --
 -- Basic queries with NOT IN clause
 -- -- -- --
@@ -253,6 +265,8 @@ explain select * from B where not exists (select * from C,A where C.i in (select
 select * from B where not exists (select * from C,A where C.i in (select C.i from C where C.i = A.i and C.i != 10) AND B.i = C.i);
 explain select * from A where A.i in (select C.j from C,B where B.i in (select i from C));
 select * from A where A.i in (select C.j from C,B where B.i in (select i from C));
+explain select * from A where not exists (select sum(c.i) from C where C.i = A.i group by C.i having c.i > 3);
+select * from A where not exists (select sum(c.i) from C where C.i = A.i group by C.i having c.i > 3);
 
 
 -- ----------------------------------------------------------------------
@@ -850,6 +864,32 @@ EXPLAIN SELECT a FROM qp_tab1 f1 LEFT JOIN qp_tab2 on a=c WHERE NOT EXISTS(SELEC
 
 EXPLAIN SELECT DISTINCT a FROM qp_tab1 WHERE NOT (SELECT TRUE FROM qp_tab2 WHERE EXISTS (SELECT * FROM qp_tab3 WHERE qp_tab2.c = qp_tab3.e));
 SELECT DISTINCT a FROM qp_tab1 WHERE NOT (SELECT TRUE FROM qp_tab2 WHERE EXISTS (SELECT * FROM qp_tab3 WHERE qp_tab2.c = qp_tab3.e));
+
+-- ----------------------------------------------------------------------
+-- Test: non-equivalence clauses
+-- ----------------------------------------------------------------------
+
+-- start_ignore
+DROP TABLE IF EXISTS qp_non_eq_a;
+DROP TABLE IF EXISTS qp_non_eq_b;
+
+CREATE TABLE qp_non_eq_a (i int, f float8);
+CREATE TABLE qp_non_eq_b (i int, f float8);
+INSERT INTO qp_non_eq_a VALUES (1, '0'), (2, '-0');
+INSERT INTO qp_non_eq_b VALUES (3, '0'), (1, '-0');
+-- end_ignore
+
+EXPLAIN SELECT * FROM qp_non_eq_a, qp_non_eq_b WHERE qp_non_eq_a.f = qp_non_eq_b.f AND qp_non_eq_a.f::text <> '-0';
+SELECT * FROM qp_non_eq_a, qp_non_eq_b WHERE qp_non_eq_a.f = qp_non_eq_b.f AND qp_non_eq_a.f::text <> '-0';
+
+EXPLAIN SELECT * FROM qp_non_eq_a INNER JOIN qp_non_eq_b ON qp_non_eq_a.f = qp_non_eq_b.f AND CASE WHEN qp_non_eq_b.f::text = '-0' THEN 1 ELSE -1::float8 END < '0';
+SELECT * FROM qp_non_eq_a INNER JOIN qp_non_eq_b ON qp_non_eq_a.f = qp_non_eq_b.f AND CASE WHEN qp_non_eq_b.f::text = '-0' THEN 1 ELSE -1::float8 END < '0';
+
+EXPLAIN SELECT * FROM qp_non_eq_a, qp_non_eq_b WHERE qp_non_eq_a.i = qp_non_eq_b.i AND qp_non_eq_a.i = ANY('{1,2,3}'::integer[]);
+SELECT * FROM qp_non_eq_a, qp_non_eq_b WHERE qp_non_eq_a.i = qp_non_eq_b.i AND qp_non_eq_a.i = ANY('{1,2,3}'::integer[]);
+
+EXPLAIN SELECT * FROM qp_non_eq_a, qp_non_eq_b WHERE qp_non_eq_a.i = qp_non_eq_b.i AND qp_non_eq_a.i = ANY('{1,2,3}'::numeric[]);
+SELECT * FROM qp_non_eq_a, qp_non_eq_b WHERE qp_non_eq_a.i = qp_non_eq_b.i AND qp_non_eq_a.i = ANY('{1,2,3}'::numeric[]);
 
 -- ----------------------------------------------------------------------
 -- Test: teardown.sql

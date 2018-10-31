@@ -169,9 +169,8 @@ static struct
 	const char* c; /* config file */
 	struct transform* trlist; /* transforms from config file */
 	const char* ssl; /* path to certificates in case we use gpfdist with ssl */
-	int 		sslclean; /* Defines the time to wait [sec] until cleanup the SSL resources (internal, not documented) */
 	int			w; /* The time used for session timeout in seconds */
-} opt = { 8080, 8080, 0, 0, 0, ".", 0, 0, -1, 5, 0, 32768, 0, 256, 0, 0, 0, 0, 0 };
+} opt = { 8080, 8080, 0, 0, 0, ".", 0, 0, -1, 5, 0, 32768, 0, 256, 0, 0, 0, 0 };
 
 
 typedef union address
@@ -312,12 +311,18 @@ static int ggetpid();
 static void log_gpfdist_status();
 static void log_request_header(const request_t *r);
 
-static void gprint(const request_t *r, const char* fmt, ...);
-static void gprintln(const request_t *r, const char* fmt, ...);
-static void gprintlnif(const request_t *r, const char* fmt, ...);
-static void gfatal(const request_t *r, const char* fmt, ...);
-static void gwarning(const request_t *r, const char* fmt, ...);
-static void gdebug(const request_t *r, const char* fmt, ...);
+static void gprint(const request_t *r, const char* fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+static void gprintln(const request_t *r, const char* fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+static void gprintlnif(const request_t *r, const char* fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+static void gfatal(const request_t *r, const char* fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+static void gwarning(const request_t *r, const char* fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+static void gdebug(const request_t *r, const char* fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
 
 /* send gp-proto==1 ctl info */
 static void gp1_send_eof(request_t* r);
@@ -357,14 +362,16 @@ static int gpfdist_SSL_send(const request_t *r, const void *buf, const size_t bu
 static int gpfdist_SSL_receive(const request_t *r, void *buf, const size_t buflen);
 static void free_SSL_resources(const request_t *r);
 static void setup_flush_ssl_buffer(request_t* r);
-static void request_cleanup_and_free_SSL_resources(int fd, short event, void* arg);
+static void request_cleanup_and_free_SSL_resources(request_t* r);
 #endif
 static int local_send(request_t *r, const char* buf, int buflen);
 
 static int get_unsent_bytes(request_t* r);
 
-static void * palloc_safe(request_t *r, apr_pool_t *pool, apr_size_t size, const char *fmt, ...);
-static void * pcalloc_safe(request_t *r, apr_pool_t *pool, apr_size_t size, const char *fmt, ...);
+static void * palloc_safe(request_t *r, apr_pool_t *pool, apr_size_t size, const char *fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
+static void * pcalloc_safe(request_t *r, apr_pool_t *pool, apr_size_t size, const char *fmt, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
 
 static void process_term_signal(int sig,short event,void* arg);
 int gpfdist_init(int argc, const char* const argv[]);
@@ -440,7 +447,7 @@ static void block_fill_header(const request_t *r, block_t* b,
 	h->htop = p - h->hbyte;
 	if (h->htop > sizeof(h->hbyte))
 		gfatal(NULL, "assert failed, h->htop = %d, max = %d", h->htop,
-				sizeof(h->hbyte));
+				(int) sizeof(h->hbyte));
 	gdebug(r, "header size: %d",h->htop-h->hbot);
 }
 
@@ -575,7 +582,6 @@ static void parse_command_line(int argc, const char* const argv[],
 	{ NULL, 'S', 0, "use O_SYNC when opening files for write" },
 	{ NULL, 'z', 1, "internal - queue size for listen call" },
 	{ "ssl", 257, 1, "ssl - certificates files under this directory" },
-	{ "sslclean", 258, 1, "Defines the time to wait [sec] until cleanup of the SSL resources" },
 #ifdef GPFXDIST
 	{ NULL, 'c', 1, "transform configuration file" },
 #endif
@@ -654,12 +660,8 @@ static void parse_command_line(int argc, const char* const argv[],
 		case 257:
 			opt.ssl = arg;
 			break;
-		case 258:
-			opt.sslclean = atoi(arg);
-			break;
 #else
 		case 257:
-		case 258:
 			usage_error("SSL is not supported by this build", 0);
 			break;
 #endif
@@ -800,10 +802,6 @@ static void parse_command_line(int argc, const char* const argv[],
 				"Please specify a valid directory for --ssl switch", opt.ssl), 0);
 		opt.ssl = p;
 	}
-
-	/* Validate opt.sslclean*/
-	if ( (opt.sslclean < 0) || (opt.sslclean > 300) )
-		usage_error("Error: -sslclean timeout must be between 0 and 300 [sec] (default is 0[sec])", 0);
 #endif
 
 #ifdef GPFXDIST
@@ -1723,7 +1721,8 @@ static int session_active_segs_isempty(session_t* session)
  *
  * Callback when the socket is ready to be written
  */
-void gfile_printf_then_putc_newline(const char *format, ...);
+void gfile_printf_then_putc_newline(const char *format, ...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
 
 static void do_write(int fd, short event, void* arg)
 {
@@ -2135,7 +2134,7 @@ static void do_accept(int fd, short event, void* arg)
 		gfatal(NULL, "out of memory in do_accept");
 
 	/* create the request in pool */
-	r = pcalloc_safe(NULL, pool, sizeof(request_t), "failed to allocated request_t: %d bytes", sizeof(request_t));
+	r = pcalloc_safe(NULL, pool, sizeof(request_t), "failed to allocated request_t: %d bytes", (int) sizeof(request_t));
 
 	r->port = ntohs(get_client_port((address_t *)&a));
 	r->id = ++REQUEST_SEQ;
@@ -2720,6 +2719,9 @@ static int ggetpid()
 
 	return pid;
 }
+
+static void _gprint(const request_t *r, const char *level, const char *fmt, va_list args)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 3, 0)));
 
 static void _gprint(const request_t *r, const char *level, const char *fmt, va_list args)
 {
@@ -3585,10 +3587,21 @@ int gpfdist_init(int argc, const char* const argv[])
 	 */
 
 #ifndef WIN32
-	char* wd = getenv("GPFDIST_WATCHDOG_TIMER");
+	char	   *wd = getenv("GPFDIST_WATCHDOG_TIMER");
+	char	   *endptr;
+	long		val;
+
 	if (wd != NULL)
 	{
-		gcb.wdtimer = atoi(wd);
+		val = strtol(wd, &endptr, 10);
+
+		if (errno || endptr == wd || val > INT_MAX)
+		{
+			fprintf(stderr, "incorrect watchdog timer: %s\n", strerror(errno));
+			return -1;
+		}
+
+		gcb.wdtimer = (int) val;
 		if (gcb.wdtimer > 0)
 		{
 			gprintln(NULL, "Watchdog enabled, abort in %d seconds if no activity", gcb.wdtimer);
@@ -3610,7 +3623,8 @@ int gpfdist_run()
 
 int main(int argc, const char* const argv[])
 {
-	gpfdist_init(argc, argv);
+	if (gpfdist_init(argc, argv) == -1)
+		gfatal(NULL, "Initialization failed");
 	return gpfdist_run();
 }
 
@@ -3777,7 +3791,8 @@ int main(int argc, const char* const argv[])
 	srv_ret = StartServiceCtrlDispatcher(ServiceTable);
 	if (0 == srv_ret) /* program is being run as a Windows console application */
 	{
-		gpfdist_init(argc, argv);
+		if (gpfdist_init(argc, argv) == -1)
+			gfatal(NULL, "Initialization failed");
 		main_ret = gpfdist_run();
 	}
 
@@ -3917,7 +3932,7 @@ static SSL_CTX *initialize_ctx(void)
 		gfatal(NULL,"Can't generate random seed for SSL");
 
 	/* The size of the string will consist of the path and the filename (the longest one) */
-	// +1 for the '/' charachter (/filename)
+	// +1 for the '/' character (/filename)
 	// +1 for the \0,
 	stringSize = find_max( strlen(CertificateFilename), find_max(strlen(PrivateKeyFilename),strlen(TrustedCaFilename)) ) + strlen(opt.ssl) + 2;
 	/* Allocate the memory for the file name */
@@ -4134,20 +4149,8 @@ static void flush_ssl_buffer(int fd, short event, void* arg)
 	}
 	else
 	{
-		// Prepare and start a timer.
-		// While working with BIO_SSL, we are working with 3 buffers:
-		// [1] BIO layer buffer [2] SSL buffer [3] Socket buffer
-		// Sometimes we have a 5 sec delay somewhere between these buffers on Solaris (MPP-16402)
-		// So, even if the BIO_wpending() shows that there is no more pending data in the BIO_SSL buffer,
-		// we might still have data in the socket's buffer that wasn't sent yet.
-
-		gdebug(r, "SSL cleanup started");
-
-		event_del(&r->ev);
-		evtimer_set(&r->ev, request_cleanup_and_free_SSL_resources, r);
-		r->tm.tv_sec  = opt.sslclean;
-		r->tm.tv_usec = 0;
-		(void)evtimer_add(&r->ev, &r->tm);
+		// Do ssl cleanup immediately.
+		request_cleanup_and_free_SSL_resources(r);
 	}
 }
 
@@ -4155,7 +4158,7 @@ static void flush_ssl_buffer(int fd, short event, void* arg)
 /*
  * setup_flush_ssl_buffer
  *
- * Create event that will call to 'flush_ssl_buffer', with opt.sslclean seconds timeout
+ * Create event that will call to 'flush_ssl_buffer', with 5 seconds timeout
  */
 static void setup_flush_ssl_buffer(request_t* r)
 {
@@ -4288,11 +4291,9 @@ static void setup_do_close(request_t* r)
  * request_cleanup_and_free_SSL_resources
  *
  */
-static void request_cleanup_and_free_SSL_resources(int fd, short event, void* arg)
+static void request_cleanup_and_free_SSL_resources(request_t *r)
 {
-	request_t *r = (request_t *)arg;
-
-	gprintln(r, "SSL cleanup ended");
+	gprintln(r, "SSL cleanup and free");
 
 	/* Clean up request resources */
 	request_cleanup(r);
@@ -4357,10 +4358,15 @@ pcalloc_safe(request_t *r, apr_pool_t *pool, apr_size_t size, const char *fmt, .
 #ifndef WIN32
 static void* watchdog_thread(void* p)
 {
-	while(apr_time_now() < shutdown_time)
+	apr_time_t		duration;
+
+	do
 	{
-		sleep(1);
-	}
+		/* apr_time_now is defined in microseconds since epoch */
+		duration = apr_time_sec(shutdown_time - apr_time_now());
+		if (duration > 0)
+			(void)sleep(duration);
+	} while(apr_time_now() < shutdown_time);
 	gprintln(NULL, "Watchdog timer expired, abort gpfdist");
 	abort();
 }

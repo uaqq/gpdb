@@ -14,14 +14,17 @@ CREATE
 -- QD may wait for ENTRY_DB_SINGLETON and we will have a wait cycle,
 -- causing deadlock.
 --
--- This test creates one such scenario using a volatile funciton.  It
+-- This test creates one such scenario using a volatile function.  It
 -- is critical that the function be volatile, otherwise,
 -- ENTRY_DB_SIGNLETON reader is not spawned to execute the query.
 --
 -- This thread on gpdb-dev has more details:
 -- https://groups.google.com/a/greenplum.org/d/msg/gpdb-dev/OS1-ODIK0P4/ZIzayBbMBwAJ
+-- Since global deadlock detector has been added into gpdb, UPDATE on heap
+-- table does not acquire an Exclusive Relation Lock on QD. Therefore, we change
+-- the table to ao table here.
 
-CREATE TABLE deadlock_entry_db_singleton_table (c int, d int);
+CREATE TABLE deadlock_entry_db_singleton_table (c int, d int) WITH (appendonly=true);
 CREATE
 INSERT INTO deadlock_entry_db_singleton_table select i, i+1 from generate_series(1,10) i;
 INSERT 10
@@ -40,10 +43,10 @@ gp_inject_fault
 ---------------
 t              
 (1 row)
-select gp_inject_fault('transaction_start_under_entry_db_singleton', 'suspend', 1);
-gp_inject_fault
----------------
-t              
+select gp_inject_fault_infinite('transaction_start_under_entry_db_singleton', 'suspend', 1);
+gp_inject_fault_infinite
+------------------------
+t                       
 (1 row)
 
 -- The QD should already hold RowExclusiveLock and ExclusiveLock on
@@ -92,6 +95,6 @@ founddeadlockprocess
 1<:  <... completed>
 ERROR:  function cannot execute on a QE slice because it issues a non-SELECT statement  (entry db 127.0.0.1:15432 pid=94879)
 CONTEXT:  SQL statement "UPDATE deadlock_entry_db_singleton_table SET d = d + 1  WHERE c = $1"
-PL/pgSQL function "function_volatile" line 3 at SQL statement
+PL/pgSQL function function_volatile(integer) line 3 at SQL statement
 2<:  <... completed>
 UPDATE 10

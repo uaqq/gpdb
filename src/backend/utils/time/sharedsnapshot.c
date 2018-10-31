@@ -157,6 +157,7 @@
 #include "miscadmin.h"
 #include "lib/stringinfo.h"
 #include "storage/buffile.h"
+#include "storage/proc.h"
 #include "storage/procarray.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -207,8 +208,8 @@ static Size xipEntryCount = 0;
 static List *shared_snapshot_files = NIL;
 
 /* prototypes for internal functions */
-static SharedSnapshotSlot *SharedSnapshotAdd(int4 slotId);
-static SharedSnapshotSlot *SharedSnapshotLookup(int4 slotId);
+static SharedSnapshotSlot *SharedSnapshotAdd(int32 slotId);
+static SharedSnapshotSlot *SharedSnapshotLookup(int32 slotId);
 
 /*
  * Report shared-memory space needed by CreateSharedSnapshot.
@@ -349,7 +350,7 @@ SharedSnapshotDump(void)
  * this slot.
  */
 static SharedSnapshotSlot *
-SharedSnapshotAdd(int4 slotId)
+SharedSnapshotAdd(int32 slotId)
 {
 	SharedSnapshotSlot *slot;
 	volatile SharedSnapshotStruct *arrayP = sharedSnapshotArray;
@@ -390,9 +391,8 @@ retry:
 		}
 		else
 		{
-			insist_log(false, "writer segworker group shared snapshot collision on id %d", slotId);
+			elog(ERROR, "writer segworker group shared snapshot collision on id %d", slotId);
 		}
-		/* not reached */
 	}
 
 	if (arrayP->numSlots >= arrayP->maxSlots || arrayP->nextSlot == -1)
@@ -447,6 +447,7 @@ retry:
 	slot->segmateSync = 0;
 	/* Remember the writer proc for IsCurrentTransactionIdForReader */
 	slot->writer_proc = MyProc;
+	slot->writer_xact = MyPgXact;
 
 	LWLockRelease(SharedSnapshotLock);
 
@@ -469,7 +470,7 @@ GetSlotTableDebugInfo(void **snapshotArray, int *maxSlots)
  * MPP-4599: retry in the same pattern as the writer.
  */
 static SharedSnapshotSlot *
-SharedSnapshotLookup(int4 slotId)
+SharedSnapshotLookup(int32 slotId)
 {
 	SharedSnapshotSlot *slot = NULL;
 	volatile SharedSnapshotStruct *arrayP = sharedSnapshotArray;
@@ -900,18 +901,18 @@ AtEOXact_SharedSnapshot(void)
 void
 LogDistributedSnapshotInfo(Snapshot snapshot, const char *prefix)
 {
-	static const int MESSAGE_LEN = 500;
-
 	if (!IsMVCCSnapshot(snapshot))
 		return;
+
+	StringInfoData buf;
+	initStringInfo(&buf);
 
 	DistributedSnapshotWithLocalMapping *mapping =
 		&(snapshot->distribSnapshotWithLocalMapping);
 
 	DistributedSnapshot *ds = &mapping->ds;
 
-	char message[MESSAGE_LEN];
-	snprintf(message, MESSAGE_LEN, "%s Distributed snapshot info: "
+	appendStringInfo(&buf, "%s Distributed snapshot info: "
 			 "xminAllDistributedSnapshots=%d, distribSnapshotId=%d"
 			 ", xmin=%d, xmax=%d, count=%d",
 			 prefix,
@@ -921,18 +922,23 @@ LogDistributedSnapshotInfo(Snapshot snapshot, const char *prefix)
 			 ds->xmax,
 			 ds->count);
 
-	snprintf(message, MESSAGE_LEN, "%s, In progress array: {",
-			 message);
+	appendStringInfoString(&buf, ", In progress array: {");
 
 	for (int no = 0; no < ds->count; no++)
 	{
 		if (no != 0)
-			snprintf(message, MESSAGE_LEN, "%s, (dx%d)",
-					 message, ds->inProgressXidArray[no]);
+		{
+			appendStringInfo(&buf, ", (dx%d)",
+					 ds->inProgressXidArray[no]);
+		}
 		else
-			snprintf(message, MESSAGE_LEN, "%s (dx%d)",
-					 message, ds->inProgressXidArray[no]);
+		{
+			appendStringInfo(&buf, " (dx%d)",
+					 ds->inProgressXidArray[no]);
+		}
 	}
+	appendStringInfoString(&buf, "}");
 
-	elog(LOG, "%s}", message);
+	elog(LOG, "%s", buf.data);
+	pfree(buf.data);
 }

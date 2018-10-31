@@ -1,5 +1,5 @@
-# $PostgreSQL: pgsql/src/bin/initdb/nls.mk,v 1.23 2010/05/13 15:56:37 petere Exp $
-CATALOG_NAME	:= initdb
-AVAIL_LANGUAGES	:= cs de es fr it ja pt_BR ru sv ta tr zh_CN
-GETTEXT_FILES	:= initdb.c ../../port/dirmod.c ../../port/exec.c
-GETTEXT_TRIGGERS:= _ simple_prompt
+# src/bin/initdb/nls.mk
+CATALOG_NAME     = initdb
+AVAIL_LANGUAGES  = cs de es fr it ja pl pt_BR ru zh_CN
+GETTEXT_FILES    = findtimezone.c initdb.c ../../common/exec.c ../../common/fe_memutils.c ../../common/pgfnames.c ../../common/rmtree.c ../../common/wait_error.c ../../port/dirmod.c
+GETTEXT_TRIGGERS = simple_prompt

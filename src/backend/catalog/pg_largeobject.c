@@ -3,12 +3,12 @@
  * pg_largeobject.c
  *	  routines to support manipulation of the pg_largeobject relation
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_largeobject.c,v 1.40 2010/06/09 21:14:28 rhaas Exp $
+ *	  src/backend/catalog/pg_largeobject.c
  *
  *-------------------------------------------------------------------------
  */
@@ -16,17 +16,14 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/sysattr.h"
-#include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
-#include "catalog/pg_authid.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_largeobject_metadata.h"
-#include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "utils/acl.h"
-#include "utils/bytea.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
@@ -79,7 +76,7 @@ LargeObjectCreate(Oid loid)
 }
 
 /*
- * Drop a large object having the given LO identifier.	Both the data pages
+ * Drop a large object having the given LO identifier.  Both the data pages
  * and metadata must be dropped.
  */
 void
@@ -107,7 +104,7 @@ LargeObjectDrop(Oid loid)
 
 	scan = systable_beginscan(pg_lo_meta,
 							  LargeObjectMetadataOidIndexId, true,
-							  SnapshotNow, 1, skey);
+							  NULL, 1, skey);
 
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
@@ -129,7 +126,7 @@ LargeObjectDrop(Oid loid)
 
 	scan = systable_beginscan(pg_largeobject,
 							  LargeObjectLOidPNIndexId, true,
-							  SnapshotNow, 1, skey);
+							  NULL, 1, skey);
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
 		simple_heap_delete(pg_largeobject, &tuple->t_self);
@@ -143,118 +140,16 @@ LargeObjectDrop(Oid loid)
 }
 
 /*
- * LargeObjectAlterOwner
- *
- * Implementation of ALTER LARGE OBJECT statement
- */
-void
-LargeObjectAlterOwner(Oid loid, Oid newOwnerId)
-{
-	Form_pg_largeobject_metadata form_lo_meta;
-	Relation	pg_lo_meta;
-	ScanKeyData skey[1];
-	SysScanDesc scan;
-	HeapTuple	oldtup;
-	HeapTuple	newtup;
-
-	pg_lo_meta = heap_open(LargeObjectMetadataRelationId,
-						   RowExclusiveLock);
-
-	ScanKeyInit(&skey[0],
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(loid));
-
-	scan = systable_beginscan(pg_lo_meta,
-							  LargeObjectMetadataOidIndexId, true,
-							  SnapshotNow, 1, skey);
-
-	oldtup = systable_getnext(scan);
-	if (!HeapTupleIsValid(oldtup))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("large object %u does not exist", loid)));
-
-	form_lo_meta = (Form_pg_largeobject_metadata) GETSTRUCT(oldtup);
-	if (form_lo_meta->lomowner != newOwnerId)
-	{
-		Datum		values[Natts_pg_largeobject_metadata];
-		bool		nulls[Natts_pg_largeobject_metadata];
-		bool		replaces[Natts_pg_largeobject_metadata];
-		Acl		   *newAcl;
-		Datum		aclDatum;
-		bool		isnull;
-
-		/* Superusers can always do it */
-		if (!superuser())
-		{
-			/*
-			 * lo_compat_privileges is not checked here, because ALTER LARGE
-			 * OBJECT ... OWNER did not exist at all prior to PostgreSQL 9.0.
-			 *
-			 * We must be the owner of the existing object.
-			 */
-			if (!pg_largeobject_ownercheck(loid, GetUserId()))
-				ereport(ERROR,
-						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-						 errmsg("must be owner of large object %u", loid)));
-
-			/* Must be able to become new owner */
-			check_is_member_of_role(GetUserId(), newOwnerId);
-		}
-
-		memset(values, 0, sizeof(values));
-		memset(nulls, false, sizeof(nulls));
-		memset(replaces, false, sizeof(nulls));
-
-		values[Anum_pg_largeobject_metadata_lomowner - 1]
-			= ObjectIdGetDatum(newOwnerId);
-		replaces[Anum_pg_largeobject_metadata_lomowner - 1] = true;
-
-		/*
-		 * Determine the modified ACL for the new owner. This is only
-		 * necessary when the ACL is non-null.
-		 */
-		aclDatum = heap_getattr(oldtup,
-								Anum_pg_largeobject_metadata_lomacl,
-								RelationGetDescr(pg_lo_meta), &isnull);
-		if (!isnull)
-		{
-			newAcl = aclnewowner(DatumGetAclP(aclDatum),
-								 form_lo_meta->lomowner, newOwnerId);
-			values[Anum_pg_largeobject_metadata_lomacl - 1]
-				= PointerGetDatum(newAcl);
-			replaces[Anum_pg_largeobject_metadata_lomacl - 1] = true;
-		}
-
-		newtup = heap_modify_tuple(oldtup, RelationGetDescr(pg_lo_meta),
-								   values, nulls, replaces);
-
-		simple_heap_update(pg_lo_meta, &newtup->t_self, newtup);
-		CatalogUpdateIndexes(pg_lo_meta, newtup);
-
-		heap_freetuple(newtup);
-
-		/* Update owner dependency reference */
-		changeDependencyOnOwner(LargeObjectRelationId,
-								loid, newOwnerId);
-	}
-	systable_endscan(scan);
-
-	heap_close(pg_lo_meta, RowExclusiveLock);
-}
-
-/*
  * LargeObjectExists
  *
  * We don't use the system cache for large object metadata, for fear of
  * using too much local memory.
  *
- * This function always scans the system catalog using SnapshotNow, so it
- * should not be used when a large object is opened in read-only mode (because
- * large objects opened in read only mode are supposed to be viewed relative
- * to the caller's snapshot, whereas in read-write mode they are relative to
- * SnapshotNow).
+ * This function always scans the system catalog using an up-to-date snapshot,
+ * so it should not be used when a large object is opened in read-only mode
+ * (because large objects opened in read only mode are supposed to be viewed
+ * relative to the caller's snapshot, whereas in read-write mode they are
+ * relative to a current snapshot).
  */
 bool
 LargeObjectExists(Oid loid)
@@ -275,7 +170,7 @@ LargeObjectExists(Oid loid)
 
 	sd = systable_beginscan(pg_lo_meta,
 							LargeObjectMetadataOidIndexId, true,
-							SnapshotNow, 1, skey);
+							NULL, 1, skey);
 
 	tuple = systable_getnext(sd);
 	if (HeapTupleIsValid(tuple))

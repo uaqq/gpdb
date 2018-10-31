@@ -2,15 +2,7 @@
 --  Test citext datatype
 --
 
---
--- first, define the datatype.  Turn off echoing so that expected file
--- does not depend on contents of citext.sql.
---
-SET client_min_messages = warning;
-\set ECHO none
-\i citext.sql
-RESET client_min_messages;
-\set ECHO all
+CREATE EXTENSION citext;
 
 -- Test the operators and indexing functions
 
@@ -136,6 +128,8 @@ VALUES ('aardvark'),
        ('aba'),
        ('ABC'),
        ('abd');
+
+CREATE INDEX srt_name ON srt (name);
 
 -- Check the min() and max() aggregates, with and without index.
 set enable_seqscan = off;
@@ -304,7 +298,7 @@ CREATE TABLE caster (
     bpchar      bpchar,
     char        char,
     chr         "char",
-    name        name,    
+    name        name,
     bytea       bytea,
     boolean     boolean,
     float4      float4,
@@ -313,7 +307,7 @@ CREATE TABLE caster (
     int8        int8,
     int4        int4,
     int2        int2,
-    cidr        cidr,   
+    cidr        cidr,
     inet        inet,
     macaddr     macaddr,
     money       money,
@@ -580,7 +574,7 @@ SELECT btrim('xyxtrimyyx'::citext,    'xy'::text  ) = 'trim' AS t;
 -- chr() takes an int and returns text.
 -- convert() and convert_from take bytea and return text.
 
-SELECT convert_to( name, 'ISO-8859-1' ) = convert_to( name::text, 'ISO-8859-1' ) AS t FROM srt;
+SELECT convert_from( name::bytea, 'SQL_ASCII' ) = convert_from( name::text::bytea, 'SQL_ASCII' ) AS t FROM srt;
 SELECT decode('MTIzAAE='::citext, 'base64') = decode('MTIzAAE='::text, 'base64') AS t;
 -- encode() takes bytea and returns text.
 SELECT initcap('hi THOMAS'::citext) = initcap('hi THOMAS'::text) AS t;
@@ -719,3 +713,26 @@ SELECT COUNT(*) = 19::bigint AS t FROM try;
 
 SELECT like_escape( name, '' ) = like_escape( name::text, '' ) AS t FROM srt;
 SELECT like_escape( name::text, ''::citext ) = like_escape( name::text, '' ) AS t FROM srt;
+
+-- Ensure correct behavior for citext with materialized views.
+CREATE TABLE citext_table (
+  id serial primary key,
+  name citext
+);
+INSERT INTO citext_table (name)
+  VALUES ('one'), ('two'), ('three'), (NULL), (NULL);
+CREATE MATERIALIZED VIEW citext_matview AS
+  SELECT * FROM citext_table;
+CREATE UNIQUE INDEX citext_matview_id
+  ON citext_matview (id);
+SELECT *
+  FROM citext_matview m
+  FULL JOIN citext_table t ON (t.id = m.id AND t *= m)
+  WHERE t.id IS NULL OR m.id IS NULL;
+UPDATE citext_table SET name = 'Two' WHERE name = 'TWO';
+SELECT *
+  FROM citext_matview m
+  FULL JOIN citext_table t ON (t.id = m.id AND t *= m)
+  WHERE t.id IS NULL OR m.id IS NULL;
+REFRESH MATERIALIZED VIEW CONCURRENTLY citext_matview;
+SELECT * FROM citext_matview ORDER BY id;

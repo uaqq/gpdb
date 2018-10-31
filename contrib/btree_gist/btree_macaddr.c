@@ -1,6 +1,8 @@
 /*
- * $PostgreSQL: pgsql/contrib/btree_gist/btree_macaddr.c,v 1.10 2010/02/26 02:00:31 momjian Exp $
+ * contrib/btree_gist/btree_macaddr.c
  */
+#include "postgres.h"
+
 #include "btree_gist.h"
 #include "btree_utils_num.h"
 #include "utils/builtins.h"
@@ -10,6 +12,7 @@ typedef struct
 {
 	macaddr		lower;
 	macaddr		upper;
+	char		pad[4];			/* make struct size = sizeof(gbtreekey16) */
 } macKEY;
 
 /*
@@ -21,13 +24,6 @@ PG_FUNCTION_INFO_V1(gbt_macad_picksplit);
 PG_FUNCTION_INFO_V1(gbt_macad_consistent);
 PG_FUNCTION_INFO_V1(gbt_macad_penalty);
 PG_FUNCTION_INFO_V1(gbt_macad_same);
-
-Datum		gbt_macad_compress(PG_FUNCTION_ARGS);
-Datum		gbt_macad_union(PG_FUNCTION_ARGS);
-Datum		gbt_macad_picksplit(PG_FUNCTION_ARGS);
-Datum		gbt_macad_consistent(PG_FUNCTION_ARGS);
-Datum		gbt_macad_penalty(PG_FUNCTION_ARGS);
-Datum		gbt_macad_same(PG_FUNCTION_ARGS);
 
 
 static bool
@@ -63,8 +59,8 @@ gbt_macadlt(const void *a, const void *b)
 static int
 gbt_macadkey_cmp(const void *a, const void *b)
 {
-	macKEY	   *ia = (macKEY *) (((Nsrt *) a)->t);
-	macKEY	   *ib = (macKEY *) (((Nsrt *) b)->t);
+	macKEY	   *ia = (macKEY *) (((const Nsrt *) a)->t);
+	macKEY	   *ib = (macKEY *) (((const Nsrt *) b)->t);
 	int			res;
 
 	res = DatumGetInt32(DirectFunctionCall2(macaddr_cmp, MacaddrPGetDatum(&ia->lower), MacaddrPGetDatum(&ib->lower)));
@@ -79,12 +75,14 @@ static const gbtree_ninfo tinfo =
 {
 	gbt_t_macad,
 	sizeof(macaddr),
+	16,							/* sizeof(gbtreekey16) */
 	gbt_macadgt,
 	gbt_macadge,
 	gbt_macadeq,
 	gbt_macadle,
 	gbt_macadlt,
-	gbt_macadkey_cmp
+	gbt_macadkey_cmp,
+	NULL
 };
 
 
@@ -146,7 +144,7 @@ Datum
 gbt_macad_union(PG_FUNCTION_ARGS)
 {
 	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
-	void	   *out = palloc(sizeof(macKEY));
+	void	   *out = palloc0(sizeof(macKEY));
 
 	*(int *) PG_GETARG_POINTER(1) = sizeof(macKEY);
 	PG_RETURN_POINTER(gbt_num_union((void *) out, entryvec, &tinfo));

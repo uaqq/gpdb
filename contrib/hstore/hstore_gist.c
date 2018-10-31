@@ -1,10 +1,9 @@
 /*
- * $PostgreSQL: pgsql/contrib/hstore/hstore_gist.c,v 1.12 2010/02/26 02:00:32 momjian Exp $
+ * contrib/hstore/hstore_gist.c
  */
 #include "postgres.h"
 
 #include "access/gist.h"
-#include "access/itup.h"
 #include "access/skey.h"
 #include "catalog/pg_type.h"
 
@@ -41,7 +40,7 @@ typedef char *BITVECP;
 typedef struct
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
-	int4		flag;
+	int32		flag;
 	char		data[1];
 } GISTTYPE;
 
@@ -49,7 +48,7 @@ typedef struct
 
 #define ISALLTRUE(x)	( ((GISTTYPE*)x)->flag & ALLISTRUE )
 
-#define GTHDRSIZE		(VARHDRSZ + sizeof(int4))
+#define GTHDRSIZE		(VARHDRSZ + sizeof(int32))
 #define CALCGTSIZE(flag) ( GTHDRSIZE+(((flag) & ALLISTRUE) ? 0 : SIGLEN) )
 
 #define GETSIGN(x)		( (BITVECP)( (char*)x+GTHDRSIZE ) )
@@ -70,10 +69,7 @@ typedef struct
 #define WISH_F(a,b,c) (double)( -(double)(((a)-(b))*((a)-(b))*((a)-(b)))*(c) )
 
 PG_FUNCTION_INFO_V1(ghstore_in);
-Datum		ghstore_in(PG_FUNCTION_ARGS);
-
 PG_FUNCTION_INFO_V1(ghstore_out);
-Datum		ghstore_out(PG_FUNCTION_ARGS);
 
 
 Datum
@@ -97,14 +93,6 @@ PG_FUNCTION_INFO_V1(ghstore_penalty);
 PG_FUNCTION_INFO_V1(ghstore_picksplit);
 PG_FUNCTION_INFO_V1(ghstore_union);
 PG_FUNCTION_INFO_V1(ghstore_same);
-
-Datum		ghstore_consistent(PG_FUNCTION_ARGS);
-Datum		ghstore_compress(PG_FUNCTION_ARGS);
-Datum		ghstore_decompress(PG_FUNCTION_ARGS);
-Datum		ghstore_penalty(PG_FUNCTION_ARGS);
-Datum		ghstore_picksplit(PG_FUNCTION_ARGS);
-Datum		ghstore_union(PG_FUNCTION_ARGS);
-Datum		ghstore_same(PG_FUNCTION_ARGS);
 
 Datum
 ghstore_compress(PG_FUNCTION_ARGS)
@@ -144,7 +132,7 @@ ghstore_compress(PG_FUNCTION_ARGS)
 	}
 	else if (!ISALLTRUE(DatumGetPointer(entry->key)))
 	{
-		int4		i;
+		int32		i;
 		GISTTYPE   *res;
 		BITVECP		sign = GETSIGN(DatumGetPointer(entry->key));
 
@@ -168,28 +156,14 @@ ghstore_compress(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(retval);
 }
 
+/*
+ * Since type ghstore isn't toastable (and doesn't need to be),
+ * this function can be a no-op.
+ */
 Datum
 ghstore_decompress(PG_FUNCTION_ARGS)
 {
-	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
-	GISTENTRY  *retval;
-	HStore	   *key;
-
-	key = DatumGetHStoreP(entry->key);
-
-	if (key != (HStore *) DatumGetPointer(entry->key))
-	{
-		/* need to pass back the decompressed item */
-		retval = palloc(sizeof(GISTENTRY));
-		gistentryinit(*retval, PointerGetDatum(key),
-					  entry->rel, entry->page, entry->offset, entry->leafkey);
-		PG_RETURN_POINTER(retval);
-	}
-	else
-	{
-		/* we can return the entry as-is */
-		PG_RETURN_POINTER(entry);
-	}
+	PG_RETURN_POINTER(PG_GETARG_POINTER(0));
 }
 
 Datum
@@ -207,7 +181,7 @@ ghstore_same(PG_FUNCTION_ARGS)
 		*result = false;
 	else
 	{
-		int4		i;
+		int32		i;
 		BITVECP		sa = GETSIGN(a),
 					sb = GETSIGN(b);
 
@@ -224,10 +198,10 @@ ghstore_same(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(result);
 }
 
-static int4
+static int32
 sizebitvec(BITVECP sign)
 {
-	int4		size = 0,
+	int32		size = 0,
 				i;
 
 	LOOPBYTE
@@ -268,10 +242,10 @@ hemdist(GISTTYPE *a, GISTTYPE *b)
 	return hemdistsign(GETSIGN(a), GETSIGN(b));
 }
 
-static int4
+static int32
 unionkey(BITVECP sbase, GISTTYPE *add)
 {
-	int4		i;
+	int32		i;
 	BITVECP		sadd = GETSIGN(add);
 
 	if (ISALLTRUE(add))
@@ -285,12 +259,12 @@ Datum
 ghstore_union(PG_FUNCTION_ARGS)
 {
 	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
-	int4		len = entryvec->n;
+	int32		len = entryvec->n;
 
 	int		   *size = (int *) PG_GETARG_POINTER(1);
 	BITVEC		base;
-	int4		i;
-	int4		flag = 0;
+	int32		i;
+	int32		flag = 0;
 	GISTTYPE   *result;
 
 	MemSet((void *) base, 0, sizeof(BITVEC));
@@ -331,13 +305,13 @@ ghstore_penalty(PG_FUNCTION_ARGS)
 typedef struct
 {
 	OffsetNumber pos;
-	int4		cost;
+	int32		cost;
 } SPLITCOST;
 
 static int
 comparecost(const void *a, const void *b)
 {
-	return ((SPLITCOST *) a)->cost - ((SPLITCOST *) b)->cost;
+	return ((const SPLITCOST *) a)->cost - ((const SPLITCOST *) b)->cost;
 }
 
 
@@ -354,11 +328,11 @@ ghstore_picksplit(PG_FUNCTION_ARGS)
 			   *datum_r;
 	BITVECP		union_l,
 				union_r;
-	int4		size_alpha,
+	int32		size_alpha,
 				size_beta;
-	int4		size_waste,
+	int32		size_waste,
 				waste = -1;
-	int4		nbytes;
+	int32		nbytes;
 	OffsetNumber seed_1 = 0,
 				seed_2 = 0;
 	OffsetNumber *left,

@@ -1,4 +1,4 @@
-/* $PostgreSQL: pgsql/src/interfaces/ecpg/ecpglib/typename.c,v 1.19 2010/02/26 02:01:30 momjian Exp $ */
+/* src/interfaces/ecpg/ecpglib/typename.c */
 
 #define POSTGRES_ECPG_INTERNAL
 #include "postgres_fe.h"
@@ -65,7 +65,7 @@ ecpg_type_name(enum ECPGttype typ)
 		default:
 			abort();
 	}
-	return NULL;
+	return "";					/* keep MSC compiler happy */
 }
 
 int

@@ -4,12 +4,12 @@
  *	  routines for managing the buffer pool's replacement strategy.
  *
  *
- * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/storage/buffer/freelist.c,v 1.68 2010/01/02 16:57:51 momjian Exp $
+ *	  src/backend/storage/buffer/freelist.c
  *
  *-------------------------------------------------------------------------
  */
@@ -36,11 +36,16 @@ typedef struct
 	 */
 
 	/*
-	 * Statistics.	These counters should be wide enough that they can't
+	 * Statistics.  These counters should be wide enough that they can't
 	 * overflow during a single bgwriter cycle.
 	 */
 	uint32		completePasses; /* Complete cycles of the clock sweep */
 	uint32		numBufferAllocs;	/* Buffers allocated since last reset */
+
+	/*
+	 * Notification latch, or NULL if none.  See StrategyNotifyBgWriter.
+	 */
+	Latch	   *bgwriterLatch;
 } BufferStrategyControl;
 
 /* Pointers to shared state */
@@ -77,7 +82,7 @@ typedef struct BufferAccessStrategyData
 	 * struct.
 	 */
 	Buffer		buffers[1];		/* VARIABLE SIZE ARRAY */
-} BufferAccessStrategyData;
+}	BufferAccessStrategyData;
 
 
 /* Prototypes for internal functions */
@@ -107,6 +112,7 @@ volatile BufferDesc *
 StrategyGetBuffer(BufferAccessStrategy strategy, bool *lock_held)
 {
 	volatile BufferDesc *buf;
+	Latch	   *bgwriterLatch;
 	int			trycounter;
 
 	/*
@@ -129,10 +135,25 @@ StrategyGetBuffer(BufferAccessStrategy strategy, bool *lock_held)
 
 	/*
 	 * We count buffer allocation requests so that the bgwriter can estimate
-	 * the rate of buffer consumption.	Note that buffers recycled by a
+	 * the rate of buffer consumption.  Note that buffers recycled by a
 	 * strategy object are intentionally not counted here.
 	 */
 	StrategyControl->numBufferAllocs++;
+
+	/*
+	 * If bgwriterLatch is set, we need to waken the bgwriter, but we should
+	 * not do so while holding BufFreelistLock; so release and re-grab.  This
+	 * is annoyingly tedious, but it happens at most once per bgwriter cycle,
+	 * so the performance hit is minimal.
+	 */
+	bgwriterLatch = StrategyControl->bgwriterLatch;
+	if (bgwriterLatch)
+	{
+		StrategyControl->bgwriterLatch = NULL;
+		LWLockRelease(BufFreelistLock);
+		SetLatch(bgwriterLatch);
+		LWLockAcquire(BufFreelistLock, LW_EXCLUSIVE);
+	}
 
 	/*
 	 * Try to get a buffer from the freelist.  Note that the freeNext fields
@@ -218,9 +239,6 @@ StrategyGetBuffer(BufferAccessStrategy strategy, bool *lock_held)
 		}
 		UnlockBufHdr(buf);
 	}
-
-	/* not reached */
-	return NULL;
 }
 
 /*
@@ -254,7 +272,7 @@ StrategyFreeBuffer(volatile BufferDesc *buf)
  *
  * In addition, we return the completed-pass count (which is effectively
  * the higher-order bits of nextVictimBuffer) and the count of recent buffer
- * allocs if non-NULL pointers are passed.	The alloc count is reset after
+ * allocs if non-NULL pointers are passed.  The alloc count is reset after
  * being read.
  */
 int
@@ -273,6 +291,27 @@ StrategySyncStart(uint32 *complete_passes, uint32 *num_buf_alloc)
 	}
 	LWLockRelease(BufFreelistLock);
 	return result;
+}
+
+/*
+ * StrategyNotifyBgWriter -- set or clear allocation notification latch
+ *
+ * If bgwriterLatch isn't NULL, the next invocation of StrategyGetBuffer will
+ * set that latch.  Pass NULL to clear the pending notification before it
+ * happens.  This feature is used by the bgwriter process to wake itself up
+ * from hibernation, and is not meant for anybody else to use.
+ */
+void
+StrategyNotifyBgWriter(Latch *bgwriterLatch)
+{
+	/*
+	 * We acquire the BufFreelistLock just to ensure that the store appears
+	 * atomic to StrategyGetBuffer.  The bgwriter should call this rather
+	 * infrequently, so there's no performance penalty from being safe.
+	 */
+	LWLockAcquire(BufFreelistLock, LW_EXCLUSIVE);
+	StrategyControl->bgwriterLatch = bgwriterLatch;
+	LWLockRelease(BufFreelistLock);
 }
 
 
@@ -350,6 +389,9 @@ StrategyInitialize(bool init)
 		/* Clear statistics */
 		StrategyControl->completePasses = 0;
 		StrategyControl->numBufferAllocs = 0;
+
+		/* No pending notification */
+		StrategyControl->bgwriterLatch = NULL;
 	}
 	else
 		Assert(!init);
@@ -448,7 +490,7 @@ GetBufferFromRing(BufferAccessStrategy strategy)
 
 	/*
 	 * If the slot hasn't been filled yet, tell the caller to allocate a new
-	 * buffer with the normal allocation strategy.	He will then fill this
+	 * buffer with the normal allocation strategy.  He will then fill this
 	 * slot by calling AddBufferToRing with the new buffer.
 	 */
 	bufnum = strategy->buffers[strategy->current];
@@ -501,7 +543,7 @@ AddBufferToRing(BufferAccessStrategy strategy, volatile BufferDesc *buf)
  *
  * When a nondefault strategy is used, the buffer manager calls this function
  * when it turns out that the buffer selected by StrategyGetBuffer needs to
- * be written out and doing so would require flushing WAL too.	This gives us
+ * be written out and doing so would require flushing WAL too.  This gives us
  * a chance to choose a different victim.
  *
  * Returns true if buffer manager should ask for a new victim, and false
