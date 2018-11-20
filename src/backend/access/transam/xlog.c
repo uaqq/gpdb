@@ -5544,6 +5544,8 @@ getRecordTimestamp(XLogRecord *record, TimestampTz *recordXtime)
 		*recordXtime = ((xl_xact_abort *) XLogRecGetData(record))->xact_time;
 		return true;
 	}
+
+	*recordXtime = DT_NOBEGIN;
 	return false;
 }
 
@@ -6805,7 +6807,7 @@ StartupXLOG(void)
 		CheckRequiredParameterValues();
 
 		UtilityModeFindOrCreateDtmRedoFile();
-		
+
 		/*
 		 * We're in recovery, so unlogged relations may be trashed and must be
 		 * reset.  This should be done BEFORE allowing Hot Standby
