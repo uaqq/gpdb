@@ -1365,6 +1365,7 @@ fi
 # Check for zstd.h
 if test "$with_zstd" = yes; then
   AC_CHECK_HEADER(zstd.h, [], [AC_MSG_ERROR([header file <zstd.h> is required for zstd support])])
+  AC_CHECK_HEADER(zstd_errors.h, [], [AC_MSG_ERROR([header file <zstd_errors.h> is required for zstd support])])
 fi
 
 # On BSD, cpp test for net/if.h will fail unless sys/socket.h
