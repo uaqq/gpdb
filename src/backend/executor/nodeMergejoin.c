@@ -209,11 +209,11 @@ MJExamineQuals(List *mergeclauses,
 		{
 			BoolExpr *bx = (BoolExpr*)qual;
 			bool ok = false;
-			
+
 			if ( IsA(bx, BoolExpr) && bx->boolop == NOT_EXPR && list_length(bx->args) == 1 )
 			{
 				DistinctExpr *dx = (DistinctExpr*)linitial(bx->args);
-				
+
 				if ( IsA(dx, DistinctExpr) )
 				{
 					clause->notdistinct = true;
@@ -875,7 +875,7 @@ ExecMergeJoin(MergeJoinState *node)
 					node->mj_MatchedInner = true;
 
 					/* In an antijoin, we never return a matched tuple */
-					if (node->js.jointype == JOIN_LASJ) 
+					if (node->js.jointype == JOIN_LASJ)
 					{
 						node->mj_JoinState = EXEC_MJ_NEXTOUTER;
 						break;
@@ -1718,7 +1718,7 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 			   "node initialized");
 
 	initGpmonPktForMergeJoin((Plan *)node, &mergestate->js.ps.gpmon_pkt, estate);
-	
+
 	return mergestate;
 }
 
@@ -1791,7 +1791,7 @@ void
 initGpmonPktForMergeJoin(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate)
 {
 	Assert(planNode != NULL && gpmon_pkt != NULL && IsA(planNode, MergeJoin));
-	
+
 	InitPlanNodeGpmonPkt(planNode, gpmon_pkt, estate);
 }
 

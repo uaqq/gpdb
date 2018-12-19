@@ -158,7 +158,7 @@ typedef enum
 
 // #define PRINT_SPILL_AND_MEMORY_MESSAGES
 
-/* 
+/*
  * Current position of Tuplesort operation.
  */
 struct TuplesortPos_mk
