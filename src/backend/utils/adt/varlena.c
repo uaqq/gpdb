@@ -1243,22 +1243,24 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		}
 #endif   /* WIN32 */
 
-		if (len1 >= STACKBUFLEN)
-			a1p = (char *) palloc(len1 + 1);
-		else
-			a1p = a1buf;
-		if (len2 >= STACKBUFLEN)
-			a2p = (char *) palloc(len2 + 1);
-		else
-			a2p = a2buf;
+		int len_compared = Min(len1, len2);
 
-		memcpy(a1p, arg1, len1);
-		a1p[len1] = '\0';
-		memcpy(a2p, arg2, len2);
-		a2p[len2] = '\0';
+		if (len_compared >= STACKBUFLEN) {
+			a1p = (char *) palloc(len_compared + 1);
+			a2p = (char *) palloc(len_compared + 1);
+		}
+		else {
+			a1p = a1buf;
+			a2p = a2buf;
+		}
+
+		memcpy(a1p, arg1, len_compared);
+		a1p[len_compared] = '\0';
+		memcpy(a2p, arg2, len_compared);
+		a2p[len_compared] = '\0';
 
 		result = gp_strcoll(a1p, a2p);
-		elog(WARNING, "gp_strcoll = %d for '%s'[%d] and '%s'[%d]", result, a1p, len1, a2p, len2);
+		elog(WARNING, "gp_strcoll = %d for '%s' and '%s' [%d]", result, a1p, a2p, len_compared);
 		/*
 		 * In some locales strcoll() can claim that nonidentical strings are
 		 * equal.  Believing that would be bad news for a number of reasons,
@@ -1268,6 +1270,10 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		if (result == 0) {
 			result = strcmp(a1p, a2p);
 			elog(WARNING, "gp_strcoll changed to %d by strcmp", result);
+		}
+		if ((result == 0) && (len1 != len2)) {
+			result = (len1 < len2) ? -1 : 1;
+			elog(WARNING, "gp_strcoll transformed to = %d", result);
 		}
 
 		if (a1p != a1buf)
