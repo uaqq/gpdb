@@ -21,6 +21,7 @@
 #include "catalog/pg_type.h"
 #include "libpq/md5.h"
 #include "libpq/pqformat.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
 #include "regex/regex.h"
@@ -1126,6 +1127,34 @@ text_position_cleanup(TextPositionState *state)
 	}
 }
 
+/* varstr_determine_len_compared()
+ * Determine lengths at which the given args could be cut so that they are
+ * properly compared by varstr_cmp().
+ *
+ * They are determined by Min(len1, len2), but one of such lengths may be bigger
+ * than this value, as args may contain variable-length-encoded characters
+ */
+static void
+varstr_determine_len_compared(char* arg1, int len1, char* arg2, int len2, int* clen1, int* clen2) {
+	/* Special case: arguments of equal length */
+	if (len1 == len2) {
+		*clen1 = len1;
+		*clen2 = len2;
+		return;
+	}
+	/* Call pg_verify_mbstr() while symbol at "cut" position is invalid */
+	int min_len = Min(len1, len2);
+	char* arg_unstable = min_len == len1 ? arg2 : arg1;
+	int len_unstable = min_len == len1 ? len2 : len1;
+	int advance = 0;
+	while (!pg_verify_mbstr(GetDatabaseEncoding(), arg_unstable + min_len + advance, len_unstable - min_len - advance, true))
+		advance += 1;
+	/* Return calculated lengths */
+	*clen1 = min_len == len1 ? min_len : min_len + advance;
+	*clen2 = min_len == len2 ? min_len : min_len + advance;
+	elog(WARNING, "clen1 = %d, clen2 = %d, advance = %d", *clen1, *clen2, advance);
+}
+
 /* varstr_cmp()
  * Comparison function for text strings with given lengths.
  * Includes locale support, but must copy strings to temporary memory
@@ -1243,24 +1272,27 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		}
 #endif   /* WIN32 */
 
-		int len_compared = Min(len1, len2);
+		int clen1;
+		int clen2;
+		varstr_determine_len_compared(arg1, len1, arg2, len2, &clen1, &clen2);
 
-		if (len_compared >= STACKBUFLEN) {
-			a1p = (char *) palloc(len_compared + 1);
-			a2p = (char *) palloc(len_compared + 1);
-		}
-		else {
+		if (clen1 >= STACKBUFLEN)
+			a1p = (char *) palloc(clen1 + 1);
+		else
 			a1p = a1buf;
-			a2p = a2buf;
-		}
 
-		memcpy(a1p, arg1, len_compared);
-		a1p[len_compared] = '\0';
-		memcpy(a2p, arg2, len_compared);
-		a2p[len_compared] = '\0';
+		if (clen2 >= STACKBUFLEN)
+			a2p = (char *) palloc(clen2 + 1);
+		else
+			a2p = a2buf;
+
+		memcpy(a1p, arg1, clen1);
+		a1p[clen1] = '\0';
+		memcpy(a2p, arg2, clen2);
+		a2p[clen2] = '\0';
 
 		result = gp_strcoll(a1p, a2p);
-		elog(WARNING, "gp_strcoll = %d for '%s' and '%s' [%d]", result, a1p, a2p, len_compared);
+		elog(WARNING, "gp_strcoll = %d for '%s'[%d] and '%s'[%d]", result, a1p, clen1, a2p, clen2);
 		/*
 		 * In some locales strcoll() can claim that nonidentical strings are
 		 * equal.  Believing that would be bad news for a number of reasons,
@@ -1269,11 +1301,11 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		 */
 		if (result == 0) {
 			result = strcmp(a1p, a2p);
-			elog(WARNING, "gp_strcoll changed to %d by strcmp", result);
+			elog(WARNING, "gp_strcoll checked by strcmp, result = %d", result);
 		}
 		if ((result == 0) && (len1 != len2)) {
 			result = (len1 < len2) ? -1 : 1;
-			elog(WARNING, "gp_strcoll transformed to = %d", result);
+			elog(WARNING, "gp_strcoll checked for length, result = %d", result);
 		}
 
 		if (a1p != a1buf)
