@@ -1173,7 +1173,7 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 	 */
 	if (1)
 	{
-		result = strncmp(arg1, arg2, Min(len1, len2));
+		result = memcmp(arg1, arg2, Min(len1, len2));
 		elog(WARNING, "gp_strcoll = %d for '%s' and '%s'", result, arg1, arg2);
 		if ((result == 0) && (len1 != len2))
 			result = (len1 < len2) ? -1 : 1;
