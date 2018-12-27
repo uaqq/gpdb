@@ -21,6 +21,7 @@
 #include "catalog/pg_type.h"
 #include "libpq/md5.h"
 #include "libpq/pqformat.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
 #include "regex/regex.h"
@@ -67,7 +68,7 @@ typedef struct
  */
 #define MAX_STRING_BYTES	((Size) (MaxAllocSize - 0x400000))
 
-static int	text_position_ptr_len(char* p1, int len1, char *p2, int len2); 
+static int	text_position_ptr_len(char* p1, int len1, char *p2, int len2);
 static void text_position_setup_ptr_len(char* p1, int len1, char* p2, int len2, TextPositionState *state);
 
 static int	text_position_next(int start_pos, TextPositionState *state);
@@ -992,10 +993,10 @@ textpos(PG_FUNCTION_ARGS)
  *	This is broken out so it can be called directly by other string processing
  *	functions.
  */
-static int 
+static int
 text_position_ptr_len(char* p1, int len1, char* p2, int len2)
 {
-	TextPositionState state = 
+	TextPositionState state =
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -1028,7 +1029,7 @@ text_position_ptr_len(char* p1, int len1, char* p2, int len2)
  */
 
 /* Set up text postion, using pointer and len. */
-static void 
+static void
 text_position_setup_ptr_len(char* p1, int len1, char* p2, int len2, TextPositionState *state)
 {
 	if (pg_database_encoding_max_length() == 1)
@@ -1136,6 +1137,8 @@ int
 varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 {
 	int			result;
+#define STACKBUFLEN	(1024)
+#define WCHAR_STACK_SIZE (STACKBUFLEN / sizeof(pg_wchar))
 
 	/*
 	 * Unfortunately, there is no strncoll(), so in the non-C locale case we
@@ -1151,17 +1154,14 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 	}
 	else
 	{
-#define STACKBUFLEN		1024
-
-		char		a1buf[STACKBUFLEN];
-		char		a2buf[STACKBUFLEN];
-		char	   *a1p,
-				   *a2p;
-
 #ifdef WIN32
 		/* Win32 does not have UTF-8, so we need to map to UTF-16 */
 		if (GetDatabaseEncoding() == PG_UTF8)
 		{
+			char		a1buf[STACKBUFLEN];
+			char		a2buf[STACKBUFLEN];
+			char	   *a1p,
+					   *a2p;
 			int			a1len;
 			int			a2len;
 			int			r;
@@ -1243,21 +1243,28 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		}
 #endif   /* WIN32 */
 
-		if (len1 >= STACKBUFLEN)
-			a1p = (char *) palloc(len1 + 1);
+		pg_wchar		a1buf[WCHAR_STACK_SIZE];
+		pg_wchar		a2buf[WCHAR_STACK_SIZE];
+		pg_wchar	   *a1p,
+					   *a2p;
+
+		if (len1 >= WCHAR_STACK_SIZE)
+			a1p = (pg_wchar *) palloc((len1 + 1) * sizeof(pg_wchar));
 		else
 			a1p = a1buf;
-		if (len2 >= STACKBUFLEN)
-			a2p = (char *) palloc(len2 + 1);
+		if (len2 >= WCHAR_STACK_SIZE)
+			a2p = (pg_wchar *) palloc((len2 + 1) * sizeof(pg_wchar));
 		else
 			a2p = a2buf;
 
-		memcpy(a1p, arg1, len1);
-		a1p[len1] = '\0';
-		memcpy(a2p, arg2, len2);
-		a2p[len2] = '\0';
+		int length_1 = pg_mb2wchar_with_len(arg1, a1p, len1);
+		int length_2 = pg_mb2wchar_with_len(arg2, a2p, len2);
 
-		result = gp_strcoll(a1p, a2p);
+		result = pg_wchar_strncmp(a1p, a2p, Min(length_1, length_2));
+		if ((result == 0) && (length_1 != length_2))
+			result = length_1 < length_2 ? -1 : 1;
+
+		elog(WARNING, "%d <= Comparing %d symbols from '%s'[%d] and '%s'[%d]", result, Min(length_1, length_2), arg1, length_1, arg2, length_2);
 
 		/*
 		 * In some locales strcoll() can claim that nonidentical strings are
@@ -1265,8 +1272,8 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		 * so we follow Perl's lead and sort "equal" strings according to
 		 * strcmp().
 		 */
-		if (result == 0)
-			result = strcmp(a1p, a2p);
+		// if (result == 0)
+		// 	result = strcmp(a1p, a2p);
 
 		if (a1p != a1buf)
 			pfree(a1p);
@@ -2344,7 +2351,7 @@ replace_text(PG_FUNCTION_ARGS)
 	int			src_text_len;
 	int			from_sub_text_len;
 
-	TextPositionState state = 
+	TextPositionState state =
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -2360,7 +2367,7 @@ replace_text(PG_FUNCTION_ARGS)
 	int			chunk_len;
 	char	   *start_ptr;
 	StringInfoData str;
- 
+
 	varattrib_untoast_ptr_len(d0, &p0, &len0, &tofree0);
 	varattrib_untoast_ptr_len(d1, &p1, &len1, &tofree1);
 	varattrib_untoast_ptr_len(d2, &p2, &len2, &tofree2);
@@ -2381,7 +2388,7 @@ replace_text(PG_FUNCTION_ARGS)
 		return d0;
 	}
 
-	text_position_setup_ptr_len(p0, len0, p1, len1, &state); 
+	text_position_setup_ptr_len(p0, len0, p1, len1, &state);
 
 	/*
 	 * Note: we check the converted string length, not the original, because
@@ -2415,7 +2422,7 @@ replace_text(PG_FUNCTION_ARGS)
 	}
 
 	/* start_ptr points to the start_posn'th character of src_text */
-	start_ptr = p0; 
+	start_ptr = p0;
 
 	initStringInfo(&str);
 
@@ -2740,9 +2747,9 @@ split_text(PG_FUNCTION_ARGS)
 
 	int			fldnum = PG_GETARG_INT32(2);
 
-	int			inputstring_len; 
-	int			fldsep_len; 
-	TextPositionState state = 		
+	int			inputstring_len;
+	int			fldsep_len;
+	TextPositionState state =
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -2839,7 +2846,7 @@ split_text(PG_FUNCTION_ARGS)
 		/* N'th field separator not found */
 		/* if last field requested, return it, else empty string */
 		if (fldnum == 1)
-			result_text = text_substring(d0, 
+			result_text = text_substring(d0,
 										 start_posn,
 										 -1,
 										 true);
