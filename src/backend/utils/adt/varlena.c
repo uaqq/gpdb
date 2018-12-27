@@ -1152,7 +1152,6 @@ varstr_determine_len_compared(char* arg1, int len1, char* arg2, int len2, int* c
 	/* Return calculated lengths */
 	*clen1 = min_len == len1 ? min_len : min_len + advance;
 	*clen2 = min_len == len2 ? min_len : min_len + advance;
-	elog(WARNING, "clen1 = %d, clen2 = %d, advance = %d", *clen1, *clen2, advance);
 }
 
 /* varstr_cmp()
@@ -1172,9 +1171,10 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 	 * slower, so we optimize the case where LC_COLLATE is C.  We also try to
 	 * optimize relatively-short strings by avoiding palloc/pfree overhead.
 	 */
-	if (lc_collate_is_c())
+	if (1)
 	{
 		result = strncmp(arg1, arg2, Min(len1, len2));
+		elog(WARNING, "gp_strcoll = %d for '%s' and '%s'", result, arg1, arg2);
 		if ((result == 0) && (len1 != len2))
 			result = (len1 < len2) ? -1 : 1;
 	}
