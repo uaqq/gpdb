@@ -21,7 +21,6 @@
 #include "catalog/pg_type.h"
 #include "libpq/md5.h"
 #include "libpq/pqformat.h"
-#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
 #include "regex/regex.h"
@@ -68,7 +67,7 @@ typedef struct
  */
 #define MAX_STRING_BYTES	((Size) (MaxAllocSize - 0x400000))
 
-static int	text_position_ptr_len(char* p1, int len1, char *p2, int len2);
+static int	text_position_ptr_len(char* p1, int len1, char *p2, int len2); 
 static void text_position_setup_ptr_len(char* p1, int len1, char* p2, int len2, TextPositionState *state);
 
 static int	text_position_next(int start_pos, TextPositionState *state);
@@ -993,10 +992,10 @@ textpos(PG_FUNCTION_ARGS)
  *	This is broken out so it can be called directly by other string processing
  *	functions.
  */
-static int
+static int 
 text_position_ptr_len(char* p1, int len1, char* p2, int len2)
 {
-	TextPositionState state =
+	TextPositionState state = 
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -1029,7 +1028,7 @@ text_position_ptr_len(char* p1, int len1, char* p2, int len2)
  */
 
 /* Set up text postion, using pointer and len. */
-static void
+static void 
 text_position_setup_ptr_len(char* p1, int len1, char* p2, int len2, TextPositionState *state)
 {
 	if (pg_database_encoding_max_length() == 1)
@@ -1127,33 +1126,6 @@ text_position_cleanup(TextPositionState *state)
 	}
 }
 
-/* varstr_determine_len_compared()
- * Determine lengths at which the given args could be cut so that they are
- * properly compared by varstr_cmp().
- *
- * They are determined by Min(len1, len2), but one of such lengths may be bigger
- * than this value, as args may contain variable-length-encoded characters
- */
-static void
-varstr_determine_len_compared(char* arg1, int len1, char* arg2, int len2, int* clen1, int* clen2) {
-	/* Special case: arguments of equal length */
-	if (len1 == len2) {
-		*clen1 = len1;
-		*clen2 = len2;
-		return;
-	}
-	/* Call pg_verify_mbstr() while symbol at "cut" position is invalid */
-	int min_len = Min(len1, len2);
-	char* arg_unstable = min_len == len1 ? arg2 : arg1;
-	int len_unstable = min_len == len1 ? len2 : len1;
-	int advance = 0;
-	while (!pg_verify_mbstr(GetDatabaseEncoding(), arg_unstable + min_len + advance, len_unstable - min_len - advance, true))
-		advance += -1;
-	/* Return calculated lengths */
-	*clen1 = min_len == len1 ? min_len : min_len + advance;
-	*clen2 = min_len == len2 ? min_len : min_len + advance;
-}
-
 /* varstr_cmp()
  * Comparison function for text strings with given lengths.
  * Includes locale support, but must copy strings to temporary memory
@@ -1171,10 +1143,9 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 	 * slower, so we optimize the case where LC_COLLATE is C.  We also try to
 	 * optimize relatively-short strings by avoiding palloc/pfree overhead.
 	 */
-	if (1)
+	if (lc_collate_is_c())
 	{
-		result = memcmp(arg1, arg2, Min(len1, len2));
-		elog(WARNING, "gp_strcoll = %d for '%s' and '%s'", result, arg1, arg2);
+		result = strncmp(arg1, arg2, Min(len1, len2));
 		if ((result == 0) && (len1 != len2))
 			result = (len1 < len2) ? -1 : 1;
 	}
@@ -1272,41 +1243,30 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		}
 #endif   /* WIN32 */
 
-		int clen1;
-		int clen2;
-		varstr_determine_len_compared(arg1, len1, arg2, len2, &clen1, &clen2);
-
-		if (clen1 >= STACKBUFLEN)
-			a1p = (char *) palloc(clen1 + 1);
+		if (len1 >= STACKBUFLEN)
+			a1p = (char *) palloc(len1 + 1);
 		else
 			a1p = a1buf;
-
-		if (clen2 >= STACKBUFLEN)
-			a2p = (char *) palloc(clen2 + 1);
+		if (len2 >= STACKBUFLEN)
+			a2p = (char *) palloc(len2 + 1);
 		else
 			a2p = a2buf;
 
-		memcpy(a1p, arg1, clen1);
-		a1p[clen1] = '\0';
-		memcpy(a2p, arg2, clen2);
-		a2p[clen2] = '\0';
+		memcpy(a1p, arg1, len1);
+		a1p[len1] = '\0';
+		memcpy(a2p, arg2, len2);
+		a2p[len2] = '\0';
 
-		result = strcmp(a1p, a2p);
-		elog(WARNING, "gp_strcoll = %d for '%s'[%d] and '%s'[%d]", result, a1p, clen1, a2p, clen2);
+		result = gp_strcoll(a1p, a2p);
+
 		/*
 		 * In some locales strcoll() can claim that nonidentical strings are
 		 * equal.  Believing that would be bad news for a number of reasons,
 		 * so we follow Perl's lead and sort "equal" strings according to
 		 * strcmp().
 		 */
-		if (result == 0) {
+		if (result == 0)
 			result = strcmp(a1p, a2p);
-			elog(WARNING, "gp_strcoll checked by strcmp, result = %d", result);
-		}
-		if ((result == 0) && (len1 != len2)) {
-			result = (len1 < len2) ? -1 : 1;
-			elog(WARNING, "gp_strcoll checked for length, result = %d", result);
-		}
 
 		if (a1p != a1buf)
 			pfree(a1p);
@@ -2384,7 +2344,7 @@ replace_text(PG_FUNCTION_ARGS)
 	int			src_text_len;
 	int			from_sub_text_len;
 
-	TextPositionState state =
+	TextPositionState state = 
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -2400,7 +2360,7 @@ replace_text(PG_FUNCTION_ARGS)
 	int			chunk_len;
 	char	   *start_ptr;
 	StringInfoData str;
-
+ 
 	varattrib_untoast_ptr_len(d0, &p0, &len0, &tofree0);
 	varattrib_untoast_ptr_len(d1, &p1, &len1, &tofree1);
 	varattrib_untoast_ptr_len(d2, &p2, &len2, &tofree2);
@@ -2421,7 +2381,7 @@ replace_text(PG_FUNCTION_ARGS)
 		return d0;
 	}
 
-	text_position_setup_ptr_len(p0, len0, p1, len1, &state);
+	text_position_setup_ptr_len(p0, len0, p1, len1, &state); 
 
 	/*
 	 * Note: we check the converted string length, not the original, because
@@ -2455,7 +2415,7 @@ replace_text(PG_FUNCTION_ARGS)
 	}
 
 	/* start_ptr points to the start_posn'th character of src_text */
-	start_ptr = p0;
+	start_ptr = p0; 
 
 	initStringInfo(&str);
 
@@ -2780,9 +2740,9 @@ split_text(PG_FUNCTION_ARGS)
 
 	int			fldnum = PG_GETARG_INT32(2);
 
-	int			inputstring_len;
-	int			fldsep_len;
-	TextPositionState state =
+	int			inputstring_len; 
+	int			fldsep_len; 
+	TextPositionState state = 		
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -2879,7 +2839,7 @@ split_text(PG_FUNCTION_ARGS)
 		/* N'th field separator not found */
 		/* if last field requested, return it, else empty string */
 		if (fldnum == 1)
-			result_text = text_substring(d0,
+			result_text = text_substring(d0, 
 										 start_posn,
 										 -1,
 										 true);
