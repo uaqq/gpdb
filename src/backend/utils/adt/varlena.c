@@ -1291,7 +1291,7 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2)
 		memcpy(a2p, arg2, clen2);
 		a2p[clen2] = '\0';
 
-		result = gp_strcoll(a1p, a2p);
+		result = strcmp(a1p, a2p);
 		elog(WARNING, "gp_strcoll = %d for '%s'[%d] and '%s'[%d]", result, a1p, clen1, a2p, clen2);
 		/*
 		 * In some locales strcoll() can claim that nonidentical strings are
