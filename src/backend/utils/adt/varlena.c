@@ -1148,7 +1148,7 @@ varstr_determine_len_compared(char* arg1, int len1, char* arg2, int len2, int* c
 	int len_unstable = min_len == len1 ? len2 : len1;
 	int advance = 0;
 	while (!pg_verify_mbstr(GetDatabaseEncoding(), arg_unstable + min_len + advance, len_unstable - min_len - advance, true))
-		advance += 1;
+		advance += -1;
 	/* Return calculated lengths */
 	*clen1 = min_len == len1 ? min_len : min_len + advance;
 	*clen2 = min_len == len2 ? min_len : min_len + advance;
