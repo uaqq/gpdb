@@ -25,43 +25,58 @@
 static inline
 int gp_strcoll(const char *left, const char *right)
 {
-	int result;
+	int result = 0;
+	const char* symbol_left = left;
+	const char* symbol_right = right;
+	char buffer_left[2] = {'\0', '\0'};
+	char buffer_right[2] = {'\0', '\0'};
 
 	errno = 0;
-	result = strcoll(left, right);
-
-	if ( errno != 0 )
-	{
-		if ( errno == EINVAL || errno == EILSEQ)
+	while (*symbol_left != '\0' && *symbol_right != '\0') {
+		buffer_left[0] = *symbol_left;
+		buffer_right[0] = *symbol_right;
+		result = strcoll(buffer_left, buffer_right);
+		if ( errno != 0 )
 		{
-			ereport(ERROR,
-					(errcode(ERRCODE_UNTRANSLATABLE_CHARACTER),
-							errmsg("Unable to compare strings because one or both contained data that is not valid "
-							       "for the collation specified by LC_COLLATE ('%s').  First string has length %lu "
-							       "and value (limited to 100 characters): '%.100s'.  Second string has length %lu "
-							       "and value (limited to 100 characters): '%.100s'",
-									GetConfigOption("lc_collate"),
-									(unsigned long) SAFE_STR_LENGTH(left),
-									NULL_TO_DUMMY_STR(left),
-									(unsigned long) SAFE_STR_LENGTH(left),
-									NULL_TO_DUMMY_STR(right))));
+			if ( errno == EINVAL || errno == EILSEQ)
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_UNTRANSLATABLE_CHARACTER),
+								errmsg("Unable to compare strings because one or both contained data that is not valid "
+									"for the collation specified by LC_COLLATE ('%s').  First string has length %lu "
+									"and value (limited to 100 characters): '%.100s'.  Second string has length %lu "
+									"and value (limited to 100 characters): '%.100s'",
+										GetConfigOption("lc_collate"),
+										(unsigned long) SAFE_STR_LENGTH(left),
+										NULL_TO_DUMMY_STR(left),
+										(unsigned long) SAFE_STR_LENGTH(left),
+										NULL_TO_DUMMY_STR(right))));
+			}
+			else
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_GP_INTERNAL_ERROR),
+								errmsg("Unable to compare strings.  "
+									"Error: %s.  "
+									"First string has length %lu and value (limited to 100 characters): '%.100s'.  "
+									"Second string has length %lu and value (limited to 100 characters): '%.100s'",
+										strerror(errno),
+										(unsigned long) SAFE_STR_LENGTH(left),
+										NULL_TO_DUMMY_STR(left),
+										(unsigned long) SAFE_STR_LENGTH(left),
+										NULL_TO_DUMMY_STR(right))));
+			}
 		}
-		else
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_GP_INTERNAL_ERROR),
-							errmsg("Unable to compare strings.  "
-							       "Error: %s.  "
-							       "First string has length %lu and value (limited to 100 characters): '%.100s'.  "
-							       "Second string has length %lu and value (limited to 100 characters): '%.100s'",
-									strerror(errno),
-									(unsigned long) SAFE_STR_LENGTH(left),
-									NULL_TO_DUMMY_STR(left),
-									(unsigned long) SAFE_STR_LENGTH(left),
-									NULL_TO_DUMMY_STR(right))));
+		if (result != 0) {
+			break;
 		}
+		symbol_left++;
+		symbol_right++;
 	}
 
+	if (!(*symbol_left != '\0' && *symbol_right != '\0')) {
+		return 0;
+	}
 	return result;
 }
 
