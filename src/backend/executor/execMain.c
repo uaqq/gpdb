@@ -79,6 +79,7 @@
 #include "utils/typcache.h"
 #include "utils/workfile_mgr.h"
 #include "utils/faultinjector.h"
+#include "utils/resource_manager.h"
 
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_class.h"
@@ -3236,7 +3237,7 @@ ExecInsert(TupleTableSlot *slot,
 
 		}
 
-		mtuple = ExecFetchSlotMemTuple(slot, false);
+		mtuple = ExecFetchSlotMemTuple(slot);
 		appendonly_insert(resultRelInfo->ri_aoInsertDesc, mtuple, &newId, (AOTupleId *) &lastTid);
 	}
 	else if (rel_is_aocols)
@@ -3864,7 +3865,7 @@ lreplace:;
 					appendonly_update_init(resultRelationDesc, ActiveSnapshot, resultRelInfo->ri_aosegno);
 			}
 
-			mtuple = ExecFetchSlotMemTuple(slot, false);
+			mtuple = ExecFetchSlotMemTuple(slot);
 
 			result = appendonly_update(resultRelInfo->ri_updateDesc,
 									   mtuple, (AOTupleId *) tupleid, (AOTupleId *) &lastTid);

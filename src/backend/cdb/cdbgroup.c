@@ -2860,7 +2860,14 @@ cdbpathlocus_collocates(PlannerInfo *root, CdbPathLocus locus, List *pathkeys,
 		return true;
 
 	if (!CdbPathLocus_IsHashed(locus))
-		return false;  /* Or would HashedOJ ok, too? */
+	{
+		/*
+		 * Note: HashedOJ can *not* be used for grouping. In HashedOJ, NULL
+		 * values can be located on any segment, so we would end up with
+		 * multiple NULL groups.
+		 */
+		return false;
+	}
 
 	if (exact_match && list_length(pathkeys) != list_length(locus.partkey_h))
 		return false;
@@ -3554,7 +3561,6 @@ Node *split_aggref(Aggref *aggref, MppGroupContext *ctx)
 	ListCell *cell;
 	Node *final_node;
 	Oid transtype = InvalidOid;
-	AttrNumber attrno = OUTER;
 	TargetEntry *prelim_tle = NULL;
 
 	Assert(aggref != NULL  && aggref->agglevelsup == 0);
@@ -3640,7 +3646,8 @@ Node *split_aggref(Aggref *aggref, MppGroupContext *ctx)
 		Aggref *pref;
 		Aggref *iref;
 		Aggref *fref;
-		
+		AttrNumber attrno;
+
 		/*
 		 * We may have seen an Aggref just like this one already.  Look for
 		 * the preliminary form of such in the preliminary Aggref target
@@ -6878,9 +6885,11 @@ within_agg_planner(PlannerInfo *root,
 			 */
 			memcpy(&root_copy, root, sizeof(PlannerInfo));
 			sz = root->simple_rel_array_size * sizeof(RelOptInfo *);
-			root_copy.simple_rel_array =
-				(RelOptInfo **) palloc(sz);
+			root_copy.simple_rel_array = (RelOptInfo **) palloc(sz);
 			memcpy(root_copy.simple_rel_array, root->simple_rel_array, sz);
+			sz = root->simple_rel_array_size * sizeof(RangeTblEntry *);
+			root_copy.simple_rte_array = (RangeTblEntry **) palloc(sz);
+			memcpy(root_copy.simple_rte_array, root->simple_rte_array, sz);
 
 			/*
 			 * Query should be copied deeply for the planner changes it.
