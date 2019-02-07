@@ -119,3 +119,25 @@ insert into colltest VALUES ('a'), ('A'), ('b'), ('B'), ('c'), ('C'), ('d'), ('D
 
 select * from colltest order by t COLLATE "C";
 select * from colltest order by t COLLATE "C" NULLS FIRST;
+
+-- Check that the sort order of russian characters
+-- is the same for gp_enable_mk_sort 'on' and 'off'
+-- start_ignore
+create function mk_sort_on() returns table (a bigint, b text) as $$
+begin
+    set gp_enable_mk_sort = on;
+    return query
+        with t(c) as (values ('б б'), ('бб ') order by 1)
+        select row_number() over() as n, c from t;
+end;
+$$ language plpgsql;
+create function mk_sort_off() returns table (a bigint, b text) as $$
+begin
+    set gp_enable_mk_sort = off;
+    return query
+        with t(c) as (values ('б б'), ('бб ') order by 1)
+        select row_number() over() as n, c from t;
+end;
+$$ language plpgsql;
+-- end_ignore
+select count(*) from mk_sort_on() natural join mk_sort_off();
