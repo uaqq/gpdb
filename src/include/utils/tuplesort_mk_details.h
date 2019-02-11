@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * tuplesort_mk_details.h 
+ * tuplesort_mk_details.h
  *	  Tuplesort Multi Key.
  *
  * Portions Copyright (c) Greenplum Inc. 2008.
@@ -20,10 +20,10 @@
 /* mk_qsort: multi level key quick sort */
 
 /* flags, involved in cmp */
-#define MKE_CF_NullFirst       1                      /* Null is smaller than non null */ 
+#define MKE_CF_NullFirst       1                      /* Null is smaller than non null */
 #define MKE_CF_NotNull         2
 #define MKE_CF_NullLast        3                      /* Null is bigger than non null  */
-#define MKE_CF_NULLBITS        3                      
+#define MKE_CF_NULLBITS        3
 
 #define MKE_CF_Lv              0xFFFC                 /* Runs use 14 bits             */
 #define MKE_CF_Run             0x3FFF0000             /* Lv use 14 bits               */
@@ -32,18 +32,17 @@
 
 #define MKE_MAX_LV    0x3FFF
 #define MKE_MAX_RUN   0x3FFF
-#define MKE_RunShift  16 
-#define MKE_LvShift   2 
+#define MKE_RunShift  16
+#define MKE_LvShift   2
 /* Top bit is always unused */
 
-/* flags, not comp */ 
-#define MKE_F_RefCnt          1
-#define MKE_F_Copied          2 
-#define MKE_F_Reader          0xFFFC               
+/* flags, not comp */
+#define MKE_F_Copied          2
+#define MKE_F_Reader          0xFFFC
 #define MKE_MAX_READER        0x3FFF
-#define MKE_ReaderShift       2 
+#define MKE_ReaderShift       2
 
-typedef struct MKEntry 
+typedef struct MKEntry
 {
     int32 compflags;
     int32 flags;
@@ -116,12 +115,12 @@ static inline int32 mke_get_run(MKEntry *e)
 static inline void mke_set_run(MKEntry *e, int32 run)
 {
     Assert(run >= 0 && run <= MKE_MAX_RUN);
-    /* If statement_mem is too small, we might end up generating 
-       too many runs. */ 
+    /* If statement_mem is too small, we might end up generating
+       too many runs. */
     if (run > MKE_MAX_RUN)
     {
     	elog(ERROR, ERRMSG_GP_INSUFFICIENT_STATEMENT_MEMORY);
-    } 
+    }
     i_clear_flag(&e->compflags, MKE_CF_Run);
     i_set_flag(&e->compflags, run << MKE_RunShift);
 }
@@ -133,9 +132,9 @@ static inline int32 mke_get_lv(MKEntry *e)
 static inline void mke_set_lv(MKEntry *e, int32 lv)
 {
     Assert(lv >= 0 && lv <= MKE_MAX_LV);
-    /* If statement_mem is too small, we might end up generating 
-       too many runs. */ 
-    if (lv > MKE_MAX_LV) 
+    /* If statement_mem is too small, we might end up generating
+       too many runs. */
+    if (lv > MKE_MAX_LV)
     {
 		elog(ERROR, ERRMSG_GP_INSUFFICIENT_STATEMENT_MEMORY);
     }
@@ -145,32 +144,19 @@ static inline void mke_set_lv(MKEntry *e, int32 lv)
 
 static inline void mke_set_empty(MKEntry *e)
 {
-    e->compflags = MKE_CF_Empty; 
+    e->compflags = MKE_CF_Empty;
     e->flags = 0;
 	e->d = 0;
 	e->ptr = 0;
 }
 static inline bool mke_is_empty(MKEntry *e)
 {
-    return i_test_flag(&e->compflags, MKE_CF_Empty); 
+    return i_test_flag(&e->compflags, MKE_CF_Empty);
 }
 
 static inline void mke_set_comp_max(MKEntry *e)
 {
     e->compflags = MKE_CF_MAX;
-}
-
-static inline void mke_set_refc(MKEntry *e)
-{
-    i_set_flag(&e->flags, MKE_F_RefCnt);
-}
-static inline void mke_clear_refc(MKEntry *e)
-{
-    i_clear_flag(&e->flags, MKE_F_RefCnt);
-}
-static inline bool mke_is_refc(MKEntry *e)
-{
-    return i_test_flag(&e->flags, MKE_F_RefCnt);
 }
 
 static inline void mke_set_copied(MKEntry *e)
@@ -188,7 +174,7 @@ static inline bool mke_is_copied(MKEntry *e)
 
 static inline void mke_clear_refc_copied(MKEntry *e)
 {
-    i_clear_flag(&e->flags, MKE_F_RefCnt | MKE_F_Copied);
+    i_clear_flag(&e->flags, MKE_F_Copied);
 }
 
 static inline int32 mke_get_reader(MKEntry *e)
@@ -218,9 +204,7 @@ extern void tupsort_prepare(MKEntry *a, struct MKContext *ctxt, int lv);
 typedef enum MKLvType
 {
     MKLV_TYPE_NONE,  /* this level has not yet been assigned a type: todo: verify meaning */
-    MKLV_TYPE_INT32, /* this level contains int32 values */
-    MKLV_TYPE_CHAR,  /* this level contains char (blank padded) values */
-    MKLV_TYPE_TEXT,  /* this level contains text values */
+    MKLV_TYPE_INT32 /* this level contains int32 values */
 } MKLvType;
 
 typedef struct MKLvContext
@@ -266,17 +250,6 @@ typedef struct MKContext {
      */
     MKFreeTuple freeTup;
 
-
-    /* as calculated by estimateExtraSpace.  This is only valid before we've switched to buildruns mode
-     *   It is only calculate when the fetchForPrep fn is set as well
-     */
-    long estimatedExtraForPrep;
-
-    /* strxfrm's scale factor (multiplies by length), depends on the current collation */
-    int strxfrmScaleFactor;
-
-    /* strxfrm's constant factor, depends on the current collation */
-    int strxfrmConstantFactor;
 
     TupleDesc tupdesc;
     Relation indexRel;
@@ -343,7 +316,7 @@ typedef struct MKHeapReader
 /**
  * The heap itself
  */
-typedef struct MKHeap 
+typedef struct MKHeap
 {
 	/* Configuration data for the heap, indicating how to interpret values and how to perform the sort */
     MKContext *mkctxt;
@@ -377,29 +350,29 @@ typedef struct MKHeap
 } MKHeap;
 
 
-/* 
- * Create a heap from an array.  Once the heap is created, it owns the array. 
+/*
+ * Create a heap from an array.  Once the heap is created, it owns the array.
  */
-extern MKHeap *mkheap_from_array(MKEntry *entries, int alloc_size, int count, MKContext *mkctxt); 
+extern MKHeap *mkheap_from_array(MKEntry *entries, int alloc_size, int count, MKContext *mkctxt);
 
-/* 
+/*
  * Create a heap from an array of readers.  MKHeap never owns the reader.  Readers
- * are assumed to have a longer life cycle than the mkheap. 
+ * are assumed to have a longer life cycle than the mkheap.
  */
 extern MKHeap *mkheap_from_reader(MKHeapReader *readers, int nreader, MKContext *mkctxt);
 
 extern void mkheap_destroy(MKHeap *mkheap);
 
-/* 
- * Insert into heap.  
+/*
+ * Insert into heap.
  * NOTE: Unusual interfaces.
- * 		insert an flagptr.  
+ * 		insert an flagptr.
  *		return value < 0 means fail to insert because the value is smaller than the smallest entry in heap.
  *		return value = 0 means fail to insert because the value equals to smallest entry in heap.
  *		return value > 0 means successfully inserted into the heap.
  *
  * This means, we cannot insert anything smaller than current smallest entry, however, we will see this
- * is enough for our use in external sort or limit sort.  More general way of doing this is definitely 
+ * is enough for our use in external sort or limit sort.  More general way of doing this is definitely
  * doable, but not needed.
  *
  * On output, in cases where the value is >= the min element, *e will be filled in with a copy of the min value of the heap.
@@ -408,7 +381,7 @@ extern int mkheap_putAndGet(MKHeap *mkheap, MKEntry *e);
 extern int mkheap_putAndGet_run(MKHeap *mkheap, MKEntry *e, int16 run);
 extern int mkheap_putAndGet_reader(MKHeap *mkheap, MKEntry *e);
 
-/* 
+/*
  * Remove and return smallest elements from the heap.
  */
 extern MKEntry *mkheap_peek(MKHeap *mkheap);
@@ -418,7 +391,7 @@ static inline bool mkheap_run_match(MKHeap *mkheap, int32 run)
     MKEntry *e = mkheap_peek(mkheap);
 
     if(e)
-        return (run == mke_get_run(e)); 
+        return (run == mke_get_run(e));
     else
         return false;
 }

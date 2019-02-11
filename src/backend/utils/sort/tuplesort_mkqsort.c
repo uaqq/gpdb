@@ -26,7 +26,7 @@
 
 #include "miscadmin.h"
 
-#ifdef MKQSORT_VERIFY 
+#ifdef MKQSORT_VERIFY
 extern void mkqsort_verify(MKEntry *a, int l, int r, MKContext *mkctxt);
 #endif
 
@@ -81,7 +81,7 @@ static inline MKEntry *mkqs_choose_pivot(MKEntry *a, int left, int right, int lv
 	MKEntry *pl, *pm, *pn;
 
 	Assert(n >= 0);
-	
+
 	pm = a + (left + n/2);
 
 	if(n > 7)
@@ -127,7 +127,7 @@ static void mk_qsort_part3(MKEntry *a, int left, int right, int lv, MKContext *m
 	/*
 	 * leftIndex points to the known <= upper,
 	 * rightIndex points to the known >= lower.
-	 * 
+	 *
 	 * Initially, we know nothing, so point them to out of bounds.
 	 */
 	leftIndex = left-1;
@@ -136,12 +136,9 @@ static void mk_qsort_part3(MKEntry *a, int left, int right, int lv, MKContext *m
 	/* Choose a pivot */
 	pv = mkqs_choose_pivot(a, left, right, lv, lvctxt, mkqs_ctxt);
 
-	/* Save pivot in v */ 
+	/* Save pivot in v */
 	/* Hacking a ref count */
-	if(mke_is_refc(pv))
-		mkqs_ctxt->cpfr(&v, pv, lvctxt);
-	else 
-		v = *pv;
+	v = *pv;
 
 	while(1)
 	{
@@ -168,12 +165,12 @@ static void mk_qsort_part3(MKEntry *a, int left, int right, int lv, MKContext *m
 		}
 
 		if(leftIndex == rightIndex)
-		{ 
+		{
 			/**
 			 * Caught up, back down and done loop
 			 */
 			--leftIndex;
-			break; 
+			break;
 		}
 
 		/**
@@ -253,10 +250,6 @@ static void mk_qsort_part3(MKEntry *a, int left, int right, int lv, MKContext *m
 	Assert(rightIndex > left && rightIndex <= right+1);
 	Assert(rightIndex >= leftIndex+2);
 
-	/* Hack ref count */
-	if(mke_is_refc(&v))
-		mkqs_ctxt->cpfr(&v, NULL, lvctxt);
-
 	*lastInLowOut = leftIndex;
 	*firstInHighOut = rightIndex;
 }
@@ -276,14 +269,14 @@ void mk_qsort_impl(MKEntry *a, int left, int right, int lv, bool lvdown, MKConte
 
 	if(right <= left)
 		return;
-	
+
 	/* Prepare at level lv */
 	if(lvdown)
         mk_prepare_array(a, left, right, lv, ctxt);
 
-	/* 
-	 * According to Bentley & McIlroy [1] (1993), using insert sort for case 
-	 * n < 7 is a significant saving.  However, according to Sedgewick & 
+	/*
+	 * According to Bentley & McIlroy [1] (1993), using insert sort for case
+	 * n < 7 is a significant saving.  However, according to Sedgewick &
 	 * Bentley [2] (2002), the wisdom of new millenium is not to special case
 	 * smaller cases.  Here, we do not special case it because we want to save
 	 * memtuple_getattr, and expensive comparisons that has been prepared.
@@ -314,7 +307,7 @@ void mk_qsort_impl(MKEntry *a, int left, int right, int lv, bool lvdown, MKConte
 			{
 				Datum	values[INDEX_MAX_KEYS];
 				bool	isnull[INDEX_MAX_KEYS];
-		
+
 				index_deform_tuple((IndexTuple)(a+lastInLow+1)->ptr, ctxt->tupdesc, values, isnull);
 				ereport(ERROR,
 						(errcode(ERRCODE_UNIQUE_VIOLATION),
@@ -342,20 +335,20 @@ void mk_qsort_impl(MKEntry *a, int left, int right, int lv, bool lvdown, MKConte
 	/* recurse to right chunk */
 	mk_qsort_impl(a, firstInHigh, right, lv, false, ctxt, seenNull);
 
-#ifdef MKQSORT_VERIFY 
+#ifdef MKQSORT_VERIFY
 	if(lv == 0)
 		mkqsort_verify(a, left, right, ctxt);
 #endif
 }
 
-#ifdef MKQSORT_VERIFY 
+#ifdef MKQSORT_VERIFY
 static int mkqsort_comp_entry_all_lv(MKEntry *a, MKEntry *b, MKContext *mkctxt)
 {
 	int i;
 	int c;
 
-	MKEntry aa = {0, }; 
-	MKEntry bb = {0, }; 
+	MKEntry aa = {0, };
+	MKEntry bb = {0, };
 
 	(*mkctxt->cpfr)(&aa, a, mk_get_ctxt(mkctxt, mke_get_lv(a)));
 	(*mkctxt->cpfr)(&bb, b, mk_get_ctxt(mkctxt, mke_get_lv(b)));
