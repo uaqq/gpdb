@@ -67,7 +67,7 @@ typedef struct
  */
 #define MAX_STRING_BYTES	((Size) (MaxAllocSize - 0x400000))
 
-static int	text_position_ptr_len(char* p1, int len1, char *p2, int len2); 
+static int	text_position_ptr_len(char* p1, int len1, char *p2, int len2);
 static void text_position_setup_ptr_len(char* p1, int len1, char* p2, int len2, TextPositionState *state);
 
 static int	text_position_next(int start_pos, TextPositionState *state);
@@ -992,10 +992,10 @@ textpos(PG_FUNCTION_ARGS)
  *	This is broken out so it can be called directly by other string processing
  *	functions.
  */
-static int 
+static int
 text_position_ptr_len(char* p1, int len1, char* p2, int len2)
 {
-	TextPositionState state = 
+	TextPositionState state =
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -1028,7 +1028,7 @@ text_position_ptr_len(char* p1, int len1, char* p2, int len2)
  */
 
 /* Set up text postion, using pointer and len. */
-static void 
+static void
 text_position_setup_ptr_len(char* p1, int len1, char* p2, int len2, TextPositionState *state)
 {
 	if (pg_database_encoding_max_length() == 1)
@@ -2344,7 +2344,7 @@ replace_text(PG_FUNCTION_ARGS)
 	int			src_text_len;
 	int			from_sub_text_len;
 
-	TextPositionState state = 
+	TextPositionState state =
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -2360,7 +2360,7 @@ replace_text(PG_FUNCTION_ARGS)
 	int			chunk_len;
 	char	   *start_ptr;
 	StringInfoData str;
- 
+
 	varattrib_untoast_ptr_len(d0, &p0, &len0, &tofree0);
 	varattrib_untoast_ptr_len(d1, &p1, &len1, &tofree1);
 	varattrib_untoast_ptr_len(d2, &p2, &len2, &tofree2);
@@ -2381,7 +2381,7 @@ replace_text(PG_FUNCTION_ARGS)
 		return d0;
 	}
 
-	text_position_setup_ptr_len(p0, len0, p1, len1, &state); 
+	text_position_setup_ptr_len(p0, len0, p1, len1, &state);
 
 	/*
 	 * Note: we check the converted string length, not the original, because
@@ -2415,7 +2415,7 @@ replace_text(PG_FUNCTION_ARGS)
 	}
 
 	/* start_ptr points to the start_posn'th character of src_text */
-	start_ptr = p0; 
+	start_ptr = p0;
 
 	initStringInfo(&str);
 
@@ -2740,9 +2740,9 @@ split_text(PG_FUNCTION_ARGS)
 
 	int			fldnum = PG_GETARG_INT32(2);
 
-	int			inputstring_len; 
-	int			fldsep_len; 
-	TextPositionState state = 		
+	int			inputstring_len;
+	int			fldsep_len;
+	TextPositionState state =
 		{
 		0, /* use_wchar */
 		NULL, /* str1 */
@@ -2839,7 +2839,7 @@ split_text(PG_FUNCTION_ARGS)
 		/* N'th field separator not found */
 		/* if last field requested, return it, else empty string */
 		if (fldnum == 1)
-			result_text = text_substring(d0, 
+			result_text = text_substring(d0,
 										 start_posn,
 										 -1,
 										 true);
