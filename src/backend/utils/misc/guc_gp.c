@@ -2907,8 +2907,7 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
 		},
 		&optimizer_force_agg_skew_avoidance,
-		true,
-		NULL, NULL, NULL
+		true, NULL, NULL
 	},
 
 	{
@@ -4687,7 +4686,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
 		},
 		&optimizer_penalize_broadcast_threshold,
-		10000000, 0, INT_MAX, NULL, NULL
+		100000, 0, INT_MAX, NULL, NULL
 	},
 
 	{
