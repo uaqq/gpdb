@@ -26,7 +26,10 @@
 {% set aa_Test_suites = ['Planner_centos6',
                          'Orca_centos6',
                          'Planner_centos7',
-                         'Orca_centos7',
+                         'Orca_centos7'
+                        ] %}
+{% set postgis_build_platforms = ['centos6',
+                         'centos7'
                         ] %}
 ## ======================================================================
 ##   __ _ _ __ ___  _   _ _ __  ___
@@ -46,6 +49,7 @@ groups:
   - compile_gpdb_sles11
   - compile_gpdb_ubuntu16
   - compile_gpdb_ubuntu16_oss
+  - compile_gpdb_ubuntu16_oss_abi
   - compile_gpdb_open_source_centos6
   - compile_gpdb_binary_swap_centos6
   - compile_gpdb_windows_cl
@@ -132,6 +136,9 @@ groups:
 {% if "AA" in test_sections %}
   ## --------------------------------------------------------------------
   - gate_advanced_analytics_start
+{% for platform in postgis_build_platforms %}
+  - postgis_build_[[ platform ]]
+{% endfor %}
 {% for test_name in aa_Test_suites %}
 {% set platform_version = '7' if "centos7" in test_name else '6' %}
 {% set orca_state = 'off' if "Planner" in test_name else 'on' %}
@@ -156,6 +163,7 @@ groups:
 - name: Release
   jobs:
   - gate_release_candidate_start
+  - compile_gpdb_ubuntu16_oss_abi
   - Release_Candidate
 
 {% endif %}
@@ -271,6 +279,9 @@ groups:
 - name: G:AdvancedAnalytics
   jobs:
   - gate_advanced_analytics_start
+{% for platform in postgis_build_platforms %}
+  - postgis_build_[[ platform ]]
+{% endfor %}
 {% for test_name in aa_Test_suites %}
 {% set platform_version = '7' if "centos7" in test_name else '6' %}
 {% set orca_state = 'off' if "Planner" in test_name else 'on' %}
@@ -408,6 +419,13 @@ resources:
     ignore_paths:
     - gpdb-doc/*
     - README*
+
+- name: gpdb_src_latest_5X_tag
+  type: git
+  source:
+    branch: 5X_STABLE
+    uri: {{gpdb-git-remote}}
+    tag_filter: 5.*
 
 - name: gpdb_src_binary_swap
   type: git
@@ -763,6 +781,7 @@ resources:
   type: git
   source:
     branch: master
+    tag_filter: rel/v2.1.5+pivotal.2
     uri: https://github.com/greenplum-db/geospatial.git
 
 - name: postgis_gppkg_centos6
@@ -1248,6 +1267,86 @@ jobs:
     - put: deb_package_open_source_ubuntu16
       params:
         file: {{deb_package_open_source_ubuntu16_versioned_file}}
+
+- name: compile_gpdb_ubuntu16_oss_abi
+  plan:
+  - aggregate:
+    - get: gpdb_src
+      passed: [gate_compile_start]
+      trigger: ((gpdb_src-trigger-flag))
+    - get: gpdb_src_latest_5X_tag
+    - get: ubuntu-gpdb-dev-16
+      passed: [gate_compile_start]
+  - aggregate:
+    - task: compile_gpdb_head
+      image: ubuntu-gpdb-dev-16
+      config:
+        platform: linux
+        inputs:
+          - name: gpdb_src
+        outputs:
+          - name: compiled_bits_ubuntu16_head
+        run:
+          path: gpdb_src/concourse/scripts/compile_gpdb_open_source_ubuntu.bash
+        params:
+          CFLAGS: -g -Og
+          CXXFLAGS: -g -Og
+          CONFIGURE_FLAGS: {{configure_flags}}
+          TRANSFER_DIR: compiled_bits_ubuntu16_head
+          COMPILED_BITS_FILENAME: compiled_bits_ubuntu16.tar.gz
+    - task: compile_gpdb_tag
+      image: ubuntu-gpdb-dev-16
+      input_mapping:
+        gpdb_src: gpdb_src_latest_5X_tag
+      config:
+        platform: linux
+        inputs:
+          - name: gpdb_src
+        outputs:
+          - name: compiled_bits_ubuntu16_tag
+        run:
+          path: gpdb_src/concourse/scripts/compile_gpdb_open_source_ubuntu.bash
+        params:
+          CFLAGS: -g -Og
+          CXXFLAGS: -g -Og
+          CONFIGURE_FLAGS: {{configure_flags}}
+          TRANSFER_DIR: compiled_bits_ubuntu16_tag
+          COMPILED_BITS_FILENAME: compiled_bits_ubuntu16.tar.gz
+  - task: compare_abi
+    image: ubuntu-gpdb-dev-16
+    config:
+      platform: linux
+      inputs:
+        - name: gpdb_src
+        - name: compiled_bits_ubuntu16_head
+        - name: compiled_bits_ubuntu16_tag
+      outputs:
+        - name: abi
+      run:
+        path: gpdb_src/concourse/scripts/compare_abi_ubuntu.bash
+        args: [
+          'bin/postgres',
+          'lib/libecpg.so',
+          'lib/libecpg_compat.so',
+          'lib/libgppc.so',
+          'lib/libpgtypes.so',
+          'lib/libpq.so',
+        ]
+      params:
+  - task: publish_report
+    image: ubuntu-gpdb-dev-16
+    config:
+      platform: linux
+      inputs:
+        - name: gpdb_src
+        - name: abi
+      run:
+        path: gpdb_src/concourse/scripts/s3_sync
+        args: [ "./abi/", "s3://((public-bucket-name))/" ]
+      params:
+        AWS_ACCESS_KEY_ID: {{bucket-access-key-id}}
+        AWS_SECRET_ACCESS_KEY: {{bucket-secret-access-key}}
+        AWS_DEFAULT_REGION: {{aws-region}}
 
 - name: compile_gpdb_open_source_centos6
   public: true
@@ -3477,6 +3576,39 @@ jobs:
       passed:
       - gate_compile_end
 
+{% for platform in postgis_build_platforms %}
+{% set platform_version = '7' if "centos7" in platform else '6' %}
+- name: postgis_build_[[ platform ]]
+  plan:
+  - aggregate:
+    - get: postgis_src
+    - get: madlib_ci
+    - get: gpdb_src
+      passed:
+      - gate_advanced_analytics_start
+    - get: bin_gpdb
+      resource: bin_gpdb_[[ platform ]]
+      trigger: [[ test_trigger ]]
+      passed:
+      - gate_advanced_analytics_start
+    - get: centos-gpdb-dev-[[ platform_version ]]
+    - get: gcc_4.4.2_snowflake
+  - aggregate:
+    - task: postgis_gpdb_build
+      file: madlib_ci/concourse/tasks/build_postgis.yml
+      image: centos-gpdb-dev-[[ platform_version ]]
+      params:
+        TEST_OS: [[ platform ]]
+        IVYREPO_HOST: {{ivyrepo_host}}
+        IVYREPO_REALM: {{ivyrepo_realm}}
+        IVYREPO_USER: {{ivyrepo_user}}
+        IVYREPO_PASSWD: {{ivyrepo_passwd}}
+  - aggregate:
+    - put: postgis_gppkg_[[ platform ]]
+      params:
+        file: postgis_gppkg/postgis-*.gppkg
+{% endfor %}
+
 {% for test_name in aa_Test_suites %}
 {% set platform_version = '7' if "centos7" in test_name else '6' %}
 {% set orca_state = 'off' if "Planner" in test_name else 'on' %}
@@ -3506,18 +3638,22 @@ jobs:
   - aggregate:
     - get: madlib_ci
     - get: postgis_src
+      passed:
+      - postgis_build_centos[[ platform_version ]]
     - get: postgis_gppkg
       resource: postgis_gppkg_centos[[ platform_version ]]
       trigger: [[ test_trigger ]]
+      passed:
+      - postgis_build_centos[[ platform_version ]]
     - get: bin_gpdb
       resource: bin_gpdb_centos[[ platform_version ]]
       trigger: [[ test_trigger ]]
       passed:
-      - gate_advanced_analytics_start
+      - postgis_build_centos[[ platform_version ]]
     - get: centos-gpdb-dev-[[ platform_version ]]
     - get: gpdb_src
       passed:
-      - gate_advanced_analytics_start
+      - postgis_build_centos[[ platform_version ]]
     - get: gcc_4.4.2_snowflake
   - task: test_postgis
     file: madlib_ci/concourse/tasks/test_postgis.yml
@@ -3724,6 +3860,9 @@ jobs:
       - gptransfer-5x-to-5x
       - mpp_interconnect
       - QP_optimizer-functional
+{% for platform in postgis_build_platforms %}
+      - postgis_build_[[ platform ]]
+{% endfor %}
 {% for test_name in aa_Test_suites %}
 {% set platform_version = '7' if "centos7" in test_name else '6' %}
 {% set orca_state = 'off' if "Planner" in test_name else 'on' %}
