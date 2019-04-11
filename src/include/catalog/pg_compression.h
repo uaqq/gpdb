@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pg_compress.h
- * 
+ *
  * 		Representation of compression algorithms for user extensibility of
  * 		compression used by the storage layer.
  *
@@ -30,13 +30,13 @@
 
 CATALOG(pg_compression,3056)
 {
-	NameData	compname;			
-	regproc		compconstructor;	
-	regproc		compdestructor;		
-	regproc		compcompressor;		
-	regproc		compdecompressor;	
-	regproc		compvalidator;		
-	Oid			compowner;			
+	NameData	compname;
+	regproc		compconstructor;
+	regproc		compdestructor;
+	regproc		compcompressor;
+	regproc		compdecompressor;
+	regproc		compvalidator;
+	Oid			compowner;
 } FormData_pg_compression;
 
 /* GPDB added foreign key definitions for gpcheckcat. */
@@ -76,6 +76,8 @@ DATA(insert OID = 3061 ( quicklz gp_quicklz_constructor gp_quicklz_destructor gp
 DATA(insert OID = 3062 ( rle_type gp_rle_type_constructor gp_rle_type_destructor gp_rle_type_compress gp_rle_type_decompress gp_rle_type_validator PGUID ));
 
 DATA(insert OID = 3063 ( none gp_dummy_compression_constructor gp_dummy_compression_destructor gp_dummy_compression_compress gp_dummy_compression_decompress gp_dummy_compression_validator PGUID ));
+
+DATA(insert OID = 3070 ( zstd gp_zstd_constructor gp_zstd_destructor gp_zstd_compress gp_zstd_decompress gp_zstd_validator PGUID ));
 
 #define NUM_COMPRESS_FUNCS 5
 
