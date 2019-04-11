@@ -80,7 +80,7 @@ comptype_to_name(char *comptype)
 	len = strlen(comptype);
 	dct = str_tolower(comptype, len);
 	len = strlen(dct);
-	
+
 	memcpy(&(NameStr(compname)), dct, len);
 	NameStr(compname)[len] = '\0';
 	pfree(dct);
