@@ -143,6 +143,9 @@ typedef struct PlannedStmt
 
 	/* What is the memory reserved for this query's execution? */
 	uint64		query_mem;
+
+	/* GPDB: whether the query is a spi/function inner/top-level query or for extension usage */
+	int8		metricsQueryType;
 } PlannedStmt;
 
 /*
@@ -746,6 +749,7 @@ typedef struct Join
 	List	   *joinqual;		/* JOIN quals (in addition to plan.qual) */
 
 	bool		prefetch_inner; /* to avoid deadlock in MPP */
+	bool		prefetch_joinqual; /* to avoid deadlock in MPP */
 } Join;
 
 /* ----------------
