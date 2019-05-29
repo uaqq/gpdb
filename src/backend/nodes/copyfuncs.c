@@ -131,6 +131,7 @@ _copyPlannedStmt(PlannedStmt *from)
 		newnode->intoPolicy = NULL;
 
 	COPY_SCALAR_FIELD(query_mem);
+	COPY_SCALAR_FIELD(metricsQueryType);
 
 	return newnode;
 }
@@ -790,6 +791,7 @@ CopyJoinFields(Join *from, Join *newnode)
 	CopyPlanFields((Plan *) from, (Plan *) newnode);
 
     COPY_SCALAR_FIELD(prefetch_inner);
+	COPY_SCALAR_FIELD(prefetch_joinqual);
 
 	COPY_SCALAR_FIELD(jointype);
 	COPY_NODE_FIELD(joinqual);

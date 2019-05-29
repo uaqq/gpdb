@@ -1089,6 +1089,12 @@ ExecuteTruncate(TruncateStmt *stmt)
 	ListCell   *cell;
     int partcheck = 2;
 	List *partList = NIL;
+	TruncateStmt *truncateStatement;
+
+	/*
+	 * Copy the statement to ensure we do not modify a cached plan
+	 */
+	truncateStatement = (TruncateStmt *) copyObject(stmt);
 
 	/*
 	 * Open, exclusive-lock, and check all the explicitly-specified relations
@@ -1097,7 +1103,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 	 */
 	while (partcheck)
 	{
-		foreach(cell, stmt->relations)
+		foreach(cell, truncateStatement->relations)
 		{
 			RangeVar   *rv = lfirst(cell);
 			Relation	rel;
@@ -1134,9 +1140,9 @@ ExecuteTruncate(TruncateStmt *stmt)
 			/* add the partitions to the relation list and try again */
 			if (partcheck == 1)
 			{
-				stmt->relations = list_concat(partList, stmt->relations);
+				truncateStatement->relations = list_concat(partList, truncateStatement->relations);
 
-				cell = list_head(stmt->relations);
+				cell = list_head(truncateStatement->relations);
 				while (cell != NULL)
 				{
 					RangeVar   *rv = lfirst(cell);
@@ -1162,7 +1168,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 	/*
 	 * Open, exclusive-lock, and check all the explicitly-specified relations
 	 */
-	foreach(cell, stmt->relations)
+	foreach(cell, truncateStatement->relations)
 	{
 		RangeVar   *rv = lfirst(cell);
 		Relation	rel;
@@ -1184,7 +1190,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 	 * soon as we open it, to avoid a faux pas such as holding lock for a long
 	 * time on a rel we have no permissions for.
 	 */
-	if (stmt->behavior == DROP_CASCADE)
+	if (truncateStatement->behavior == DROP_CASCADE)
 	{
 		for (;;)
 		{
@@ -1222,7 +1228,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 #ifdef USE_ASSERT_CHECKING
 	heap_truncate_check_FKs(rels, false);
 #else
-	if (stmt->behavior == DROP_RESTRICT)
+	if (truncateStatement->behavior == DROP_RESTRICT)
 		heap_truncate_check_FKs(rels, false);
 #endif
 
@@ -1246,7 +1252,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 	{
 		ListCell	*lc;
 
-		CdbDispatchUtilityStatement((Node *) stmt,
+		CdbDispatchUtilityStatement((Node *) truncateStatement,
 									DF_CANCEL_ON_ERROR |
 									DF_WITH_SNAPSHOT |
 									DF_NEED_TWO_PHASE,
@@ -11580,14 +11586,10 @@ static void checkUniqueIndexCompatible(Relation rel, GpPolicy *pol)
 {
 	List *indexoidlist = RelationGetIndexList(rel);
 	ListCell *indexoidscan = NULL;
-	Bitmapset *polbm = NULL;
-	int i = 0;
+	bool compatible;
 
 	if(pol == NULL || pol->nattrs == 0)
 		return;
-
-	for (i = 0; i < pol->nattrs; i++)
-		polbm = bms_add_member(polbm, pol->attrs[i]);
 
 	/* Loop over all indexes on the relation */
 	foreach(indexoidscan, indexoidlist)
@@ -11596,7 +11598,6 @@ static void checkUniqueIndexCompatible(Relation rel, GpPolicy *pol)
 		HeapTuple	indexTuple;
 		Form_pg_index indexStruct;
 		int			i;
-		Bitmapset  *indbm = NULL;
 
 		indexTuple = SearchSysCache1(INDEXRELID,
 									 ObjectIdGetDatum(indexoid));
@@ -11607,28 +11608,32 @@ static void checkUniqueIndexCompatible(Relation rel, GpPolicy *pol)
 		/* If the index is not a unique key, skip the check */
 		if (indexStruct->indisunique)
 		{
-			for (i = 0; i < indexStruct->indnatts; i++)
-			{
-				indbm = bms_add_member(indbm, indexStruct->indkey.values[i]);
-			}
+			compatible = true;
+			if (indexStruct->indnatts < pol->nattrs)
+				compatible = false;
 
-			if (!bms_is_subset(polbm, indbm))
+			for (i = 0; i < pol->nattrs; i++)
+			{
+				if (indexStruct->indkey.values[i] != pol->attrs[i])
+				{
+					compatible = false;
+					break;
+				}
+			}
+			if (!compatible)
 			{
 				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("UNIQUE INDEX and DISTRIBUTED BY definitions incompatible"),
-						 errhint("the DISTRIBUTED BY columns must be equal to "
-								 "or a left-subset of the UNIQUE INDEX columns.")));
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("UNIQUE INDEX and DISTRIBUTED BY definitions incompatible"),
+					 errhint("the DISTRIBUTED BY columns must be equal to "
+							 "or a left-subset of the UNIQUE INDEX columns.")));
 			}
-
-			bms_free(indbm);
 		}
 
 		ReleaseSysCache(indexTuple);
 	}
 
 	list_free(indexoidlist);
-	bms_free(polbm);
 }
 
 /*

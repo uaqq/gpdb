@@ -2127,6 +2127,7 @@ typedef struct NestLoopState
 	bool		nl_innerSquelchNeeded;	/*CDB*/
 	bool		shared_outer;
 	bool		prefetch_inner;
+	bool		prefetch_joinqual;
 	bool		reset_inner; /*CDB-OLAP*/
 	bool		require_inner_reset; /*CDB-OLAP*/
 
@@ -2181,6 +2182,7 @@ typedef struct MergeJoinState
 	ExprContext *mj_InnerEContext;
 	bool		prefetch_inner; /* MPP-3300 */
 	bool		mj_squelchInner; /* MPP-3300 */
+	bool		prefetch_joinqual;
 } MergeJoinState;
 
 /* ----------------
@@ -2233,6 +2235,7 @@ typedef struct HashJoinState
 	bool		hj_OuterNotEmpty;
 	bool		hj_InnerEmpty;  /* set to true if inner side is empty */
 	bool		prefetch_inner;
+	bool		prefetch_joinqual;
 	bool		hj_nonequijoin;
 
 	/* set if the operator created workfiles */
@@ -2461,6 +2464,14 @@ typedef struct WindowState
 
 	/* Indicate if child is done returning tuples */
 	bool	    is_input_done;
+
+	/*
+	 * Most executor nodes in GPDB don't support SRFs in target lists, the
+	 * planner tries to insulate them from SRFs by adding Result nodes. But
+	 * WindowAgg needs to handle them, because a Result can't evaluate
+	 * WindowFunc, which an WindowAgg's target list usually has.
+	 */
+	bool        ps_TupFromTlist;
 } WindowState;
 
 /* ----------------
