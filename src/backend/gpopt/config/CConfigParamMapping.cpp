@@ -388,7 +388,7 @@ CConfigParamMapping::SConfigMappingElem CConfigParamMapping::m_elements[] =
 CBitSet *
 CConfigParamMapping::PackConfigParamInBitset
 	(
-	IMemoryPool *mp,
+	CMemoryPool *mp,
 	ULONG xform_id // number of available xforms
 	)
 {
@@ -504,7 +504,7 @@ CConfigParamMapping::PackConfigParamInBitset
 			join_heuristic_bitset = CXform::PbsJoinOrderOnGreedyXforms(mp);
 			break;
 		case JOIN_ORDER_EXHAUSTIVE_SEARCH:
-			join_heuristic_bitset = GPOS_NEW(mp) CBitSet(mp, EopttraceSentinel);
+			join_heuristic_bitset = CXform::PbsJoinOrderOnExhaustiveXforms(mp);
 			break;
 		default:
 			elog(ERROR, "Invalid value for optimizer_join_order, must \

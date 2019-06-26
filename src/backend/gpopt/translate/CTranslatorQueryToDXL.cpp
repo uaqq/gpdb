@@ -127,7 +127,7 @@ static const OID lag_func_oids[] =
 //---------------------------------------------------------------------------
 CTranslatorQueryToDXL::CTranslatorQueryToDXL
 	(
-	IMemoryPool *mp,
+	CMemoryPool *mp,
 	CMDAccessor *md_accessor,
 	CIdGenerator *m_colid_counter,
 	CIdGenerator *cte_id_counter,
@@ -237,7 +237,7 @@ CTranslatorQueryToDXL::CTranslatorQueryToDXL
 CTranslatorQueryToDXL *
 CTranslatorQueryToDXL::QueryToDXLInstance
 	(
-	IMemoryPool *mp,
+	CMemoryPool *mp,
 	CMDAccessor *md_accessor,
 	CIdGenerator *m_colid_counter,
 	CIdGenerator *cte_id_counter,
@@ -406,9 +406,13 @@ CTranslatorQueryToDXL::CheckSupportedCmdType
 
 	if (CMD_SELECT == query->commandType)
 	{
-		if (!optimizer_enable_ctas && NULL != query->intoClause)
+		if (!optimizer_enable_ctas && (NULL != query->intoClause || query->isCopy))
 		{
 			GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature, GPOS_WSZ_LIT("CTAS. Set optimizer_enable_ctas to on to enable CTAS with GPORCA"));
+		}
+		if (query->isCopy)
+		{
+			GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature, GPOS_WSZ_LIT("COPY. Copy select statement to file on segment is not supported with GPORCA"));
 		}
 		
 		// supported: regular select or CTAS when it is enabled
@@ -626,7 +630,7 @@ CTranslatorQueryToDXL::TranslateQueryToDXL()
 	switch (m_query->commandType)
 	{
 		case CMD_SELECT:
-			if (NULL == m_query->intoClause)
+			if (NULL == m_query->intoClause && !m_query->isCopy)
 			{
 				return TranslateSelectQueryToDXL();
 			}
@@ -4242,7 +4246,7 @@ CTranslatorQueryToDXL::ConstructCTEAnchors
 ULongPtrArray *
 CTranslatorQueryToDXL::GenerateColIds
 	(
-	IMemoryPool *mp,
+	CMemoryPool *mp,
 	ULONG size
 	)
 	const
@@ -4268,7 +4272,7 @@ CTranslatorQueryToDXL::GenerateColIds
 ULongPtrArray *
 CTranslatorQueryToDXL::ExtractColIds
 	(
-	IMemoryPool *mp,
+	CMemoryPool *mp,
 	IntToUlongMap *attno_to_colid_mapping
 	)
 	const
@@ -4306,7 +4310,7 @@ CTranslatorQueryToDXL::ExtractColIds
 IntToUlongMap *
 CTranslatorQueryToDXL::RemapColIds
 	(
-	IMemoryPool *mp,
+	CMemoryPool *mp,
 	IntToUlongMap *attno_to_colid_mapping,
 	ULongPtrArray *from_list_colids,
 	ULongPtrArray *to_list_colids
