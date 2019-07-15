@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------
 
-![Arenadata DB]
+Arenadata DB
 
 The Arenadata DB (ADB) is an advanced, fully featured, open
 source data warehouse, based on Greenplum Project. It provides powerful and rapid analytics on
