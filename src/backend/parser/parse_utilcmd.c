@@ -83,7 +83,6 @@ typedef struct
 	List	   *grants;			/* GRANT items */
 } CreateSchemaStmtContext;
 
-
 static void transformColumnDefinition(ParseState *pstate,
 						  CreateStmtContext *cxt,
 						  ColumnDef *column);
@@ -1694,100 +1693,151 @@ transformDistributedBy(ParseState *pstate, CreateStmtContext *cxt,
 		policy->nattrs = 0;
 		if (!(distributedBy->length == 1 && linitial(distributedBy) == NULL))
 		{
-			foreach(keys, distributedBy)
+
+			typedef struct
 			{
-				char	   *key = strVal(lfirst(keys));
-				bool		found = false;
-				ColumnDef  *column = NULL;
-				ListCell   *columns;
+				char	*columnName;
+				Oid		typeOid;
+			} InheritColumn;
 
-				colindex = 0;
+			List* orderedColumns = NIL;
 
-				if (cxt->inhRelations)
+
+			if (cxt->inhRelations)
+			{
+				/* 
+				 * Get a list of unique columns in the right order 
+				 * from inherited (parent) tables 
+				 */
+				ListCell   *inher;
+
+				foreach(inher, cxt->inhRelations)
 				{
-					/* try inherited tables */
-					ListCell   *inher;
+					RangeVar   *inh = (RangeVar *) lfirst(inher);
+					Relation	rel;
+					int			count;
 
-					foreach(inher, cxt->inhRelations)
+					Assert(IsA(inh, RangeVar));
+					rel = heap_openrv(inh, AccessShareLock);
+					if (rel->rd_rel->relkind != RELKIND_RELATION)
+						ereport(ERROR,
+							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+							errmsg("inherited relation \"%s\" is not a table",
+									inh->relname)));
+					for (count = 0; count < rel->rd_att->natts; count++)
 					{
-						RangeVar   *inh = (RangeVar *) lfirst(inher);
-						Relation	rel;
-						int			count;
+						Form_pg_attribute inhattr = rel->rd_att->attrs[count];
+						char	*inhname = NameStr(inhattr->attname);
+						bool	found = false;		
 
-						Assert(IsA(inh, RangeVar));
-						rel = heap_openrv(inh, AccessShareLock);
-						if (rel->rd_rel->relkind != RELKIND_RELATION)
-							ereport(ERROR,
-									(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-							   errmsg("inherited relation \"%s\" is not a table",
-									  inh->relname)));
-						for (count = 0; count < rel->rd_att->natts; count++)
+						if (inhattr->attisdropped)
+							continue;
+
+						ListCell	*item;
+
+						foreach(item, orderedColumns)
 						{
-							Form_pg_attribute inhattr = rel->rd_att->attrs[count];
-							char	   *inhname = NameStr(inhattr->attname);
-
-							if (inhattr->attisdropped)
-								continue;
-							colindex++;
-							if (strcmp(key, inhname) == 0)
+							InheritColumn *col = (InheritColumn *) lfirst(item);
+							if (strcmp(col->columnName, inhname) == 0)
 							{
 								found = true;
-
 								break;
 							}
 						}
-						heap_close(rel, NoLock);
-						if (found)
-							elog(DEBUG1, "DISTRIBUTED BY clause refers to columns of inherited table");
-
-						if (found)
-							break;
-					}
-				}
-
-				if (!found)
-				{
-					foreach(columns, cxt->columns)
-					{
-						column = (ColumnDef *) lfirst(columns);
-						Assert(IsA(column, ColumnDef));
-						colindex++;
-
-						if (strcmp(column->colname, key) == 0)
+						if (!found)
 						{
-							Oid			typeOid;
-							int32		typmod;
-
-							typeOid = typenameTypeId(NULL, column->typeName, &typmod);
-							
-							/*
-							 * To be a part of a distribution key, this type must
-							 * be supported for hashing internally in Greenplum
-							 * Database. We check if the base type is supported
-							 * for hashing or if it is an array type (we support
-							 * hashing on all array types).
-							 */
-							if (!isGreenplumDbHashable(typeOid))
-							{
-								ereport(ERROR,
-										(errcode(ERRCODE_GP_FEATURE_NOT_SUPPORTED),
-										 errmsg("type \"%s\" can't be a part of a "
-												"distribution key",
-												format_type_be(typeOid))));
-							}
-
-							found = true;
-							break;
+							InheritColumn *col = (InheritColumn *) palloc(sizeof(InheritColumn));
+							col->columnName = inhname;
+							col->typeOid = inhattr->atttypid;
+							orderedColumns = lappend(orderedColumns, col);
+							elog(DEBUG1, "Add inherited column \"%s\" of type %d to a column list", 
+								inhname, inhattr->atttypid);
 						}
 					}
+					heap_close(rel, NoLock);
 				}
+			}
 
+			/* 
+			 * Add non-present columns from inheriting (child) table
+			 * to a column list with unique columns from interited 
+			 * (parent) tables.
+			 */
+			ListCell	*columns;
+
+			foreach(columns, cxt->columns)
+			{
+				ColumnDef *column =  (ColumnDef *) lfirst(columns);
+				ListCell	*inhColumn;
+				bool found = false;
+
+				foreach(inhColumn, orderedColumns)
+				{
+					InheritColumn *col = (InheritColumn *) lfirst(inhColumn);
+
+					if (strcmp(col->columnName, column->colname) == 0)
+					{
+						found = true;
+						break;
+					}
+				}
+				if (!found)
+				{
+					int32		typmod;
+					Oid typeOid = typenameTypeId(NULL, column->typeName, &typmod);					
+					InheritColumn *col = (InheritColumn *) palloc(sizeof(InheritColumn));
+					col->columnName = column->colname;
+					col->typeOid = typeOid;
+					orderedColumns = lappend(orderedColumns, col);
+					elog(DEBUG1, "Add column \"%s\" of type %d to a column list", 
+						column->colname, typeOid);
+				}
+			}
+
+			/* Find distribution keys in an ordered list of columns. */
+			foreach(keys, distributedBy)
+			{
+				char		*key = strVal(lfirst(keys));
+				bool		found = false;
+				ListCell	*item;
+
+				colindex = 0;
+				foreach(item, orderedColumns)
+				{
+					InheritColumn *col = (InheritColumn *) lfirst(item);
+					colindex++;
+					elog(DEBUG1, "Iterating column list: column \"%s\", number %d", 
+						col->columnName, colindex);
+					if (strcmp(key, col->columnName) == 0)
+					{	
+						/*
+						 * To be a part of a distribution key, this type must
+						 * be supported for hashing internally in Greenplum
+						 * Database. We check if the base type is supported
+						 * for hashing or if it is an array type (we support
+						 * hashing on all array types).
+						 */
+						if (!isGreenplumDbHashable(col->typeOid))
+						{
+							ereport(ERROR,
+									(errcode(ERRCODE_GP_FEATURE_NOT_SUPPORTED),
+										errmsg("type \"%s\" can't be a part of a "
+											"distribution key",
+											format_type_be(col->typeOid))));
+						}
+						elog(DEBUG1, "Distribution key \"%s\" matched a column \"%s\" with number %d in a column list", 
+							key, col->columnName, colindex);
+						found = true;
+
+						break;
+					}
+				}
 				/*
-				* In the ALTER TABLE case, don't complain about index keys
-				* not created in the command; they may well exist already.
-				* DefineIndex will complain about them if not, and will also
-				* take care of marking them NOT NULL.
-				*/
+				 * In the ALTER TABLE case, don't complain about index keys
+				 * not created in the command; they may well exist already.
+				 * DefineIndex will complain about them if not, and will also
+				 * take care of marking them NOT NULL.
+				 */
 				if (!found && !cxt->isalter)
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
