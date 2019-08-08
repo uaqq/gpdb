@@ -129,6 +129,14 @@ CREATE TABLE b_points (
 ) INHERITS (points) distributed by (b, c);
 select attrnums from gp_distribution_policy where localoid = 'b_points'::regclass;
 
+CREATE TABLE c_points (
+    b     int,
+    p     point,
+    d     int,
+    c     int
+) INHERITS (points, b_points, a_points) distributed by (b, c);
+select attrnums from gp_distribution_policy where localoid = 'c_points'::regclass;
+
 -- Check distribution on non-hashable column in a parent table
 CREATE TABLE c_points (
     c     int

@@ -188,6 +188,23 @@ select attrnums from gp_distribution_policy where localoid = 'b_points'::regclas
  {2,3}
 (1 row)
 
+CREATE TABLE c_points (
+    b     int,
+    p     point,
+    d     int,
+    c     int
+) INHERITS (points, b_points, a_points) distributed by (b, c);
+NOTICE:  merging multiple inherited definitions of column "p"
+NOTICE:  merging multiple inherited definitions of column "p"
+NOTICE:  merging column "b" with inherited definition
+NOTICE:  merging column "p" with inherited definition
+NOTICE:  merging column "c" with inherited definition
+select attrnums from gp_distribution_policy where localoid = 'c_points'::regclass;
+ attrnums 
+----------
+ {2,3}
+  (1 row)
+
 -- Check distribution on non-hashable column in a parent table
 CREATE TABLE c_points (
     c     int
