@@ -381,7 +381,20 @@ CConfigParamMapping::SConfigMappingElem CConfigParamMapping::m_elements[] =
 		&optimizer_enable_full_join,
 		false, // m_negate_param
 		GPOS_WSZ_LIT("Enable Expand Full Join transform for converting FULL JOIN into UNION ALL.")
+		},
+		{
+		EopttracePenalizeSkewedHashJoin,
+		&optimizer_penalize_skew,
+		true, // m_negate_param
+		GPOS_WSZ_LIT("Penalize a hash join with a skewed redistribute as a child.")
+		},
+		{
+		EopttraceTranslateUnusedColrefs,
+		&optimizer_prune_unused_columns,
+		true, // m_negate_param
+		GPOS_WSZ_LIT("Prune unused columns from the query.")
 		}
+	
 };
 
 //---------------------------------------------------------------------------
