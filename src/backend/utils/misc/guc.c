@@ -5673,18 +5673,31 @@ set_config_by_name(PG_FUNCTION_ARGS)
 					  is_local ? GUC_ACTION_LOCAL : GUC_ACTION_SET,
 					  true);
 
-    if (Gp_role == GP_ROLE_DISPATCH && !IsBootstrapProcessingMode())
-    {
-			StringInfoData buffer;
-			initStringInfo(&buffer);
-			appendStringInfo(&buffer, "SET ");
-			if (is_local)
-					appendStringInfo(&buffer, "LOCAL ");
-			appendStringInfo(&buffer, "%s TO '%s'", name, value);
-			CdbDispatchSetCommand(buffer.data,
-								   false /* cancelOnError */,
-								   false /* no two phase commit */);
-    }
+	if (Gp_role == GP_ROLE_DISPATCH && !IsBootstrapProcessingMode())
+	{
+		StringInfoData	buffer;
+		const char	   *quoted_name;
+		const char	   *quoted_value = NULL;
+
+		initStringInfo(&buffer);
+
+		quoted_name = quote_literal_internal(name);
+		if (value)
+			quoted_value = quote_literal_internal(value);
+
+		appendStringInfo(&buffer, "SELECT pg_catalog.set_config(%s, %s, %s)",
+						 quoted_name,
+						 quoted_value ? quoted_value : "NULL",
+						 is_local ? "true" : "false");
+
+		if (quoted_value)
+			pfree((char *) quoted_value);
+		pfree((char *) quoted_name);
+
+		CdbDispatchSetCommand(buffer.data,
+		                      false /* cancelOnError */,
+		                      false /* need two phase */);
+	}
 
 	/* get the new current value */
 	new_value = GetConfigOptionByName(name, NULL);
