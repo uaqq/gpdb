@@ -13,6 +13,7 @@
 
 #include "access/transam.h"
 #include "catalog/pg_class.h"
+#include "info_gp.h"
 
 
 static void create_rel_filename_map(const char *old_data, const char *new_data,
@@ -414,6 +415,28 @@ get_db_infos(ClusterInfo *cluster)
 	cluster->dbarr.ndbs = ntups;
 }
 
+static char *
+get_tablespace_path_for_old_cluster(OldTablespaceFileContents *contents, Oid tablespace_oid)
+{
+	GetTablespacePathResponse response = gp_get_tablespace_path(
+		old_cluster.old_tablespace_file_contents, tablespace_oid);
+
+	switch (response.code)
+	{
+		case GetTablespacePathResponse_FOUND:
+			return pg_strdup(response.tablespace_path);
+		case GetTablespacePathResponse_MISSING_FILE:
+			pg_fatal("expected pg_upgrade to receive an "
+			         "old-tablespaces-file argument in order to "
+			         "determine GPDB5 tablespace locations\n");
+		case GetTablespacePathResponse_NOT_FOUND_IN_FILE:
+			pg_fatal("expected the old tablespace file to "
+			         "contain a tablespace entry for tablespace oid = %u\n",
+			         tablespace_oid);
+		default:
+			pg_fatal("unknown get tablespace path response\n");
+	}
+}
 
 /*
  * get_rel_infos()
@@ -459,6 +482,7 @@ get_rel_infos(ClusterInfo *cluster, DbInfo *dbinfo)
 	int			numeric_rel_num = 0;
 	char		typestr[QUERY_ALLOC];
 	int			i;
+	Oid tablespace_oid;
 
 	/*
 	 * If we are upgrading from Greenplum 4.3.x we need to record which rels
@@ -666,14 +690,26 @@ get_rel_infos(ClusterInfo *cluster, DbInfo *dbinfo)
 		curr->relfilenode = atooid(PQgetvalue(res, relnum, i_relfilenode));
 		curr->tblsp_alloc = false;
 
+		tablespace_oid = atooid(PQgetvalue(res, relnum, i_reltablespace));
+
 		/* Is the tablespace oid non-zero? */
-		if (atooid(PQgetvalue(res, relnum, i_reltablespace)) != 0)
+		if (tablespace_oid != 0)
 		{
-			/*
-			 * The tablespace location might be "", meaning the cluster
-			 * default location, i.e. pg_default or pg_global.
-			 */
-			tablespace = PQgetvalue(res, relnum, i_spclocation);
+			bool is_old_cluster = old_cluster.major_version == cluster->major_version;
+
+			if (is_old_cluster && is_gpdb_version_with_filespaces(&old_cluster))
+			{
+				tablespace = get_tablespace_path_for_old_cluster(
+					old_cluster.old_tablespace_file_contents,
+					tablespace_oid);
+			}
+			else {
+				/*
+				 * The tablespace location might be "", meaning the cluster
+				 * default location, i.e. pg_default or pg_global.
+				 */
+				tablespace = PQgetvalue(res, relnum, i_spclocation);
+			}
 
 			/* Can we reuse the previous string allocation? */
 			if (last_tablespace && strcmp(tablespace, last_tablespace) == 0)
