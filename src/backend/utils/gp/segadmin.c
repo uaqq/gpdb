@@ -1404,6 +1404,8 @@ gp_remove_segment_persistent_entries(PG_FUNCTION_ARGS)
 	int16 mirdbid;
 	seginfo seg;
 
+        pg_sleep(60);
+
 	if (PG_ARGISNULL(0))
 		elog(ERROR, "dbid cannot be NULL");
 	if (PG_ARGISNULL(1))
