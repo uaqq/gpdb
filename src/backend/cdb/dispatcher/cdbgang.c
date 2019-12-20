@@ -531,6 +531,12 @@ buildGangDefinition(GangType type, int gang_id, int size, int content)
 			cdbinfo = &cdb_component_dbs->segment_db_info[i];
 			if (SEGMENT_IS_ACTIVE_PRIMARY(cdbinfo))
 			{
+				if (segCount >= size)
+				{
+					FtsReConfigureMPP(false);
+					elog(ERROR, "Not all primary segment instances are active and connected");
+				}
+
 				segdbDesc = &newGangDefinition->db_descriptors[segCount];
 				cdbInfoCopy = copyCdbComponentDatabaseInfo(cdbinfo);
 				cdbconn_initSegmentDescriptor(segdbDesc, cdbInfoCopy);
@@ -544,6 +550,7 @@ buildGangDefinition(GangType type, int gang_id, int size, int content)
 			FtsReConfigureMPP(false);
 			elog(ERROR, "Not all primary segment instances are active and connected");
 		}
+
 		break;
 
 	default:
@@ -1207,6 +1214,7 @@ void DisconnectAndDestroyAllGangs(bool resetSession)
 	 */
 	if (NULL != GangContext)
 	{
+		destroyCdbSegmentIPCache();
 		MemoryContextReset(GangContext);
 		cdb_component_dbs = NULL;
 	}
