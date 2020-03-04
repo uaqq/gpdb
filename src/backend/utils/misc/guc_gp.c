@@ -128,8 +128,6 @@ extern struct config_generic *find_option(const char *name, bool create_placehol
 
 extern bool enable_partition_rules;
 
-extern int listenerBacklog;
-
 /* GUC lists for gp_guc_list_show().  (List of struct config_generic) */
 List	   *gp_guc_list_for_explain;
 List	   *gp_guc_list_for_no_plan;
@@ -4116,7 +4114,7 @@ struct config_int ConfigureNamesInt_gp[] =
 
 	{
 		{"gp_interconnect_tcp_listener_backlog", PGC_USERSET, GP_ARRAY_TUNING,
-			gettext_noop("Size of the listening queue for each TCP interconnect socket"),
+			gettext_noop("Size of the listening queue for each TCP interconnect socket and sequence server socket"),
 			gettext_noop("Cooperate with kernel parameter net.core.somaxconn and net.ipv4.tcp_max_syn_backlog to tune network performance."),
 			GUC_NOT_IN_SAMPLE | GUC_GPDB_ADDOPT
 		},
@@ -4820,7 +4818,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_SUPERUSER_ONLY |  GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_GPDB_ADDOPT
 		},
 		&dtx_phase2_retry_count,
-		2, 0, 15, NULL, NULL
+		10, 0, INT_MAX, NULL, NULL
 	},
 
 	{
@@ -5127,7 +5125,7 @@ struct config_string ConfigureNamesString_gp[] =
 	{
 		{"optimizer_cost_model", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Set optimizer cost model."),
-			gettext_noop("Valid values are legacy, calibrated"),
+			gettext_noop("Valid values are legacy, calibrated, experimental"),
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
 		},
 		&optimizer_cost_model_str,
@@ -5838,6 +5836,10 @@ assign_optimizer_cost_model(const char *val, bool assign, GucSource source)
 	else if (pg_strcasecmp(val, "calibrated") == 0 && assign)
 	{
 		optimizer_cost_model = OPTIMIZER_GPDB_CALIBRATED;
+	}
+	else if (pg_strcasecmp(val, "experimental") == 0 && assign)
+	{
+		optimizer_cost_model = OPTIMIZER_GPDB_EXPERIMENTAL;
 	}
 	else
 	{
