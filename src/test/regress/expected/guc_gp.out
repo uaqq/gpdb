@@ -148,3 +148,40 @@ SELECT to_timestamp(b)::timestamp WITH TIME ZONE AS b_ts FROM timezone_table ORD
  Wed Dec 13 04:36:04 2017 +04:30
 (4 rows)
 
+--
+-- Test DISCARD TEMP.
+--
+-- There's a test like this in upstream 'guc' test, but this expanded version
+-- verifies that temp tables are dropped on segments, too.
+--
+CREATE TEMP TABLE reset_test ( data text ) ON COMMIT DELETE ROWS;
+DISCARD TEMP;
+-- Try to create a new temp table with same. Should work.
+CREATE TEMP TABLE reset_test ( data text ) ON COMMIT PRESERVE ROWS;
+-- Now test that the effects of DISCARD TEMP can be rolled back
+BEGIN;
+DISCARD TEMP;
+ROLLBACK;
+-- the table should still exist.
+INSERT INTO reset_test VALUES (1);
+-- Unlike DISCARD TEMP, DISCARD ALL cannot be run in a transaction.
+BEGIN;
+DISCARD ALL;
+ERROR:  DISCARD ALL cannot run inside a transaction block
+COMMIT;
+-- the table should still exist.
+INSERT INTO reset_test VALUES (2);
+SELECT * FROM reset_test;
+ data 
+------
+ 1
+ 2
+(2 rows)
+
+-- Also DISCARD ALL does not have cluster wide effects. CREATE will fail as the
+-- table will not be dropped in the segments.
+DISCARD ALL;
+NOTICE:  command without clusterwide effect
+HINT:  Concider alternatives as DEALLOCATE ALL, or DISCARD TEMP if a clusterwide effect is desired.
+CREATE TEMP TABLE reset_test ( data text ) ON COMMIT PRESERVE ROWS;
+ERROR:  relation "reset_test" already exists  (seg0 127.0.1.1:7002 pid=26153)
