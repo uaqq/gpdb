@@ -526,6 +526,9 @@ CConfigParamMapping::PackConfigParamInBitset
 		case JOIN_ORDER_EXHAUSTIVE_SEARCH:
 			join_heuristic_bitset = CXform::PbsJoinOrderOnExhaustiveXforms(mp);
 			break;
+		case JOIN_ORDER_EXHAUSTIVE2_SEARCH:
+			join_heuristic_bitset = CXform::PbsJoinOrderOnExhaustive2Xforms(mp);
+			break;
 		default:
 			elog(ERROR, "Invalid value for optimizer_join_order, must \
 				 not come here");
@@ -553,6 +556,9 @@ CConfigParamMapping::PackConfigParamInBitset
 	{
 		traceflag_bitset->ExchangeSet(EopttraceCalibratedBitmapIndexCostModel);
 	}
+
+	// Keep current behavior for range predicates in DPE for 5x
+	traceflag_bitset->ExchangeSet(EopttraceAllowGeneralPredicatesforDPE);
 
 	return traceflag_bitset;
 }
