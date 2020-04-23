@@ -34,6 +34,7 @@
 #include "postmaster/primary_mirror_mode.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/faultinjector.h"
 
 #define MASTER_ONLY 0x1
 #define UTILITY_MODE 0x2
@@ -1479,6 +1480,8 @@ gp_add_segment_persistent_entries(PG_FUNCTION_ARGS)
 	MemSet(&seg, 0, sizeof(seginfo));
 	seg.db.dbid = mirdbid;
 	seg.db.role = SEGMENT_ROLE_MIRROR;
+
+	SIMPLE_FAULT_INJECTOR(AddSegmentPersistentEntries);
 
 	add_segment_persistent_entries(dbid, &seg, fsmap);
 

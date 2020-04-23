@@ -371,6 +371,8 @@ FaultInjectorIdentifierEnumToString[] = {
 		/* inject fault inside dynamic index scan after context reset */
 	_("dynamic_index_scan_context_reset"),
 		/* inject fault when creating new TOAST tables, to modify the chunk size */
+	_("add_segment_persistent_entries"),
+		/* inject fault when add segment persistent entries */
 	_("not recognized"),
 };
 
