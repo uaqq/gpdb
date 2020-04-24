@@ -33,13 +33,14 @@ begin /*in func*/
 end $$ /*in func*/
 language plpgsql;
 
--- Stop content 0 primary and let the mirror take over
+-- Stop content 0 mirror
 select stop_segment(fselocation) from pg_filespace_entry fe, gp_segment_configuration c, pg_filespace f
 where fe.fsedbid = c.dbid and c.content=0 and c.role='m' and f.oid = fe.fsefsoid and f.fsname = 'pg_system';
 
 select wait_for_content0('c');
 
-SELECT gp_inject_fault('add_segment_persistent_entries', 'sleep', '', '', '', 1, 70, 2::smallint);
+SELECT gp_inject_fault('add_segment_persistent_entries', 'sleep', '', '', '', 1, 70,
+(select dbid from gp_segment_configuration where content = 0 and role = 'p'));
 
 -- start_ignore
 \! gprecoverseg -a -F;
@@ -47,4 +48,5 @@ SELECT gp_inject_fault('add_segment_persistent_entries', 'sleep', '', '', '', 1,
 
 select wait_for_content0('s');
 
-select gp_inject_fault('add_segment_persistent_entries', 'reset', 2);
+select gp_inject_fault('add_segment_persistent_entries', 'reset',
+(select dbid from gp_segment_configuration where content = 0 and role = 'p'));
