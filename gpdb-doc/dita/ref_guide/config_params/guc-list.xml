@@ -5139,6 +5139,38 @@
             <codeph>gp_resource_group_memory_limit</codeph> setting.</p></note>
     </body>
   </topic>
+  <topic id="gp_resource_group_queuing_timeout">
+    <title>gp_resource_group_queuing_timeout</title>
+    <body>
+      <note>The <codeph>gp_resource_group_queuing_timeout</codeph> server configuration parameter
+        is enforced only when resource group-based resource management is active.</note>
+      <p>Cancel a transaction queued in a resource group that waits longer than the
+        specified number of milliseconds. The time limit applies separately to each
+        transaction. The default value is zero; transactions are queued indefinitely
+        and never time out.</p>
+      <table id="gp_resource_group_queuing_timeout_table">
+        <tgroup cols="3">
+          <colspec colnum="1" colname="col1" colwidth="1*"/>
+          <colspec colnum="2" colname="col2" colwidth="1*"/>
+          <colspec colnum="3" colname="col3" colwidth="1*"/>
+          <thead>
+            <row>
+              <entry colname="col1">Value Range</entry>
+              <entry colname="col2">Default</entry>
+              <entry colname="col3">Set Classifications</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry colname="col1">0 - <codeph>INT_MAX</codeph> millisecs</entry>
+              <entry colname="col2">0 millisecs</entry>
+              <entry colname="col3">master<p>system</p><p>session</p><p>reload</p></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </body>
+  </topic>
   <topic id="gp_resource_manager">
     <title>gp_resource_manager</title>
     <body>
@@ -9340,6 +9372,8 @@
         is pgsql, perl, tcl, or python. By preloading a shared library, the library startup time is
         avoided when the library is first used. If a specified library is not found, the server will
         fail to start.</p>
+      <note>When you add a library to <codeph>shared_preload_libraries</codeph>, be sure to
+        retain any previous setting of the parameter.</note>
       <table id="shared_preload_libraries_table">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
@@ -9916,7 +9950,6 @@ statement_mem = rg_perseg_mem / max_expected_concurrent_queries</codeblock></li>
           <codeph>/tmp/</codeph>.</p>
       <note type="important">Do not change the value of this parameter. The default location is
         required for Greenplum Database utilities.</note>
-      <note>This parameter is deprecated and will be removed in a future release.</note>
       <table id="unix_socket_directory_table">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
