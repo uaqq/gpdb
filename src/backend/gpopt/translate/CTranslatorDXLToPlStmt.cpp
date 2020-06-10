@@ -3175,6 +3175,8 @@ CTranslatorDXLToPlStmt::TranslateDXLMaterialize
 	CDXLPhysicalMaterialize *materialize_dxlop = CDXLPhysicalMaterialize::Cast(materialize_dxlnode->GetOperator());
 
 	materialize->cdb_strict = materialize_dxlop->IsEager();
+	// ensure that executor actually materializes results
+	materialize->cdb_shield_child_from_rescans = true;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -5579,6 +5581,7 @@ CTranslatorDXLToPlStmt::TranslateDXLBitmapBoolOp
 	if (CDXLScalarBitmapBoolOp::EdxlbitmapAnd == sc_bitmap_boolop_dxlop->GetDXLBitmapOpType())
 	{
 		BitmapAnd *bitmapand = MakeNode(BitmapAnd);
+		bitmapand->plan.plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
 		bitmapand->bitmapplans = child_plan_list;
 		bitmapand->plan.targetlist = NULL;
 		bitmapand->plan.qual = NULL;
@@ -5587,6 +5590,7 @@ CTranslatorDXLToPlStmt::TranslateDXLBitmapBoolOp
 	else
 	{
 		BitmapOr *bitmapor = MakeNode(BitmapOr);
+		bitmapor->plan.plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
 		bitmapor->bitmapplans = child_plan_list;
 		bitmapor->plan.targetlist = NULL;
 		bitmapor->plan.qual = NULL;
