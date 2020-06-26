@@ -253,6 +253,14 @@ ifdef ADDON_DIR
 CONFIGFLAGS+=ADDON_DIR=$(ADDON_DIR)
 endif
 
+# if $BLD_ARCH is rhel6_x86_64 of rhel7_x86_64
+# compile with relative rpath
+ifeq "$(findstring rhel,$(BLD_ARCH))" "rhel"
+CONFIGFLAGS+= --disable-rpath
+CONFIGFLAGS+= LDFLAGS='-Wl,--enable-new-dtags -Wl,-rpath,\$$$$ORIGIN/../lib'
+CONFIGFLAGS+= LDFLAGS_SL='-Wl,--enable-new-dtags -Wl,-rpath,\$$$$ORIGIN/../lib'
+endif
+
 RECONFIG :
 	rm -f Debug/GNUmakefile
 	rm -f Release/GNUmakefile
@@ -330,11 +338,18 @@ sol10_sparc_32_GPDB_BUILDSET=partial
 win64_GPDB_BUILDSET=partial
 win32_GPDB_BUILDSET=partial
 BLD_GPDB_BUILDSET=$($(BLD_ARCH)_GPDB_BUILDSET)
+perl_archlibexp:=$(shell perl -MConfig -e 'print $$Config{archlibexp}')
 
 # set default build steps
 define BUILD_STEPS
 	@rm -rf $(INSTLOC)
-	cd $(BUILDDIR) && $(MAKE) $(PARALLEL_MAKE_OPTS) install
+	if [ "$(findstring rhel,$(BLD_ARCH))" = "rhel" ]; then \
+	  cd $(BUILDDIR) && PYGRESQL_LDFLAGS='-Wl,-rpath,\$$$$ORIGIN/../../../lib -Wl,--enable-new-dtags' $(MAKE) $(PARALLEL_MAKE_OPTS) install; \
+	  cd $(BUILDDIR)/src/pl/plpython && $(MAKE) clean && echo 'LDFLAGS += -Wl,-rpath,\$$$$ORIGIN/../../ext/python/lib/ -Wl,--enable-new-dtags' >> Makefile && echo 'LDFLAGS_SL += -Wl,-rpath,\$$$$ORIGIN/../../ext/python/lib/ -Wl,--enable-new-dtags' >> Makefile && $(MAKE) $(PARALLEL_MAKE_OPTS) install && cd $(BUILDDIR) ; \
+	  cd $(BUILDDIR)/src/pl/plperl && $(MAKE) clean && echo "LDFLAGS += -Wl,-rpath,$(perl_archlibexp)/CORE -Wl,--enable-new-dtags" >> GNUmakefile && echo "LDFLAGS_SL += -Wl,-rpath,$(perl_archlibexp)/CORE -Wl,--enable-new-dtags" >> GNUmakefile && $(MAKE) $(PARALLEL_MAKE_OPTS) install && cd $(BUILDDIR) ; \
+	else \
+	  cd $(BUILDDIR) && $(MAKE) $(PARALLEL_MAKE_OPTS) install; \
+	fi \
 	#@$(MAKE) greenplum_path INSTLOC=$(INSTLOC)
 	#@$(MAKE) mgmtcopy INSTLOC=$(INSTLOC)
 	@$(MAKE) mkpgbouncer INSTLOC=$(INSTLOC) BUILDDIR=$(BUILDDIR)
