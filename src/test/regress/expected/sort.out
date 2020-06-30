@@ -588,3 +588,29 @@ select col1, col2, col3, col4, col5 from gpsort_alltypes order by col5 desc, col
   99999999999999999 |       312394234 | 1    | 0000 | f
  (4 rows)
  
+-- Check that the sort order of russian characters
+-- is the same for gp_enable_mk_sort 'on' and 'off'
+-- start_ignore
+create function mk_sort_on() returns table (a bigint, b text) as $$
+begin
+    set gp_enable_mk_sort = on;
+    return query
+        with t(c) as (values ('б б'), ('бб ') order by 1)
+        select row_number() over() as n, c from t;
+end;
+$$ language plpgsql;
+create function mk_sort_off() returns table (a bigint, b text) as $$
+begin
+    set gp_enable_mk_sort = off;
+    return query
+        with t(c) as (values ('б б'), ('бб ') order by 1)
+        select row_number() over() as n, c from t;
+end;
+$$ language plpgsql;
+-- end_ignore
+select count(*) from mk_sort_on() natural join mk_sort_off();
+  count 
+ -------
+      2
+ (1 row)
+

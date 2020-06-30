@@ -110,3 +110,24 @@ select col1, col2, col3, col4, col5 from gpsort_alltypes order by col1, col2, co
 select col1, col2, col3, col4, col5 from gpsort_alltypes order by col3 desc, col2 asc, col1, col4, col5;
 select col1, col2, col3, col4, col5 from gpsort_alltypes order by col5 desc, col3 asc, col2 desc, col4 asc, col1 desc;
 
+-- Check that the sort order of russian characters
+-- is the same for gp_enable_mk_sort 'on' and 'off'
+-- start_ignore
+create function mk_sort_on() returns table (a bigint, b text) as $$
+begin
+    set gp_enable_mk_sort = on;
+    return query
+        with t(c) as (values ('б б'), ('бб ') order by 1)
+        select row_number() over() as n, c from t;
+end;
+$$ language plpgsql;
+create function mk_sort_off() returns table (a bigint, b text) as $$
+begin
+    set gp_enable_mk_sort = off;
+    return query
+        with t(c) as (values ('б б'), ('бб ') order by 1)
+        select row_number() over() as n, c from t;
+end;
+$$ language plpgsql;
+-- end_ignore
+select count(*) from mk_sort_on() natural join mk_sort_off();
