@@ -587,4 +587,23 @@ select col1, col2, col3, col4, col5 from gpsort_alltypes order by col5 desc, col
     122223333333366 | 423402340240234 | 1    | 0100 | f
   99999999999999999 |       312394234 | 1    | 0000 | f
  (4 rows)
- 
+
+--
+-- Test strxfrm()/strcoll() sort order inconsistency in a
+-- merge join with russian characters and default collation
+--
+set gp_enable_mk_sort = on;
+set enable_hashjoin = off;
+with t as (
+    select * from (values ('б б'), ('бб ')) as t1(b)
+    full join (values ('б б'), ('бб ')) as t2(b)
+    using (b)
+)
+select count(*) from t;
+ count 
+-------
+     2
+(1 row)
+
+reset gp_enable_mk_sort;
+reset enable_hashjoin;
