@@ -732,6 +732,11 @@ create_mksort_context(
 
 			if (sinfo->scanKey.sk_func.fn_addr == btint4cmp)
 				sinfo->lvtype = MKLV_TYPE_INT32;
+/*
+ * Users who are certain that their glibc is not affected by strcoll() and strxfrm()
+ * inconsistency can speed up mk sort defining TRUST_STRXFRM_MK_SORT at compile time.
+ */
+#ifdef TRUST_STRXFRM_MK_SORT
 			if (!lc_collate_is_c())
 			{
 				if (sinfo->scanKey.sk_func.fn_addr == bpcharcmp)
@@ -739,6 +744,7 @@ create_mksort_context(
 				else if (sinfo->scanKey.sk_func.fn_addr == bttextcmp)
 					sinfo->lvtype = MKLV_TYPE_TEXT;
 			}
+#endif
 		}
 		else
 		{

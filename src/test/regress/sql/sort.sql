@@ -110,3 +110,20 @@ select col1, col2, col3, col4, col5 from gpsort_alltypes order by col1, col2, co
 select col1, col2, col3, col4, col5 from gpsort_alltypes order by col3 desc, col2 asc, col1, col4, col5;
 select col1, col2, col3, col4, col5 from gpsort_alltypes order by col5 desc, col3 asc, col2 desc, col4 asc, col1 desc;
 
+
+--
+-- Test strxfrm()/strcoll() sort order inconsistency in a
+-- merge join with russian characters and default collation
+--
+set gp_enable_mk_sort = on;
+set enable_hashjoin = off;
+
+with t as (
+    select * from (values ('б б'), ('бб ')) as t1(b)
+    full join (values ('б б'), ('бб ')) as t2(b)
+    using (b)
+)
+select count(*) from t;
+
+reset gp_enable_mk_sort;
+reset enable_hashjoin;
