@@ -213,6 +213,7 @@ make distclean
 ./configure --disable-orca --with-perl --with-python --with-libxml --prefix=/usr/local/gpdb
 ```
 
+<<<<<<< HEAD
 ### Building GPDB with PXF
 
 PXF is an extension framework for GPDB to enable fast access to external hadoop datasets.
@@ -233,6 +234,8 @@ compression option for append-only and append-only column-oriented tables.
 To build GPDB with Zstandard support, install packages `libzstd` and `libzstd-devel` and
 invoke `./configure` with an additional option `--with-zstd`.
 
+=======
+>>>>>>> 5.28.1
 ### Building GPDB with gpperfmon enabled
 
 gpperfmon tracks a variety of queries, statistics, system properties, and metrics.

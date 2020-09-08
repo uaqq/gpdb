@@ -159,8 +159,8 @@ endif
 
 APU_CONFIG=--with-apu-config=$(BLD_THIRDPARTY_BIN_DIR)/apu-1-config
 
-aix7_ppc_64_CONFIGFLAGS=--disable-gpcloud --without-readline --without-libcurl --disable-orca --disable-pxf $(APR_CONFIG)
-win32_CONFIGFLAGS=--with-gssapi --without-libcurl --disable-orca --disable-pxf --disable-gpcloud $(APR_CONFIG)
+aix7_ppc_64_CONFIGFLAGS=--disable-gpcloud --without-readline --without-libcurl --disable-orca $(APR_CONFIG)
+win32_CONFIGFLAGS=--with-gssapi --without-libcurl --disable-orca --disable-gpcloud $(APR_CONFIG)
 sol10_x86_64_CONFIGFLAGS=--enable-snmp --with-libxml $(APR_CONFIG)
 rhel5_x86_32_CONFIGFLAGS=--host=i686-pc-linux-gnu --enable-snmp --enable-ddboost --with-gssapi --enable-netbackup --with-libxml $(APR_CONFIG)
 rhel5_x86_64_CONFIGFLAGS=--enable-snmp --enable-gpperfmon --enable-ddboost --with-gssapi --enable-netbackup ${ORCA_CONFIG} --with-libxml $(APR_CONFIG) $(APU_CONFIG)
@@ -350,7 +350,6 @@ define BUILD_STEPS
 	else \
 	  cd $(BUILDDIR) && $(MAKE) $(PARALLEL_MAKE_OPTS) install; \
 	fi \
-	#@$(MAKE) greenplum_path INSTLOC=$(INSTLOC)
 	#@$(MAKE) mgmtcopy INSTLOC=$(INSTLOC)
 	@$(MAKE) mkpgbouncer INSTLOC=$(INSTLOC) BUILDDIR=$(BUILDDIR)
 	@$(MAKE) mkpgbench INSTLOC=$(INSTLOC) BUILDDIR=$(BUILDDIR)
@@ -360,6 +359,7 @@ define BUILD_STEPS
 	fi
 	@$(MAKE) copydocs INSTLOC=$(INSTLOC)
 	@$(MAKE) copylibs INSTLOC=$(INSTLOC)
+	@$(MAKE) greenplum_path INSTLOC=$(INSTLOC)
 	@$(MAKE) clients INSTLOC=$(INSTLOC) CLIENTINSTLOC=$(CLIENTINSTLOC)
 	@$(MAKE) set_scripts_version INSTLOC=$(CLIENTINSTLOC)
 	@$(MAKE) loaders INSTLOC=$(INSTLOC) LOADERSINSTLOC=$(LOADERSINSTLOC)
@@ -1057,8 +1057,12 @@ endif
 
 greenplum_path:
 	mkdir -p $(INSTLOC)
-	unset LIBPATH; \
-	  releng/generate-greenplum-path.sh $(INSTLOC) > $(INSTLOC)/greenplum_path.sh
+ifeq ($(BLD_ARCH),$(filter $(BLD_ARCH),ubuntu1604_amd64))
+	# python is not vendored in the enterpise builds of Ubuntu 16.04
+	$(BUILDDIR)/gpMgmt/bin/generate-greenplum-path.sh $(INSTLOC) no > $(INSTLOC)/greenplum_path.sh
+else
+	$(BUILDDIR)/gpMgmt/bin/generate-greenplum-path.sh $(INSTLOC) yes > $(INSTLOC)/greenplum_path.sh
+endif
 
 copylicense:
 	for proddir in $(INSTLOC) $(CLIENTINSTLOC) $(LOADERSINSTLOC); do \
