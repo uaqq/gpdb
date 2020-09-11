@@ -213,6 +213,7 @@ ShmemAlloc(Size size)
 	}
 
 	newFree = newStart + size;
+	elog(WARNING, "ShmemAlloc | NEXT free offset %lu / %lu", newFree, shmemseghdr->totalsize);
 	if (newFree <= shmemseghdr->totalsize)
 	{
 		newSpace = (void *) ((char *) ShmemBase + newStart);
@@ -220,6 +221,8 @@ ShmemAlloc(Size size)
 	}
 	else
 		newSpace = NULL;
+
+	elog(WARNING, "ShmemAlloc | Result %p", newSpace);
 
 	SpinLockRelease(ShmemLock);
 
