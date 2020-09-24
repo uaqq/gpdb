@@ -1368,3 +1368,124 @@ AppendOnlyBlockDirectory_End_addCol(
 
 	MemoryContextDelete(blockDirectory->memoryContext);
 }
+
+void AppendOnlyBlockDirectory_SampleBlocks(Relation aoRel, Snapshot snapshot)
+{
+	Oid blkdirrelid;
+	Oid blkdiridxid;
+	int totalSegfiles;
+	TupleDesc heapTupleDesc;
+
+	GetAppendOnlyEntryAuxOids(aoRel->rd_id, snapshot, NULL, &blkdirrelid, &blkdiridxid, NULL, NULL);
+	if (OidIsValid(blkdirrelid) && OidIsValid(blkdiridxid))
+	{
+		int i;
+		int natts;
+		bool *proj;
+		AppendOnlyBlockDirectory *blockDirectory;
+		FileSegInfo **rowFileSegInfo;
+		AOCSFileSegInfo **colFileSegInfo;
+		FileSegInfo *fsInfo;
+		int numScanKeys;
+
+		/* Initiallize the projection info, assumes the whole row */
+		natts = RelationGetNumberOfAttributes(aoRel);
+		proj = palloc(natts * sizeof(*proj));
+		MemSet(proj, true, natts * sizeof(*proj));
+
+		/* Initaillize segment files info */
+		if (RelationIsAoRows(aoRel))
+		{
+			rowFileSegInfo = GetAllFileSegInfo(aoRel, snapshot, &totalSegfiles);
+		}
+		else
+		{
+			colFileSegInfo = GetAllAOCSFileSegInfo(aoRel, snapshot, &totalSegfiles);
+		}
+
+		/* Initialize block directory */
+		blockDirectory = (AppendOnlyBlockDirectory *) palloc0(sizeof(AppendOnlyBlockDirectory));
+		AppendOnlyBlockDirectory_Init_forSearch(
+			blockDirectory,
+			snapshot,
+			RelationIsAoRows(aoRel) ? rowFileSegInfo : (FileSegInfo **) colFileSegInfo,
+			totalSegfiles,
+			aoRel,
+			natts,
+			RelationIsAoCols(aoRel),
+			proj
+		);
+		heapTupleDesc = RelationGetDescr(blockDirectory->blkdirRel);
+
+		/* Iterate over segments to collect sample minipage entries */
+		for (i = 0; i < totalSegfiles; i ++)
+		{
+			int tmpGroupNo;
+			bool found;
+			SysScanDesc sscan;
+			HeapTuple tuple = NULL;
+
+			fsInfo = blockDirectory->segmentFileInfo[i];
+			blockDirectory->currentSegmentFileInfo = fsInfo;
+			blockDirectory->currentSegmentFileNum = fsInfo->segno;
+
+
+
+			/* Search for the first valid column group to sample minipage entries. */
+			found = false;
+			for (tmpGroupNo = 0; tmpGroupNo < blockDirectory->numColumnGroups; tmpGroupNo++)
+			{
+				uint64 blockDirTuple_no;
+
+				if (blockDirectory->proj && !blockDirectory->proj[tmpGroupNo])
+				{
+					/* Ignore columns that are not projected. */
+					continue;
+				}
+
+				/*
+				 * Initialize scan keys for block directory auxiliary table
+				 * (only 'segno' and 'columngroup_no' columns are used)
+				 */
+				blockDirectory->scanKeys[0].sk_argument = Int32GetDatum(blockDirectory->currentSegmentFileNum);
+				blockDirectory->scanKeys[1].sk_argument = Int32GetDatum(tmpGroupNo);
+				numScanKeys = 2;
+
+				sscan = systable_beginscan(
+					blockDirectory->blkdirRel,
+					blkdiridxid,
+					true,
+					blockDirectory->appendOnlyMetaDataSnapshot,
+					numScanKeys,
+					blockDirectory->scanKeys
+				);
+				blockDirTuple_no = 0;
+				/* Extract minipages from the block directory */
+				// TODO: if blockdirectory was created for a AO table already hol;ding data it would be empty till the first insert
+				while((tuple = systable_getnext(sscan)) != NULL)
+				{
+					int entry_no;
+					MinipageEntry *entry;
+					MinipagePerColumnGroup *minipageInfo;
+
+					extract_minipage(blockDirectory, tuple, heapTupleDesc, tmpGroupNo);
+					minipageInfo = &blockDirectory->minipages[tmpGroupNo];
+					entry_no = 0;
+					while (entry_no < minipageInfo->numMinipageEntries)
+					{
+						entry = &minipageInfo->minipage->entry[entry_no];
+						elog(LOG, "TEST: segment file %d, column group %d, block directory tuple number %lu, minipage entry %d, tuples %lu, first row %lu",
+							i, tmpGroupNo, blockDirTuple_no, entry_no, entry->rowCount, entry->firstRowNum);
+						entry_no++;
+					}
+					blockDirTuple_no++;
+				}
+				systable_endscan(sscan);
+			}
+		}
+
+		/* Close block directory */
+		AppendOnlyBlockDirectory_End_forSearch(blockDirectory);
+	}
+
+}

@@ -225,4 +225,9 @@ extern void AppendOnlyBlockDirectory_DeleteSegmentFile(
 		Snapshot snapshot,
 		int segno,
 		int columnGroupNo);
+
+extern void AppendOnlyBlockDirectory_SampleBlocks(
+	Relation aoRel,
+	Snapshot snapshot
+);
 #endif

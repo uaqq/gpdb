@@ -1399,6 +1399,9 @@ acquire_sample_rows(Relation onerel, int elevel,
 	 */
 	if (RelationIsAppendOptimized(onerel))
 	{
+		AppendOnlyBlockDirectory_SampleBlocks(onerel, GetTransactionSnapshot());
+
+		/* one step tuple sampling */
 		BlockNumber pages;
 		double		tuples;
 		double		allvisfrac;
