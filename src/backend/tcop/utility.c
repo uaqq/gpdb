@@ -405,6 +405,8 @@ standard_ProcessUtility(Node *parsetree,
 	if (completionTag)
 		completionTag[0] = '\0';
 
+	debug_query_string = queryString;
+
 	switch (nodeTag(parsetree))
 	{
 			/*
