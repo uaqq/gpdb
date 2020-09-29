@@ -419,6 +419,8 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 	pstate = make_parsestate(NULL);
 	pstate->p_sourcetext = queryString;
 
+	debug_query_string = queryString;
+
 	switch (nodeTag(parsetree))
 	{
 			/*
