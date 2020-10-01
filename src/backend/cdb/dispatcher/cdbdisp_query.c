@@ -542,7 +542,7 @@ cdbdisp_buildUtilityQueryParms(struct Node *stmt,
 	}
 
 	pQueryParms = palloc0(sizeof(*pQueryParms));
-	pQueryParms->strCommand = debug_query_string;
+	pQueryParms->strCommand = PointerIsValid(debug_query_string) ? debug_query_string : "";
 	pQueryParms->serializedQuerytree = serializedQuerytree;
 	pQueryParms->serializedQuerytreelen = serializedQuerytree_len;
 	pQueryParms->serializedQueryDispatchDesc = serializedQueryDispatchDesc;
