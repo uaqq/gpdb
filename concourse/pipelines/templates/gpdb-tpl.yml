@@ -566,7 +566,7 @@ resources:
     bucket: {{gpdb-stable-builds-bucket-name}}
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
-    versioned_file: release_candidates/bin_gpdb_centos6/gpdb511X/bin_gpdb.tar.gz
+    versioned_file: release_candidates/bin_gpdb_centos6/gpdb5/bin_gpdb.tar.gz
 
 - name: bin_gpdb_centos7_rc
   type: s3
@@ -575,7 +575,7 @@ resources:
     bucket: {{gpdb-stable-builds-bucket-name}}
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
-    versioned_file: release_candidates/bin_gpdb_centos7/gpdb511X/bin_gpdb.tar.gz
+    versioned_file: release_candidates/bin_gpdb_centos7/gpdb5/bin_gpdb.tar.gz
 
 - name: bin_gpdb_sles11_rc
   type: s3
@@ -584,7 +584,7 @@ resources:
     bucket: {{gpdb-stable-builds-bucket-name}}
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
-    versioned_file: release_candidates/bin_gpdb_sles11/gpdb511X/bin_gpdb.tar.gz
+    versioned_file: release_candidates/bin_gpdb_sles11/gpdb5/bin_gpdb.tar.gz
 
 {% endif %}
 - name: compiled_bits_ubuntu16
