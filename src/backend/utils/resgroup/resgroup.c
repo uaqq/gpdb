@@ -85,6 +85,7 @@ bool						gp_log_resgroup_memory = false;
 int							gp_resgroup_memory_policy_auto_fixed_mem;
 bool						gp_resgroup_print_operator_memory_limits = false;
 int							memory_spill_ratio=20;
+bool						gp_resgroup_debug_wait_queue = true;
 
 /*
  * Data structures
@@ -232,15 +233,21 @@ struct ResGroupControl
 	bool			loaded;
 
 	int32			totalChunks;	/* total memory chunks on this segment */
-	volatile int32	freeChunks;		/* memory chunks not allocated to any group,
-									will be used for the query which group share
-									memory is not enough*/
+
 	/* 
 	 * Safe memory threshold:
 	 * if remained global shared memory is less than this threshold,
 	 * then the resource group memory usage is in red zone.
+	 * Note that safeChunksThreshold100 is 100 times bigger than the real safe chunks.
+	 * This is used to avoid rounding problem caused by runaway_detector_activation_percent.
 	 */
-	pg_atomic_uint32 safeChunksThreshold;
+	pg_atomic_uint32 safeChunksThreshold100;
+
+	/*
+	 * memory chunks not allocated to any group, will be used for the query
+	 * whose group share memory is not enough.
+	 */
+	pg_atomic_uint32 freeChunks;
 
 	int32			chunkSizeInBits;
 
@@ -340,6 +347,7 @@ static bool procIsWaiting(const PGPROC *proc);
 static void procWakeup(PGPROC *proc);
 static int slotGetId(const ResGroupSlotData *slot);
 static void groupWaitQueueValidate(const ResGroupData *group);
+static void groupWaitProcValidate(PGPROC *proc, PROC_QUEUE *head);
 static void groupWaitQueuePush(ResGroupData *group, PGPROC *proc);
 static PGPROC *groupWaitQueuePop(ResGroupData *group);
 static void groupWaitQueueErase(ResGroupData *group, PGPROC *proc);
@@ -356,6 +364,7 @@ static void resgroupDumpSlots(StringInfo str);
 static void resgroupDumpFreeSlots(StringInfo str);
 
 static void sessionSetSlot(ResGroupSlotData *slot);
+static void sessionResetSlot(void);
 static ResGroupSlotData *sessionGetSlot(void);
 
 static void bindGroupOperation(ResGroupData *group);
@@ -482,8 +491,8 @@ ResGroupControlInit(void)
     pResGroupControl->loaded = false;
     pResGroupControl->nGroups = MaxResourceGroups;
 	pResGroupControl->totalChunks = 0;
-	pResGroupControl->freeChunks = 0;
-	pg_atomic_init_u32(&pResGroupControl->safeChunksThreshold, 0);
+	pg_atomic_init_u32(&pResGroupControl->safeChunksThreshold100, 0);
+	pg_atomic_init_u32(&pResGroupControl->freeChunks, 0);
 	pResGroupControl->chunkSizeInBits = BITS_IN_MB;
 
 	for (i = 0; i < MaxResourceGroups; i++)
@@ -574,9 +583,9 @@ InitResGroups(void)
 
 	/* These initialization must be done before createGroup() */
 	decideTotalChunks(&pResGroupControl->totalChunks, &pResGroupControl->chunkSizeInBits);
-	pResGroupControl->freeChunks = pResGroupControl->totalChunks;
-	pg_atomic_write_u32(&pResGroupControl->safeChunksThreshold,
-						pResGroupControl->totalChunks * (100 - runaway_detector_activation_percent) / 100);
+	pg_atomic_write_u32(&pResGroupControl->freeChunks, pResGroupControl->totalChunks);
+	pg_atomic_write_u32(&pResGroupControl->safeChunksThreshold100,
+						pResGroupControl->totalChunks * (100 - runaway_detector_activation_percent));
 	if (pResGroupControl->totalChunks == 0)
 		ereport(PANIC,
 				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
@@ -1398,8 +1407,7 @@ groupIncMemUsage(ResGroupData *group, ResGroupSlotData *slot, int32 chunks)
 		int32 deltaGlobalSharedMemUsage = Max(0, deltaSharedMemUsage - oldSharedFree);
 
 		/* freeChunks -= deltaGlobalSharedMemUsage and get the new value */
-		int32 newFreeChunks = pg_atomic_sub_fetch_u32((pg_atomic_uint32 *)
-													  &pResGroupControl->freeChunks,
+		int32 newFreeChunks = pg_atomic_sub_fetch_u32(&pResGroupControl->freeChunks,
 													  deltaGlobalSharedMemUsage);
 		/* calculate the total over used chunks of global share */
 		globalOveruse = Max(0, 0 - newFreeChunks);
@@ -1450,8 +1458,7 @@ groupDecMemUsage(ResGroupData *group, ResGroupSlotData *slot, int32 chunks)
 		/* calculate the global share usage of current release */
 		int32 deltaGlobalSharedMemUsage = Min(grpTotalGlobalUsage, deltaSharedMemUsage);
 		/* add chunks to global shared memory */
-		pg_atomic_add_fetch_u32((pg_atomic_uint32 *)
-								&pResGroupControl->freeChunks,
+		pg_atomic_add_fetch_u32(&pResGroupControl->freeChunks,
 								deltaGlobalSharedMemUsage);
 		return deltaGlobalSharedMemUsage;
 	}
@@ -1647,8 +1654,7 @@ groupPutSlot(ResGroupData *group, ResGroupSlotData *slot)
 	 * Reset resource group slot for current session. Note MySessionState
 	 * could be reset as NULL in shmem_exit() before calling this function.
 	 */
-	if (MySessionState != NULL)
-		MySessionState->resGroupSlot = NULL;
+	sessionResetSlot();
 
 	/* And finally release the overused memory quota */
 	released = mempoolAutoRelease(group);
@@ -1932,14 +1938,12 @@ mempoolReserve(Oid groupId, int32 chunks)
 	/* Compare And Save to avoid concurrency problem without using lock */
 	while (true)
 	{
-		oldFreeChunks = pg_atomic_read_u32((pg_atomic_uint32 *)
-										   &pResGroupControl->freeChunks);
+		oldFreeChunks = pg_atomic_read_u32(&pResGroupControl->freeChunks);
 		reserved = Min(Max(0, oldFreeChunks), chunks);
 		newFreeChunks = oldFreeChunks - reserved;
 		if (reserved == 0)
 			break;
-		if (pg_atomic_compare_exchange_u32((pg_atomic_uint32 *)
-										   &pResGroupControl->freeChunks,
+		if (pg_atomic_compare_exchange_u32(&pResGroupControl->freeChunks,
 										   (uint32 *) &oldFreeChunks,
 										   (uint32) newFreeChunks))
 			break;
@@ -1948,8 +1952,17 @@ mempoolReserve(Oid groupId, int32 chunks)
 	/* also update the safeChunksThreshold which is used in runaway detector */
 	if (reserved != 0)
 	{
-		pg_atomic_sub_fetch_u32(&pResGroupControl->safeChunksThreshold,
-								reserved * (100 - runaway_detector_activation_percent) / 100);
+		uint32	safeChunksThreshold100;
+		int		safeChunksDelta100;
+		
+		safeChunksThreshold100 = (uint32) pg_atomic_read_u32(&pResGroupControl->safeChunksThreshold100);
+		safeChunksDelta100 = reserved * (100 - runaway_detector_activation_percent);
+
+		if (safeChunksThreshold100 < safeChunksDelta100)
+			elog(ERROR, "safeChunksThreshold: %u should be positive after mempool reserved: %d",
+				 safeChunksThreshold100, safeChunksDelta100);
+
+		pg_atomic_sub_fetch_u32(&pResGroupControl->safeChunksThreshold100, safeChunksDelta100);
 	}
 	LOG_RESGROUP_DEBUG(LOG, "allocate %u out of %u chunks to group %d",
 					   reserved, oldFreeChunks, groupId);
@@ -1970,13 +1983,12 @@ mempoolRelease(Oid groupId, int32 chunks)
 	Assert(LWLockHeldExclusiveByMe(ResGroupLock));
 	Assert(chunks >= 0);
 
-	newFreeChunks = pg_atomic_add_fetch_u32((pg_atomic_uint32 *)
-											&pResGroupControl->freeChunks,
+	newFreeChunks = pg_atomic_add_fetch_u32(&pResGroupControl->freeChunks,
 											chunks);
 
 	/* also update the safeChunksThreshold which is used in runaway detector */
-	pg_atomic_add_fetch_u32(&pResGroupControl->safeChunksThreshold,
-							chunks * (100 - runaway_detector_activation_percent) / 100);
+	pg_atomic_add_fetch_u32(&pResGroupControl->safeChunksThreshold100,
+							chunks * (100 - runaway_detector_activation_percent));
 
 	LOG_RESGROUP_DEBUG(LOG, "free %u to pool(%u) chunks from group %d",
 					   chunks, newFreeChunks - chunks, groupId);
@@ -2207,7 +2219,7 @@ notifyGroupsOnMem(Oid skipGroupId)
 		if (group->groupMemOps->group_mem_on_notify)
 			group->groupMemOps->group_mem_on_notify(group);
 
-		if (!pResGroupControl->freeChunks)
+		if (!pg_atomic_read_u32(&pResGroupControl->freeChunks))
 			break;
 	}
 }
@@ -3306,6 +3318,8 @@ slotGetId(const ResGroupSlotData *slot)
 static void
 lockResGroupForDrop(ResGroupData *group)
 {
+	if (group->lockedForDrop)
+		return;
 	Assert(LWLockHeldExclusiveByMe(ResGroupLock));
 	Assert(Gp_role == GP_ROLE_DISPATCH);
 	Assert(group->nRunning == 0);
@@ -3316,6 +3330,8 @@ lockResGroupForDrop(ResGroupData *group)
 static void
 unlockResGroupForDrop(ResGroupData *group)
 {
+	if (!group->lockedForDrop)
+		return;
 	Assert(LWLockHeldExclusiveByMe(ResGroupLock));
 	Assert(Gp_role == GP_ROLE_DISPATCH);
 	Assert(group->nRunning == 0);
@@ -3355,9 +3371,53 @@ groupWaitQueueValidate(const ResGroupData *group)
 
 	waitQueue = &group->waitProcs;
 
+	if (gp_resgroup_debug_wait_queue)
+	{
+		if (waitQueue->size == 0)
+		{
+			if (waitQueue->links.next != MAKE_OFFSET(&waitQueue->links) ||
+				waitQueue->links.prev != MAKE_OFFSET(&waitQueue->links))
+				elog(PANIC, "resource group wait queue is corrupted");
+		}
+		else
+		{
+			PGPROC *nextProc = (PGPROC *)MAKE_PTR(waitQueue->links.next);
+			PGPROC *prevProc = (PGPROC *)MAKE_PTR(waitQueue->links.prev);
+
+			if (!nextProc->mppIsWriter ||
+				!prevProc->mppIsWriter ||
+				nextProc->links.prev != MAKE_OFFSET(&waitQueue->links) ||
+				prevProc->links.next != MAKE_OFFSET(&waitQueue->links))
+				elog(PANIC, "resource group wait queue is corrupted");
+		}
+
+		return;
+	}
+
 	AssertImply(waitQueue->size == 0,
 				waitQueue->links.next == MAKE_OFFSET(&waitQueue->links) &&
 				waitQueue->links.prev == MAKE_OFFSET(&waitQueue->links));
+}
+
+static void
+groupWaitProcValidate(PGPROC *proc, PROC_QUEUE *head)
+{
+	PGPROC *nextProc = (PGPROC *) MAKE_PTR(proc->links.next);
+	PGPROC *prevProc = (PGPROC *) MAKE_PTR(proc->links.prev);
+
+	Assert(LWLockHeldExclusiveByMe(ResGroupLock));
+
+	if (!gp_resgroup_debug_wait_queue)
+		return;
+
+	if (!proc->mppIsWriter ||
+		((PROC_QUEUE *)nextProc != head && !nextProc->mppIsWriter) ||
+		((PROC_QUEUE *)prevProc != head && !prevProc->mppIsWriter) ||
+		nextProc->links.prev != MAKE_OFFSET(&proc->links) ||
+		prevProc->links.next != MAKE_OFFSET(&proc->links))
+		elog(PANIC, "resource group wait queue is corrupted");
+
+	return;
 }
 
 /*
@@ -3379,6 +3439,7 @@ groupWaitQueuePush(ResGroupData *group, PGPROC *proc)
 	headProc = (PGPROC *) &waitQueue->links;
 
 	SHMQueueInsertBefore(&headProc->links, &proc->links);
+	groupWaitProcValidate(proc, waitQueue);
 
 	waitQueue->size++;
 
@@ -3402,6 +3463,7 @@ groupWaitQueuePop(ResGroupData *group)
 	waitQueue = &group->waitProcs;
 
 	proc = (PGPROC *) MAKE_PTR(waitQueue->links.next);
+	groupWaitProcValidate(proc, waitQueue);
 	Assert(groupWaitQueueFind(group, proc));
 	Assert(proc->resSlot == NULL);
 
@@ -3429,6 +3491,7 @@ groupWaitQueueErase(ResGroupData *group, PGPROC *proc)
 
 	waitQueue = &group->waitProcs;
 
+	groupWaitProcValidate(proc, waitQueue);
 	SHMQueueDelete(&proc->links);
 
 	waitQueue->size--;
@@ -3590,7 +3653,7 @@ ResGroupDumpInfo(StringInfo str)
 	appendStringInfo(str, "\"segmentsOnMaster\":%d,", pResGroupControl->segmentsOnMaster);
 	appendStringInfo(str, "\"loaded\":%s,", pResGroupControl->loaded ? "true" : "false");
 	appendStringInfo(str, "\"totalChunks\":%d,", pResGroupControl->totalChunks);
-	appendStringInfo(str, "\"freeChunks\":%d,", pResGroupControl->freeChunks);
+	appendStringInfo(str, "\"freeChunks\":%d,", pg_atomic_read_u32(&pResGroupControl->freeChunks));
 	appendStringInfo(str, "\"chunkSizeInBits\":%d,", pResGroupControl->chunkSizeInBits);
 	
 	/* dump each group */
@@ -3733,7 +3796,37 @@ sessionSetSlot(ResGroupSlotData *slot)
 	Assert(slot != NULL);
 	Assert(MySessionState->resGroupSlot == NULL);
 
+	/*
+	 * SessionStateLock is required since runaway detector will traverse
+	 * the current session array and check corresponding resGroupSlot with
+	 * shared lock on SessionStateLock.
+	 */
+	LWLockAcquire(SessionStateLock, LW_EXCLUSIVE);
+
 	MySessionState->resGroupSlot = (void *) slot;
+
+	LWLockRelease(SessionStateLock);
+}
+
+/*
+ * Reset resource group slot for current session to NULL.
+ */
+static void
+sessionResetSlot(void)
+{
+	/*
+	 * SessionStateLock is required since runaway detector will traverse
+	 * the current session array and check corresponding resGroupSlot with
+	 * shared lock on SessionStateLock.
+	 */
+	if (MySessionState != NULL)
+	{
+		LWLockAcquire(SessionStateLock, LW_EXCLUSIVE);
+
+		MySessionState->resGroupSlot = NULL;
+
+		LWLockRelease(SessionStateLock);
+	}
 }
 
 /*
@@ -4274,7 +4367,7 @@ bool
 IsGroupInRedZone(void)
 {
 	uint32				remainGlobalSharedMem;
-	uint32				safeChunksThreshold;
+	uint32				safeChunksThreshold100;
 	ResGroupSlotData	*slot = self->slot;
 	ResGroupData		*group = self->group;
 
@@ -4285,8 +4378,8 @@ IsGroupInRedZone(void)
 	 * safe: global shared memory is not in redzone
 	 */
 	remainGlobalSharedMem = (uint32) pg_atomic_read_u32(&pResGroupControl->freeChunks);
-	safeChunksThreshold = (uint32) pg_atomic_read_u32(&pResGroupControl->safeChunksThreshold);
-	if (remainGlobalSharedMem >= safeChunksThreshold)
+	safeChunksThreshold100 = (uint32) pg_atomic_read_u32(&pResGroupControl->safeChunksThreshold100);
+	if (remainGlobalSharedMem * 100 >= safeChunksThreshold100)
 		return false;
 
 	AssertImply(slot != NULL, group != NULL);
@@ -4317,14 +4410,14 @@ ResGroupGetMemoryRunawayInfo(StringInfo str)
 	ResGroupSlotData	*slot = self->slot;
 	ResGroupData		*group = self->group;
 	uint32				remainGlobalSharedMem = 0;
-	uint32				safeChunksThreshold = 0;
+	uint32				safeChunksThreshold100 = 0;
 
 	if (group)
 	{
 		Assert(selfIsAssigned());
 
 		remainGlobalSharedMem = (uint32) pg_atomic_read_u32(&pResGroupControl->freeChunks);
-		safeChunksThreshold = (uint32) pg_atomic_read_u32(&pResGroupControl->safeChunksThreshold);
+		safeChunksThreshold100 = (uint32) pg_atomic_read_u32(&pResGroupControl->safeChunksThreshold100);
 
 		appendStringInfo(str,
 						 "current group id is %u, "
@@ -4338,7 +4431,7 @@ ResGroupGetMemoryRunawayInfo(StringInfo str)
 						 VmemTracker_ConvertVmemChunksToMB(group->memSharedGranted),
 						 VmemTracker_ConvertVmemChunksToMB(slot->memQuota),
 						 VmemTracker_ConvertVmemChunksToMB(remainGlobalSharedMem),
-						 VmemTracker_ConvertVmemChunksToMB(safeChunksThreshold));
+						 VmemTracker_ConvertVmemChunksToMB(safeChunksThreshold100 / 100));
 	}
 	else
 	{

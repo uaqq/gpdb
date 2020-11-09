@@ -281,9 +281,10 @@ class CheckFilespaceConsistency(Operation):
         files are consistent on all segments
     """
 
-    def __init__(self, gparray, file_type):
+    def __init__(self, gparray, file_type, skip_standby=False):
         self.gparray = gparray
         self.file_type = file_type
+        self.skip_standby = skip_standby
 
     def execute(self):
         logger.info('Checking for filespace consistency')
@@ -301,7 +302,7 @@ class CheckFilespaceConsistency(Operation):
             dbid = seg.getSegmentDbId()
             flat_file_location = os.path.join(pg_system_fs_entries[dbid][2],
                                               flat_file)
-            if seg.isSegmentDown():
+            if seg.isSegmentDown() or (seg.isSegmentStandby() and self.skip_standby):
                 logger.warning("Segment with DBID %s on host %s is down, skipping checking the filespace info file %s." % (dbid, seg.getSegmentHostName(), flat_file_location))
                 continue
             logger.debug('flat file location = %s' % flat_file_location)
@@ -340,7 +341,7 @@ class CheckFilespaceConsistency(Operation):
         operation_list = []
         for seg in self.gparray.getDbList():
             dbid = seg.getSegmentDbId()
-            if seg.isSegmentDown():
+            if seg.isSegmentDown() or (seg.isSegmentStandby() and self.skip_standby):
                 logger.warning("Segment with DBID %s on host %s is down, skipping verifying the filespace entries with the corresponding primary segment." % (dbid, seg.getSegmentHostName()))
                 continue
             cur_filespace_entry = cur_filespace_entries[dbid]
@@ -447,43 +448,51 @@ class UpdateFlatFiles(Operation):
         self.gparray = gparray
         self.primaries = primaries
         self.expansion = expansion
+        self.segments = None
+        self.db_list = None
+        self.logger = logger
 
     def execute(self):
 
         # Obtain list of segments from gparray
         if self.expansion:
-            db_list = self.gparray.getExpansionSegDbList()
+            self.db_list = self.gparray.getExpansionSegDbList()
         else:
-            db_list = self.gparray.getDbList()
+            self.db_list = self.gparray.getDbList()
 
         if self.primaries:
-            segments = [seg for seg in db_list if seg.isSegmentPrimary()]
+            self.segments = [seg for seg in self.db_list if seg.isSegmentPrimary()]
         else:
-            segments = [seg for seg in db_list if seg.isSegmentMirror()]
+            self.segments = [seg for seg in self.db_list if seg.isSegmentMirror()]
 
-        logger.debug('segment_list = %s' % self.gparray.getDbList())
-        logger.debug('segments on which flat files will be updated = %s' % segments)
+        self.logger.debug('segment_list = %s' % self.gparray.getDbList())
+        self.logger.debug('segments on which flat files will be updated = %s' % self.segments)
         pg_system_filespace_entries = GetFilespaceEntriesDict(GetFilespaceEntries(self.gparray,
                                                                                   PG_SYSTEM_FILESPACE).run()
                                                               ).run()
-        transaction_flat_file = os.path.join(pg_system_filespace_entries[1][2], GP_TRANSACTION_FILES_FILESPACE)
-        if os.path.exists(transaction_flat_file):
-            logger.debug('Updating transaction flat files')
-            cur_filespace_entries = GetFilespaceEntriesDict(
-                GetCurrentFilespaceEntries(self.gparray, FileType.TRANSACTION_FILES
-                                           ).run()
-                ).run()
+
+        self.__execute(GP_TRANSACTION_FILES_FILESPACE, pg_system_filespace_entries, "transaction", FileType.TRANSACTION_FILES)
+        self.__execute(GP_TEMPORARY_FILES_FILESPACE, pg_system_filespace_entries, "temporary", FileType.TEMPORARY_FILES)
+
+    def __execute(self, file_type, pg_system_filespace_entries, identifier_str, files):
+        flat_file_path = os.path.join(pg_system_filespace_entries[1][2], file_type)
+        if os.path.exists(flat_file_path):
+            logger.debug('Updating %s flat files' % identifier_str)
+            cur_filespace_entries = GetFilespaceEntriesDict(GetCurrentFilespaceEntries(self.gparray, files).run()).run()
+
             operation_list = []
-            for seg in segments:
+            for seg in self.segments:
                 dbid = seg.getSegmentDbId()
+                if seg.isSegmentDown():
+                    self.logger.warning("Segment with DBID %s on host %s is down, skipping updating the %s filespace entries." % (dbid, seg.getSegmentHostName(), identifier_str))
+                    continue
                 filespace_oid = cur_filespace_entries[dbid][0]
                 cur_filespace_entry = cur_filespace_entries[dbid]
                 peer_filespace_entry = get_peer_filespace_entry(cur_filespace_entries, dbid,
-                                                                seg.getSegmentContentId(), db_list)
+                                                                seg.getSegmentContentId(), self.db_list)
                 logger.debug('cur_filespace_entry = %s' % str(cur_filespace_entry))
                 logger.debug('peer_filespace_entry = %s' % str(peer_filespace_entry))
-                flat_file = os.path.join(pg_system_filespace_entries[dbid][2],
-                                         GP_TRANSACTION_FILES_FILESPACE)
+                flat_file = os.path.join(pg_system_filespace_entries[dbid][2], file_type)
                 operation_list.append(RemoteOperation(UpdateFlatFilesLocally(flat_file,
                                                                              filespace_oid,
                                                                              cur_filespace_entry,
@@ -498,41 +507,8 @@ class UpdateFlatFiles(Operation):
                 for operation in operation_list:
                     operation.get_ret()
             except Exception, e:
-                raise MoveFilespaceError('Failed to update transaction flat file.')
+                raise MoveFilespaceError('Failed to update %s flat file.' % identifier_str)
 
-        temporary_flat_file = os.path.join(pg_system_filespace_entries[1][2], GP_TEMPORARY_FILES_FILESPACE)
-        if os.path.exists(temporary_flat_file):
-            logger.debug('Updating temporary flat files')
-            cur_filespace_entries = GetFilespaceEntriesDict(
-                GetCurrentFilespaceEntries(self.gparray, FileType.TEMPORARY_FILES
-                                           ).run()
-                ).run()
-            operation_list = []
-            for seg in segments:
-                dbid = seg.getSegmentDbId()
-                filespace_oid = cur_filespace_entries[dbid][0]
-                cur_filespace_entry = cur_filespace_entries[dbid]
-                peer_filespace_entry = get_peer_filespace_entry(cur_filespace_entries, dbid,
-                                                                seg.getSegmentContentId(), db_list)
-                logger.debug('cur_filespace_entry = %s' % str(cur_filespace_entry))
-                logger.debug('peer_filespace_entry = %s' % str(peer_filespace_entry))
-                flat_file = os.path.join(pg_system_filespace_entries[dbid][2],
-                                         GP_TEMPORARY_FILES_FILESPACE)
-                operation_list.append(RemoteOperation(UpdateFlatFilesLocally(flat_file,
-                                                                             filespace_oid,
-                                                                             cur_filespace_entry,
-                                                                             peer_filespace_entry
-                                                                             ),
-                                                      seg.getSegmentHostName(), "dbid %d"%dbid)
-                                      )
-
-            ParallelOperation(operation_list, NUM_WORKERS).run()
-
-            try:
-                for operation in operation_list:
-                    operation.get_ret()
-            except Exception, e:
-                raise MoveFilespaceError('Failed to update temporary flat file.')
 
 
 class MoveTransFilespaceLocally(Operation):

@@ -45,6 +45,7 @@ groups:
 - name: 5X_STABLE
   jobs:
   ## --------------------------------------------------------------------
+  - check_format
   - gate_compile_start
   - compile_gpdb_centos6
   - prepare_binary_swap_gpdb_centos6
@@ -166,6 +167,7 @@ groups:
   - gate_release_candidate_start
   - compile_gpdb_ubuntu16_oss_abi
   - Release_Candidate
+  - Build_Release_Candidate_RPMs
 
 {% endif %}
 ## ======================================================================
@@ -326,18 +328,18 @@ groups:
 
 resource_types:
 - name: terraform
-  type: docker-image
+  type: registry-image
   source:
     repository: ljfranklin/terraform-resource
     tag: 0.11.14
 - name: pivnet
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotalcf/pivnet-resource
     tag: latest-final
 {% if "ICW" in test_sections %}
 - name: gcs
-  type: docker-image
+  type: registry-image
   source:
     repository: frodenas/gcs-resource
 {% endif %}
@@ -364,8 +366,13 @@ resources:
     private_key: {{ccp-git-key}}
     uri: {{ccp-git-remote}}
 
+- name: clang_toolchain
+  type: registry-image
+  source:
+    repository: gcr.io/data-orca/clang-toolchain
+
 - name: ccp-image
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/ccp
     tag: '7'
@@ -474,43 +481,43 @@ resources:
     uri: ((debian-release-git-remote))
 
 - name: centos-gpdb-dev-6
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/centos-gpdb-dev
     tag: '6-gcc6.2-llvm3.7'
 
 - name: centos-gpdb-dev-7
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/centos-gpdb-dev
     tag: 7-gcc6.2-llvm3.7
 
 - name: oracle-gpdb-test-7
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/oracle7-test
     tag: gpdb5-latest
 
 - name: ubuntu-gpdb-dev-16
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/ubuntu-gpdb-dev
     tag: '16.04'
 
 - name: ubuntu16.04-test
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/ubuntu16.04-test
     tag: gpdb5-latest
 
 - name: ubuntu-gpdb-debian-dev-16
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/ubuntu-gpdb-debian-dev
     tag: '16.04'
 
 - name: ubuntu-gpcloud-dev-16
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/ubuntu-gpcloud-dev
     tag: '16.04'
@@ -518,7 +525,7 @@ resources:
     password: {{docker_password}}
 
 - name: centos-mingw
-  type: docker-image
+  type: registry-image
   source:
     repository: pivotaldata/centos-mingw
 
@@ -568,6 +575,15 @@ resources:
     secret_access_key: {{bucket-secret-access-key}}
     versioned_file: release_candidates/bin_gpdb_centos6/gpdb5/bin_gpdb.tar.gz
 
+- name: gpdb_rpm_installer_centos6
+  type: s3
+  source:
+    access_key_id: {{bucket-access-key-id}}
+    bucket: {{gpdb-stable-builds-bucket-name}}
+    region_name: {{aws-region}}
+    secret_access_key: {{bucket-secret-access-key}}
+    regexp: release_candidates/gpdb_rpm_installer_centos6/gpdb5/greenplum-db-(.*)-rhel6-x86_64.rpm
+
 - name: bin_gpdb_centos7_rc
   type: s3
   source:
@@ -577,6 +593,15 @@ resources:
     secret_access_key: {{bucket-secret-access-key}}
     versioned_file: release_candidates/bin_gpdb_centos7/gpdb5/bin_gpdb.tar.gz
 
+- name: gpdb_rpm_installer_centos7
+  type: s3
+  source:
+    access_key_id: {{bucket-access-key-id}}
+    bucket: {{gpdb-stable-builds-bucket-name}}
+    region_name: {{aws-region}}
+    secret_access_key: {{bucket-secret-access-key}}
+    regexp: release_candidates/gpdb_rpm_installer_centos7/gpdb5/greenplum-db-(.*)-rhel7-x86_64.rpm
+
 - name: bin_gpdb_sles11_rc
   type: s3
   source:
@@ -585,6 +610,13 @@ resources:
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
     versioned_file: release_candidates/bin_gpdb_sles11/gpdb5/bin_gpdb.tar.gz
+
+- name: greenplum-database-release
+  type: git
+  icon: git
+  source:
+    branch: main
+    uri: https://github.com/greenplum-db/greenplum-database-release.git
 
 {% endif %}
 - name: compiled_bits_ubuntu16
@@ -874,7 +906,7 @@ anchors:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
@@ -969,7 +1001,7 @@ set_failed_anchor: &set_failed
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: "7"
@@ -996,7 +1028,7 @@ set_failed_two_clusters_anchor: &set_failed_two_clusters
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: "7"
@@ -1022,7 +1054,7 @@ dpm_debug_sleep_anchor: &dpm_debug_sleep
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
           tag: latest
@@ -1083,6 +1115,16 @@ cs_ccp_run_tests_params_anchor: &cs_ccp_run_tests_params
 
 jobs:
 
+- name: check_format
+  plan:
+    - in_parallel:
+      - get: gpdb_src
+        trigger: true
+      - get: clang_toolchain
+    - task: check_format
+      image: clang_toolchain
+      file: gpdb_src/concourse/tasks/check_format.yml
+
 ## ======================================================================
 ##   ____                      _ _
 ##  / ___|___  _ __ ___  _ __ (_) | ___
@@ -1094,8 +1136,10 @@ jobs:
 
 - name: gate_compile_start
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
+      passed:
+        - check_format
       trigger: true
     - get: gpaddon_src
       trigger: true
@@ -1108,7 +1152,7 @@ jobs:
 
 - name: compile_gpdb_centos6
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
     - get: gpdb_src
@@ -1138,7 +1182,7 @@ jobs:
       TARGET_OS: centos
       TARGET_OS_VERSION: 6
       BLD_TARGETS: "clients loaders"
-  - aggregate:
+  - in_parallel:
     - put: bin_gpdb_centos6
       params:
         file: gpdb_artifacts/bin_gpdb.tar.gz
@@ -1151,7 +1195,7 @@ jobs:
 
 - name: compile_gpdb_centos7
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
     - get: gpdb_src
@@ -1181,7 +1225,7 @@ jobs:
       TARGET_OS: centos
       TARGET_OS_VERSION: 7
       BLD_TARGETS: "clients loaders"
-  - aggregate:
+  - in_parallel:
     - put: bin_gpdb_centos7
       params:
         file: gpdb_artifacts/bin_gpdb.tar.gz
@@ -1194,7 +1238,7 @@ jobs:
 
 - name: compile_gpdb_sles11
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
     - get: gpdb_src
@@ -1253,7 +1297,7 @@ jobs:
 
 - name: compile_gpdb_ubuntu16
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
     - get: gpdb_src
@@ -1268,7 +1312,7 @@ jobs:
     file: gpdb_src/concourse/tasks/compile_gpdb_ubuntu16.yml
     image: ubuntu-gpcloud-dev-16
     privileged: true
-  - aggregate:
+  - in_parallel:
     - put: bin_gpdb_ubuntu16
       params:
         file: gpdb_artifacts/bin_gpdb.tar.gz
@@ -1278,7 +1322,7 @@ jobs:
 
 - name: compile_gpdb_ubuntu16_oss
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
     - get: gpdb_src
@@ -1290,7 +1334,7 @@ jobs:
       passed:
       - gate_compile_start
     - get: debian_release
-  - aggregate:
+  - in_parallel:
     - task: compile_gpdb
       image: ubuntu-gpdb-dev-16
       file: gpdb_src/concourse/tasks/compile_gpdb_open_source_ubuntu.yml
@@ -1302,7 +1346,7 @@ jobs:
       params:
         DEBFULLNAME: ((debian-package-maintainer-fullname))
         DEBEMAIL: ((debian-package-maintainer-email))
-  - aggregate:
+  - in_parallel:
     - put: compiled_bits_ubuntu16
       params:
         file: compiled_bits_ubuntu16/compiled_bits_ubuntu16.tar.gz
@@ -1312,14 +1356,14 @@ jobs:
 
 - name: compile_gpdb_ubuntu16_oss_abi
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_compile_start]
       trigger: ((gpdb_src-trigger-flag))
     - get: gpdb_src_latest_5X_tag
     - get: ubuntu-gpdb-dev-16
       passed: [gate_compile_start]
-  - aggregate:
+  - in_parallel:
     - task: compile_gpdb_head
       image: ubuntu-gpdb-dev-16
       config:
@@ -1392,7 +1436,7 @@ jobs:
 
 - name: compile_gpdb_open_source_centos6
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
     - get: gpdb_src
@@ -1408,7 +1452,7 @@ jobs:
 
 - name: compile_gpdb_windows_cl
   plan:
-  - aggregate:
+  - in_parallel:
     - get: reduced-frequency-trigger
       trigger: ((reduced-frequency-trigger-flag))
       tags: ["wix"]
@@ -1446,7 +1490,7 @@ jobs:
       TARGET_OS: win32
       TARGET_OS_VERSION:
       BLD_TARGETS: "clients loaders"
-  - aggregate:
+  - in_parallel:
     - put: bin_gpdb_windows_clients
       tags: ["wix"]
       params:
@@ -1462,7 +1506,7 @@ jobs:
   # Compile gpdb on a remote AIX machine, triggered by concourse.
   # We need to serialize this job to avoid overwhelming workload
   # on remote machine.
-  - aggregate:
+  - in_parallel:
     - get: nightly-trigger-aix
       trigger: true
     - get: gpdb_src
@@ -1484,7 +1528,7 @@ jobs:
       IVYREPO_USER: {{ivyrepo_user}}
       IVYREPO_PASSWD: {{ivyrepo_passwd}}
       BLD_TARGETS: "clients loaders"
-  - aggregate:
+  - in_parallel:
     - put: installer_aix7_gpdb_clients
       params:
         file: gpdb_artifacts/greenplum-clients-*-aix7_ppc_64.zip
@@ -1494,7 +1538,7 @@ jobs:
 - name: client_loader_remote_test_aix
   serial: true
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_start
@@ -1540,7 +1584,7 @@ jobs:
 
 - name: gate_compile_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_start
@@ -1587,7 +1631,7 @@ jobs:
 
 - name: gate_icw_start
   plan:
-    - aggregate:
+    - in_parallel:
       - get: gpdb_src
         passed:
         - gate_compile_end
@@ -1619,7 +1663,7 @@ jobs:
 
 - name: icw_planner_centos6
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1646,7 +1690,7 @@ jobs:
 
 - name: icw_planner_ictcp_centos6
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1664,7 +1708,7 @@ jobs:
 
 - name: icw_gporca_centos6
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1683,7 +1727,7 @@ jobs:
 
 - name: icw_gporca_centos7
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1702,7 +1746,7 @@ jobs:
 
 - name: icw_planner_centos7
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1721,7 +1765,7 @@ jobs:
 
 - name: icw_planner_oracle7
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1740,7 +1784,7 @@ jobs:
 
 - name: icw_gporca_oracle7
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1759,7 +1803,7 @@ jobs:
 
 - name: icw_gporca_sles11
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: bin_gpdb
@@ -1776,7 +1820,7 @@ jobs:
 
 - name: icw_planner_ubuntu16
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: deb_package_ubuntu16
@@ -1795,7 +1839,7 @@ jobs:
 
 - name: icw_planner_ubuntu16_oss
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: deb_package_open_source_ubuntu16
@@ -1814,7 +1858,7 @@ jobs:
 
 - name: icw_gporca_ubuntu16
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: deb_package_ubuntu16
@@ -1833,7 +1877,7 @@ jobs:
 
 - name: icw_gporca_ubuntu16_oss
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: deb_package_open_source_ubuntu16
@@ -1852,7 +1896,7 @@ jobs:
 
 - name: icw_extensions_gpcloud
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
       trigger: [[ test_trigger ]]
@@ -1862,7 +1906,7 @@ jobs:
       passed: [gate_icw_start]
     - get: centos-gpdb-dev-6
     - get: ubuntu-gpdb-dev-16
-  - aggregate:
+  - in_parallel:
     - task: unit_tests_gpcloud
       file: gpdb_src/concourse/tasks/unit_tests_gpcloud.yml
       image: centos-gpdb-dev-6
@@ -1898,7 +1942,7 @@ jobs:
 
 - name: QP_optimizer-functional
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params: {submodules: none}
       passed: [gate_icw_start]
@@ -1907,7 +1951,7 @@ jobs:
       passed: [gate_icw_start]
       trigger: [[ test_trigger ]]
     - get: centos-gpdb-dev-6
-  - aggregate:
+  - in_parallel:
     - task: optimizer_functional_part1
       timeout: 3h
       file: gpdb_src/concourse/tasks/tinc_gpdb.yml
@@ -1929,7 +1973,7 @@ jobs:
 
 - name: fips_centos6
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_icw_start]
     - get: gpdb_binary
@@ -1967,7 +2011,7 @@ jobs:
 
 - name: gate_icw_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - icw_planner_centos6
@@ -2004,7 +2048,7 @@ jobs:
       passed:
       - icw_gporca_sles11
 {% if pipeline_type == "prod" %}
-  - aggregate:
+  - in_parallel:
     - put: bin_gpdb_centos6_icw_green
       params:
         file: bin_gpdb_centos6/bin_gpdb.tar.gz
@@ -2034,14 +2078,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 1 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -2063,7 +2107,7 @@ jobs:
 - name: cs_[[ test_name ]]
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_cs_start]
     - get: gpdb_binary
@@ -2098,7 +2142,7 @@ jobs:
 - name: cs_[[ test_name ]]
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_cs_start]
     - get: gpdb_binary
@@ -2135,7 +2179,7 @@ jobs:
 - name: cs_[[ test_name ]]
   plan:
   - *ccp_jitter_delay
-  - aggregate: *cs_ccp_aggregate_mpp_start
+  - in_parallel: *cs_ccp_aggregate_mpp_start
   - put: terraform
     <<: *cs_ccp_terraform_params
   - task: gen_cluster
@@ -2153,7 +2197,7 @@ jobs:
 {% endfor %}
 - name: fts
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params: {submodules: none}
       passed: [gate_cs_start]
@@ -2162,7 +2206,7 @@ jobs:
       passed: [gate_cs_start]
       trigger: [[ test_trigger ]]
     - get: centos-gpdb-dev-6
-  - aggregate:
+  - in_parallel:
     - task: fts_transitions_part01
       file: gpdb_src/concourse/tasks/tinc_gpdb.yml
       image: centos-gpdb-dev-6
@@ -2190,7 +2234,7 @@ jobs:
 
 - name: storage
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params: {submodules: none}
       passed: [gate_cs_start]
@@ -2199,7 +2243,7 @@ jobs:
       passed: [gate_cs_start]
       trigger: [[ test_trigger ]]
     - get: centos-gpdb-dev-6
-  - aggregate:
+  - in_parallel:
     - task: aocoalter_catalog_loaders
       file: gpdb_src/concourse/tasks/tinc_gpdb.yml
       params:
@@ -2238,7 +2282,7 @@ jobs:
 
 - name: gate_cs_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: &gate_cs_passed
 {% for test_name in cs_walrep_suites +
@@ -2270,14 +2314,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 2 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -2295,7 +2339,7 @@ jobs:
 - name: mpp_interconnect
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_mpp_start]
     - get: gpdb_binary
@@ -2323,7 +2367,7 @@ jobs:
 - name: mpp_resource_group_centos6
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_mpp_start]
     - get: bin_gpdb
@@ -2363,7 +2407,7 @@ jobs:
 - name: mpp_resource_group_centos7
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_mpp_start]
     - get: bin_gpdb
@@ -2404,7 +2448,7 @@ jobs:
 
 - name: gate_mpp_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
         - mpp_interconnect
@@ -2437,14 +2481,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 3 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -2463,7 +2507,7 @@ jobs:
 - name: MM_[[ test_name ]]
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params:
         submodules:
@@ -2504,7 +2548,7 @@ jobs:
 - name: MM_gppkg
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params:
         submodules:
@@ -2547,7 +2591,7 @@ jobs:
 
 - name: MM_gpcheck
   plan:
-  - aggregate: &gets_for_behave
+  - in_parallel: &gets_for_behave
     - get: gpdb_src
       params:
         submodules:
@@ -2567,7 +2611,7 @@ jobs:
 
 - name: MM_gpexpand
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params:
         submodules:
@@ -2605,7 +2649,7 @@ jobs:
 {% for test_name in MM_2_suites %}
 - name: MM_[[ test_name ]]
   plan:
-  - aggregate: *gets_for_behave
+  - in_parallel: *gets_for_behave
   - task: [[ test_name ]]
     file: gpdb_src/concourse/tasks/behave_gpdb.yml
     image: centos-gpdb-dev-6
@@ -2615,8 +2659,8 @@ jobs:
 {% endfor %}
 - name: MM_pt-rebuild
   plan:
-  - aggregate: *gets_for_behave
-  - aggregate:
+  - in_parallel: *gets_for_behave
+  - in_parallel:
     - task: persistent_table_rebuild
       file: gpdb_src/concourse/tasks/behave_gpdb.yml
       image: centos-gpdb-dev-6
@@ -2632,7 +2676,7 @@ jobs:
 
 - name: MU_check_centos
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_mm_start]
     - get: bin_gpdb
@@ -2648,7 +2692,7 @@ jobs:
 
 - name: MM_gpaddmirrors
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params:
         submodules:
@@ -2684,7 +2728,7 @@ jobs:
 
 - name: gate_mm_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: &gate_mm_end_passed
 {% for test_name in MM_1_suites +
@@ -2718,14 +2762,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 4 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -2737,7 +2781,7 @@ jobs:
 - name: DPM_backup-restore
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params:
         submodules:
@@ -2775,7 +2819,7 @@ jobs:
   - get: nightly-trigger
     trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: ccp_src
       tags: ["ddboost"]
     - get: gpdb_src
@@ -2818,7 +2862,7 @@ jobs:
        - name: cluster_env_files
        - name: ddboost_rpm
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: '7'
@@ -2853,7 +2897,7 @@ jobs:
   - get: nightly-trigger
     trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: ccp_src
       tags: ["ddboost"]
     - get: gpdb_src
@@ -2896,7 +2940,7 @@ jobs:
        - name: cluster_env_files
        - name: ddboost_rpm
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: '7'
@@ -2931,7 +2975,7 @@ jobs:
   - get: nightly-trigger
     trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: ccp_src
       tags: ["ddboost"]
     - get: gpdb_src
@@ -2974,7 +3018,7 @@ jobs:
        - name: cluster_env_files
        - name: ddboost_rpm
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: '7'
@@ -3010,7 +3054,7 @@ jobs:
     tags: ["netbackup"]
     trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: ccp_src
       tags: ["netbackup"]
     - get: gpdb_src
@@ -3068,7 +3112,7 @@ jobs:
     tags: ["netbackup"]
     trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: ccp_src
       tags: ["netbackup"]
     - get: gpdb_src
@@ -3126,7 +3170,7 @@ jobs:
     tags: ["netbackup"]
     trigger: [[ test_trigger ]]
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: ccp_src
       tags: ["netbackup"]
     - get: gpdb_src
@@ -3181,7 +3225,7 @@ jobs:
 - name: DPM_backup_43_restore_5
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       params:
         submodules:
@@ -3230,7 +3274,7 @@ jobs:
 - name: gptransfer-43x-to-5x
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_dpm_start]
     - get: gpdb_binary
@@ -3243,7 +3287,7 @@ jobs:
     - get: centos-gpdb-dev-6
   # The separate clusters can be created in parallel with the aggregate and do blocks
   #  The terraform put and gen cluster that correspond must still happen serially
-  - aggregate:
+  - in_parallel:
     - do:
       - put: terraform
         params:
@@ -3259,7 +3303,7 @@ jobs:
         config:
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: pivotaldata/ccp
               tag: "7"
@@ -3292,7 +3336,7 @@ jobs:
         config:
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: pivotaldata/ccp
               tag: "7"
@@ -3312,7 +3356,7 @@ jobs:
         - name: ccp_src
         - name: gpdb_src
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: '7'
@@ -3336,7 +3380,7 @@ jobs:
 - name: gptransfer-5x-to-5x
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_dpm_start]
     - get: gpdb_binary
@@ -3347,7 +3391,7 @@ jobs:
     - get: centos-gpdb-dev-6
   # The separate clusters can be created in parallel with the aggregate and do blocks
   #  The terraform put and gen cluster that correspond must still happen serially
-  - aggregate:
+  - in_parallel:
     - do:
       - put: terraform
         params:
@@ -3363,7 +3407,7 @@ jobs:
         config:
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: pivotaldata/ccp
               tag: "7"
@@ -3395,7 +3439,7 @@ jobs:
         config:
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: pivotaldata/ccp
               tag: "7"
@@ -3415,7 +3459,7 @@ jobs:
         - name: ccp_src
         - name: gpdb_src
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: pivotaldata/ccp
           tag: '7'
@@ -3438,7 +3482,7 @@ jobs:
 
 - name: gate_dpm_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       trigger: true
       passed:
@@ -3483,14 +3527,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 5 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -3504,7 +3548,7 @@ jobs:
 
 - name: regression_tests_gphdfs_hadoop_centos
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_ud_start]
     - get: bin_gpdb
@@ -3521,7 +3565,7 @@ jobs:
 
 - name: gate_ud_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: &gate_ud_end
       - regression_tests_gphdfs_hadoop_centos
@@ -3547,14 +3591,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 6 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -3570,7 +3614,7 @@ jobs:
 {% set platform_version = '7' if "centos7" in platform else '6' %}
 - name: postgis_build_[[ platform ]]
   plan:
-  - aggregate:
+  - in_parallel:
     - get: postgis_src
     - get: madlib_ci
     - get: gpdb_src
@@ -3583,7 +3627,7 @@ jobs:
       - gate_advanced_analytics_start
     - get: centos-gpdb-dev-[[ platform_version ]]
     - get: gcc_4.4.2_snowflake
-  - aggregate:
+  - in_parallel:
     - task: postgis_gpdb_build
       file: madlib_ci/concourse/tasks/build_postgis.yml
       image: centos-gpdb-dev-[[ platform_version ]]
@@ -3593,7 +3637,7 @@ jobs:
         IVYREPO_REALM: {{ivyrepo_realm}}
         IVYREPO_USER: {{ivyrepo_user}}
         IVYREPO_PASSWD: {{ivyrepo_passwd}}
-  - aggregate:
+  - in_parallel:
     - put: postgis_gppkg_[[ platform ]]
       params:
         file: postgis_gppkg/postgis-*.gppkg
@@ -3604,7 +3648,7 @@ jobs:
 {% set orca_state = 'off' if "Planner" in test_name else 'on' %}
 - name: MADlib_Test_[[ test_name ]]
   plan:
-  - aggregate:
+  - in_parallel:
     - get: madlib_ci
     - get: gpdb_src
       passed:
@@ -3626,7 +3670,7 @@ jobs:
 
 - name: Postgis_Test_[[ test_name ]]
   plan:
-  - aggregate:
+  - in_parallel:
     - get: madlib_ci
     - get: postgis_src
       passed:
@@ -3660,7 +3704,7 @@ jobs:
 {% endfor %}
 - name: gate_advanced_analytics_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       trigger: true
       passed:
@@ -3708,14 +3752,14 @@ jobs:
     config:
       platform: linux
       image_resource:
-        type: docker-image
+        type: registry-image
         source:
           repository: alpine
       run:
         path: 'sh'
         args: ['-c', 'sleep `expr 7 \* {{group_start_delay}} + 1 + $RANDOM % {{group_delay_jitter}}`']
 {% endif %}
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
       - gate_compile_end
@@ -3728,7 +3772,7 @@ jobs:
 - name: cs_[[ test_name ]]
   plan:
   - *ccp_jitter_delay
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed: [gate_filerep_start]
     - get: gpdb_binary
@@ -3766,7 +3810,7 @@ jobs:
 {% endfor %}
 - name: gate_filerep_end
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       passed:
 {% for test_name in cs_filerep_end_to_end_suites %}
@@ -3791,12 +3835,13 @@ jobs:
 
 - name: gate_release_candidate_start
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       trigger: true
       passed:
       - compile_gpdb_centos6
       - compile_gpdb_open_source_centos6
+      - check_format
       - compile_gpdb_centos7
       - compile_gpdb_sles11
       - compile_gpdb_ubuntu16
@@ -3886,7 +3931,7 @@ jobs:
 
 - name: Release_Candidate
   plan:
-  - aggregate:
+  - in_parallel:
     - get: gpdb_src
       trigger: true
       passed: [gate_release_candidate_start]
@@ -3910,4 +3955,62 @@ jobs:
   - put: bin_gpdb_sles11_rc
     params:
       file: bin_gpdb_sles11/bin_gpdb.tar.gz
+
+
+- name: Build_Release_Candidate_RPMs
+  plan:
+    - in_parallel:
+        steps:
+          - get: gpdb_src
+            trigger: true
+            passed: [gate_release_candidate_start]
+          - get: bin_gpdb_centos6
+            trigger: true
+            passed: [gate_release_candidate_start]
+          - get: bin_gpdb_centos7
+            trigger: true
+            passed: [gate_release_candidate_start]
+          - get: centos-gpdb-dev-6
+          - get: centos-gpdb-dev-7
+          - get: greenplum-database-release
+    - in_parallel:
+        steps:
+          - task: build_rpm_gpdb_centos6
+            file: greenplum-database-release/ci/concourse/tasks/build_gpdb5_rpm.yml
+            vars:
+              concourse-root: gpdb5/concourse
+            image: centos-gpdb-dev-6
+            input_mapping:
+              bin_gpdb: bin_gpdb_centos6
+            output_mapping:
+              gpdb_rpm_installer: gpdb_rpm_centos6
+            params:
+              PLATFORM: "rhel6"
+              GPDB_NAME: greenplum-db-5
+              GPDB_LICENSE: Pivotal Software EULA
+              GPDB_URL: https://docs.greenplum.org
+              GPDB_RELEASE: 1
+          - task: build_rpm_gpdb_centos7
+            file: greenplum-database-release/ci/concourse/tasks/build_gpdb5_rpm.yml
+            vars:
+              concourse-root: gpdb5/concourse
+            image: centos-gpdb-dev-7
+            input_mapping:
+              bin_gpdb: bin_gpdb_centos7
+            output_mapping:
+              gpdb_rpm_installer: gpdb_rpm_centos7
+            params:
+              PLATFORM: "rhel7"
+              GPDB_NAME: greenplum-db-5
+              GPDB_LICENSE: Pivotal Software EULA
+              GPDB_URL: https://docs.greenplum.org
+              GPDB_RELEASE: 1
+    - in_parallel:
+        steps:
+          - put: gpdb_rpm_installer_centos6
+            params:
+              file: gpdb_rpm_centos6/*.rpm
+          - put: gpdb_rpm_installer_centos7
+            params:
+              file: gpdb_rpm_centos7/*.rpm
 {% endif %}
