@@ -42,9 +42,11 @@
 #include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "catalog/storage.h"
+#include "commands/vacuum.h"
 #include "executor/instrument.h"
 #include "lib/binaryheap.h"
 #include "miscadmin.h"
+#include "optimizer/plancat.h"
 #include "pg_trace.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
@@ -2956,6 +2958,28 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 			return smgrnblocks(relation->rd_smgr, forkNum);
 
 		case RELKIND_RELATION:
+			{
+				if (RelationIsAppendOptimized(relation))
+				{
+					Snapshot snapshot;
+					FileSegTotals *fileSegTotals;
+					double tuples;
+					BlockNumber blocks;
+
+					/* Get total number of rows among all segment files. */
+					snapshot = RegisterSnapshot(GetLatestSnapshot());
+					fileSegTotals = (RelationIsAoCols(relation)) ?
+						GetAOCSSSegFilesTotals(relation, snapshot) :
+						GetSegFilesTotals(relation, snapshot);
+					tuples = (double) fileSegTotals->totaltuples;
+					UnregisterSnapshot(snapshot);
+
+					/* Analyze skips blocks starting from about 2 billion rows on GP's segment instance. */
+					blocks = (BlockNumber) ceil(tuples / APPENDONLY_ANALYZE_BLOCK_SIZE);
+
+					return blocks;
+				}
+			}
 		case RELKIND_TOASTVALUE:
 		case RELKIND_MATVIEW:
 		case RELKIND_AOSEGMENTS:
