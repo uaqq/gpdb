@@ -543,7 +543,7 @@ aocs_beginscan_internal(Relation relation,
 	scan->columnScanInfo.scanCtx = CurrentMemoryContext;
 
 	/* block size for analyze scan */
-	scan->analyze_block_size = APPENDONLY_ANALYZE_BLOCK_SIZE;
+	scan->analyze_block_size = gp_appendonly_analyze_block_size;
 
 	/* relationTupleDesc will be inited by the slot when needed */
 	scan->columnScanInfo.relationTupleDesc = NULL;

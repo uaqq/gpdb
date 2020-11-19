@@ -1663,7 +1663,7 @@ appendonly_beginrangescan_internal(Relation relation,
 	scan->aoScanInitContext = CurrentMemoryContext;
 
 	/* block size for analyze scan */
-	scan->analyze_block_size = APPENDONLY_ANALYZE_BLOCK_SIZE;
+	scan->analyze_block_size = gp_appendonly_analyze_block_size;
 
 	initStringInfo(&titleBuf);
 	appendStringInfo(&titleBuf, "Scan of Append-Only Row-Oriented relation '%s'",

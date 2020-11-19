@@ -2964,7 +2964,7 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 					Snapshot snapshot;
 					FileSegTotals *fileSegTotals;
 					double tuples;
-					BlockNumber blocks;
+					double blocks;
 
 					/* Get total number of rows among all segment files. */
 					snapshot = RegisterSnapshot(GetLatestSnapshot());
@@ -2974,10 +2974,13 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 					tuples = (double) fileSegTotals->totaltuples;
 					UnregisterSnapshot(snapshot);
 
-					/* Analyze skips blocks starting from about 2 billion rows on GP's segment instance. */
-					blocks = (BlockNumber) ceil(tuples / APPENDONLY_ANALYZE_BLOCK_SIZE);
+					blocks = ceil(tuples / gp_appendonly_analyze_block_size);
+					if (blocks > APPENDONLY_ANALYZE_BLOCK_MAX)
+					{
+						blocks = APPENDONLY_ANALYZE_BLOCK_MAX;
+					}
 
-					return blocks;
+					return (BlockNumber) blocks;
 				}
 			}
 		case RELKIND_TOASTVALUE:
