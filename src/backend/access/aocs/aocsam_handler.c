@@ -1324,8 +1324,8 @@ aoco_scan_analyze_next_block(TableScanDesc scan, BlockNumber blockno,
 	DatumStreamRead *ds;
 	TupleTableSlot *slot;
 	bool found;
-	int segno;
-	int64 totalrows;
+	Snapshot snapshot;
+	FileSegTotals *fileSegTotals;
 	int64 totalRemainingRows;
 
 	AOCSScanDesc aoscan = (AOCSScanDesc) scan;
@@ -1355,12 +1355,10 @@ aoco_scan_analyze_next_block(TableScanDesc scan, BlockNumber blockno,
 	}
 
 	/* Calculate rows to scan in a current block. */
-	totalrows = 0;
-	for (segno = 0; segno < aoscan->total_seg; segno++)
-	{
-		totalrows += aoscan->seginfo[segno]->total_tupcount;
-	}
-	totalRemainingRows = totalrows - aoscan->total_row;
+	snapshot = RegisterSnapshot(GetLatestSnapshot());
+	fileSegTotals = GetAOCSSSegFilesTotals(aoscan->rs_base.rs_rd, snapshot);
+	UnregisterSnapshot(snapshot);
+	totalRemainingRows = fileSegTotals->totaltuples - aoscan->total_row;
 	aoscan->rows_to_scan = aoscan->analyze_block_size < totalRemainingRows ?
 								aoscan->analyze_block_size :
 								totalRemainingRows;

@@ -1125,8 +1125,8 @@ appendonly_scan_analyze_next_block(TableScanDesc scan, BlockNumber blockno,
 	AppendOnlyExecutorReadBlock *readblock;
 	TupleTableSlot *slot;
 	bool found;
-	int segno;
-	int64 totalrows;
+	Snapshot snapshot;
+	FileSegTotals *fileSegTotals;
 	int64 totalRemainingRows;
 
 	AppendOnlyScanDesc aoscan = (AppendOnlyScanDesc) scan;
@@ -1149,12 +1149,10 @@ appendonly_scan_analyze_next_block(TableScanDesc scan, BlockNumber blockno,
 
 	/* Calculate rows to scan in a current block. */
 	readblock = &aoscan->executorReadBlock;
-	totalrows = 0;
-	for (segno = 0; segno < aoscan->aos_total_segfiles; segno++)
-	{
-		totalrows += aoscan->aos_segfile_arr[segno]->total_tupcount;
-	}
-	totalRemainingRows = totalrows - readblock->totalRowsScanned;
+	snapshot = RegisterSnapshot(GetLatestSnapshot());
+	fileSegTotals = GetSegFilesTotals(aoscan->rs_base.rs_rd, snapshot);
+	UnregisterSnapshot(snapshot);
+	totalRemainingRows = fileSegTotals->totaltuples - readblock->totalRowsScanned;
 	readblock->rows_to_scan = aoscan->analyze_block_size < totalRemainingRows ?
 								aoscan->analyze_block_size :
 								totalRemainingRows;
