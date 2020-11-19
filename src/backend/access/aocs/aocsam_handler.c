@@ -525,12 +525,7 @@ aoco_beginscan(Relation relation,
 	/* Parallel scan not supported for AO_COLUMN tables */
 	Assert(pscan == NULL);
 
-	/*
-	 * At the moment we project all columns for analyze scan.
-	 *
-	 * TODO: we need a way to project only subset of columns from
-	 * "analyze t(col1, ..., colN)"" command.
-	 */
+	/* At the moment we project all columns for analyze scan. */
 	if ((flags & SO_TYPE_ANALYZE) != 0)
 	{
 		natts = RelationGetNumberOfAttributes(relation);
