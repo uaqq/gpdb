@@ -237,7 +237,7 @@ function _main() {
     centos|ubuntu|sles)
       prep_env
       build_xerces
-      install_deps
+      #install_deps
       ;;
     win32)
         export BLD_ARCH=win32
@@ -269,9 +269,9 @@ function _main() {
       # require `./configure --with-zlib`.
       unittest_check_gpdb
   fi
-  include_zstd
-  include_quicklz
-  include_libuv
+  #include_zstd
+  #include_quicklz
+  #include_libuv
   export_gpdb
   export_gpdb_extensions
   export_gpdb_win32_ccl
