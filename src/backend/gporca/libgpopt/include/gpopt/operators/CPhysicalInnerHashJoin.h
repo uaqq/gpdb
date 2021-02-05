@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalInnerHashJoin_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPhysicalHashJoin.h"
 
 namespace gpopt
@@ -54,7 +55,7 @@ public:
 	CPhysicalInnerHashJoin(CMemoryPool *mp,
 						   CExpressionArray *pdrgpexprOuterKeys,
 						   CExpressionArray *pdrgpexprInnerKeys,
-						   IMdIdArray *hash_opfamilies = NULL);
+						   IMdIdArray *hash_opfamilies = nullptr);
 
 	// dtor
 	~CPhysicalInnerHashJoin() override;
@@ -86,12 +87,6 @@ public:
 	// derive distribution
 	CDistributionSpec *PdsDerive(CMemoryPool *mp,
 								 CExpressionHandle &exprhdl) const override;
-
-	// compute required partition propagation of the n-th child
-	CPartitionPropagationSpec *PppsRequired(
-		CMemoryPool *mp, CExpressionHandle &exprhdl,
-		CPartitionPropagationSpec *pppsRequired, ULONG child_index,
-		CDrvdPropArray *pdrgpdpCtxt, ULONG ulOptReq) override;
 
 };	// class CPhysicalInnerHashJoin
 

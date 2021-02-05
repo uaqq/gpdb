@@ -12,9 +12,10 @@
 #define GPNAUCRATES_CStatsPredArrayCmp_H
 
 #include "gpos/base.h"
+
 #include "naucrates/md/IMDType.h"
-#include "naucrates/statistics/CStatsPred.h"
 #include "naucrates/statistics/CPoint.h"
+#include "naucrates/statistics/CStatsPred.h"
 
 // fwd declarations
 namespace gpopt
@@ -75,7 +76,7 @@ public:
 	static CStatsPredArrayCmp *
 	ConvertPredStats(CStatsPred *pred_stats)
 	{
-		GPOS_ASSERT(NULL != pred_stats);
+		GPOS_ASSERT(nullptr != pred_stats);
 		GPOS_ASSERT(CStatsPred::EsptArrayCmp == pred_stats->GetPredStatsType());
 
 		return dynamic_cast<CStatsPredArrayCmp *>(pred_stats);

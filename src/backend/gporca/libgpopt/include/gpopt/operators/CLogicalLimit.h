@@ -13,10 +13,9 @@
 
 #include "gpos/base.h"
 
-#include "naucrates/md/IMDId.h"
-
 #include "gpopt/base/COrderSpec.h"
 #include "gpopt/operators/CLogical.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpopt
 {
@@ -188,7 +187,7 @@ public:
 	static CLogicalLimit *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalLimit == pop->Eopid());
 
 		return dynamic_cast<CLogicalLimit *>(pop);

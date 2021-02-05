@@ -12,8 +12,9 @@
 #define GPOPT_CScalarCaseTest_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CScalar.h"
+
 #include "gpopt/base/CDrvdProp.h"
+#include "gpopt/operators/CScalar.h"
 
 namespace gpopt
 {
@@ -86,7 +87,7 @@ public:
 	static CScalarCaseTest *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarCaseTest == pop->Eopid());
 
 		return dynamic_cast<CScalarCaseTest *>(pop);

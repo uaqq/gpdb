@@ -13,8 +13,9 @@
 #define GPDXL_CDXLScalarIdent_H
 
 #include "gpos/base.h"
-#include "naucrates/dxl/operators/CDXLScalar.h"
+
 #include "naucrates/dxl/operators/CDXLColRef.h"
+#include "naucrates/dxl/operators/CDXLScalar.h"
 #include "naucrates/md/IMDId.h"
 
 namespace gpdxl
@@ -64,7 +65,7 @@ public:
 	static CDXLScalarIdent *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarIdent == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarIdent *>(dxl_op);

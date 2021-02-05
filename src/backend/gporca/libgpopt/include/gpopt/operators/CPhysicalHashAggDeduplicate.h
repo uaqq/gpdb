@@ -12,6 +12,7 @@
 #define GPOS_CPhysicalHashAggDeduplicate_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPhysicalHashAgg.h"
 
 namespace gpopt
@@ -106,7 +107,7 @@ public:
 	static CPhysicalHashAggDeduplicate *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalHashAggDeduplicate == pop->Eopid());
 
 		return reinterpret_cast<CPhysicalHashAggDeduplicate *>(pop);

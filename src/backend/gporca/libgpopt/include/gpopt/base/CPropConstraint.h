@@ -69,9 +69,9 @@ public:
 	CColRefSet *
 	PcrsEquivClass(const CColRef *colref) const
 	{
-		if (NULL == m_phmcrcrs)
+		if (nullptr == m_phmcrcrs)
 		{
-			return NULL;
+			return nullptr;
 		}
 		return m_phmcrcrs->Find(colref);
 	}
@@ -93,7 +93,7 @@ public:
 		CPropConstraint *constraintsForOuterRefs) const;
 
 	// print
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 };	// class CPropConstraint
 

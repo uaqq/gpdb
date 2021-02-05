@@ -12,6 +12,7 @@
 #define GPOPT_CLogicalDML_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogical.h"
 
 namespace gpopt
@@ -244,7 +245,7 @@ public:
 	static CLogicalDML *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalDML == pop->Eopid());
 
 		return dynamic_cast<CLogicalDML *>(pop);

@@ -12,8 +12,8 @@
 #define GPOS_CBitSet_H
 
 #include "gpos/base.h"
-#include "gpos/common/CDynamicPtrArray.h"
 #include "gpos/common/CBitVector.h"
+#include "gpos/common/CDynamicPtrArray.h"
 #include "gpos/common/CList.h"
 
 
@@ -96,7 +96,7 @@ protected:
 	CBitSet(const CBitSet &);
 
 	// find link with offset less or equal to given value
-	CBitSetLink *FindLinkByOffset(ULONG, CBitSetLink * = NULL) const;
+	CBitSetLink *FindLinkByOffset(ULONG, CBitSetLink * = nullptr) const;
 
 	// reset set
 	void Clear();
@@ -153,7 +153,7 @@ public:
 	}
 
 	// print function
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 };	// class CBitSet
 

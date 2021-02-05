@@ -12,6 +12,7 @@
 #define GPOPT_CLogicalInsert_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogical.h"
 
 namespace gpopt
@@ -165,7 +166,7 @@ public:
 	static CLogicalInsert *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalInsert == pop->Eopid());
 
 		return dynamic_cast<CLogicalInsert *>(pop);

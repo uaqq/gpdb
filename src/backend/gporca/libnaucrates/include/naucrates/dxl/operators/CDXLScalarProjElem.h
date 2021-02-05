@@ -15,6 +15,7 @@
 #define GPDXL_CDXLScalarProjElem_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 #include "naucrates/md/CMDName.h"
 
@@ -74,7 +75,7 @@ public:
 	static CDXLScalarProjElem *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarProjectElem == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarProjElem *>(dxl_op);

@@ -106,7 +106,7 @@ private:
 		BOOL Equals(CCTEReqEntry *pcre) const;
 
 		// print function
-		IOstream &OsPrint(IOstream &os) const override;
+		IOstream &OsPrint(IOstream &os) const;
 
 	};	// class CCTEReqEntry
 
@@ -165,7 +165,7 @@ public:
 	BOOL
 	Equals(const CCTEReq *pcter) const
 	{
-		GPOS_ASSERT(NULL != pcter);
+		GPOS_ASSERT(nullptr != pcter);
 		return (m_phmcter->Size() == pcter->m_phmcter->Size()) &&
 			   this->FSubset(pcter);
 	}
@@ -195,7 +195,7 @@ public:
 	CDrvdPropPlan *Pdpplan(ULONG ulCteId) const;
 
 	// print function
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 };	// class CCTEMap
 

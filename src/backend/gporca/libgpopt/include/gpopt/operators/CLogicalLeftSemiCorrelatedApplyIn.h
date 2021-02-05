@@ -14,6 +14,7 @@
 #define GPOPT_CLogicalLeftSemiCorrelatedApplyIn_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalLeftSemiApplyIn.h"
 
 namespace gpopt
@@ -77,7 +78,7 @@ public:
 	static CLogicalLeftSemiCorrelatedApplyIn *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalLeftSemiCorrelatedApplyIn == pop->Eopid());
 
 		return dynamic_cast<CLogicalLeftSemiCorrelatedApplyIn *>(pop);

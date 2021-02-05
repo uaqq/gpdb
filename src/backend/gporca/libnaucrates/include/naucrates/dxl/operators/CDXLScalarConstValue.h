@@ -13,9 +13,10 @@
 #define GPDXL_CDXLScalarConstValue_H
 
 #include "gpos/base.h"
-#include "naucrates/dxl/operators/CDXLScalar.h"
-#include "naucrates/dxl/operators/CDXLDatum.h"
+
 #include "naucrates/dxl/gpdb_types.h"
+#include "naucrates/dxl/operators/CDXLDatum.h"
+#include "naucrates/dxl/operators/CDXLScalar.h"
 
 namespace gpdxl
 {
@@ -64,7 +65,7 @@ public:
 	static CDXLScalarConstValue *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarConstValue == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarConstValue *>(dxl_op);

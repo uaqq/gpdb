@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalExternalScan_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPhysicalTableScan.h"
 
 namespace gpopt
@@ -83,7 +84,7 @@ public:
 	static CPhysicalExternalScan *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalExternalScan == pop->Eopid());
 
 		return reinterpret_cast<CPhysicalExternalScan *>(pop);

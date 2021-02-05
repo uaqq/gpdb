@@ -8,11 +8,10 @@
 
 #include "naucrates/dxl/parser/CParseHandlerScalarPartListValues.h"
 
-#include "naucrates/dxl/parser/CParseHandlerFactory.h"
-#include "naucrates/dxl/parser/CParseHandlerScalarOp.h"
-
 #include "naucrates/dxl/operators/CDXLOperatorFactory.h"
 #include "naucrates/dxl/operators/CDXLScalarPartListValues.h"
+#include "naucrates/dxl/parser/CParseHandlerFactory.h"
+#include "naucrates/dxl/parser/CParseHandlerScalarOp.h"
 
 using namespace gpdxl;
 
@@ -76,7 +75,7 @@ CParseHandlerScalarPartListValues::EndElement(
 				   str->GetBuffer());
 	}
 
-	GPOS_ASSERT(NULL != m_dxl_node);
+	GPOS_ASSERT(nullptr != m_dxl_node);
 
 	// deactivate handler
 	m_parse_handler_mgr->DeactivateHandler();

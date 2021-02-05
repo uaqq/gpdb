@@ -47,12 +47,12 @@ public:
 		delete;
 
 	// ctors
-	CLogicalDynamicBitmapTableGet(
-		CMemoryPool *mp, CTableDescriptor *ptabdesc, ULONG ulOriginOpId,
-		const CName *pnameTableAlias, ULONG ulPartIndex,
-		CColRefArray *pdrgpcrOutput, CColRef2dArray *pdrgpdrgpcrPart,
-		ULONG ulSecondaryPartIndexId, BOOL is_partial,
-		CPartConstraint *ppartcnstr, CPartConstraint *ppartcnstrRel);
+	CLogicalDynamicBitmapTableGet(CMemoryPool *mp, CTableDescriptor *ptabdesc,
+								  ULONG ulOriginOpId,
+								  const CName *pnameTableAlias,
+								  ULONG ulPartIndex,
+								  CColRefArray *pdrgpcrOutput,
+								  CColRef2dArray *pdrgpdrgpcrPart);
 
 	explicit CLogicalDynamicBitmapTableGet(CMemoryPool *mp);
 
@@ -138,7 +138,7 @@ public:
 	static CLogicalDynamicBitmapTableGet *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalDynamicBitmapTableGet == pop->Eopid());
 
 		return dynamic_cast<CLogicalDynamicBitmapTableGet *>(pop);

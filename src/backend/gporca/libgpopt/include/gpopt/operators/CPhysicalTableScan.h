@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalTableScan_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPhysicalScan.h"
 
 namespace gpopt
@@ -56,16 +57,6 @@ public:
 	// match function
 	BOOL Matches(COperator *) const override;
 
-	// derive partition index map
-	CPartIndexMap *
-	PpimDerive(CMemoryPool *mp,
-			   CExpressionHandle &,	 // exprhdl
-			   CDrvdPropCtxt *		 //pdpctxt
-	) const override
-	{
-		return GPOS_NEW(mp) CPartIndexMap(mp);
-	}
-
 	//-------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------
@@ -78,7 +69,7 @@ public:
 	static CPhysicalTableScan *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalTableScan == pop->Eopid() ||
 					EopPhysicalExternalScan == pop->Eopid());
 
@@ -96,7 +87,7 @@ public:
 		GPOS_ASSERT(
 			!"stats derivation during costing for table scan is invalid");
 
-		return NULL;
+		return nullptr;
 	}
 
 	CRewindabilitySpec *

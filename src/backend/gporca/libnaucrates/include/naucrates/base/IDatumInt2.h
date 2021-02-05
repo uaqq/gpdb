@@ -12,6 +12,7 @@
 #define GPNAUCRATES_IDatumInt2_H
 
 #include "gpos/base.h"
+
 #include "naucrates/base/IDatum.h"
 
 namespace gpnaucrates
@@ -79,7 +80,7 @@ public:
 	GetByteArrayValue() const override
 	{
 		GPOS_ASSERT(!"Invalid invocation of MakeCopyOfValue");
-		return NULL;
+		return nullptr;
 	}
 
 	// does the datum need to be padded before statistical derivation
@@ -96,7 +97,7 @@ public:
 	) const override
 	{
 		GPOS_ASSERT(!"Invalid invocation of MakePaddedDatum");
-		return NULL;
+		return nullptr;
 	}
 
 	// does datum support like predicate

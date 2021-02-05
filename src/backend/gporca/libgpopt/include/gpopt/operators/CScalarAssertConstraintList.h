@@ -27,10 +27,10 @@
 #define GPOPT_CScalarAssertConstraintList_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDId.h"
 
-#include "gpopt/operators/CScalar.h"
 #include "gpopt/base/COptCtxt.h"
+#include "gpopt/operators/CScalar.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpopt
 {
@@ -95,7 +95,7 @@ public:
 	static CScalarAssertConstraintList *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarAssertConstraintList == pop->Eopid());
 
 		return dynamic_cast<CScalarAssertConstraintList *>(pop);

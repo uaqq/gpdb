@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarMergeCondList_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 
 namespace gpdxl
@@ -47,7 +48,7 @@ public:
 	static CDXLScalarMergeCondList *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarMergeCondList == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarMergeCondList *>(dxl_op);

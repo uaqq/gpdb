@@ -12,6 +12,7 @@
 #define GPDXL_CDXLLogicalCTEProducer_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLLogical.h"
 
 namespace gpdxl
@@ -76,7 +77,7 @@ public:
 	static CDXLLogicalCTEProducer *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalCTEProducer == dxl_op->GetDXLOperator());
 		return dynamic_cast<CDXLLogicalCTEProducer *>(dxl_op);
 	}

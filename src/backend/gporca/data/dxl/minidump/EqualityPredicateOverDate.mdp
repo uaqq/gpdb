@@ -313,6 +313,11 @@
           </dxl:TableDescriptor>
         </dxl:TableScan>
       </dxl:GatherMotion>
+      <dxl:DirectDispatchInfo>
+          <dxl:KeyValue>
+              <dxl:Datum TypeMdid="0.1082.1.0" Value="txoAAA==" LintValue="6839"/>
+          </dxl:KeyValue>
+      </dxl:DirectDispatchInfo>
     </dxl:Plan>
   </dxl:Thread>
 </dxl:DXLMessage>

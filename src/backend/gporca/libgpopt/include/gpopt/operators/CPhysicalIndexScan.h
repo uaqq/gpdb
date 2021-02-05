@@ -12,8 +12,9 @@
 #define GPOPT_CPhysicalIndexScan_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CPhysicalScan.h"
+
 #include "gpopt/metadata/CIndexDescriptor.h"
+#include "gpopt/operators/CPhysicalScan.h"
 
 namespace gpopt
 {
@@ -118,16 +119,6 @@ public:
 		return m_pos;
 	}
 
-	// derive partition index map
-	CPartIndexMap *
-	PpimDerive(CMemoryPool *mp,
-			   CExpressionHandle &,	 // exprhdl
-			   CDrvdPropCtxt *		 //pdpctxt
-	) const override
-	{
-		return GPOS_NEW(mp) CPartIndexMap(mp);
-	}
-
 	CRewindabilitySpec *
 	PrsDerive(CMemoryPool *mp,
 			  CExpressionHandle &  // exprhdl
@@ -151,7 +142,7 @@ public:
 	static CPhysicalIndexScan *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalIndexScan == pop->Eopid());
 
 		return dynamic_cast<CPhysicalIndexScan *>(pop);
@@ -168,7 +159,7 @@ public:
 		GPOS_ASSERT(
 			!"stats derivation during costing for index scan is invalid");
 
-		return NULL;
+		return nullptr;
 	}
 
 	// debug print

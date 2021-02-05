@@ -12,6 +12,7 @@
 #define GPOPT_CPattern_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/COperator.h"
 
 namespace gpopt
@@ -72,7 +73,7 @@ public:
 	static CPattern *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(pop->FPattern());
 
 		return reinterpret_cast<CPattern *>(pop);

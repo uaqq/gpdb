@@ -17,7 +17,6 @@
 #include "gpos/string/CWStringConst.h"
 
 #include "naucrates/dxl/gpdb_types.h"
-
 #include "naucrates/md/CMDIdGPDB.h"
 #include "naucrates/md/CSystemId.h"
 
@@ -114,7 +113,7 @@ public:
 	static const CMDIdCast *
 	CastMdid(const IMDId *mdid)
 	{
-		GPOS_ASSERT(NULL != mdid && EmdidCastFunc == mdid->MdidType());
+		GPOS_ASSERT(nullptr != mdid && EmdidCastFunc == mdid->MdidType());
 
 		return dynamic_cast<const CMDIdCast *>(mdid);
 	}
@@ -123,7 +122,7 @@ public:
 	static CMDIdCast *
 	CastMdid(IMDId *mdid)
 	{
-		GPOS_ASSERT(NULL != mdid && EmdidCastFunc == mdid->MdidType());
+		GPOS_ASSERT(nullptr != mdid && EmdidCastFunc == mdid->MdidType());
 
 		return dynamic_cast<CMDIdCast *>(mdid);
 	}

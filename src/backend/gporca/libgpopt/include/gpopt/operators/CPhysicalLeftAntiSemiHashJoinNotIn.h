@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalLeftAntiSemiHashJoinNotIn_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPhysicalLeftAntiSemiHashJoin.h"
 
 namespace gpopt
@@ -35,7 +36,7 @@ public:
 	CPhysicalLeftAntiSemiHashJoinNotIn(CMemoryPool *mp,
 									   CExpressionArray *pdrgpexprOuterKeys,
 									   CExpressionArray *pdrgpexprInnerKeys,
-									   IMdIdArray *hash_opfamilies = NULL);
+									   IMdIdArray *hash_opfamilies = nullptr);
 
 	// ident accessors
 	EOperatorId

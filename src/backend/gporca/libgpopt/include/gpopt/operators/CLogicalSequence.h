@@ -12,8 +12,9 @@
 #define GPOPT_CLogicalSequence_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogical.h"
+
 #include "gpopt/operators/CExpressionHandle.h"
+#include "gpopt/operators/CLogical.h"
 
 namespace gpopt
 {
@@ -156,7 +157,7 @@ public:
 	static CLogicalSequence *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalSequence == pop->Eopid());
 
 		return dynamic_cast<CLogicalSequence *>(pop);

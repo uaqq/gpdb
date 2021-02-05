@@ -12,12 +12,14 @@
 #define GPOPT_CJoinOrderDP_H
 
 #include "gpos/base.h"
-#include "gpos/common/CHashMap.h"
 #include "gpos/common/CBitSet.h"
+#include "gpos/common/CHashMap.h"
+#include "gpos/common/DbgPrintMixin.h"
 #include "gpos/io/IOstream.h"
+
 #include "gpopt/base/CUtils.h"
-#include "gpopt/xforms/CJoinOrder.h"
 #include "gpopt/operators/CExpression.h"
+#include "gpopt/xforms/CJoinOrder.h"
 
 
 namespace gpopt
@@ -32,7 +34,7 @@ using namespace gpos;
 //		Helper class for creating join orders using dynamic programming
 //
 //---------------------------------------------------------------------------
-class CJoinOrderDP : public CJoinOrder
+class CJoinOrderDP : public CJoinOrder, public gpos::DbgPrintMixin<CJoinOrderDP>
 {
 private:
 	//---------------------------------------------------------------------------
@@ -69,7 +71,7 @@ private:
 	static ULONG
 	UlHashBitSet(const CBitSet *pbs)
 	{
-		GPOS_ASSERT(NULL != pbs);
+		GPOS_ASSERT(nullptr != pbs);
 
 		return pbs->HashValue();
 	}
@@ -78,8 +80,8 @@ private:
 	static BOOL
 	FEqualBitSet(const CBitSet *pbsFst, const CBitSet *pbsSnd)
 	{
-		GPOS_ASSERT(NULL != pbsFst);
-		GPOS_ASSERT(NULL != pbsSnd);
+		GPOS_ASSERT(nullptr != pbsFst);
+		GPOS_ASSERT(nullptr != pbsSnd);
 
 		return pbsFst->Equals(pbsSnd);
 	}
@@ -189,9 +191,6 @@ public:
 	// print function
 	IOstream &OsPrint(IOstream &) const;
 
-#ifdef GPOS_DEBUG
-	void DbgPrint();
-#endif
 
 };	// class CJoinOrderDP
 

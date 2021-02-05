@@ -19,9 +19,8 @@
 #include "gpos/string/CWStringConst.h"
 
 #include "naucrates/dxl/gpdb_types.h"
-
-#include "naucrates/md/IMDId.h"
 #include "naucrates/md/CSystemId.h"
+#include "naucrates/md/IMDId.h"
 
 
 // TODO:  - Feb 1, 2012; remove once system id is part of the mdid
@@ -127,7 +126,7 @@ public:
 	static const CMDIdGPDB *
 	CastMdid(const IMDId *mdid)
 	{
-		GPOS_ASSERT(NULL != mdid && EmdidGPDB == mdid->MdidType());
+		GPOS_ASSERT(nullptr != mdid && EmdidGPDB == mdid->MdidType());
 
 		return dynamic_cast<const CMDIdGPDB *>(mdid);
 	}
@@ -136,8 +135,8 @@ public:
 	static CMDIdGPDB *
 	CastMdid(IMDId *mdid)
 	{
-		GPOS_ASSERT(NULL != mdid && (EmdidGPDB == mdid->MdidType() ||
-									 EmdidGPDBCtas == mdid->MdidType()));
+		GPOS_ASSERT(nullptr != mdid && (EmdidGPDB == mdid->MdidType() ||
+										EmdidGPDBCtas == mdid->MdidType()));
 
 		return dynamic_cast<CMDIdGPDB *>(mdid);
 	}

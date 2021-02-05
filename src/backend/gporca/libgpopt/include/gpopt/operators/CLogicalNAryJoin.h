@@ -12,6 +12,7 @@
 #define GPOS_CLogicalNAryJoin_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalJoin.h"
 
 namespace gpopt
@@ -113,7 +114,7 @@ public:
 	static CLogicalNAryJoin *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 
 		return dynamic_cast<CLogicalNAryJoin *>(pop);
 	}
@@ -124,13 +125,13 @@ public:
 	BOOL
 	HasOuterJoinChildren() const
 	{
-		return (NULL != m_lojChildPredIndexes);
+		return (nullptr != m_lojChildPredIndexes);
 	}
 
 	BOOL
 	IsInnerJoinChild(ULONG child_num) const
 	{
-		return (NULL == m_lojChildPredIndexes ||
+		return (nullptr == m_lojChildPredIndexes ||
 				*((*m_lojChildPredIndexes)[child_num]) == 0);
 	}
 

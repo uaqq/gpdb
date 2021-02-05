@@ -20,6 +20,7 @@
 
 #include "gpos/base.h"
 #include "gpos/common/CDouble.h"
+
 #include "naucrates/dxl/operators/CDXLDatumGeneric.h"
 
 namespace gpdxl
@@ -68,7 +69,7 @@ public:
 	static CDXLDatumStatsLintMappable *
 	Cast(CDXLDatum *dxl_datum)
 	{
-		GPOS_ASSERT(NULL != dxl_datum);
+		GPOS_ASSERT(nullptr != dxl_datum);
 		GPOS_ASSERT(CDXLDatum::EdxldatumStatsLintMappable ==
 					dxl_datum->GetDatumType());
 

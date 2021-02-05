@@ -14,12 +14,11 @@
 #include "gpos/base.h"
 #include "gpos/common/CDouble.h"
 
+#include "gpdbcost/CCostModelParamsGPDB.h"
 #include "gpopt/cost/CCost.h"
 #include "gpopt/cost/ICostModel.h"
 #include "gpopt/cost/ICostModelParams.h"
 #include "gpopt/operators/COperator.h"
-
-#include "gpdbcost/CCostModelParamsGPDB.h"
 
 
 namespace gpdbcost
@@ -224,7 +223,7 @@ private:
 public:
 	// ctor
 	CCostModelGPDB(CMemoryPool *mp, ULONG ulSegments,
-				   CCostModelParamsGPDB *pcp = NULL);
+				   CCostModelParamsGPDB *pcp = nullptr);
 
 	// dtor
 	~CCostModelGPDB() override;

@@ -10,6 +10,7 @@
 //---------------------------------------------------------------------------
 
 #include "naucrates/dxl/parser/CParseHandlerScalarOp.h"
+
 #include "naucrates/dxl/parser/CParseHandlerFactory.h"
 
 
@@ -65,7 +66,7 @@ CParseHandlerScalarOp::StartElement(const XMLCh *const element_uri,
 		CParseHandlerFactory::GetParseHandler(m_mp, element_local_name,
 											  m_parse_handler_mgr, this);
 
-	GPOS_ASSERT(NULL != parse_handler_base);
+	GPOS_ASSERT(nullptr != parse_handler_base);
 
 	// activate the specialized parse handler
 	m_parse_handler_mgr->ReplaceHandler(parse_handler_base,

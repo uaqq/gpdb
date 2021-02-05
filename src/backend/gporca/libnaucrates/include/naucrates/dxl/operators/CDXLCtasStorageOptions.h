@@ -17,6 +17,7 @@
 #include "gpos/base.h"
 #include "gpos/common/CDynamicPtrArray.h"
 #include "gpos/common/CRefCount.h"
+
 #include "naucrates/md/CMDName.h"
 
 using namespace gpmd;
@@ -59,8 +60,8 @@ public:
 			  m_str_value(str_value),
 			  m_is_null(is_null)
 		{
-			GPOS_ASSERT(NULL != str_name);
-			GPOS_ASSERT(NULL != str_value);
+			GPOS_ASSERT(nullptr != str_name);
+			GPOS_ASSERT(nullptr != str_value);
 		}
 
 		// dtor

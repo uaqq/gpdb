@@ -12,32 +12,33 @@
 #ifndef GPDXL_CDXLOperatorFactory_H
 #define GPDXL_CDXLOperatorFactory_H
 
-#include <xercesc/util/XMLUniDefs.hpp>
 #include <xercesc/sax2/Attributes.hpp>
 #include <xercesc/util/XMLString.hpp>
 #include <xercesc/util/XMLStringTokenizer.hpp>
+#include <xercesc/util/XMLUniDefs.hpp>
 
 #include "gpos/base.h"
+#include "gpos/common/CDouble.h"
+
+#include "naucrates/base/IDatum.h"
 #include "naucrates/dxl/operators/CDXLColRef.h"
-#include "naucrates/dxl/operators/CDXLScalarSubPlan.h"
-#include "naucrates/dxl/operators/CDXLIndexDescr.h"
-#include "naucrates/dxl/operators/CDXLTableDescr.h"
 #include "naucrates/dxl/operators/CDXLCtasStorageOptions.h"
+#include "naucrates/dxl/operators/CDXLIndexDescr.h"
 #include "naucrates/dxl/operators/CDXLLogical.h"
 #include "naucrates/dxl/operators/CDXLPhysical.h"
 #include "naucrates/dxl/operators/CDXLPhysicalMotion.h"
-#include "naucrates/dxl/operators/CDXLScalarBooleanTest.h"
 #include "naucrates/dxl/operators/CDXLScalarBoolExpr.h"
+#include "naucrates/dxl/operators/CDXLScalarBooleanTest.h"
+#include "naucrates/dxl/operators/CDXLScalarSubPlan.h"
 #include "naucrates/dxl/operators/CDXLScalarWindowFrameEdge.h"
+#include "naucrates/dxl/operators/CDXLTableDescr.h"
 #include "naucrates/dxl/operators/CDXLWindowFrame.h"
 #include "naucrates/dxl/xml/CDXLMemoryManager.h"
 #include "naucrates/dxl/xml/dxltokens.h"
-#include "naucrates/md/IMDId.h"
 #include "naucrates/md/CMDFunctionGPDB.h"
 #include "naucrates/md/CMDRelationGPDB.h"
+#include "naucrates/md/IMDId.h"
 #include "naucrates/md/IMDIndex.h"
-#include "naucrates/base/IDatum.h"
-#include "gpos/common/CDouble.h"
 
 // dynamic array of XML strings
 typedef CDynamicPtrArray<XMLCh, CleanupNULL> XMLChArray;
@@ -442,7 +443,7 @@ public:
 	static CHAR *ExtractConvertAttrValueToSz(
 		CDXLMemoryManager *dxl_memory_manager, const Attributes &attr,
 		Edxltoken target_attr, Edxltoken target_elem, BOOL is_optional = false,
-		CHAR *default_value = NULL);
+		CHAR *default_value = nullptr);
 
 	// parse a string value from the value for a given attribute
 	static CHAR *ConvertAttrValueToSz(CDXLMemoryManager *dxl_memory_manager,
@@ -473,7 +474,7 @@ public:
 	static IMDId *ExtractConvertAttrValueToMdId(
 		CDXLMemoryManager *dxl_memory_manager, const Attributes &attr,
 		Edxltoken target_attr, Edxltoken target_elem, BOOL is_optional = false,
-		IMDId *default_val = NULL);
+		IMDId *default_val = nullptr);
 
 	// parse an mdid object from an XMLCh
 	static IMDId *MakeMdIdFromStr(CDXLMemoryManager *dxl_memory_manager,
@@ -658,7 +659,7 @@ CDXLOperatorFactory::ExtractIntsToArray(CDXLMemoryManager *dxl_memory_manager,
 	{
 		XMLCh *xmlszNext = mdid_components.nextToken();
 
-		GPOS_ASSERT(NULL != xmlszNext);
+		GPOS_ASSERT(nullptr != xmlszNext);
 
 		T *pt = GPOS_NEW(mp) T(ValueFromXmlstr(dxl_memory_manager, xmlszNext,
 											   target_attr, target_elem));

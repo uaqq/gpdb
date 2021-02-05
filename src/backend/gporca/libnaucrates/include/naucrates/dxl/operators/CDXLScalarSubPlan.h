@@ -13,8 +13,9 @@
 #define GPDXL_CDXLScalarSubPlan_H
 
 #include "gpos/base.h"
-#include "naucrates/dxl/operators/CDXLScalar.h"
+
 #include "naucrates/dxl/operators/CDXLColRef.h"
+#include "naucrates/dxl/operators/CDXLScalar.h"
 
 namespace gpdxl
 {
@@ -115,7 +116,7 @@ public:
 	static CDXLScalarSubPlan *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarSubPlan == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarSubPlan *>(dxl_op);

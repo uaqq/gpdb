@@ -12,6 +12,7 @@
 #define GPNAUCRATES_CStatsPredLike_H
 
 #include "gpos/base.h"
+
 #include "naucrates/md/IMDType.h"
 #include "naucrates/statistics/CStatsPred.h"
 
@@ -88,7 +89,7 @@ public:
 	static CStatsPredLike *
 	ConvertPredStats(CStatsPred *pred_stats)
 	{
-		GPOS_ASSERT(NULL != pred_stats);
+		GPOS_ASSERT(nullptr != pred_stats);
 		GPOS_ASSERT(CStatsPred::EsptLike == pred_stats->GetPredStatsType());
 
 		return dynamic_cast<CStatsPredLike *>(pred_stats);

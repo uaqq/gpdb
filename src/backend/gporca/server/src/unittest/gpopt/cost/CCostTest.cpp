@@ -8,25 +8,24 @@
 //	@doc:
 //		Tests for basic operations on cost
 //---------------------------------------------------------------------------
+#include "unittest/gpopt/cost/CCostTest.h"
+
 #include "gpos/error/CAutoTrace.h"
 #include "gpos/task/CAutoTraceFlag.h"
 
+#include "gpdbcost/CCostModelGPDB.h"
 #include "gpopt/cost/CCost.h"
 #include "gpopt/cost/ICostModelParams.h"
 #include "gpopt/engine/CEngine.h"
 #include "gpopt/eval/CConstExprEvaluatorDefault.h"
 #include "gpopt/minidump/CMinidumperUtils.h"
-#include "gpopt/optimizer/COptimizerConfig.h"
 #include "gpopt/operators/CLogicalInnerJoin.h"
-
+#include "gpopt/optimizer/COptimizerConfig.h"
 #include "naucrates/dxl/CDXLUtils.h"
 #include "naucrates/dxl/parser/CParseHandlerDXL.h"
 
 #include "unittest/base.h"
-#include "unittest/gpopt/cost/CCostTest.h"
 #include "unittest/gpopt/CTestUtils.h"
-
-#include "gpdbcost/CCostModelGPDB.h"
 
 //---------------------------------------------------------------------------
 //	@function:
@@ -220,7 +219,7 @@ CCostTest::EresUnittest_Params()
 	CMDAccessor mda(mp, CMDCache::Pcache(), CTestUtils::m_sysidDefault, pmdp);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */
 					 GPOS_NEW(mp) CCostModelGPDB(mp, GPOPT_TEST_SEGMENTS));
 
 	TestParams(mp);
@@ -243,7 +242,7 @@ CCostTest::EresUnittest_Parsing()
 	CAutoMemoryPool amp;
 	CMemoryPool *mp = amp.Pmp();
 	CParseHandlerDXL *pphDXL = CDXLUtils::GetParseHandlerForDXLFile(
-		mp, "../data/dxl/cost/cost0.xml", NULL);
+		mp, "../data/dxl/cost/cost0.xml", nullptr);
 	ICostModelParams *pcp = pphDXL->GetCostModelParams();
 
 	{
@@ -271,7 +270,7 @@ CCostTest::EresUnittest_ParsingWithException()
 	CAutoMemoryPool amp;
 	CMemoryPool *mp = amp.Pmp();
 	CParseHandlerDXL *pphDXL = CDXLUtils::GetParseHandlerForDXLFile(
-		mp, "../data/dxl/cost/wrong-cost.xml", NULL);
+		mp, "../data/dxl/cost/wrong-cost.xml", nullptr);
 	GPOS_DELETE(pphDXL);
 
 	return GPOS_OK;
@@ -300,7 +299,7 @@ CCostTest::EresUnittest_SetParams()
 	ICostModel *pcm = GPOS_NEW(mp) CCostModelGPDB(mp, GPOPT_TEST_SEGMENTS);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */ pcm);
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */ pcm);
 
 	// generate in-equality join expression
 	CExpression *pexprOuter = CTestUtils::PexprLogicalGet(mp);
@@ -313,7 +312,7 @@ CCostTest::EresUnittest_SetParams()
 		mp, pexprOuter, pexprInner, pexprPred);
 
 	// optimize in-equality join based on default cost model params
-	CExpression *pexprPlan1 = NULL;
+	CExpression *pexprPlan1 = nullptr;
 	{
 		CEngine eng(mp);
 
@@ -321,14 +320,14 @@ CCostTest::EresUnittest_SetParams()
 		CQueryContext *pqc = CTestUtils::PqcGenerate(mp, pexpr);
 
 		// Initialize engine
-		eng.Init(pqc, NULL /*search_stage_array*/);
+		eng.Init(pqc, nullptr /*search_stage_array*/);
 
 		// optimize query
 		eng.Optimize();
 
 		// extract plan
 		pexprPlan1 = eng.PexprExtractPlan();
-		GPOS_ASSERT(NULL != pexprPlan1);
+		GPOS_ASSERT(nullptr != pexprPlan1);
 
 		GPOS_DELETE(pqc);
 	}
@@ -342,7 +341,7 @@ CCostTest::EresUnittest_SetParams()
 										dVal + 0.5);
 
 	// optimize again after updating NLJ cost factor
-	CExpression *pexprPlan2 = NULL;
+	CExpression *pexprPlan2 = nullptr;
 	{
 		CEngine eng(mp);
 
@@ -350,14 +349,14 @@ CCostTest::EresUnittest_SetParams()
 		CQueryContext *pqc = CTestUtils::PqcGenerate(mp, pexpr);
 
 		// Initialize engine
-		eng.Init(pqc, NULL /*search_stage_array*/);
+		eng.Init(pqc, nullptr /*search_stage_array*/);
 
 		// optimize query
 		eng.Optimize();
 
 		// extract plan
 		pexprPlan2 = eng.PexprExtractPlan();
-		GPOS_ASSERT(NULL != pexprPlan2);
+		GPOS_ASSERT(nullptr != pexprPlan2);
 
 		GPOS_DELETE(pqc);
 	}

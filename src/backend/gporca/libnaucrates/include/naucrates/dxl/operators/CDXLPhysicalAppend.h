@@ -15,6 +15,7 @@
 #define GPDXL_CDXLPhysicalAppend_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysical.h"
 
 namespace gpdxl
@@ -66,7 +67,7 @@ public:
 	static CDXLPhysicalAppend *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalAppend == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalAppend *>(dxl_op);

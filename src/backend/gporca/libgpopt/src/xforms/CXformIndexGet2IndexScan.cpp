@@ -9,15 +9,16 @@
 //		Implementation of transform
 //---------------------------------------------------------------------------
 
-#include "gpos/base.h"
 #include "gpopt/xforms/CXformIndexGet2IndexScan.h"
 
+#include "gpos/base.h"
+
+#include "gpopt/metadata/CIndexDescriptor.h"
+#include "gpopt/metadata/CTableDescriptor.h"
 #include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/operators/CLogicalIndexGet.h"
 #include "gpopt/operators/CPatternLeaf.h"
 #include "gpopt/operators/CPhysicalIndexScan.h"
-#include "gpopt/metadata/CIndexDescriptor.h"
-#include "gpopt/metadata/CTableDescriptor.h"
 
 using namespace gpopt;
 
@@ -71,7 +72,7 @@ CXformIndexGet2IndexScan::Transform(CXformContext *pxfctxt,
 									CXformResult *pxfres,
 									CExpression *pexpr) const
 {
-	GPOS_ASSERT(NULL != pxfctxt);
+	GPOS_ASSERT(nullptr != pxfctxt);
 	GPOS_ASSERT(FPromising(pxfctxt->Pmp(), this, pexpr));
 	GPOS_ASSERT(FCheckPattern(pexpr));
 
@@ -91,11 +92,11 @@ CXformIndexGet2IndexScan::Transform(CXformContext *pxfctxt,
 	ptabdesc->AddRef();
 
 	CColRefArray *pdrgpcrOutput = pop->PdrgpcrOutput();
-	GPOS_ASSERT(NULL != pdrgpcrOutput);
+	GPOS_ASSERT(nullptr != pdrgpcrOutput);
 	pdrgpcrOutput->AddRef();
 
 	COrderSpec *pos = pop->Pos();
-	GPOS_ASSERT(NULL != pos);
+	GPOS_ASSERT(nullptr != pos);
 	pos->AddRef();
 
 	// addref all children

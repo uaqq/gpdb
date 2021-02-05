@@ -9,13 +9,15 @@
 //		Implementation of limit operator
 //---------------------------------------------------------------------------
 
-#include "gpos/base.h"
-#include "gpopt/base/CUtils.h"
-#include "gpopt/base/CDistributionSpecAny.h"
-#include "gpopt/base/CDistributionSpecSingleton.h"
-#include "gpopt/base/CDistributionSpecReplicated.h"
-#include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/operators/CPhysicalLimit.h"
+
+#include "gpos/base.h"
+
+#include "gpopt/base/CDistributionSpecAny.h"
+#include "gpopt/base/CDistributionSpecReplicated.h"
+#include "gpopt/base/CDistributionSpecSingleton.h"
+#include "gpopt/base/CUtils.h"
+#include "gpopt/operators/CExpressionHandle.h"
 
 
 using namespace gpopt;
@@ -36,10 +38,10 @@ CPhysicalLimit::CPhysicalLimit(CMemoryPool *mp, COrderSpec *pos, BOOL fGlobal,
 	  m_fGlobal(fGlobal),
 	  m_fHasCount(fHasCount),
 	  m_top_limit_under_dml(fTopLimitUnderDML),
-	  m_pcrsSort(NULL)
+	  m_pcrsSort(nullptr)
 {
-	GPOS_ASSERT(NULL != mp);
-	GPOS_ASSERT(NULL != pos);
+	GPOS_ASSERT(nullptr != mp);
+	GPOS_ASSERT(nullptr != pos);
 
 	m_pcrsSort = m_pos->PcrsUsed(mp);
 }
@@ -266,38 +268,6 @@ CPhysicalLimit::PrsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CPhysicalLimit::PppsRequired
-//
-//	@doc:
-//		Compute required partition propagation of the n-th child
-//
-//---------------------------------------------------------------------------
-CPartitionPropagationSpec *
-CPhysicalLimit::PppsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
-							 CPartitionPropagationSpec *pppsRequired,
-							 ULONG
-#ifdef GPOS_DEBUG
-								 child_index
-#endif
-							 ,
-							 CDrvdPropArray *,	//pdrgpdpCtxt
-							 ULONG				//ulOptReq
-)
-{
-	GPOS_ASSERT(0 == child_index);
-	GPOS_ASSERT(NULL != pppsRequired);
-
-	// limit should not push predicate below it as it will generate wrong results
-	// for example, the following two queries are not equivalent.
-	// Q1: select * from (select * from foo order by a limit 1) x where x.a = 10
-	// Q2: select * from (select * from foo where a = 10 order by a limit 1) x
-
-	return CPhysical::PppsRequiredPushThruUnresolvedUnary(
-		mp, exprhdl, pppsRequired, CPhysical::EppcProhibited, NULL);
-}
-
-//---------------------------------------------------------------------------
-//	@function:
 //		CPhysicalLimit::PcteRequired
 //
 //	@doc:
@@ -418,7 +388,7 @@ CEnfdProp::EPropEnforcingType
 CPhysicalLimit::EpetOrder(CExpressionHandle &,	// exprhdl
 						  const CEnfdOrder *peo) const
 {
-	GPOS_ASSERT(NULL != peo);
+	GPOS_ASSERT(nullptr != peo);
 	GPOS_ASSERT(!peo->PosRequired()->IsEmpty());
 
 	if (peo->FCompatible(m_pos))
@@ -444,7 +414,7 @@ CEnfdProp::EPropEnforcingType
 CPhysicalLimit::EpetDistribution(CExpressionHandle &exprhdl,
 								 const CEnfdDistribution *ped) const
 {
-	GPOS_ASSERT(NULL != ped);
+	GPOS_ASSERT(nullptr != ped);
 
 	// get distribution delivered by the limit node
 	CDistributionSpec *pds = CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds();

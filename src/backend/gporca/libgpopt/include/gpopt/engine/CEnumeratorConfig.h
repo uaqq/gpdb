@@ -16,7 +16,6 @@
 #include "gpos/common/CRefCount.h"
 
 #include "gpopt/cost/CCost.h"
-
 #include "naucrates/traceflags/traceflags.h"
 
 #define GPOPT_UNBOUNDED_COST_THRESHOLD 0.0
@@ -275,7 +274,7 @@ public:
 	void
 	SetPlanChecker(FnPlanChecker *pfpc)
 	{
-		GPOS_ASSERT(NULL != pfpc);
+		GPOS_ASSERT(nullptr != pfpc);
 
 		m_pfpc = pfpc;
 	}
@@ -299,9 +298,9 @@ public:
 	BOOL
 	FCheckPlan(CExpression *pexpr) const
 	{
-		GPOS_ASSERT(NULL != pexpr);
+		GPOS_ASSERT(nullptr != pexpr);
 
-		if (NULL != m_pfpc)
+		if (nullptr != m_pfpc)
 		{
 			return m_pfpc(pexpr);
 		}

@@ -12,8 +12,8 @@
 #define GPOS_CColRefSet_H
 
 #include "gpos/base.h"
-
 #include "gpos/common/CBitSet.h"
+
 #include "gpopt/base/CColRef.h"
 
 
@@ -124,7 +124,7 @@ public:
 	ULONG HashValue();
 
 	// debug print
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 	IOstream &OsPrint(IOstream &os, ULONG ulLenMax) const;
 
 	// extract all column ids

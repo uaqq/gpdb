@@ -15,8 +15,8 @@
 #include "gpos/base.h"
 #include "gpos/task/CTaskLocalStorageObject.h"
 
-#include "gpopt/base/CColumnFactory.h"
 #include "gpopt/base/CCTEInfo.h"
+#include "gpopt/base/CColumnFactory.h"
 #include "gpopt/base/IComparator.h"
 #include "gpopt/mdcache/CMDAccessor.h"
 
@@ -261,7 +261,7 @@ public:
 	void
 	SetReqdSystemCols(CColRefArray *pdrgpcrSystemCols)
 	{
-		GPOS_ASSERT(NULL != pdrgpcrSystemCols);
+		GPOS_ASSERT(nullptr != pdrgpcrSystemCols);
 
 		CRefCount::SafeRelease(m_pdrgpcrSystemCols);
 		m_pdrgpcrSystemCols = pdrgpcrSystemCols;

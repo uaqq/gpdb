@@ -12,6 +12,7 @@
 #define GPDXL_CDXLProperties_H
 
 #include "gpos/base.h"
+
 #include "naucrates/md/CDXLStatsDerivedRelation.h"
 
 namespace gpdxl
@@ -38,7 +39,7 @@ class CDXLProperties : public CRefCount
 {
 private:
 	// derived statistics
-	CDXLStatsDerivedRelation *m_dxl_stats_derived_relation;
+	CDXLStatsDerivedRelation *m_dxl_stats_derived_relation{nullptr};
 
 protected:
 	// serialize statistics in DXL format

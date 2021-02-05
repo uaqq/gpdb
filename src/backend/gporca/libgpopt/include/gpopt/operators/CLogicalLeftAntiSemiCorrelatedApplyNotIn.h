@@ -15,8 +15,9 @@
 #define GPOPT_CLogicalLeftAntiSemiCorrelatedApplyNotIn_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogicalLeftAntiSemiApplyNotIn.h"
+
 #include "gpopt/operators/CExpressionHandle.h"
+#include "gpopt/operators/CLogicalLeftAntiSemiApplyNotIn.h"
 
 namespace gpopt
 {
@@ -94,7 +95,7 @@ public:
 	static CLogicalLeftAntiSemiCorrelatedApplyNotIn *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalLeftAntiSemiCorrelatedApplyNotIn == pop->Eopid());
 
 		return dynamic_cast<CLogicalLeftAntiSemiCorrelatedApplyNotIn *>(pop);

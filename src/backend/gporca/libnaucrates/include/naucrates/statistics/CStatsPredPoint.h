@@ -12,6 +12,7 @@
 #define GPNAUCRATES_CStatsPredPoint_H
 
 #include "gpos/base.h"
+
 #include "naucrates/md/IMDType.h"
 #include "naucrates/statistics/CPoint.h"
 #include "naucrates/statistics/CStatsPred.h"
@@ -92,7 +93,7 @@ public:
 	static CStatsPredPoint *
 	ConvertPredStats(CStatsPred *pred_stats)
 	{
-		GPOS_ASSERT(NULL != pred_stats);
+		GPOS_ASSERT(nullptr != pred_stats);
 		GPOS_ASSERT(CStatsPred::EsptPoint == pred_stats->GetPredStatsType());
 
 		return dynamic_cast<CStatsPredPoint *>(pred_stats);

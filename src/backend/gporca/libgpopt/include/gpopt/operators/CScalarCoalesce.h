@@ -12,8 +12,9 @@
 #define GPOPT_CScalarCoalesce_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CScalar.h"
+
 #include "gpopt/base/CDrvdProp.h"
+#include "gpopt/operators/CScalar.h"
 
 namespace gpopt
 {
@@ -102,7 +103,7 @@ public:
 	static CScalarCoalesce *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarCoalesce == pop->Eopid());
 
 		return dynamic_cast<CScalarCoalesce *>(pop);

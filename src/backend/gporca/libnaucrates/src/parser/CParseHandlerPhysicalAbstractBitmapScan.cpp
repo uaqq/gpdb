@@ -11,9 +11,9 @@
 
 #include "naucrates/dxl/parser/CParseHandlerPhysicalAbstractBitmapScan.h"
 
-#include "naucrates/dxl/operators/CDXLPhysicalDynamicBitmapTableScan.h"
-#include "naucrates/dxl/operators/CDXLPhysicalBitmapTableScan.h"
 #include "naucrates/dxl/operators/CDXLPhysicalAbstractBitmapScan.h"
+#include "naucrates/dxl/operators/CDXLPhysicalBitmapTableScan.h"
+#include "naucrates/dxl/operators/CDXLPhysicalDynamicBitmapTableScan.h"
 #include "naucrates/dxl/parser/CParseHandlerFactory.h"
 #include "naucrates/dxl/parser/CParseHandlerFilter.h"
 #include "naucrates/dxl/parser/CParseHandlerPhysicalBitmapTableScan.h"
@@ -136,12 +136,12 @@ CParseHandlerPhysicalAbstractBitmapScan::EndElementHelper(
 	CParseHandlerTableDescr *table_descr_parse_handler =
 		dynamic_cast<CParseHandlerTableDescr *>((*this)[5]);
 
-	GPOS_ASSERT(NULL != table_descr_parse_handler->GetDXLTableDescr());
+	GPOS_ASSERT(nullptr != table_descr_parse_handler->GetDXLTableDescr());
 
 	// set table descriptor
 	CDXLTableDescr *table_descr = table_descr_parse_handler->GetDXLTableDescr();
 	table_descr->AddRef();
-	CDXLPhysical *dxl_op = NULL;
+	CDXLPhysical *dxl_op = nullptr;
 
 	if (EdxltokenPhysicalBitmapTableScan == token_type)
 	{

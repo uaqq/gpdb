@@ -80,7 +80,7 @@ public:
 	const IMDColumn *PartColAt(ULONG /*pos*/) const override
 	{
 		GPOS_ASSERT(!"External tables have no partition columns");
-		return NULL;
+		return nullptr;
 	}
 
 	// retrieve list of partition types
@@ -88,7 +88,7 @@ public:
 	GetPartitionTypes() const override
 	{
 		GPOS_ASSERT(!"External tables have no partition types");
-		return NULL;
+		return nullptr;
 	}
 
 	// retrieve the partition type at the given position
@@ -99,10 +99,10 @@ public:
 	}
 
 	// part constraint
-	IMDPartConstraint *
+	CDXLNode *
 	MDPartConstraint() const override
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	// reject limit

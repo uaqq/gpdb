@@ -19,6 +19,7 @@
 #define GPDXL_CDXLDatumBool_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLDatum.h"
 
 namespace gpdxl
@@ -72,7 +73,7 @@ public:
 	static CDXLDatumBool *
 	Cast(CDXLDatum *dxl_datum)
 	{
-		GPOS_ASSERT(NULL != dxl_datum);
+		GPOS_ASSERT(nullptr != dxl_datum);
 		GPOS_ASSERT(CDXLDatum::CDXLDatum::EdxldatumBool ==
 					dxl_datum->GetDatumType());
 

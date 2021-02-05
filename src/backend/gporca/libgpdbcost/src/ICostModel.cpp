@@ -11,6 +11,7 @@
 
 #include "gpos/base.h"
 #include "gpos/string/CWStringConst.h"
+
 #include "gpdbcost/CCostModelGPDB.h"
 
 using namespace gpopt;
@@ -45,7 +46,7 @@ ICostModel::PcmDefault(CMemoryPool *mp)
 void
 ICostModel::SetParams(ICostModelParamsArray *pdrgpcp)
 {
-	if (NULL == pdrgpcp)
+	if (nullptr == pdrgpcp)
 	{
 		return;
 	}

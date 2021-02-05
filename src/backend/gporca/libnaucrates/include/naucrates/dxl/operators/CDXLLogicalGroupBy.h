@@ -13,6 +13,7 @@
 #define GPDXL_CDXLLogicalGroupBy_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLLogical.h"
 #include "naucrates/dxl/operators/CDXLNode.h"
 
@@ -61,7 +62,7 @@ public:
 	static CDXLLogicalGroupBy *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalGrpBy == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLLogicalGroupBy *>(dxl_op);

@@ -17,19 +17,18 @@
 
 #include "naucrates/dxl/parser/CParseHandlerIndexScan.h"
 
-#include "naucrates/dxl/parser/CParseHandlerIndexCondList.h"
-#include "naucrates/dxl/parser/CParseHandlerTableDescr.h"
-#include "naucrates/dxl/parser/CParseHandlerIndexDescr.h"
+#include "naucrates/dxl/operators/CDXLOperatorFactory.h"
+#include "naucrates/dxl/operators/CDXLPhysicalDynamicIndexScan.h"
+#include "naucrates/dxl/operators/CDXLPhysicalIndexOnlyScan.h"
 #include "naucrates/dxl/parser/CParseHandlerFactory.h"
 #include "naucrates/dxl/parser/CParseHandlerFilter.h"
+#include "naucrates/dxl/parser/CParseHandlerIndexCondList.h"
+#include "naucrates/dxl/parser/CParseHandlerIndexDescr.h"
 #include "naucrates/dxl/parser/CParseHandlerProjList.h"
 #include "naucrates/dxl/parser/CParseHandlerProperties.h"
 #include "naucrates/dxl/parser/CParseHandlerScalarOp.h"
+#include "naucrates/dxl/parser/CParseHandlerTableDescr.h"
 #include "naucrates/dxl/parser/CParseHandlerUtils.h"
-
-#include "naucrates/dxl/operators/CDXLPhysicalDynamicIndexScan.h"
-#include "naucrates/dxl/operators/CDXLPhysicalIndexOnlyScan.h"
-#include "naucrates/dxl/operators/CDXLOperatorFactory.h"
 
 using namespace gpdxl;
 
@@ -213,7 +212,7 @@ CParseHandlerIndexScan::EndElementHelper(const XMLCh *const element_local_name,
 		index_descr_parse_handler->GetDXLIndexDescr();
 	dxl_index_descr->AddRef();
 
-	CDXLPhysical *dxl_op = NULL;
+	CDXLPhysical *dxl_op = nullptr;
 	if (EdxltokenPhysicalIndexOnlyScan == token_type)
 	{
 		dxl_op = GPOS_NEW(m_mp) CDXLPhysicalIndexOnlyScan(

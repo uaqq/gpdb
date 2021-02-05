@@ -16,13 +16,14 @@
 //
 //---------------------------------------------------------------------------
 
-#include "gpos/assert.h"
-#include "gpos/types.h"
-#include "gpos/utils.h"
-#include "gpos/common/CStackDescriptor.h"
 #include "gpos/memory/CMemoryVisitorPrint.h"
+
+#include "gpos/assert.h"
+#include "gpos/common/CStackDescriptor.h"
 #include "gpos/string/CWStringStatic.h"
 #include "gpos/task/ITask.h"
+#include "gpos/types.h"
+#include "gpos/utils.h"
 
 using namespace gpos;
 
@@ -75,9 +76,9 @@ CMemoryVisitorPrint::Visit(void *user_addr, SIZE_T user_size, void *total_addr,
 		 << std::endl;
 
 	ITask *task = ITask::Self();
-	if (NULL != task)
+	if (nullptr != task)
 	{
-		if (NULL != stack_desc &&
+		if (nullptr != stack_desc &&
 			task->IsTraceSet(EtracePrintMemoryLeakStackTrace))
 		{
 			m_os << "Stack trace: " << std::endl;

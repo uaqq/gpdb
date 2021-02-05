@@ -13,18 +13,16 @@
 #define GPOPT_CXform_H
 
 #include "gpos/base.h"
-#include "gpopt/base/CUtils.h"
 #include "gpos/common/CEnumSet.h"
 #include "gpos/common/CEnumSetIter.h"
 #include "gpos/common/CRefCount.h"
 
+#include "gpopt/base/CUtils.h"
 #include "gpopt/operators/CExpression.h"
 #include "gpopt/operators/CPhysicalHashJoin.h"
-
 #include "gpopt/xforms/CXform.h"
 #include "gpopt/xforms/CXformContext.h"
 #include "gpopt/xforms/CXformResult.h"
-
 #include "naucrates/traceflags/traceflags.h"
 
 // Macro for enabling and disabling xforms
@@ -82,7 +80,7 @@ public:
 		ExfSelect2Filter,
 		ExfSelect2IndexGet,
 		ExfSelect2DynamicIndexGet,
-		ExfSelect2PartialDynamicIndexGet,
+		ExfSelect2PartialDynamicIndexGet____removed,
 		ExfSimplifySelectWithSubquery,
 		ExfSimplifyProjectWithSubquery,
 		ExfSelect2Apply,
@@ -185,7 +183,7 @@ public:
 		ExfSelect2DynamicBitmapBoolOp,
 		ExfImplementBitmapTableGet,
 		ExfImplementDynamicBitmapTableGet,
-		ExfInnerJoin2PartialDynamicIndexGetApply,
+		ExfInnerJoin2PartialDynamicIndexGetApply____removed,
 		ExfLeftOuter2InnerUnionAllLeftAntiSemiJoin,
 		ExfImplementLeftSemiCorrelatedApply,
 		ExfImplementLeftSemiCorrelatedApplyIn,
@@ -199,7 +197,7 @@ public:
 		ExfMaxOneRow2Assert,
 		ExfInnerJoinWithInnerSelect2IndexGetApply____removed,
 		ExfInnerJoinWithInnerSelect2DynamicIndexGetApply____removed,
-		ExfInnerJoinWithInnerSelect2PartialDynamicIndexGetApply,
+		ExfInnerJoinWithInnerSelect2PartialDynamicIndexGetApply____removed,
 		ExfInnerJoin2DynamicBitmapIndexGetApply____removed,
 		ExfInnerJoinWithInnerSelect2BitmapIndexGetApply____removed,
 		ExfInnerJoinWithInnerSelect2DynamicBitmapIndexGetApply____removed,
@@ -221,6 +219,10 @@ public:
 		ExfIndexGet2IndexOnlyScan,
 		ExfJoin2BitmapIndexGetApply,
 		ExfJoin2IndexGetApply,
+		ExfMultiExternalGet2MultiExternalScan____removed,
+		ExfExpandDynamicGetWithExternalPartitions____removed,
+		ExfLeftJoin2RightJoin,
+		ExfRightOuterJoin2HashJoin,
 		ExfInvalid,
 		ExfSentinel = ExfInvalid
 	};
@@ -291,7 +293,7 @@ public:
 	virtual EXformPromise Exfp(CExpressionHandle &exprhdl) const = 0;
 
 	// print
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 #ifdef GPOS_DEBUG
 
@@ -315,10 +317,6 @@ public:
 	// returns a set containing all xforms related to bitmap indexes
 	// caller takes ownership of the returned set
 	static CBitSet *PbsBitmapIndexXforms(CMemoryPool *mp);
-
-	// returns a set containing all xforms related to heterogeneous indexes
-	// caller takes ownership of the returned set
-	static CBitSet *PbsHeterogeneousIndexXforms(CMemoryPool *mp);
 
 	// returns a set containing all xforms that generate a plan with a hash join
 	// caller takes ownership of the returned set

@@ -20,21 +20,20 @@ extern "C" {
 #include "postgres.h"
 }
 
+#include "gpos/base.h"
+
 #include "gpopt/translate/CContextDXLToPlStmt.h"
 #include "gpopt/translate/CDXLTranslateContext.h"
-#include "gpopt/translate/CTranslatorDXLToScalar.h"
 #include "gpopt/translate/CDXLTranslateContextBaseTable.h"
 #include "gpopt/translate/CMappingColIdVarPlStmt.h"
+#include "gpopt/translate/CTranslatorDXLToScalar.h"
+#include "naucrates/dxl/CIdGenerator.h"
+#include "naucrates/dxl/operators/dxlops.h"
+#include "naucrates/md/IMDRelationExternal.h"
 
 #include "access/attnum.h"
 #include "nodes/nodes.h"
 #include "nodes/plannodes.h"
-
-#include "gpos/base.h"
-
-#include "naucrates/dxl/operators/dxlops.h"
-#include "naucrates/dxl/CIdGenerator.h"
-#include "naucrates/md/IMDRelationExternal.h"
 
 // fwd declarations
 namespace gpopt
@@ -117,8 +116,8 @@ private:
 							  const IMDIndex *md_index)
 			: m_md_rel(md_rel), m_md_index(md_index)
 		{
-			GPOS_ASSERT(NULL != md_rel);
-			GPOS_ASSERT(NULL != md_index);
+			GPOS_ASSERT(nullptr != md_rel);
+			GPOS_ASSERT(nullptr != md_index);
 		}
 	};	// SContextIndexVarAttno
 
@@ -569,7 +568,7 @@ private:
 	Plan *TranslateDXLCtas(
 		const CDXLNode *dml_dxlnode, CDXLTranslateContext *output_context,
 		CDXLTranslationContextArray *ctxt_translation_prev_siblings =
-			NULL  // translation contexts of previous siblings
+			nullptr	 // translation contexts of previous siblings
 	);
 
 	// sets the vartypmod fields in the target entries of the given target list

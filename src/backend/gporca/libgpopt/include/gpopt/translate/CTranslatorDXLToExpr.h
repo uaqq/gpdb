@@ -15,23 +15,22 @@
 #include "gpos/base.h"
 #include "gpos/common/CHashMap.h"
 
-#include "naucrates/dxl/operators/CDXLNode.h"
-#include "naucrates/dxl/operators/CDXLScalarBoolExpr.h"
-#include "naucrates/dxl/operators/CDXLColDescr.h"
-#include "naucrates/dxl/operators/CDXLWindowFrame.h"
-#include "naucrates/dxl/operators/CDXLScalarWindowFrameEdge.h"
-#include "naucrates/dxl/operators/CDXLScalarWindowRef.h"
-#include "naucrates/dxl/operators/CDXLScalarArrayRefIndexList.h"
-
 #include "gpopt/base/CQueryContext.h"
 #include "gpopt/base/CWindowFrame.h"
 #include "gpopt/mdcache/CMDAccessor.h"
+#include "gpopt/metadata/CTableDescriptor.h"
 #include "gpopt/operators/CExpression.h"
+#include "gpopt/operators/CScalarBoolOp.h"
 #include "gpopt/operators/CScalarCmp.h"
 #include "gpopt/operators/CScalarWindowFunc.h"
-#include "gpopt/operators/CScalarBoolOp.h"
-#include "gpopt/metadata/CTableDescriptor.h"
 #include "gpopt/translate/CTranslatorDXLToExprUtils.h"
+#include "naucrates/dxl/operators/CDXLColDescr.h"
+#include "naucrates/dxl/operators/CDXLNode.h"
+#include "naucrates/dxl/operators/CDXLScalarArrayRefIndexList.h"
+#include "naucrates/dxl/operators/CDXLScalarBoolExpr.h"
+#include "naucrates/dxl/operators/CDXLScalarWindowFrameEdge.h"
+#include "naucrates/dxl/operators/CDXLScalarWindowRef.h"
+#include "naucrates/dxl/operators/CDXLWindowFrame.h"
 
 // fwd decl
 
@@ -402,7 +401,7 @@ public:
 	// translate a dxl scalar expression
 	CExpression *PexprTranslateScalar(const CDXLNode *dxlnode,
 									  CColRefArray *colref_array,
-									  ULongPtrArray *colids = NULL);
+									  ULongPtrArray *colids = nullptr);
 
 	// return the array of query output column reference id
 	ULongPtrArray *PdrgpulOutputColRefs();
@@ -411,7 +410,7 @@ public:
 	CMDNameArray *
 	Pdrgpmdname()
 	{
-		GPOS_ASSERT(NULL != m_pdrgpmdname);
+		GPOS_ASSERT(nullptr != m_pdrgpmdname);
 		return m_pdrgpmdname;
 	}
 };

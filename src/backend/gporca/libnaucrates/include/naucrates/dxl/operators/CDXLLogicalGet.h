@@ -14,6 +14,7 @@
 #define GPDXL_CDXLLogicalGet_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLLogical.h"
 #include "naucrates/dxl/operators/CDXLTableDescr.h"
 
@@ -59,7 +60,7 @@ public:
 	static CDXLLogicalGet *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalGet == dxl_op->GetDXLOperator() ||
 					EdxlopLogicalExternalGet == dxl_op->GetDXLOperator());
 

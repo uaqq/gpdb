@@ -9,18 +9,18 @@
 //		Tests for minidump handler
 //---------------------------------------------------------------------------
 
+#include "unittest/gpos/error/CMiniDumperTest.h"
+
 #include "gpos/base.h"
 #include "gpos/common/clibwrapper.h"
 #include "gpos/error/CErrorContext.h"
 #include "gpos/io/COstreamString.h"
 #include "gpos/memory/CAutoMemoryPool.h"
-#include "gpos/string/CWStringStatic.h"
 #include "gpos/string/CWStringDynamic.h"
+#include "gpos/string/CWStringStatic.h"
 #include "gpos/task/CAutoSuspendAbort.h"
 #include "gpos/task/CAutoTaskProxy.h"
 #include "gpos/test/CUnittest.h"
-
-#include "unittest/gpos/error/CMiniDumperTest.h"
 
 using namespace gpos;
 
@@ -65,7 +65,7 @@ CMiniDumperTest::EresUnittest_Basic()
 
 	GPOS_TRY
 	{
-		(void) PvRaise(NULL);
+		(void) PvRaise(nullptr);
 	}
 	GPOS_CATCH_EX(ex)
 	{
@@ -99,9 +99,9 @@ CMiniDumperTest::PvRaise(void *	 // pv
 	clib::USleep(1000);
 
 	// raise exception to trigger minidump
-	GPOS_OOM_CHECK(NULL);
+	GPOS_OOM_CHECK(nullptr);
 
-	return NULL;
+	return nullptr;
 }
 
 

@@ -12,9 +12,9 @@
 #define GPOPT_CScalarArrayRef_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDId.h"
 
 #include "gpopt/operators/CScalar.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpopt
 {
@@ -122,7 +122,7 @@ public:
 	static CScalarArrayRef *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarArrayRef == pop->Eopid());
 
 		return dynamic_cast<CScalarArrayRef *>(pop);

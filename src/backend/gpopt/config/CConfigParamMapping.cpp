@@ -364,10 +364,7 @@ CConfigParamMapping::PackConfigParamInBitset(
 
 	if (!optimizer_enable_partial_index)
 	{
-		CBitSet *heterogeneous_index_bitset =
-			CXform::PbsHeterogeneousIndexXforms(mp);
-		traceflag_bitset->Union(heterogeneous_index_bitset);
-		heterogeneous_index_bitset->Release();
+		// GPDB_12_MERGE_FIXME: Remove this GUC
 	}
 
 	if (!optimizer_enable_hashjoin)
@@ -428,7 +425,7 @@ CConfigParamMapping::PackConfigParamInBitset(
 			GPOPT_DISABLE_XFORM_TF(CXform::ExfImplementFullOuterMergeJoin));
 	}
 
-	CBitSet *join_heuristic_bitset = NULL;
+	CBitSet *join_heuristic_bitset = nullptr;
 	switch (optimizer_join_order)
 	{
 		case JOIN_ORDER_IN_QUERY:

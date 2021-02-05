@@ -12,6 +12,7 @@
 #define GPOPT_CLogicalLeftSemiApply_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalApply.h"
 
 namespace gpopt
@@ -130,7 +131,7 @@ public:
 	static CLogicalLeftSemiApply *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(CUtils::FLeftSemiApply(pop));
 
 		return dynamic_cast<CLogicalLeftSemiApply *>(pop);

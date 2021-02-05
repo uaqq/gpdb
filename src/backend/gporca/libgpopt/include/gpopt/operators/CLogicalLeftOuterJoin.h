@@ -12,6 +12,7 @@
 #define GPOS_CLogicalLeftOuterJoin_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalJoin.h"
 
 namespace gpopt
@@ -97,7 +98,7 @@ public:
 	static CLogicalLeftOuterJoin *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalLeftOuterJoin == pop->Eopid());
 
 		return dynamic_cast<CLogicalLeftOuterJoin *>(pop);

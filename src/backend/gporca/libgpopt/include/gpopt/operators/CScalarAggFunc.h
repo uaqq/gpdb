@@ -12,10 +12,10 @@
 #define GPOPT_CScalarAggFunc_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDId.h"
 
-#include "gpopt/operators/CScalar.h"
 #include "gpopt/base/CDrvdProp.h"
+#include "gpopt/operators/CScalar.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpopt
 {
@@ -126,7 +126,7 @@ public:
 	static CScalarAggFunc *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarAggFunc == pop->Eopid());
 
 		return reinterpret_cast<CScalarAggFunc *>(pop);
@@ -177,7 +177,7 @@ public:
 	IMDId *
 	MdidType() const override
 	{
-		if (NULL == m_pmdidResolvedRetType)
+		if (nullptr == m_pmdidResolvedRetType)
 		{
 			return m_return_type_mdid;
 		}
@@ -189,7 +189,7 @@ public:
 	BOOL
 	FHasAmbiguousReturnType() const
 	{
-		return (NULL != m_pmdidResolvedRetType);
+		return (nullptr != m_pmdidResolvedRetType);
 	}
 
 	// is function count(*)?
@@ -206,7 +206,7 @@ public:
 
 	// lookup mdid of return type for given Agg function
 	static IMDId *PmdidLookupReturnType(IMDId *pmdidAggFunc, BOOL fGlobal,
-										CMDAccessor *pmdaInput = NULL);
+										CMDAccessor *pmdaInput = nullptr);
 
 };	// class CScalarAggFunc
 

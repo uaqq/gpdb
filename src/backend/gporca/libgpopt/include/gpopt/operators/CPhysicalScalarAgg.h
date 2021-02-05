@@ -12,6 +12,7 @@
 #define GPOS_CPhysicalScalarAgg_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPhysicalAgg.h"
 
 namespace gpopt
@@ -93,7 +94,7 @@ public:
 	static CPhysicalScalarAgg *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalScalarAgg == pop->Eopid());
 
 		return reinterpret_cast<CPhysicalScalarAgg *>(pop);

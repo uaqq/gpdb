@@ -17,6 +17,7 @@
 #define GPDXL_CGPDBAttOptCol_H
 
 #include "gpos/common/CRefCount.h"
+
 #include "gpopt/translate/CGPDBAttInfo.h"
 #include "gpopt/translate/COptColInfo.h"
 
@@ -48,8 +49,8 @@ public:
 	CGPDBAttOptCol(CGPDBAttInfo *gpdb_att_info, COptColInfo *opt_col_info)
 		: m_gpdb_att_info(gpdb_att_info), m_opt_col_info(opt_col_info)
 	{
-		GPOS_ASSERT(NULL != m_gpdb_att_info);
-		GPOS_ASSERT(NULL != m_opt_col_info);
+		GPOS_ASSERT(nullptr != m_gpdb_att_info);
+		GPOS_ASSERT(nullptr != m_opt_col_info);
 	}
 
 	// d'tor

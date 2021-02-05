@@ -14,18 +14,19 @@
 //---------------------------------------------------------------------------
 
 #include "naucrates/dxl/xml/dxltokens.h"
+
 #include "naucrates/dxl/xml/CDXLMemoryManager.h"
 
 using namespace gpdxl;
 
 // static member initialization
-CDXLTokens::SStrMapElem *CDXLTokens::m_pstrmap = NULL;
+CDXLTokens::SStrMapElem *CDXLTokens::m_pstrmap = nullptr;
 
-CDXLTokens::SXMLStrMapElem *CDXLTokens::m_pxmlszmap = NULL;
+CDXLTokens::SXMLStrMapElem *CDXLTokens::m_pxmlszmap = nullptr;
 
-CMemoryPool *CDXLTokens::m_mp = NULL;
+CMemoryPool *CDXLTokens::m_mp = nullptr;
 
-CDXLMemoryManager *CDXLTokens::m_dxl_memory_manager = NULL;
+CDXLMemoryManager *CDXLTokens::m_dxl_memory_manager = nullptr;
 
 
 //---------------------------------------------------------------------------
@@ -39,9 +40,9 @@ CDXLMemoryManager *CDXLTokens::m_dxl_memory_manager = NULL;
 void
 CDXLTokens::Init(CMemoryPool *mp)
 {
-	GPOS_ASSERT(NULL != mp);
-	GPOS_ASSERT(NULL == m_dxl_memory_manager);
-	GPOS_ASSERT(NULL == m_mp);
+	GPOS_ASSERT(nullptr != mp);
+	GPOS_ASSERT(nullptr == m_dxl_memory_manager);
+	GPOS_ASSERT(nullptr == m_mp);
 
 	m_mp = mp;
 
@@ -489,6 +490,7 @@ CDXLTokens::Init(CMemoryPool *mp)
 		{EdxltokenOid, GPOS_WSZ_LIT("Oid")},
 		{EdxltokenVersion, GPOS_WSZ_LIT("Version")},
 		{EdxltokenMdid, GPOS_WSZ_LIT("Mdid")},
+		{EdxltokenLockMode, GPOS_WSZ_LIT("LockMode")},
 		{EdxltokenMDTypeRequest, GPOS_WSZ_LIT("TypeRequest")},
 		{EdxltokenTypeInfo, GPOS_WSZ_LIT("TypeInfo")},
 		{EdxltokenFuncInfo, GPOS_WSZ_LIT("FuncInfo")},
@@ -808,10 +810,10 @@ CDXLTokens::Terminate()
 const CWStringConst *
 CDXLTokens::GetDXLTokenStr(Edxltoken token_type)
 {
-	GPOS_ASSERT(NULL != m_pstrmap && "Token map not initialized yet");
+	GPOS_ASSERT(nullptr != m_pstrmap && "Token map not initialized yet");
 
 	const CWStringConst *str = m_pstrmap[token_type].m_pstr;
-	GPOS_ASSERT(NULL != str);
+	GPOS_ASSERT(nullptr != str);
 
 	return str;
 }
@@ -827,10 +829,10 @@ CDXLTokens::GetDXLTokenStr(Edxltoken token_type)
 const XMLCh *
 CDXLTokens::XmlstrToken(Edxltoken token_type)
 {
-	GPOS_ASSERT(NULL != m_pxmlszmap && "Token map not initialized yet");
+	GPOS_ASSERT(nullptr != m_pxmlszmap && "Token map not initialized yet");
 
 	const XMLCh *xml_val = m_pxmlszmap[token_type].m_xmlsz;
-	GPOS_ASSERT(NULL != xml_val);
+	GPOS_ASSERT(nullptr != xml_val);
 
 	return xml_val;
 }

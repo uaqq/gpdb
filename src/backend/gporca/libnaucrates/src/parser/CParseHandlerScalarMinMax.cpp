@@ -11,10 +11,11 @@
 //---------------------------------------------------------------------------
 
 
-#include "naucrates/dxl/parser/CParseHandlerFactory.h"
+#include "naucrates/dxl/parser/CParseHandlerScalarMinMax.h"
+
 #include "naucrates/dxl/CDXLUtils.h"
 #include "naucrates/dxl/operators/CDXLOperatorFactory.h"
-#include "naucrates/dxl/parser/CParseHandlerScalarMinMax.h"
+#include "naucrates/dxl/parser/CParseHandlerFactory.h"
 
 
 using namespace gpdxl;
@@ -33,7 +34,7 @@ CParseHandlerScalarMinMax::CParseHandlerScalarMinMax(
 	CMemoryPool *mp, CParseHandlerManager *parse_handler_mgr,
 	CParseHandlerBase *parse_handler_root)
 	: CParseHandlerScalarOp(mp, parse_handler_mgr, parse_handler_root),
-	  m_mdid_type(NULL),
+	  m_mdid_type(nullptr),
 	  m_min_max_type(CDXLScalarMinMax::EmmtSentinel)
 {
 }

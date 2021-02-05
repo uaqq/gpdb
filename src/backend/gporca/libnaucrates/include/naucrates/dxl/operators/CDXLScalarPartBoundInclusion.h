@@ -15,6 +15,7 @@
 #define GPDXL_CDXLScalarPartBoundInclusion_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 
 namespace gpdxl
@@ -87,7 +88,7 @@ public:
 	static CDXLScalarPartBoundInclusion *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarPartBoundInclusion == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarPartBoundInclusion *>(dxl_op);

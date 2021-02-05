@@ -26,10 +26,10 @@
 #define GPOS_CMemoryPool_H
 
 #include "gpos/assert.h"
-#include "gpos/types.h"
-#include "gpos/error/CException.h"
 #include "gpos/common/CLink.h"
 #include "gpos/common/CStackDescriptor.h"
+#include "gpos/error/CException.h"
+#include "gpos/types.h"
 
 
 // 8-byte alignment
@@ -215,7 +215,7 @@ public:
 	static void
 	Delete(T *object)
 	{
-		if (NULL == object)
+		if (nullptr == object)
 		{
 			return;
 		}
@@ -228,7 +228,7 @@ public:
 	static void
 	DeleteArray(T *object_array)
 	{
-		if (NULL == object_array)
+		if (nullptr == object_array)
 		{
 			return;
 		}

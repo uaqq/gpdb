@@ -12,20 +12,21 @@
 #define GPOPT_CExpression_H
 
 #include "gpos/base.h"
-#include "gpos/common/CRefCount.h"
 #include "gpos/common/CDynamicPtrArray.h"
+#include "gpos/common/CRefCount.h"
+#include "gpos/common/DbgPrintMixin.h"
 
-#include "naucrates/statistics/IStatistics.h"
-#include "gpopt/cost/CCost.h"
 #include "gpopt/base/CColRef.h"
 #include "gpopt/base/CCostContext.h"
 #include "gpopt/base/CDrvdPropRelational.h"
 #include "gpopt/base/CDrvdPropScalar.h"
+#include "gpopt/base/CKeyCollection.h"
+#include "gpopt/base/CPrintPrefix.h"
 #include "gpopt/base/CReqdProp.h"
 #include "gpopt/base/CReqdPropRelational.h"
-#include "gpopt/base/CPrintPrefix.h"
+#include "gpopt/cost/CCost.h"
 #include "gpopt/operators/COperator.h"
-#include "gpopt/base/CKeyCollection.h"
+#include "naucrates/statistics/IStatistics.h"
 
 namespace gpopt
 {
@@ -53,7 +54,7 @@ using namespace gpnaucrates;
 //		Simply dynamic array for pointer types
 //
 //---------------------------------------------------------------------------
-class CExpression : public CRefCount
+class CExpression : public CRefCount, public gpos::DbgPrintMixin<CExpression>
 {
 	friend class CExpressionHandle;
 
@@ -107,8 +108,10 @@ private:
 
 #endif	// GPOS_DEBUG
 
+#if 0
 	// check if the expression satisfies partition enforcer condition
 	BOOL FValidPartEnforcers(CDrvdPropCtxtPlan *pdpctxtplan);
+#endif
 
 	// check if the distributions of all children are compatible
 	BOOL FValidChildrenDistribution(CDrvdPropCtxtPlan *pdpctxtplan);
@@ -126,7 +129,7 @@ public:
 
 	// ctor for leaf nodes
 	CExpression(CMemoryPool *mp, COperator *pop,
-				CGroupExpression *pgexpr = NULL);
+				CGroupExpression *pgexpr = nullptr);
 
 	// ctor for unary expressions
 	CExpression(CMemoryPool *mp, COperator *pop, CExpression *pexpr);
@@ -154,7 +157,7 @@ public:
 	CExpression *
 	operator[](ULONG ulPos) const
 	{
-		GPOS_ASSERT(NULL != m_pdrgpexpr);
+		GPOS_ASSERT(nullptr != m_pdrgpexpr);
 		return (*m_pdrgpexpr)[ulPos];
 	};
 
@@ -162,14 +165,14 @@ public:
 	ULONG
 	Arity() const
 	{
-		return m_pdrgpexpr == NULL ? 0 : m_pdrgpexpr->Size();
+		return m_pdrgpexpr == nullptr ? 0 : m_pdrgpexpr->Size();
 	}
 
 	// accessor for operator
 	COperator *
 	Pop() const
 	{
-		GPOS_ASSERT(NULL != m_pop);
+		GPOS_ASSERT(nullptr != m_pop);
 		return m_pop;
 	}
 
@@ -220,7 +223,7 @@ public:
 	// Derive all properties immediately. The suitable derived property is
 	// determined internally. To derive properties on an on-demand bases, use
 	// DeriveXXX() methods.
-	CDrvdProp *PdpDerive(CDrvdPropCtxt *pdpctxt = NULL);
+	CDrvdProp *PdpDerive(CDrvdPropCtxt *pdpctxt = nullptr);
 
 	// derive statistics
 	IStatistics *PstatsDerive(CReqdPropRelational *prprel,
@@ -242,10 +245,10 @@ public:
 	BOOL HasOuterRefs();
 
 	// print driver
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 	// print driver, customized for expressions
-	IOstream &OsPrintExpression(IOstream &os, const CPrintPrefix * = NULL,
+	IOstream &OsPrintExpression(IOstream &os, const CPrintPrefix * = nullptr,
 								BOOL fLast = true) const;
 
 	// match with group expression

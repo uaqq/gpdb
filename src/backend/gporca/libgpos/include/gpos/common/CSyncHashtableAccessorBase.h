@@ -14,7 +14,6 @@
 #define GPOS_CSyncHashtableAccessorBase_H_
 
 #include "gpos/base.h"
-
 #include "gpos/common/CSyncHashtable.h"
 #include "gpos/common/CSyncHashtableIter.h"
 
@@ -80,7 +79,7 @@ protected:
 	T *
 	Next(T *value) const
 	{
-		GPOS_ASSERT(NULL != value);
+		GPOS_ASSERT(nullptr != value);
 
 		// make sure element is in this hash chain
 		GPOS_ASSERT(GPOS_OK == m_bucket.m_chain.Find(value));
@@ -92,7 +91,7 @@ protected:
 	void
 	Prepend(T *value)
 	{
-		GPOS_ASSERT(NULL != value);
+		GPOS_ASSERT(nullptr != value);
 
 		m_bucket.m_chain.Prepend(value);
 
@@ -104,7 +103,7 @@ protected:
 	void
 	Prepend(T *value, T *ptNext)
 	{
-		GPOS_ASSERT(NULL != value);
+		GPOS_ASSERT(nullptr != value);
 
 		// make sure element is in this hash chain
 		GPOS_ASSERT(GPOS_OK == m_bucket.m_chain.Find(ptNext));
@@ -119,7 +118,7 @@ protected:
 	void
 	Append(T *value, T *ptPrev)
 	{
-		GPOS_ASSERT(NULL != value);
+		GPOS_ASSERT(nullptr != value);
 
 		// make sure element is in this hash chain
 		GPOS_ASSERT(GPOS_OK == m_bucket.m_chain.Find(ptPrev));

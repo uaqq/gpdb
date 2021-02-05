@@ -22,8 +22,6 @@ namespace gpopt
 {
 using namespace gpos;
 
-class CPartitionPropagationSpec;
-
 //---------------------------------------------------------------------------
 //	@class:
 //		CEnfdDistribution
@@ -82,7 +80,7 @@ public:
 	BOOL
 	Matches(CEnfdDistribution *ped)
 	{
-		GPOS_ASSERT(NULL != ped);
+		GPOS_ASSERT(nullptr != ped);
 
 		return m_edm == ped->Edm() && m_pds->Equals(ped->PdsRequired());
 	}
@@ -103,7 +101,6 @@ public:
 
 	// get distribution enforcing type for the given operator
 	EPropEnforcingType Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
-							CPartitionPropagationSpec *pppsReqd,
 							BOOL fDistribReqd) const;
 
 	// print function

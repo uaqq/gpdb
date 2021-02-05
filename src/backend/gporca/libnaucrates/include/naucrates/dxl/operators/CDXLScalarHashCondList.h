@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarHashCondList_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 
 
@@ -49,7 +50,7 @@ public:
 	static CDXLScalarHashCondList *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarHashCondList == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarHashCondList *>(dxl_op);

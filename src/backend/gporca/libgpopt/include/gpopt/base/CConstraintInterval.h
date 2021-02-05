@@ -14,15 +14,15 @@
 #define GPOPT_CConstraintInterval_H
 
 #include "gpos/base.h"
-#include "gpos/task/CAutoTraceFlag.h"
 #include "gpos/error/CAutoTrace.h"
-#include "naucrates/dxl/xml/dxltokens.h"
-#include "naucrates/traceflags/traceflags.h"
+#include "gpos/task/CAutoTraceFlag.h"
 
 #include "gpopt/base/CConstraint.h"
 #include "gpopt/base/CRange.h"
-#include "gpopt/operators/CScalarConst.h"
 #include "gpopt/operators/CScalarArrayCmp.h"
+#include "gpopt/operators/CScalarConst.h"
+#include "naucrates/dxl/xml/dxltokens.h"
+#include "naucrates/traceflags/traceflags.h"
 
 namespace gpopt
 {
@@ -244,7 +244,7 @@ public:
 	// create interval from any general constraint that references
 	// only one column
 	static CConstraintInterval *PciIntervalFromConstraint(
-		CMemoryPool *mp, CConstraint *pcnstr, CColRef *colref = NULL);
+		CMemoryPool *mp, CConstraint *pcnstr, CColRef *colref = nullptr);
 
 	// generate a ConstraintInterval from the given expression
 	static CConstraintInterval *PcnstrIntervalFromScalarArrayCmp(

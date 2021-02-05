@@ -12,9 +12,10 @@
 #define GPOPT_CLogicalDynamicIndexGet_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/COrderSpec.h"
-#include "gpopt/operators/CLogicalDynamicGetBase.h"
 #include "gpopt/metadata/CIndexDescriptor.h"
+#include "gpopt/operators/CLogicalDynamicGetBase.h"
 
 
 namespace gpopt
@@ -54,10 +55,7 @@ public:
 							CTableDescriptor *ptabdesc, ULONG ulOriginOpId,
 							const CName *pnameAlias, ULONG ulPartIndex,
 							CColRefArray *pdrgpcrOutput,
-							CColRef2dArray *pdrgpdrgpcrPart,
-							ULONG ulSecondaryPartIndexId,
-							CPartConstraint *ppartcnstr,
-							CPartConstraint *ppartcnstrRel);
+							CColRef2dArray *pdrgpdrgpcrPart);
 
 	// dtor
 	~CLogicalDynamicIndexGet() override;
@@ -104,10 +102,6 @@ public:
 		return m_pindexdesc;
 	}
 
-	// check if index is partial given the table descriptor and the index mdid
-	static BOOL IsPartialIndex(CTableDescriptor *ptabdesc,
-							   const IMDIndex *pmdindex);
-
 	// order spec
 	COrderSpec *
 	Pos() const
@@ -146,7 +140,7 @@ public:
 	) const override
 	{
 		GPOS_ASSERT(!"CLogicalDynamicIndexGet has no children");
-		return NULL;
+		return nullptr;
 	}
 
 	// derive statistics
@@ -174,7 +168,7 @@ public:
 	static CLogicalDynamicIndexGet *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalDynamicIndexGet == pop->Eopid());
 
 		return dynamic_cast<CLogicalDynamicIndexGet *>(pop);

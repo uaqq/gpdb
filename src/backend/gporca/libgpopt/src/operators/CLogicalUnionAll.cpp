@@ -9,10 +9,11 @@
 //		Implementation of UnionAll operator
 //---------------------------------------------------------------------------
 
+#include "gpopt/operators/CLogicalUnionAll.h"
+
 #include "gpos/base.h"
 
 #include "gpopt/base/CUtils.h"
-#include "gpopt/operators/CLogicalUnionAll.h"
 #include "gpopt/operators/CExpressionHandle.h"
 #include "naucrates/statistics/CUnionAllStatsProcessor.h"
 
@@ -116,7 +117,7 @@ CLogicalUnionAll::DeriveKeyCollection(CMemoryPool *,	   //mp,
 									  CExpressionHandle &  // exprhdl
 ) const
 {
-	return NULL;
+	return nullptr;
 }
 
 //---------------------------------------------------------------------------
@@ -156,8 +157,8 @@ CLogicalUnionAll::PstatsDeriveUnionAll(CMemoryPool *mp,
 		CLogicalSetOp::PopConvert(exprhdl.Pop())->PdrgpcrOutput();
 	CColRef2dArray *pdrgpdrgpcrInput =
 		CLogicalSetOp::PopConvert(exprhdl.Pop())->PdrgpdrgpcrInput();
-	GPOS_ASSERT(NULL != pdrgpcrOutput);
-	GPOS_ASSERT(NULL != pdrgpdrgpcrInput);
+	GPOS_ASSERT(nullptr != pdrgpcrOutput);
+	GPOS_ASSERT(nullptr != pdrgpdrgpcrInput);
 
 	IStatistics *result_stats = exprhdl.Pstats(0);
 	result_stats->AddRef();

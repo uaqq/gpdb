@@ -12,8 +12,9 @@
 #define GPOS_CLogicalSetOp_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogical.h"
+
 #include "gpopt/base/CColRefSet.h"
+#include "gpopt/operators/CLogical.h"
 
 namespace gpopt
 {
@@ -92,7 +93,7 @@ public:
 	CColRefArray *
 	PdrgpcrOutput() const
 	{
-		GPOS_ASSERT(NULL != m_pdrgpcrOutput);
+		GPOS_ASSERT(nullptr != m_pdrgpcrOutput);
 		return m_pdrgpcrOutput;
 	}
 
@@ -100,7 +101,7 @@ public:
 	CColRef2dArray *
 	PdrgpdrgpcrInput() const
 	{
-		GPOS_ASSERT(NULL != m_pdrgpdrgpcrInput);
+		GPOS_ASSERT(nullptr != m_pdrgpdrgpcrInput);
 		return m_pdrgpdrgpcrInput;
 	}
 
@@ -147,7 +148,7 @@ public:
 	static CLogicalSetOp *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(CUtils::FLogicalSetOp(pop));
 
 		return dynamic_cast<CLogicalSetOp *>(pop);

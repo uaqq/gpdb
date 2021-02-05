@@ -15,6 +15,7 @@
 #define GPDXL_CDXLPhysicalSubqueryScan_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysical.h"
 #include "naucrates/md/CMDName.h"
 
@@ -66,7 +67,7 @@ public:
 	static CDXLPhysicalSubqueryScan *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalSubqueryScan == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalSubqueryScan *>(dxl_op);

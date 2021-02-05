@@ -12,11 +12,12 @@
 #define GPOPT_CXformPushGbBelowSetOp_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalGbAgg.h"
 #include "gpopt/operators/CPatternMultiLeaf.h"
 #include "gpopt/operators/CPatternTree.h"
-#include "gpopt/xforms/CXformExploration.h"
 #include "gpopt/optimizer/COptimizerConfig.h"
+#include "gpopt/xforms/CXformExploration.h"
 
 namespace gpopt
 {
@@ -75,7 +76,7 @@ public:
 	Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 			  CExpression *pexpr) const override
 	{
-		GPOS_ASSERT(NULL != pxfctxt);
+		GPOS_ASSERT(nullptr != pxfctxt);
 		GPOS_ASSERT(FPromising(pxfctxt->Pmp(), this, pexpr));
 		GPOS_ASSERT(FCheckPattern(pexpr));
 
@@ -117,7 +118,7 @@ public:
 			CColRefArray *pdrgpcrChild = (*pdrgpdrgpcrInput)[ulChild];
 			CColRefSet *pcrsChild = GPOS_NEW(mp) CColRefSet(mp, pdrgpcrChild);
 
-			CColRefArray *pdrgpcrChildGb = NULL;
+			CColRefArray *pdrgpcrChildGb = nullptr;
 			if (!pcrsChild->Equals(pcrsOutput))
 			{
 				// use column mapping in SetOp to set child grouping colums

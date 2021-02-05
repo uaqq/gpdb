@@ -9,18 +9,19 @@
 //		Implementation of transform
 //---------------------------------------------------------------------------
 
+#include "gpopt/xforms/CXformIndexGet2IndexOnlyScan.h"
+
 #include <cwchar>
 
 #include "gpos/base.h"
-#include "gpopt/xforms/CXformIndexGet2IndexOnlyScan.h"
-#include "gpopt/xforms/CXformUtils.h"
 
+#include "gpopt/metadata/CIndexDescriptor.h"
+#include "gpopt/metadata/CTableDescriptor.h"
 #include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/operators/CLogicalIndexGet.h"
 #include "gpopt/operators/CPatternLeaf.h"
 #include "gpopt/operators/CPhysicalIndexOnlyScan.h"
-#include "gpopt/metadata/CIndexDescriptor.h"
-#include "gpopt/metadata/CTableDescriptor.h"
+#include "gpopt/xforms/CXformUtils.h"
 #include "naucrates/md/CMDIndexGPDB.h"
 
 using namespace gpopt;
@@ -77,7 +78,7 @@ CXformIndexGet2IndexOnlyScan::Transform(CXformContext *pxfctxt,
 										CXformResult *pxfres,
 										CExpression *pexpr) const
 {
-	GPOS_ASSERT(NULL != pxfctxt);
+	GPOS_ASSERT(nullptr != pxfctxt);
 	GPOS_ASSERT(FPromising(pxfctxt->Pmp(), this, pexpr));
 	GPOS_ASSERT(FCheckPattern(pexpr));
 
@@ -98,7 +99,7 @@ CXformIndexGet2IndexOnlyScan::Transform(CXformContext *pxfctxt,
 	const IMDIndex *pmdindex = md_accessor->RetrieveIndex(pindexdesc->MDId());
 
 	CColRefArray *pdrgpcrOutput = pop->PdrgpcrOutput();
-	GPOS_ASSERT(NULL != pdrgpcrOutput);
+	GPOS_ASSERT(nullptr != pdrgpcrOutput);
 	pdrgpcrOutput->AddRef();
 
 	CColRefSet *matched_cols =
@@ -140,7 +141,7 @@ CXformIndexGet2IndexOnlyScan::Transform(CXformContext *pxfctxt,
 	ptabdesc->AddRef();
 
 	COrderSpec *pos = pop->Pos();
-	GPOS_ASSERT(NULL != pos);
+	GPOS_ASSERT(nullptr != pos);
 	pos->AddRef();
 
 

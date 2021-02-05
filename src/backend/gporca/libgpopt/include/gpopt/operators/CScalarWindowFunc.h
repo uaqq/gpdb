@@ -18,11 +18,11 @@
 #define GPOPT_CScalarWindowFunc_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDId.h"
 
+#include "gpopt/base/CDrvdProp.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/operators/CScalarFunc.h"
-#include "gpopt/base/CDrvdProp.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpopt
 {
@@ -108,7 +108,7 @@ public:
 	static CScalarWindowFunc *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarWindowFunc == pop->Eopid());
 
 		return reinterpret_cast<CScalarWindowFunc *>(pop);

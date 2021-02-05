@@ -12,10 +12,11 @@
 #define GPOPT_CPredicateUtils_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/CUtils.h"
+#include "gpopt/mdcache/CMDAccessor.h"
 #include "gpopt/operators/CExpression.h"
 #include "gpopt/operators/CScalarBoolOp.h"
-#include "gpopt/mdcache/CMDAccessor.h"
 
 namespace gpopt
 {
@@ -168,7 +169,7 @@ public:
 	// it optionally returns the colref of the local table
 	static BOOL FIdentCompareOuterRefExprIgnoreCast(
 		CExpression *pexpr, CColRefSet *pcrsOuterRefs,
-		CColRef **localColRef = NULL);
+		CColRef **localColRef = nullptr);
 
 	// is the given expression a comparison between scalar ident and a const array
 	// either the ident or constant array can be casted
@@ -354,7 +355,7 @@ public:
 	static CExpression *PexprExtractPredicatesOnPartKeys(
 		CMemoryPool *mp, CExpression *pexprScalar,
 		CColRef2dArray *pdrgpdrgpcrPartKeys, CColRefSet *pcrsAllowedRefs,
-		BOOL fUseConstraints, const IMDRelation *pmdrel = NULL);
+		BOOL fUseConstraints, const IMDRelation *pmdrel = nullptr);
 
 	// extract the constraint on the given column and return the corresponding
 	// scalar expression
@@ -390,7 +391,7 @@ public:
 		CColRefArray *pdrgpcrIndex, CExpressionArray *pdrgpexprIndex,
 		CExpressionArray *pdrgpexprResidual,
 		CColRefSet *pcrsAcceptedOuterRefs =
-			NULL,  // outer refs that are acceptable in an index predicate
+			nullptr,  // outer refs that are acceptable in an index predicate
 		BOOL allowArrayCmpForBTreeIndexes = false);
 
 	// return the inverse of given comparison expression

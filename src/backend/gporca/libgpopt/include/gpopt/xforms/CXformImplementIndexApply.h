@@ -8,6 +8,7 @@
 #define GPOPT_CXformImplementIndexApply_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalIndexApply.h"
 #include "gpopt/operators/CPatternLeaf.h"
 #include "gpopt/operators/CPhysicalInnerIndexNLJoin.h"
@@ -69,7 +70,7 @@ public:
 	Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 			  CExpression *pexpr) const override
 	{
-		GPOS_ASSERT(NULL != pxfctxt);
+		GPOS_ASSERT(nullptr != pxfctxt);
 		GPOS_ASSERT(FPromising(pxfctxt->Pmp(), this, pexpr));
 		GPOS_ASSERT(FCheckPattern(pexpr));
 
@@ -90,7 +91,7 @@ public:
 		pexprScalar->AddRef();
 
 		// assemble physical operator
-		CPhysicalNLJoin *pop = NULL;
+		CPhysicalNLJoin *pop = nullptr;
 
 		if (CLogicalIndexApply::PopConvert(pexpr->Pop())->FouterJoin())
 			pop = GPOS_NEW(mp) CPhysicalLeftOuterIndexNLJoin(

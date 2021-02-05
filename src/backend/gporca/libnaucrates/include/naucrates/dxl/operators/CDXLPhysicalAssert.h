@@ -13,6 +13,7 @@
 #define GPDXL_CDXLPhysicalAssert_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/errorcodes.h"
 #include "naucrates/dxl/operators/CDXLPhysical.h"
 
@@ -79,7 +80,7 @@ public:
 	static CDXLPhysicalAssert *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalAssert == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalAssert *>(dxl_op);

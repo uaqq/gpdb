@@ -12,8 +12,9 @@
 #define GPOPT_CScalarProjectList_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CScalar.h"
+
 #include "gpopt/base/CDrvdProp.h"
+#include "gpopt/operators/CScalar.h"
 
 namespace gpopt
 {
@@ -73,7 +74,7 @@ public:
 	static CScalarProjectList *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarProjectList == pop->Eopid());
 
 		return reinterpret_cast<CScalarProjectList *>(pop);
@@ -83,7 +84,7 @@ public:
 	MdidType() const override
 	{
 		GPOS_ASSERT(!"Invalid function call: CScalarProjectList::MdidType()");
-		return NULL;
+		return nullptr;
 	}
 
 	// return number of distinct aggs in project list attached to given handle

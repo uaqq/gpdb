@@ -13,10 +13,10 @@
 #define GPDXL_CDXLLogicalCTAS_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDRelation.h"
-#include "naucrates/dxl/operators/CDXLColDescr.h"
 
+#include "naucrates/dxl/operators/CDXLColDescr.h"
 #include "naucrates/dxl/operators/CDXLLogical.h"
+#include "naucrates/md/IMDRelation.h"
 
 namespace gpdxl
 {
@@ -220,7 +220,7 @@ public:
 	static CDXLLogicalCTAS *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalCTAS == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLLogicalCTAS *>(dxl_op);

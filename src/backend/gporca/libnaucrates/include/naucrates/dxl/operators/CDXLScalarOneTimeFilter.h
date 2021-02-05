@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarOneTimeFilter_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalarFilter.h"
 
 
@@ -43,7 +44,7 @@ public:
 	static CDXLScalarOneTimeFilter *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarOneTimeFilter == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarOneTimeFilter *>(dxl_op);

@@ -12,6 +12,7 @@
 #define GPOPT_CXformImplementCorrelatedApply_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CPatternLeaf.h"
 #include "gpopt/xforms/CXformImplementation.h"
 #include "gpopt/xforms/CXformUtils.h"
@@ -66,7 +67,7 @@ public:
 	Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 			  CExpression *pexpr) const override
 	{
-		GPOS_ASSERT(NULL != pxfctxt);
+		GPOS_ASSERT(nullptr != pxfctxt);
 		GPOS_ASSERT(FPromising(pxfctxt->Pmp(), this, pexpr));
 		GPOS_ASSERT(FCheckPattern(pexpr));
 

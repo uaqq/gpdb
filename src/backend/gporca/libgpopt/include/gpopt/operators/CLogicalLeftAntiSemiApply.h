@@ -12,8 +12,9 @@
 #define GPOPT_CLogicalLeftAntiSemiApply_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogicalApply.h"
+
 #include "gpopt/operators/CExpressionHandle.h"
+#include "gpopt/operators/CLogicalApply.h"
 
 namespace gpopt
 {
@@ -132,7 +133,7 @@ public:
 	static CLogicalLeftAntiSemiApply *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(CUtils::FLeftAntiSemiApply(pop));
 
 		return dynamic_cast<CLogicalLeftAntiSemiApply *>(pop);

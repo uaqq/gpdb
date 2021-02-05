@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarNullIf_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 #include "naucrates/md/IMDId.h"
 
@@ -69,7 +70,7 @@ public:
 	static CDXLScalarNullIf *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarNullIf == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarNullIf *>(dxl_op);

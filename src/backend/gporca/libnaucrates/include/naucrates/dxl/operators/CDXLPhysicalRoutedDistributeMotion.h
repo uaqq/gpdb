@@ -15,6 +15,7 @@
 #define GPDXL_CDXLPhysicalRoutedDistributeMotion_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysicalMotion.h"
 
 namespace gpdxl
@@ -78,7 +79,7 @@ public:
 	static CDXLPhysicalRoutedDistributeMotion *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalMotionRoutedDistribute ==
 					dxl_op->GetDXLOperator());
 

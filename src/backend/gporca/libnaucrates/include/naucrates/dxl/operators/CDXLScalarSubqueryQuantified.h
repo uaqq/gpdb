@@ -14,11 +14,10 @@
 
 #include "gpos/base.h"
 
-#include "naucrates/md/IMDId.h"
-#include "naucrates/md/CMDName.h"
-
 #include "naucrates/dxl/operators/CDXLNode.h"
 #include "naucrates/dxl/operators/CDXLScalar.h"
+#include "naucrates/md/CMDName.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpdxl
 {
@@ -91,7 +90,7 @@ public:
 	static CDXLScalarSubqueryQuantified *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarSubqueryAll == dxl_op->GetDXLOperator() ||
 					EdxlopScalarSubqueryAny == dxl_op->GetDXLOperator());
 

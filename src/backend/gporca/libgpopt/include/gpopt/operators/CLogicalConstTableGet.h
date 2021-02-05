@@ -12,6 +12,7 @@
 #define GPOPT_CLogicalConstTableGet_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogical.h"
 
 namespace gpopt
@@ -137,7 +138,7 @@ public:
 		// TODO:  - Jan 11, 2013; compute constraints based on the
 		// datum values in this CTG
 		return GPOS_NEW(mp) CPropConstraint(
-			mp, GPOS_NEW(mp) CColRefSetArray(mp), NULL /*pcnstr*/);
+			mp, GPOS_NEW(mp) CColRefSetArray(mp), nullptr /*pcnstr*/);
 	}
 
 	//-------------------------------------------------------------------------------------
@@ -153,7 +154,7 @@ public:
 	) const override
 	{
 		GPOS_ASSERT(!"CLogicalConstTableGet has no children");
-		return NULL;
+		return nullptr;
 	}
 
 	// derive statistics
@@ -182,7 +183,7 @@ public:
 	static CLogicalConstTableGet *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalConstTableGet == pop->Eopid());
 
 		return dynamic_cast<CLogicalConstTableGet *>(pop);

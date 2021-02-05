@@ -13,8 +13,9 @@
 #define GPDXL_CDXLLogicalWindow_H
 
 #include "gpos/base.h"
-#include "naucrates/dxl/operators/CDXLNode.h"
+
 #include "naucrates/dxl/operators/CDXLLogical.h"
+#include "naucrates/dxl/operators/CDXLNode.h"
 #include "naucrates/dxl/operators/CDXLWindowSpec.h"
 
 namespace gpdxl
@@ -61,7 +62,7 @@ public:
 	static CDXLLogicalWindow *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalWindow == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLLogicalWindow *>(dxl_op);

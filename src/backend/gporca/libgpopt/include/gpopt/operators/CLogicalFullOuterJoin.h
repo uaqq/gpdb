@@ -12,6 +12,7 @@
 #define GPOS_CLogicalFullOuterJoin_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalJoin.h"
 
 namespace gpopt
@@ -82,7 +83,7 @@ public:
 	) const override
 	{
 		return GPOS_NEW(mp) CPropConstraint(
-			mp, GPOS_NEW(mp) CColRefSetArray(mp), NULL /*pcnstr*/);
+			mp, GPOS_NEW(mp) CColRefSetArray(mp), nullptr /*pcnstr*/);
 	}
 
 	// promise level for stat derivation
@@ -113,7 +114,7 @@ public:
 	static CLogicalFullOuterJoin *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalFullOuterJoin == pop->Eopid());
 
 		return dynamic_cast<CLogicalFullOuterJoin *>(pop);

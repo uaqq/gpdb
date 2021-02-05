@@ -12,6 +12,7 @@
 #define GPNAUCRATES_CStatsPredConj_H
 
 #include "gpos/base.h"
+
 #include "naucrates/statistics/CPoint.h"
 #include "naucrates/statistics/CStatsPred.h"
 
@@ -79,7 +80,7 @@ public:
 	static CStatsPredConj *
 	ConvertPredStats(CStatsPred *pred_stats)
 	{
-		GPOS_ASSERT(NULL != pred_stats);
+		GPOS_ASSERT(nullptr != pred_stats);
 		GPOS_ASSERT(CStatsPred::EsptConj == pred_stats->GetPredStatsType());
 
 		return dynamic_cast<CStatsPredConj *>(pred_stats);

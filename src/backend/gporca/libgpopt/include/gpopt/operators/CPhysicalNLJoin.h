@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalNLJoin_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/CUtils.h"
 #include "gpopt/operators/CPhysicalJoin.h"
 
@@ -28,14 +29,6 @@ namespace gpopt
 class CPhysicalNLJoin : public CPhysicalJoin
 {
 private:
-protected:
-	// helper function for computing the required partition propagation
-	// spec for the children of a nested loop join
-	CPartitionPropagationSpec *PppsRequiredNLJoinChild(
-		CMemoryPool *mp, CExpressionHandle &exprhdl,
-		CPartitionPropagationSpec *pppsRequired, ULONG child_index,
-		CDrvdPropArray *pdrgpdpCtxt, ULONG ulOptReq);
-
 public:
 	CPhysicalNLJoin(const CPhysicalNLJoin &) = delete;
 
@@ -69,18 +62,6 @@ public:
 							 ULONG				// ulOptReq
 							 ) override;
 
-	// compute required partition propagation of the n-th child
-	CPartitionPropagationSpec *
-	PppsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
-				 CPartitionPropagationSpec *pppsRequired, ULONG child_index,
-				 CDrvdPropArray *pdrgpdpCtxt, ULONG ulOptReq) override
-	{
-		GPOS_ASSERT(ulOptReq < UlPartPropagateRequests());
-
-		return PppsRequiredNLJoinChild(mp, exprhdl, pppsRequired, child_index,
-									   pdrgpdpCtxt, ulOptReq);
-	}
-
 	//-------------------------------------------------------------------------------------
 	// Enforced Properties
 	//-------------------------------------------------------------------------------------
@@ -104,7 +85,7 @@ public:
 	virtual CColRefArray *
 	PdrgPcrInner() const
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	// conversion function

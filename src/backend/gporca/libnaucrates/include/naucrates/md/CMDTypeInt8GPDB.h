@@ -16,8 +16,8 @@
 
 #include "gpos/base.h"
 
-#include "naucrates/md/IMDTypeInt8.h"
 #include "naucrates/md/CGPDBTypeHelper.h"
+#include "naucrates/md/IMDTypeInt8.h"
 
 #define GPDB_INT8_OID OID(20)
 #define GPDB_INT8_OPFAMILY OID(1977)
@@ -213,7 +213,7 @@ public:
 	IMDId *
 	GetBaseRelMdid() const override
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	// serialize object in DXL format

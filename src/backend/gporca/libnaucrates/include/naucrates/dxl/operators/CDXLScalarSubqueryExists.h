@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarSubqueryExists_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLNode.h"
 #include "naucrates/dxl/operators/CDXLScalar.h"
 
@@ -50,7 +51,7 @@ public:
 	static CDXLScalarSubqueryExists *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarSubqueryExists == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarSubqueryExists *>(dxl_op);

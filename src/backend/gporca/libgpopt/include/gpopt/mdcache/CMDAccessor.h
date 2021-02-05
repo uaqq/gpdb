@@ -18,14 +18,13 @@
 #include "gpos/memory/CCache.h"
 #include "gpos/memory/CCacheAccessor.h"
 
-#include "gpopt/mdcache/CMDKey.h"
 #include "gpopt/engine/CStatisticsConfig.h"
-
+#include "gpopt/mdcache/CMDKey.h"
+#include "naucrates/md/CSystemId.h"
+#include "naucrates/md/IMDFunction.h"
 #include "naucrates/md/IMDId.h"
 #include "naucrates/md/IMDProvider.h"
 #include "naucrates/md/IMDType.h"
-#include "naucrates/md/IMDFunction.h"
-#include "naucrates/md/CSystemId.h"
 #include "naucrates/statistics/IStatistics.h"
 
 // fwd declarations
@@ -362,7 +361,7 @@ public:
 			*pcrsHist,	// set of column references for which stats are needed
 		CColRefSet *
 			pcrsWidth,	// set of column references for which the widths are needed
-		CStatisticsConfig *stats_config = NULL);
+		CStatisticsConfig *stats_config = nullptr);
 
 	// serialize object to passed stream
 	void Serialize(COstream &oos);

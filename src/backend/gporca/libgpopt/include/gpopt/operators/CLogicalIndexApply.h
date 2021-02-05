@@ -11,8 +11,9 @@
 #define GPOPT_CLogicalIndexApply_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogicalApply.h"
+
 #include "gpopt/operators/CExpressionHandle.h"
+#include "gpopt/operators/CLogicalApply.h"
 
 namespace gpopt
 {
@@ -140,7 +141,7 @@ public:
 	static CLogicalIndexApply *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalIndexApply == pop->Eopid());
 
 		return dynamic_cast<CLogicalIndexApply *>(pop);

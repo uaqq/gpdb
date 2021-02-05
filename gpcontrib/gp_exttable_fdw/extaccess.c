@@ -154,7 +154,7 @@ external_beginscan(Relation relation, uint32 scancounter,
 	 * get the external URI assigned to us.
 	 *
 	 * The URI assigned for this segment is normally in the uriList list at
-	 * the index of this segment id. However, if we are executing on MASTER
+	 * the index of this segment id. However, if we are executing on COORDINATOR
 	 * ONLY the (one and only) entry which is destined for the master will be
 	 * at the first entry of the uriList list.
 	 */
@@ -186,7 +186,7 @@ external_beginscan(Relation relation, uint32 scancounter,
 	}
 	else if (Gp_role == GP_ROLE_DISPATCH && isMasterOnly)
 	{
-		/* this is a ON MASTER table. Only get uri if we are the master */
+		/* this is a ON COORDINATOR table. Only get uri if we are the master */
 		if (segindex == -1)
 		{
 			Value	   *v = list_nth(uriList, 0);
@@ -317,6 +317,11 @@ external_rescan(FileScanDesc scan)
 	external_stopscan(scan);
 
 	/* The first call to external_getnext will re-open the scan */
+
+	if (!scan->fs_pstate)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("The file parse state of external scan is invalid")));
 
 	/* reset some parse state variables */
 	scan->fs_pstate->reached_eof = false;

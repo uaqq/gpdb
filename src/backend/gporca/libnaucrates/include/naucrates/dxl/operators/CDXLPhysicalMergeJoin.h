@@ -15,6 +15,7 @@
 #define GPDXL_CDXLPhysicalMergeJoin_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysicalJoin.h"
 
 namespace gpdxl
@@ -64,7 +65,7 @@ public:
 	static CDXLPhysicalMergeJoin *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalMergeJoin == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalMergeJoin *>(dxl_op);

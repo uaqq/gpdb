@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarDMLAction_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 
 namespace gpdxl
@@ -49,7 +50,7 @@ public:
 	static CDXLScalarDMLAction *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarDMLAction == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarDMLAction *>(dxl_op);

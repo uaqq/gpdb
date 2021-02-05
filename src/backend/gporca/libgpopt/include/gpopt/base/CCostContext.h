@@ -15,9 +15,9 @@
 #include "gpos/base.h"
 #include "gpos/common/CRefCount.h"
 
+#include "gpopt/base/COptimizationContext.h"
 #include "gpopt/cost/CCost.h"
 #include "gpopt/cost/ICostModel.h"
-#include "gpopt/base/COptimizationContext.h"
 
 // infinite plan cost
 #define GPOPT_INFINITE_COST CCost(1e+100)
@@ -236,8 +236,8 @@ public:
 	void
 	SetChildContexts(COptimizationContextArray *pdrgpoc)
 	{
-		GPOS_ASSERT(NULL == m_pdrgpoc);
-		GPOS_ASSERT(NULL != pdrgpoc);
+		GPOS_ASSERT(nullptr == m_pdrgpoc);
+		GPOS_ASSERT(nullptr != pdrgpoc);
 
 		m_pdrgpoc = pdrgpoc;
 	}
@@ -266,9 +266,9 @@ public:
 	Equals(const CCostContext &ccLeft, const CCostContext &ccRight)
 	{
 		// check if we are comparing against invalid context
-		if (NULL == ccLeft.Poc() || NULL == ccRight.Poc())
+		if (nullptr == ccLeft.Poc() || nullptr == ccRight.Poc())
 		{
-			return NULL == ccLeft.Poc() && NULL == ccRight.Poc();
+			return nullptr == ccLeft.Poc() && nullptr == ccRight.Poc();
 		}
 
 		return ccLeft.UlOptReq() == ccRight.UlOptReq() &&
@@ -298,7 +298,7 @@ public:
 	}
 
 	// debug print
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 };	// class CCostContext
 

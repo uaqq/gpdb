@@ -12,6 +12,7 @@
 #define GPOPT_CLogicalTVF_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/CColRefSet.h"
 #include "gpopt/operators/CLogical.h"
 
@@ -155,7 +156,7 @@ public:
 	) const override
 	{
 		return GPOS_NEW(mp) CPropConstraint(
-			mp, GPOS_NEW(mp) CColRefSetArray(mp), NULL /*pcnstr*/);
+			mp, GPOS_NEW(mp) CColRefSetArray(mp), nullptr /*pcnstr*/);
 	}
 
 	// derive function properties
@@ -178,7 +179,7 @@ public:
 			 ULONG				   // child_index
 	) const override
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	//-------------------------------------------------------------------------------------
@@ -207,7 +208,7 @@ public:
 	static CLogicalTVF *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalTVF == pop->Eopid());
 
 		return dynamic_cast<CLogicalTVF *>(pop);

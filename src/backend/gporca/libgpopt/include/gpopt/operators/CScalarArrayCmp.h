@@ -12,10 +12,10 @@
 #define GPOPT_CScalarArrayCmp_H
 
 #include "gpos/base.h"
+
+#include "gpopt/base/CDrvdProp.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/operators/CScalar.h"
-#include "gpopt/base/CDrvdProp.h"
-
 #include "naucrates/md/IMDId.h"
 #include "naucrates/md/IMDType.h"
 
@@ -123,7 +123,7 @@ public:
 	static CScalarArrayCmp *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarArrayCmp == pop->Eopid());
 
 		return reinterpret_cast<CScalarArrayCmp *>(pop);

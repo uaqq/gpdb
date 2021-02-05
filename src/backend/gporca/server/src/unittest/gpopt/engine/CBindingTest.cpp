@@ -8,11 +8,12 @@
 //	@doc:
 //		Test for checking bindings extracted for an expression
 //---------------------------------------------------------------------------
+#include "unittest/gpopt/engine/CBindingTest.h"
+
 #include "gpopt/engine/CEngine.h"
 #include "gpopt/minidump/CMinidumperUtils.h"
 #include "gpopt/translate/CTranslatorDXLToExpr.h"
 
-#include "unittest/gpopt/engine/CBindingTest.h"
 #include "unittest/gpopt/CTestUtils.h"
 
 #define EXPECTED_BINDING 1
@@ -102,12 +103,12 @@ CBindingTest::EresUnittest_Basic()
 
 	CMDAccessor mda(mp, CMDCache::Pcache(), pdrgpsysid, pdrgpmdp);
 
-	CBitSet *pbsEnabled = NULL;
-	CBitSet *pbsDisabled = NULL;
+	CBitSet *pbsEnabled = nullptr;
+	CBitSet *pbsDisabled = nullptr;
 	SetTraceflags(mp, pdxlmd->Pbs(), &pbsEnabled, &pbsDisabled);
 
 	// setup opt ctx
-	CAutoOptCtxt aoc(mp, &mda, NULL /* pceeval */,
+	CAutoOptCtxt aoc(mp, &mda, nullptr /* pceeval */,
 					 CTestUtils::GetCostModel(mp));
 
 	// translate DXL Tree -> Expr Tree
@@ -124,12 +125,12 @@ CBindingTest::EresUnittest_Basic()
 
 	// initialize engine and optimize query
 	CEngine eng(mp);
-	eng.Init(pqc, NULL /*search_stage_array*/);
+	eng.Init(pqc, nullptr /*search_stage_array*/);
 	eng.Optimize();
 
 	// extract plan
 	CExpression *pexprPlan = eng.PexprExtractPlan();
-	GPOS_ASSERT(NULL != pexprPlan);
+	GPOS_ASSERT(nullptr != pexprPlan);
 
 	UlongPtrArray *number_of_bindings = eng.GetNumberOfBindings();
 	ULONG search_stage = 0;

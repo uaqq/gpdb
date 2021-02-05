@@ -13,8 +13,8 @@
 #define GPOPT_CDrvdPropCtxt_H
 
 #include "gpos/base.h"
-#include "gpos/common/CRefCount.h"
 #include "gpos/common/CDynamicPtrArray.h"
+#include "gpos/common/CRefCount.h"
 
 
 namespace gpopt
@@ -90,9 +90,9 @@ public:
 	static CDrvdPropCtxt *
 	PdpctxtCopy(CMemoryPool *mp, CDrvdPropCtxt *pdpctxt)
 	{
-		if (NULL == pdpctxt)
+		if (nullptr == pdpctxt)
 		{
-			return NULL;
+			return nullptr;
 		}
 
 		return pdpctxt->PdpctxtCopy(mp);
@@ -102,7 +102,7 @@ public:
 	static void
 	AddDerivedProps(CDrvdProp *pdp, CDrvdPropCtxt *pdpctxt)
 	{
-		if (NULL != pdpctxt)
+		if (nullptr != pdpctxt)
 		{
 			pdpctxt->AddProps(pdp);
 		}

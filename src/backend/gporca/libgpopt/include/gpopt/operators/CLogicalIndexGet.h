@@ -12,9 +12,10 @@
 #define GPOPT_CLogicalIndexGet_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/COrderSpec.h"
-#include "gpopt/operators/CLogical.h"
 #include "gpopt/metadata/CIndexDescriptor.h"
+#include "gpopt/operators/CLogical.h"
 
 
 namespace gpopt
@@ -239,7 +240,7 @@ public:
 	static CLogicalIndexGet *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalIndexGet == pop->Eopid());
 
 		return dynamic_cast<CLogicalIndexGet *>(pop);

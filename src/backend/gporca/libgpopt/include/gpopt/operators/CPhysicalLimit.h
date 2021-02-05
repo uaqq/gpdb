@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalLimit_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/COrderSpec.h"
 #include "gpopt/operators/CPhysical.h"
 
@@ -150,12 +151,6 @@ public:
 									CDrvdPropArray *pdrgpdpCtxt,
 									ULONG ulOptReq) const override;
 
-	// compute required partition propagation of the n-th child
-	CPartitionPropagationSpec *PppsRequired(
-		CMemoryPool *mp, CExpressionHandle &exprhdl,
-		CPartitionPropagationSpec *pppsRequired, ULONG child_index,
-		CDrvdPropArray *pdrgpdpCtxt, ULONG ulOptReq) override;
-
 	// check if required columns are included in output columns
 	BOOL FProvidesReqdCols(CExpressionHandle &exprhdl, CColRefSet *pcrsRequired,
 						   ULONG ulOptReq) const override;
@@ -175,24 +170,6 @@ public:
 	// derive rewindability
 	CRewindabilitySpec *PrsDerive(CMemoryPool *mp,
 								  CExpressionHandle &exprhdl) const override;
-
-	// derive partition index map
-	CPartIndexMap *
-	PpimDerive(CMemoryPool *,  // mp
-			   CExpressionHandle &exprhdl,
-			   CDrvdPropCtxt *	//pdpctxt
-	) const override
-	{
-		return PpimPassThruOuter(exprhdl);
-	}
-
-	// derive partition filter map
-	CPartFilterMap *
-	PpfmDerive(CMemoryPool *,  // mp
-			   CExpressionHandle &exprhdl) const override
-	{
-		return PpfmPassThruOuter(exprhdl);
-	}
 
 	//-------------------------------------------------------------------------------------
 	// Enforced Properties
@@ -232,7 +209,7 @@ public:
 	static CPhysicalLimit *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalLimit == pop->Eopid());
 
 		return dynamic_cast<CPhysicalLimit *>(pop);

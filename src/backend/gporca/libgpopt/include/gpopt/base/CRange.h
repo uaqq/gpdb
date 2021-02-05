@@ -12,12 +12,11 @@
 #define GPOPT_CRange_H
 
 #include "gpos/base.h"
-#include "gpos/types.h"
 #include "gpos/common/CRefCount.h"
+#include "gpos/types.h"
 
 #include "gpopt/base/CColRef.h"
 #include "gpopt/operators/CExpression.h"
-
 #include "naucrates/md/IMDType.h"
 
 namespace gpnaucrates
@@ -198,11 +197,11 @@ public:
 	BOOL
 	IsConstraintUnbounded() const
 	{
-		return (NULL == m_pdatumLeft && NULL == m_pdatumRight);
+		return (nullptr == m_pdatumLeft && nullptr == m_pdatumRight);
 	}
 
 	// print
-	IOstream &OsPrint(IOstream &os) const override;
+	IOstream &OsPrint(IOstream &os) const;
 
 };	// class CRange
 

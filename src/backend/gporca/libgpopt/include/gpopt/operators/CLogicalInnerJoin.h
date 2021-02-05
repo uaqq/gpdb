@@ -12,6 +12,7 @@
 #define GPOS_CLogicalInnerJoin_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalJoin.h"
 
 namespace gpopt
@@ -93,7 +94,7 @@ public:
 	static CLogicalInnerJoin *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalInnerJoin == pop->Eopid());
 
 		return dynamic_cast<CLogicalInnerJoin *>(pop);

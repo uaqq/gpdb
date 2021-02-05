@@ -12,9 +12,10 @@
 #define GPOPT_CScalarIf_H
 
 #include "gpos/base.h"
+
+#include "gpopt/base/CDrvdProp.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/operators/CScalar.h"
-#include "gpopt/base/CDrvdProp.h"
 
 namespace gpopt
 {
@@ -116,7 +117,7 @@ public:
 	static CScalarIf *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarIf == pop->Eopid());
 
 		return dynamic_cast<CScalarIf *>(pop);

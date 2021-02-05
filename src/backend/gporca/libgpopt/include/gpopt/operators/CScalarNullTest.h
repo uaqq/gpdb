@@ -12,9 +12,10 @@
 #define GPOPT_CScalarNullTest_H
 
 #include "gpos/base.h"
+
+#include "gpopt/base/CDrvdProp.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/operators/CScalar.h"
-#include "gpopt/base/CDrvdProp.h"
 
 namespace gpopt
 {
@@ -87,7 +88,7 @@ public:
 	static CScalarNullTest *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarNullTest == pop->Eopid());
 
 		return dynamic_cast<CScalarNullTest *>(pop);

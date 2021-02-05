@@ -15,8 +15,8 @@
 
 #include "gpopt/base/CColRefSet.h"
 #include "gpopt/base/CDrvdProp.h"
-#include "naucrates/base/IDatum.h"
 #include "gpopt/operators/CScalar.h"
+#include "naucrates/base/IDatum.h"
 
 namespace gpopt
 {
@@ -94,7 +94,7 @@ public:
 	static CScalarConst *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarConst == pop->Eopid());
 
 		return reinterpret_cast<CScalarConst *>(pop);

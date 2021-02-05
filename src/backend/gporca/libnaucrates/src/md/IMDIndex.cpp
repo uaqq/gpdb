@@ -9,9 +9,10 @@
 //		Implementation of MD index
 //---------------------------------------------------------------------------
 
+#include "naucrates/md/IMDIndex.h"
+
 #include "gpos/string/CWStringDynamic.h"
 
-#include "naucrates/md/IMDIndex.h"
 #include "naucrates/dxl/xml/dxltokens.h"
 
 using namespace gpdxl;
@@ -40,7 +41,7 @@ IMDIndex::GetDXLStr(EmdindexType index_type)
 			return CDXLTokens::GetDXLTokenStr(EdxltokenIndexTypeGin);
 		default:
 			GPOS_ASSERT(!"Unrecognized index type");
-			return NULL;
+			return nullptr;
 	}
 }
 

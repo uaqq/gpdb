@@ -12,9 +12,10 @@
 #define GPOPT_CScalarSwitch_H
 
 #include "gpos/base.h"
+
+#include "gpopt/base/CDrvdProp.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/operators/CScalar.h"
-#include "gpopt/base/CDrvdProp.h"
 
 namespace gpopt
 {
@@ -113,7 +114,7 @@ public:
 	static CScalarSwitch *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarSwitch == pop->Eopid());
 
 		return dynamic_cast<CScalarSwitch *>(pop);

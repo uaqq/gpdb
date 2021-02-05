@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarAssertConstraint_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 #include "naucrates/md/IMDId.h"
 
@@ -75,7 +76,7 @@ public:
 	static CDXLScalarAssertConstraint *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarAssertConstraint == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarAssertConstraint *>(dxl_op);

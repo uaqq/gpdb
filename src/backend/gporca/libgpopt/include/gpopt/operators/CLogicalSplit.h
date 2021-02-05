@@ -12,8 +12,9 @@
 #define GPOPT_CLogicalSplit_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogical.h"
+
 #include "gpopt/operators/CExpressionHandle.h"
+#include "gpopt/operators/CLogical.h"
 
 namespace gpopt
 {
@@ -206,7 +207,7 @@ public:
 	static CLogicalSplit *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalSplit == pop->Eopid());
 
 		return dynamic_cast<CLogicalSplit *>(pop);

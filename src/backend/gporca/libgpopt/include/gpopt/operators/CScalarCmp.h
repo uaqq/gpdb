@@ -12,9 +12,9 @@
 #define GPOPT_CScalarCmp_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CScalar.h"
-#include "gpopt/base/CDrvdProp.h"
 
+#include "gpopt/base/CDrvdProp.h"
+#include "gpopt/operators/CScalar.h"
 #include "naucrates/md/IMDId.h"
 #include "naucrates/md/IMDType.h"
 
@@ -128,7 +128,7 @@ public:
 	static CScalarCmp *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarCmp == pop->Eopid());
 
 		return dynamic_cast<CScalarCmp *>(pop);

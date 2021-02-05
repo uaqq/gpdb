@@ -19,12 +19,12 @@
 #define GPOS_CMemoryPoolTracker_H
 
 #include "gpos/assert.h"
-#include "gpos/types.h"
-#include "gpos/utils.h"
 #include "gpos/common/CList.h"
 #include "gpos/common/CStackDescriptor.h"
 #include "gpos/memory/CMemoryPool.h"
 #include "gpos/memory/CMemoryPoolStatistics.h"
+#include "gpos/types.h"
+#include "gpos/utils.h"
 
 namespace gpos
 {
@@ -67,7 +67,7 @@ private:
 	CMemoryPoolStatistics m_memory_pool_statistics;
 
 	// allocation sequence number
-	ULONG m_alloc_sequence;
+	ULONG m_alloc_sequence{0};
 
 	// list of allocated (live) objects
 	CList<SAllocHeader> m_allocations_list;

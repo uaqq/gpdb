@@ -15,6 +15,7 @@
 #define GPDXL_CDXLPhysicalBroadcastMotion_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysicalMotion.h"
 
 namespace gpdxl
@@ -65,7 +66,7 @@ public:
 	static CDXLPhysicalBroadcastMotion *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalMotionBroadcast == dxl_op->GetDXLOperator());
 		return dynamic_cast<CDXLPhysicalBroadcastMotion *>(dxl_op);
 	}

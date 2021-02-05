@@ -9,9 +9,9 @@
 //		Implementation of left outer apply operator
 //---------------------------------------------------------------------------
 
-#include "gpos/base.h"
-
 #include "gpopt/operators/CLogicalLeftOuterApply.h"
+
+#include "gpos/base.h"
 
 using namespace gpopt;
 
@@ -27,7 +27,7 @@ using namespace gpopt;
 CLogicalLeftOuterApply::CLogicalLeftOuterApply(CMemoryPool *mp)
 	: CLogicalApply(mp)
 {
-	GPOS_ASSERT(NULL != mp);
+	GPOS_ASSERT(nullptr != mp);
 
 	m_fPattern = true;
 }

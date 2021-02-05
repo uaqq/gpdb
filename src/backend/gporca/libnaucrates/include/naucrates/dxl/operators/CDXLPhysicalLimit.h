@@ -13,6 +13,7 @@
 #define GPDXL_CDXLPhysicalLimit_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysical.h"
 
 namespace gpdxl
@@ -55,7 +56,7 @@ public:
 	static CDXLPhysicalLimit *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalLimit == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalLimit *>(dxl_op);

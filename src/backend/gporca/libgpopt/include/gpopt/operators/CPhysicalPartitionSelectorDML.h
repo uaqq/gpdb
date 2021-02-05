@@ -12,6 +12,7 @@
 #define GPOPT_CPhysicalPartitionSelectorDML_H
 
 #include "gpos/base.h"
+
 #include "gpopt/base/CUtils.h"
 #include "gpopt/operators/CPhysicalPartitionSelector.h"
 
@@ -84,12 +85,6 @@ public:
 							CDrvdPropArray *pdrgpdpCtxt,
 							ULONG ulOptReq) const override;
 
-	// compute required partition propagation of the n-th child
-	CPartitionPropagationSpec *PppsRequired(
-		CMemoryPool *mp, CExpressionHandle &exprhdl,
-		CPartitionPropagationSpec *pppsRequired, ULONG child_index,
-		CDrvdPropArray *pdrgpdpCtxt, ULONG ulOptReq) override;
-
 	// check if required columns are included in output columns
 	BOOL FProvidesReqdCols(CExpressionHandle &exprhdl, CColRefSet *pcrsRequired,
 						   ULONG ulOptReq) const override;
@@ -97,14 +92,6 @@ public:
 	//-------------------------------------------------------------------------------------
 	// Derived Plan Properties
 	//-------------------------------------------------------------------------------------
-
-	// derive partition index map
-	CPartIndexMap *PpimDerive(CMemoryPool *mp, CExpressionHandle &exprhdl,
-							  CDrvdPropCtxt *pdpctxt) const override;
-
-	// derive partition filter map
-	CPartFilterMap *PpfmDerive(CMemoryPool *mp,
-							   CExpressionHandle &exprhdl) const override;
 
 	//-------------------------------------------------------------------------------------
 	// Enforced Properties
@@ -127,7 +114,7 @@ public:
 	static CPhysicalPartitionSelectorDML *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopPhysicalPartitionSelectorDML == pop->Eopid());
 
 		return dynamic_cast<CPhysicalPartitionSelectorDML *>(pop);

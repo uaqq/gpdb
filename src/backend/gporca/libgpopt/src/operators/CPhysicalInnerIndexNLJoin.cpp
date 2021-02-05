@@ -9,16 +9,16 @@
 //		Implementation of index inner nested-loops join operator
 //---------------------------------------------------------------------------
 
+#include "gpopt/operators/CPhysicalInnerIndexNLJoin.h"
+
 #include "gpos/base.h"
-#include "gpopt/base/CDistributionSpecReplicated.h"
+
+#include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDistributionSpecHashed.h"
 #include "gpopt/base/CDistributionSpecNonSingleton.h"
-#include "gpopt/base/CDistributionSpecAny.h"
+#include "gpopt/base/CDistributionSpecReplicated.h"
 #include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/operators/CPredicateUtils.h"
-
-
-#include "gpopt/operators/CPhysicalInnerIndexNLJoin.h"
 
 
 
@@ -40,8 +40,8 @@ CPhysicalInnerIndexNLJoin::CPhysicalInnerIndexNLJoin(CMemoryPool *mp,
 	  m_pdrgpcrOuterRefs(colref_array),
 	  m_origJoinPred(origJoinPred)
 {
-	GPOS_ASSERT(NULL != colref_array);
-	if (NULL != origJoinPred)
+	GPOS_ASSERT(nullptr != colref_array);
+	if (nullptr != origJoinPred)
 	{
 		origJoinPred->AddRef();
 	}

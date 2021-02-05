@@ -12,8 +12,8 @@
 #define GPOPT_CLogicalApply_H
 
 #include "gpos/base.h"
-#include "gpopt/operators/CLogical.h"
 
+#include "gpopt/operators/CLogical.h"
 #include "naucrates/statistics/CStatistics.h"
 
 namespace gpopt
@@ -175,7 +175,7 @@ public:
 	static CLogicalApply *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(CUtils::FApply(pop));
 
 		return dynamic_cast<CLogicalApply *>(pop);

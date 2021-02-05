@@ -12,9 +12,9 @@
 #define GPOPT_CScalarArrayRefIndexList_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDId.h"
 
 #include "gpopt/operators/CScalar.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpopt
 {
@@ -96,14 +96,14 @@ public:
 	{
 		GPOS_ASSERT(
 			!"Invalid function call: CScalarArrayRefIndexList::MdidType()");
-		return NULL;
+		return nullptr;
 	}
 
 	// conversion function
 	static CScalarArrayRefIndexList *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarArrayRefIndexList == pop->Eopid());
 
 		return dynamic_cast<CScalarArrayRefIndexList *>(pop);

@@ -17,8 +17,8 @@
 #include "gpos/base.h"
 #include "gpos/common/CDynamicPtrArray.h"
 
-#include "naucrates/dxl/operators/CDXLPhysical.h"
 #include "naucrates/dxl/operators/CDXLNode.h"
+#include "naucrates/dxl/operators/CDXLPhysical.h"
 
 namespace gpdxl
 {
@@ -78,7 +78,7 @@ public:
 	static CDXLPhysicalMotion *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(
 			EdxlopPhysicalMotionGather == dxl_op->GetDXLOperator() ||
 			EdxlopPhysicalMotionBroadcast == dxl_op->GetDXLOperator() ||

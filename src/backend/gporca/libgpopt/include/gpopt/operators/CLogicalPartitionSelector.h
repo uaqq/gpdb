@@ -13,6 +13,8 @@
 #define GPOPT_CLogicalPartitionSelector_H
 
 #include "gpos/base.h"
+
+#include "gpopt/metadata/CPartConstraint.h"
 #include "gpopt/operators/CLogical.h"
 
 
@@ -192,7 +194,7 @@ public:
 	static CLogicalPartitionSelector *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalPartitionSelector == pop->Eopid());
 
 		return dynamic_cast<CLogicalPartitionSelector *>(pop);

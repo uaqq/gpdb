@@ -12,6 +12,7 @@
 #define GPOPT_CScalarBooleanTest_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CScalar.h"
 
 namespace gpopt
@@ -117,7 +118,7 @@ public:
 	static CScalarBooleanTest *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopScalarBooleanTest == pop->Eopid());
 
 		return dynamic_cast<CScalarBooleanTest *>(pop);

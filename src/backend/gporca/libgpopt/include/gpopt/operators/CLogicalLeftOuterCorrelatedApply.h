@@ -14,6 +14,7 @@
 #define GPOPT_CLogicalLeftOuterCorrelatedApply_H
 
 #include "gpos/base.h"
+
 #include "gpopt/operators/CLogicalLeftOuterApply.h"
 
 namespace gpopt
@@ -80,7 +81,7 @@ public:
 	static CLogicalLeftOuterCorrelatedApply *
 	PopConvert(COperator *pop)
 	{
-		GPOS_ASSERT(NULL != pop);
+		GPOS_ASSERT(nullptr != pop);
 		GPOS_ASSERT(EopLogicalLeftOuterCorrelatedApply == pop->Eopid());
 
 		return dynamic_cast<CLogicalLeftOuterCorrelatedApply *>(pop);

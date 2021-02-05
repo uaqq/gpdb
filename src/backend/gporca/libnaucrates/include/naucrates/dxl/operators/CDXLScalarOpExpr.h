@@ -13,6 +13,7 @@
 #define GPDXL_CDXLScalarOpExpr_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLScalar.h"
 #include "naucrates/md/IMDId.h"
 
@@ -72,7 +73,7 @@ public:
 	static CDXLScalarOpExpr *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopScalarOpExpr == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLScalarOpExpr *>(dxl_op);

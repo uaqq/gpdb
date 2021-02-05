@@ -13,9 +13,10 @@
 #define GPDXL_CDXLPhysicalDynamicIndexScan_H
 
 #include "gpos/base.h"
+
+#include "naucrates/dxl/operators/CDXLIndexDescr.h"
 #include "naucrates/dxl/operators/CDXLNode.h"
 #include "naucrates/dxl/operators/CDXLPhysical.h"
-#include "naucrates/dxl/operators/CDXLIndexDescr.h"
 #include "naucrates/dxl/operators/CDXLTableDescr.h"
 
 namespace gpdxl
@@ -96,7 +97,7 @@ public:
 	static CDXLPhysicalDynamicIndexScan *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalDynamicIndexScan == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalDynamicIndexScan *>(dxl_op);

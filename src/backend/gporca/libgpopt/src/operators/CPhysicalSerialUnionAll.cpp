@@ -15,21 +15,20 @@
 //
 //---------------------------------------------------------------------------
 
+#include "gpopt/operators/CPhysicalSerialUnionAll.h"
+
 #include "gpos/base.h"
 
 #include "gpopt/base/CDistributionSpecAny.h"
-#include "gpopt/base/CDistributionSpecSingleton.h"
 #include "gpopt/base/CDistributionSpecHashed.h"
-#include "gpopt/base/CDistributionSpecReplicated.h"
-#include "gpopt/base/CDistributionSpecRandom.h"
 #include "gpopt/base/CDistributionSpecNonSingleton.h"
+#include "gpopt/base/CDistributionSpecRandom.h"
+#include "gpopt/base/CDistributionSpecReplicated.h"
+#include "gpopt/base/CDistributionSpecSingleton.h"
 #include "gpopt/base/CDrvdPropCtxtPlan.h"
-
-#include "gpopt/operators/CPhysicalSerialUnionAll.h"
+#include "gpopt/exception.h"
 #include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/operators/CScalarIdent.h"
-
-#include "gpopt/exception.h"
 
 using namespace gpopt;
 
@@ -73,13 +72,13 @@ CPhysicalSerialUnionAll::PdsRequired(
 	CMemoryPool *mp, CExpressionHandle &exprhdl, CDistributionSpec *pdsRequired,
 	ULONG child_index, CDrvdPropArray *pdrgpdpCtxt, ULONG ulOptReq) const
 {
-	GPOS_ASSERT(NULL != PdrgpdrgpcrInput());
+	GPOS_ASSERT(nullptr != PdrgpdrgpcrInput());
 	GPOS_ASSERT(child_index < PdrgpdrgpcrInput()->Size());
 	GPOS_ASSERT(2 > ulOptReq);
 
 	CDistributionSpec *pds = PdsRequireSingletonOrReplicated(
 		mp, exprhdl, pdsRequired, child_index, ulOptReq);
-	if (NULL != pds)
+	if (nullptr != pds)
 	{
 		return pds;
 	}
@@ -89,7 +88,7 @@ CPhysicalSerialUnionAll::PdsRequired(
 		// attempt passing requested hashed distribution to children
 		CDistributionSpecHashed *pdshashed = PdshashedPassThru(
 			mp, CDistributionSpecHashed::PdsConvert(pdsRequired), child_index);
-		if (NULL != pdshashed)
+		if (nullptr != pdshashed)
 		{
 			return pdshashed;
 		}

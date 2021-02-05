@@ -16,9 +16,9 @@
 
 #include "gpos/base.h"
 
-#include "naucrates/md/IMDTypeBool.h"
 #include "naucrates/base/IDatumBool.h"
 #include "naucrates/md/CGPDBTypeHelper.h"
+#include "naucrates/md/IMDTypeBool.h"
 
 #define GPDB_BOOL_OID OID(16)
 #define GPDB_BOOL_OPFAMILY OID(2222)
@@ -209,7 +209,7 @@ public:
 	IMDId *
 	GetBaseRelMdid() const override
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	// return the null constant for this type

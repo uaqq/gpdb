@@ -13,9 +13,10 @@
 #define GPDXL_CDXLLogicalTVF_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDId.h"
-#include "naucrates/dxl/operators/CDXLLogical.h"
+
 #include "naucrates/dxl/operators/CDXLColDescr.h"
+#include "naucrates/dxl/operators/CDXLLogical.h"
+#include "naucrates/md/IMDId.h"
 
 namespace gpdxl
 {
@@ -104,7 +105,7 @@ public:
 	static CDXLLogicalTVF *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalTVF == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLLogicalTVF *>(dxl_op);

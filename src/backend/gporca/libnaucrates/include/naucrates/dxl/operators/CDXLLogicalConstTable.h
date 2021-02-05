@@ -14,9 +14,10 @@
 #define GPDXL_CDXLLogicalConstTable_H
 
 #include "gpos/base.h"
+
+#include "naucrates/dxl/operators/CDXLDatum.h"
 #include "naucrates/dxl/operators/CDXLLogical.h"
 #include "naucrates/dxl/operators/CDXLTableDescr.h"
-#include "naucrates/dxl/operators/CDXLDatum.h"
 
 namespace gpdxl
 {
@@ -94,7 +95,7 @@ public:
 	static CDXLLogicalConstTable *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalConstTable == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLLogicalConstTable *>(dxl_op);

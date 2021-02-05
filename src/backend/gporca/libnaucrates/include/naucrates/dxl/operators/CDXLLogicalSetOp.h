@@ -19,8 +19,8 @@
 
 #include "gpos/base.h"
 
-#include "naucrates/dxl/operators/CDXLLogical.h"
 #include "naucrates/dxl/operators/CDXLColDescr.h"
+#include "naucrates/dxl/operators/CDXLLogical.h"
 
 namespace gpdxl
 {
@@ -137,7 +137,7 @@ public:
 	static CDXLLogicalSetOp *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopLogicalSetOp == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLLogicalSetOp *>(dxl_op);

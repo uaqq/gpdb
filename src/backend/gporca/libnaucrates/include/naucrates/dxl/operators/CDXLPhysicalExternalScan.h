@@ -13,6 +13,7 @@
 #define GPDXL_CDXLPhysicalExternalScan_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysicalTableScan.h"
 #include "naucrates/dxl/operators/CDXLTableDescr.h"
 
@@ -47,7 +48,7 @@ public:
 	static CDXLPhysicalExternalScan *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalExternalScan == dxl_op->GetDXLOperator());
 
 		return dynamic_cast<CDXLPhysicalExternalScan *>(dxl_op);

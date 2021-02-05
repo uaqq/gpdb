@@ -12,10 +12,10 @@
 #define GPDXL_CDXLPhysicalCTAS_H
 
 #include "gpos/base.h"
-#include "naucrates/md/IMDRelation.h"
-#include "naucrates/dxl/operators/CDXLColDescr.h"
 
+#include "naucrates/dxl/operators/CDXLColDescr.h"
 #include "naucrates/dxl/operators/CDXLPhysical.h"
+#include "naucrates/md/IMDRelation.h"
 
 namespace gpdxl
 {
@@ -179,7 +179,7 @@ public:
 	static CDXLPhysicalCTAS *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalCTAS == dxl_op->GetDXLOperator());
 		return dynamic_cast<CDXLPhysicalCTAS *>(dxl_op);
 	}

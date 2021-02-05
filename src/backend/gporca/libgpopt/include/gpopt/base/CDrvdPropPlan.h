@@ -15,7 +15,6 @@
 #include "gpos/common/CRefCount.h"
 
 #include "gpopt/base/CColRef.h"
-#include "gpopt/base/CPartFilterMap.h"
 #include "gpopt/base/CDrvdProp.h"
 
 namespace gpopt
@@ -28,7 +27,6 @@ class CExpressionHandle;
 class COrderSpec;
 class CRewindabilitySpec;
 class CReqdPropPlan;
-class CPartIndexMap;
 class CCTEMap;
 
 //---------------------------------------------------------------------------
@@ -47,22 +45,16 @@ class CDrvdPropPlan : public CDrvdProp
 {
 private:
 	// derived sort order
-	COrderSpec *m_pos;
+	COrderSpec *m_pos{nullptr};
 
 	// derived distribution
-	CDistributionSpec *m_pds;
+	CDistributionSpec *m_pds{nullptr};
 
 	// derived rewindability
-	CRewindabilitySpec *m_prs;
-
-	// derived partition index map
-	CPartIndexMap *m_ppim;
-
-	// derived filter expressions indexed by the part index id
-	CPartFilterMap *m_ppfm;
+	CRewindabilitySpec *m_prs{nullptr};
 
 	// derived cte map
-	CCTEMap *m_pcm;
+	CCTEMap *m_pcm{nullptr};
 
 	// copy CTE producer plan properties from given context to current object
 	void CopyCTEProducerPlanProps(CMemoryPool *mp, CDrvdPropCtxt *pdpctxt,
@@ -110,20 +102,6 @@ public:
 	Prs() const
 	{
 		return m_prs;
-	}
-
-	// partition index map
-	CPartIndexMap *
-	Ppim() const
-	{
-		return m_ppim;
-	}
-
-	// partition filter map
-	CPartFilterMap *
-	Ppfm() const
-	{
-		return m_ppfm;
 	}
 
 	// cte map

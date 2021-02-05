@@ -8,31 +8,29 @@
 //	@doc:
 //		Tests for datum classes
 //---------------------------------------------------------------------------
+#include "unittest/dxl/base/CDatumTest.h"
+
 #include "gpos/error/CAutoTrace.h"
 #include "gpos/io/COstreamString.h"
 #include "gpos/string/CWStringDynamic.h"
 
+#include "gpopt/base/CQueryContext.h"
 #include "gpopt/eval/CConstExprEvaluatorDefault.h"
 #include "gpopt/mdcache/CMDCache.h"
-#include "gpopt/base/CQueryContext.h"
-
-#include "unittest/base.h"
-#include "unittest/dxl/base/CDatumTest.h"
-#include "unittest/gpopt/translate/CTranslatorExprToDXLTest.h"
-#include "unittest/gpopt/CTestUtils.h"
-
+#include "naucrates/base/CDatumBoolGPDB.h"
 #include "naucrates/base/CDatumGenericGPDB.h"
-#include "naucrates/base/CDatumOidGPDB.h"
 #include "naucrates/base/CDatumInt2GPDB.h"
 #include "naucrates/base/CDatumInt4GPDB.h"
 #include "naucrates/base/CDatumInt8GPDB.h"
-#include "naucrates/base/CDatumBoolGPDB.h"
-
-#include "naucrates/md/IMDType.h"
+#include "naucrates/base/CDatumOidGPDB.h"
+#include "naucrates/dxl/gpdb_types.h"
 #include "naucrates/md/CMDIdGPDB.h"
 #include "naucrates/md/CMDTypeGenericGPDB.h"
+#include "naucrates/md/IMDType.h"
 
-#include "naucrates/dxl/gpdb_types.h"
+#include "unittest/base.h"
+#include "unittest/gpopt/CTestUtils.h"
+#include "unittest/gpopt/translate/CTranslatorExprToDXLTest.h"
 
 //---------------------------------------------------------------------------
 //	@function:
@@ -77,7 +75,7 @@ CDatumTest::EresUnittest_Basics()
 	CMDAccessor mda(mp, CMDCache::Pcache(), CTestUtils::m_sysidDefault, pmdp);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */
 					 CTestUtils::GetCostModel(mp));
 
 	typedef IDatum *(*Pfpdatum)(CMemoryPool *, BOOL);
@@ -258,7 +256,7 @@ CDatumTest::StatsComparisonDoubleEqualWithinEpsilon()
 	CMDAccessor mda(mp, CMDCache::Pcache(), CTestUtils::m_sysidDefault, pmdp);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */
 					 CTestUtils::GetCostModel(mp));
 
 	// create accesssor
@@ -305,7 +303,7 @@ CDatumTest::StatsComparisonDoubleLessThan()
 	CMDAccessor mda(mp, CMDCache::Pcache(), CTestUtils::m_sysidDefault, pmdp);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */
 					 CTestUtils::GetCostModel(mp));
 
 	// create accesssor
@@ -352,7 +350,7 @@ CDatumTest::StatsComparisonIntLessThan()
 	CMDAccessor mda(mp, CMDCache::Pcache(), CTestUtils::m_sysidDefault, pmdp);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */
 					 CTestUtils::GetCostModel(mp));
 
 	IDatum *datum1 = GPOS_NEW(mp) CDatumInt4GPDB(CTestUtils::m_sysidDefault,
@@ -392,7 +390,7 @@ CDatumTest::StatsComparisonIntEqual()
 	CMDAccessor mda(mp, CMDCache::Pcache(), CTestUtils::m_sysidDefault, pmdp);
 
 	// install opt context in TLS
-	CAutoOptCtxt aoc(mp, &mda, NULL, /* pceeval */
+	CAutoOptCtxt aoc(mp, &mda, nullptr, /* pceeval */
 					 CTestUtils::GetCostModel(mp));
 
 	IDatum *datum1 = GPOS_NEW(mp) CDatumInt4GPDB(CTestUtils::m_sysidDefault,

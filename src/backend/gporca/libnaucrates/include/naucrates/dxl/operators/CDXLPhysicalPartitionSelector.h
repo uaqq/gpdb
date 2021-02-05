@@ -13,6 +13,7 @@
 #define GPDXL_CDXLPhysicalPartitionSelector_H
 
 #include "gpos/base.h"
+
 #include "naucrates/dxl/operators/CDXLPhysical.h"
 
 namespace gpdxl
@@ -101,7 +102,7 @@ public:
 	static CDXLPhysicalPartitionSelector *
 	Cast(CDXLOperator *dxl_op)
 	{
-		GPOS_ASSERT(NULL != dxl_op);
+		GPOS_ASSERT(nullptr != dxl_op);
 		GPOS_ASSERT(EdxlopPhysicalPartitionSelector ==
 					dxl_op->GetDXLOperator());
 
