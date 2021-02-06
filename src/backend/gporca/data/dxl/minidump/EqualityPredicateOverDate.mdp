@@ -31,6 +31,7 @@
        ->  Seq Scan on test  (cost=0.00..482.607379 rows=984.924062 width=4)
              Filter: (d = '2018-09-22'::date)
   ]]>
+  </dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>
