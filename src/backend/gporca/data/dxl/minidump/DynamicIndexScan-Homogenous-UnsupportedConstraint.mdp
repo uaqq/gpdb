@@ -389,7 +389,6 @@
               <dxl:ConstValue TypeMdid="0.1082.1.0" Value="iRwAAA==" DoubleValue="631152000000000.0"/>
             </dxl:Comparison>
           </dxl:And>
->>>>>>> master
         </dxl:PartConstraint>
       </dxl:Relation>
     </dxl:Metadata>
