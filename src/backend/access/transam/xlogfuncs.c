@@ -565,6 +565,28 @@ pg_wal_replay_pause(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+Datum
+gp_recovery_pause_on_restore_point_lsn(PG_FUNCTION_ARGS)
+{
+	XLogRecPtr	restorePointLocation = PG_GETARG_LSN(0);
+
+	if (!RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery is not in progress"),
+				 errhint("Recovery control functions can only be executed during recovery.")));
+
+	if (!XLogIsNeeded())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("WAL level not sufficient for creating a restore point"),
+				 errhint("wal_level must be set to \"replica\" or \"logical\" at server start.")));
+
+	SetRecoveryPauseRestorePointLSN(restorePointLocation);
+
+	PG_RETURN_VOID();
+}
+
 /*
  * pg_wal_replay_resume - resume recovery now
  *

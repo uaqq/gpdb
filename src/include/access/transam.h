@@ -188,6 +188,9 @@ extern PGDLLIMPORT VariableCache ShmemVariableCache;
 extern int xid_stop_limit;
 extern int xid_warn_limit;
 
+/* GPDB-specific */
+extern bool gp_pause_replay_on_recovery_start;
+
 /*
  * prototypes for functions in transam/transam.c
  */

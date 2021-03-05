@@ -118,6 +118,9 @@ int			CommitDelay = 0;	/* precommit delay in microseconds */
 int			CommitSiblings = 5; /* # concurrent xacts needed to sleep */
 int			wal_retrieve_retry_interval = 5000;
 
+/* GPDB specific */
+bool		gp_pause_replay_on_recovery_start = false;
+
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
 #endif
@@ -730,6 +733,9 @@ typedef struct XLogCtlData
 	XLogRecPtr	lastFpwDisableRecPtr;
 
 	slock_t		info_lck;		/* locks shared variables shown above */
+
+	/* GPDB: LSN of the next restore point to pause recovery on */
+	XLogRecPtr recoveryPauseRestorePointLSN;
 } XLogCtlData;
 
 static XLogCtlData *XLogCtl = NULL;
@@ -5992,6 +5998,14 @@ SetRecoveryPause(bool recoveryPause)
 	SpinLockRelease(&XLogCtl->info_lck);
 }
 
+void
+SetRecoveryPauseRestorePointLSN(XLogRecPtr restorePointLocation)
+{
+	SpinLockAcquire(&XLogCtl->info_lck);
+	XLogCtl->recoveryPauseRestorePointLSN = restorePointLocation;
+	SpinLockRelease(&XLogCtl->info_lck);
+}
+
 /*
  * When recovery_min_apply_delay is set, we wait long enough to make sure
  * certain record types are applied at least that interval behind the master.
@@ -7193,6 +7207,7 @@ StartupXLOG(void)
 		XLogCtl->recoveryLastXTime = 0;
 		XLogCtl->currentChunkStartTime = 0;
 		XLogCtl->recoveryPause = false;
+		XLogCtl->recoveryPauseRestorePointLSN = InvalidXLogRecPtr;
 		SpinLockRelease(&XLogCtl->info_lck);
 
 		/* Also ensure XLogReceiptTime has a sane value */
@@ -7249,6 +7264,17 @@ StartupXLOG(void)
 			ereport(LOG,
 					(errmsg("redo starts at %X/%X",
 							(uint32) (ReadRecPtr >> 32), (uint32) ReadRecPtr)));
+
+			/*
+			 * GPDB: Pause recovery initially if GUC is set so that the
+			 * recovery process doesn't just start replaying WAL asap.
+			 */
+			if (gp_pause_replay_on_recovery_start)
+			{
+				SetRecoveryPause(true);
+				elog(LOG,
+					 "gp_pause_replay_on_recovery_start set: replay will be paused at recovery start");
+			}
 
 			/*
 			 * main redo apply loop
@@ -10270,7 +10296,19 @@ xlog_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_RESTORE_POINT)
 	{
-		/* nothing to do here */
+		/*
+		 * GPDB: Set recovery pause if the LSN of the restore point read matches
+		 * the LSN of the restore point, for which a preemptive pause was set. A
+		 * preemptive pause could have been set with a call to
+		 * gp_recovery_pause_on_restore_point_lsn().
+		 */
+		bool			 pause;
+
+		SpinLockAcquire(&XLogCtl->info_lck);
+		pause = lsn == XLogCtl->recoveryPauseRestorePointLSN;
+		SpinLockRelease(&XLogCtl->info_lck);
+		if (pause)
+			SetRecoveryPause(true);
 	}
 	else if (info == XLOG_FPI || info == XLOG_FPI_FOR_HINT)
 	{

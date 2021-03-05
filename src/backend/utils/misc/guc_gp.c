@@ -2784,6 +2784,18 @@ struct config_bool ConfigureNamesBool_gp[] =
 		false,
 		NULL, NULL, NULL
 	},
+
+	{
+		{"gp_pause_replay_on_recovery_start", PGC_POSTMASTER, DEVELOPER_OPTIONS,
+		 gettext_noop("Pause WAL replay at recovery startup."),
+		 NULL,
+		 GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&gp_pause_replay_on_recovery_start,
+		false,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL
