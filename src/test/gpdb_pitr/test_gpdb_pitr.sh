@@ -98,6 +98,14 @@ createdb gpdb_pitr_database
 # points, and demonstrate the commit blocking.
 run_test_isolation2 gpdb_pitr_setup
 
+run_test gpdb_pitr_step2a
+psql gpdb_pitr_database -f sql/gpdb_pitr_step2b.sql | tail -n 4 > step2b.out
+psql gpdb_pitr_database -f sql/gpdb_pitr_step2c.sql
+
+run_test gpdb_pitr_step3a
+psql gpdb_pitr_database -f sql/gpdb_pitr_step3b.sql | tail -n 4 > step3b.out
+psql gpdb_pitr_database -f sql/gpdb_pitr_step3c.sql
+
 # Stop the gpdemo cluster. We'll be focusing on the PITR cluster from
 # now onwards.
 echo "Stopping gpdemo cluster to now focus on PITR cluster..."
@@ -114,12 +122,15 @@ echo "Appending recovery settings to postgresql.conf files in the replicas and s
 for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3; do
   REPLICA_VAR=REPLICA_$segment_role
 echo "restore_command = 'cp ${ARCHIVE_PREFIX}%c/%f %p'
-recovery_target_name = 'test_restore_point'
-recovery_target_action = 'promote'
+gp_pause_replay_on_recovery_start = on
+hot_standby = on
+recovery_target_name = 'unreachable_restore_point'
+recovery_target_action = 'pause'
 recovery_end_command = 'touch ${!REPLICA_VAR}/recovery_finished'" >> ${!REPLICA_VAR}/postgresql.conf
   echo "" > ${!REPLICA_VAR}/postgresql.auto.conf
   touch ${!REPLICA_VAR}/recovery.signal
   pg_ctl start -D ${!REPLICA_VAR} -l /dev/null
+  ps ax | grep postgres
 done
 
 # Wait up to 30 seconds for new master to accept connections.
@@ -137,6 +148,50 @@ while true; do
     exit 1
   fi
 done
+
+# Replay WALs step-by-step
+for segment_n in -1; do
+  PORT=$((7000))
+  NEXT_LSN=$(cat step2b.out | grep "^$segment_n" | cut --delimiter=' ' -f 2)
+  psql postgres -c "SELECT gp_recovery_pause_on_restore_point_lsn('$NEXT_LSN'); SELECT pg_wal_replay_resume();" -p $PORT
+  sleep 1
+  psql postgres -c "SELECT pg_last_wal_replay_lsn();" -ea -p $PORT
+done
+for segment_n in 0 1 2; do
+  PORT=$((7002 + $segment_n))
+  NEXT_LSN=$(cat step2b.out | grep "^$segment_n" | cut --delimiter=' ' -f 2)
+  psql postgres -c "SELECT gp_recovery_pause_on_restore_point_lsn('$NEXT_LSN'); SELECT pg_wal_replay_resume();" -p $PORT
+  sleep 1
+  psql postgres -c "SELECT pg_last_wal_replay_lsn();" -ea -p $PORT
+done
+
+for segment_n in -1; do
+  PORT=$((7000))
+  NEXT_LSN=$(cat step3b.out | grep "^$segment_n" | cut --delimiter=' ' -f 2)
+  psql postgres -c "SELECT gp_recovery_pause_on_restore_point_lsn('$NEXT_LSN'); SELECT pg_wal_replay_resume();" -p $PORT
+  sleep 1
+  psql postgres -c "SELECT pg_last_wal_replay_lsn();" -ea -p $PORT
+done
+for segment_n in 0 1 2; do
+  PORT=$((7002 + $segment_n))
+  NEXT_LSN=$(cat step3b.out | grep "^$segment_n" | cut --delimiter=' ' -f 2)
+  psql postgres -c "SELECT gp_recovery_pause_on_restore_point_lsn('$NEXT_LSN'); SELECT pg_wal_replay_resume();" -p $PORT
+  sleep 1
+  psql postgres -c "SELECT pg_last_wal_replay_lsn();" -ea -p $PORT
+done
+
+# Promote cluster
+for segment_n in -1; do
+  PORT=$((7000))
+  psql postgres -c "SELECT pg_promote(false); SELECT pg_wal_replay_resume();" -ea -p $PORT
+done
+for segment_n in 0 1 2; do
+  PORT=$((7002 + $segment_n))
+  psql postgres -c "SELECT pg_promote(false); SELECT pg_wal_replay_resume();" -ea -p $PORT
+done
+
+echo "Sleeping for 3 seconds until promotion is complete..."
+sleep 3
 
 # Reconfigure the segment configuration on the replica master so that
 # the other replicas are recognized as primary segments.
@@ -156,7 +211,7 @@ export COORDINATOR_DATA_DIRECTORY=$REPLICA_MASTER
 gpstop -ar
 
 # Run validation test to confirm we have gone back in time.
-run_test gpdb_pitr_validate
+run_test gpdb_pitr_validate_new
 
 # Print unnecessary success output.
 echo "============================================="

@@ -1,0 +1,43 @@
+-- This table must exist, and be empty (all WALs have been replayed).
+SELECT * FROM gpdb_pitr_tt;
+ i 
+---
+(0 rows)
+
+-- The DELETE was replayed.
+SELECT * FROM gpdb_two_phase_commit_before_acquire_share_lock;
+ num 
+-----
+(0 rows)
+
+-- The DELETE should have been rebroadcasted so should show no rows.
+SELECT * FROM gpdb_two_phase_commit_after_acquire_share_lock;
+ num 
+-----
+(0 rows)
+
+-- The INSERT happened after the restore point, and was replayed
+SELECT * FROM gpdb_two_phase_commit_after_restore_point;
+ num 
+-----
+   2
+   3
+   4
+   7
+   8
+   1
+   5
+   6
+   9
+  10
+(10 rows)
+
+-- The one-phase commit should have gone through before the restore
+-- point was created so it should show up.
+SELECT * FROM gpdb_one_phase_commit;
+ num 
+-----
+   2
+   1
+(2 rows)
+
