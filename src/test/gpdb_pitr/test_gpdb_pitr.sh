@@ -29,10 +29,14 @@ PRIMARY3_PORT=7004
 # Set up temporary directories to store the basebackups and the WAL
 # archives that will be used for Point-In-Time Recovery later.
 TEMP_DIR=$PWD/temp_test
-REPLICA_MASTER=$TEMP_DIR/replica_m
+REPLICA_MASTER=$TEMP_DIR/replica_c
 REPLICA_PRIMARY1=$TEMP_DIR/replica_p1
 REPLICA_PRIMARY2=$TEMP_DIR/replica_p2
 REPLICA_PRIMARY3=$TEMP_DIR/replica_p3
+REPLICA_STANDBY=$TEMP_DIR/replica_s
+REPLICA_MIRROR1=$TEMP_DIR/replica_m1
+REPLICA_MIRROR2=$TEMP_DIR/replica_m2
+REPLICA_MIRROR3=$TEMP_DIR/replica_m3
 
 ARCHIVE_PREFIX=$TEMP_DIR/archive_seg
 
@@ -40,6 +44,10 @@ REPLICA_MASTER_DBID=10
 REPLICA_PRIMARY1_DBID=11
 REPLICA_PRIMARY2_DBID=12
 REPLICA_PRIMARY3_DBID=13
+REPLICA_STANDBY_DBID=100
+REPLICA_MIRROR1_DBID=101
+REPLICA_MIRROR2_DBID=102
+REPLICA_MIRROR3_DBID=103
 
 # The options for pg_regress and pg_isolation2_regress.
 REGRESS_OPTS="--dbname=gpdb_pitr_database --use-existing --init-file=../regress/init_file --load-extension=gp_inject_fault"
@@ -130,7 +138,6 @@ recovery_end_command = 'touch ${!REPLICA_VAR}/recovery_finished'" >> ${!REPLICA_
   echo "" > ${!REPLICA_VAR}/postgresql.auto.conf
   touch ${!REPLICA_VAR}/recovery.signal
   pg_ctl start -D ${!REPLICA_VAR} -l /dev/null
-  ps ax | grep postgres
 done
 
 # Wait up to 30 seconds for new master to accept connections.
@@ -198,17 +205,37 @@ sleep 3
 echo "Configuring replica master's gp_segment_configuration..."
 PGOPTIONS="-c gp_role=utility" psql postgres -c "
 SET allow_system_table_mods=true;
+UPDATE gp_segment_configuration SET dbid=${REPLICA_MASTER_DBID}, datadir='${REPLICA_MASTER}', mode='n' WHERE content = -1 AND preferred_role='p';
+UPDATE gp_segment_configuration SET dbid=${REPLICA_PRIMARY1_DBID}, datadir='${REPLICA_PRIMARY1}', mode='n' WHERE content = 0 AND preferred_role='p';
+UPDATE gp_segment_configuration SET dbid=${REPLICA_PRIMARY2_DBID}, datadir='${REPLICA_PRIMARY2}', mode='n' WHERE content = 1 AND preferred_role='p';
+UPDATE gp_segment_configuration SET dbid=${REPLICA_PRIMARY3_DBID}, datadir='${REPLICA_PRIMARY3}', mode='n' WHERE content = 2 AND preferred_role='p';
+DELETE FROM gp_segment_configuration WHERE content = -1 AND preferred_role='m';
+-- UPDATE gp_segment_configuration SET dbid=${REPLICA_STANDBY_DBID}, datadir='${REPLICA_STANDBY}', status='d', mode='n' WHERE content = -1 AND preferred_role='m';
+UPDATE gp_segment_configuration SET dbid=${REPLICA_MIRROR1_DBID}, datadir='${REPLICA_MIRROR1}', status='d', mode='n' WHERE content = 0 AND preferred_role='m';
+UPDATE gp_segment_configuration SET dbid=${REPLICA_MIRROR2_DBID}, datadir='${REPLICA_MIRROR2}', status='d', mode='n' WHERE content = 1 AND preferred_role='m';
+UPDATE gp_segment_configuration SET dbid=${REPLICA_MIRROR3_DBID}, datadir='${REPLICA_MIRROR3}', status='d', mode='n' WHERE content = 2 AND preferred_role='m';
+CREATE TABLE gp_segment_configuration_tmp(LIKE gp_segment_configuration);
+INSERT INTO gp_segment_configuration_tmp SELECT * FROM gp_segment_configuration;
 DELETE FROM gp_segment_configuration WHERE preferred_role='m';
-UPDATE gp_segment_configuration SET dbid=${REPLICA_MASTER_DBID}, datadir='${REPLICA_MASTER}' WHERE content = -1;
-UPDATE gp_segment_configuration SET dbid=${REPLICA_PRIMARY1_DBID}, datadir='${REPLICA_PRIMARY1}' WHERE content = 0;
-UPDATE gp_segment_configuration SET dbid=${REPLICA_PRIMARY2_DBID}, datadir='${REPLICA_PRIMARY2}' WHERE content = 1;
-UPDATE gp_segment_configuration SET dbid=${REPLICA_PRIMARY3_DBID}, datadir='${REPLICA_PRIMARY3}' WHERE content = 2;
 "
 
 # Restart the cluster to get the MPP parts working.
 echo "Restarting cluster now that the new cluster is properly configured..."
 export COORDINATOR_DATA_DIRECTORY=$REPLICA_MASTER
 gpstop -ar
+
+echo "Reconfiguring replica master's gp_segment_configuration after restart..."
+psql postgres -c "
+SET allow_system_table_mods=true;
+DELETE FROM gp_segment_configuration;
+INSERT INTO gp_segment_configuration SELECT * FROM gp_segment_configuration_tmp;
+DROP TABLE gp_segment_configuration_tmp;
+"
+
+echo "Recovering standby and mirrors..."
+gprecoverseg -a -v -F
+
+exit 0
 
 # Run validation test to confirm we have gone back in time.
 run_test gpdb_pitr_validate_new
