@@ -129,15 +129,16 @@ gpstop -a -q
 echo "Appending recovery settings to postgresql.conf files in the replicas and starting them up..."
 for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3; do
   REPLICA_VAR=REPLICA_$segment_role
-echo "restore_command = 'cp ${ARCHIVE_PREFIX}%c/%f %p'
+  cp ${!REPLICA_VAR}/postgresql.conf ${!REPLICA_VAR}/postgresql.cluster.conf
+  echo "restore_command = 'cp ${ARCHIVE_PREFIX}%c/%f %p'
 gp_pause_replay_on_recovery_start = on
 hot_standby = on
 recovery_target_name = 'unreachable_restore_point'
 recovery_target_action = 'pause'
 recovery_end_command = 'touch ${!REPLICA_VAR}/recovery_finished'" >> ${!REPLICA_VAR}/postgresql.conf
-  echo "" > ${!REPLICA_VAR}/postgresql.auto.conf
+  mv ${!REPLICA_VAR}/postgresql.auto.conf ${!REPLICA_VAR}/postgresql.cluster.auto.conf
   touch ${!REPLICA_VAR}/recovery.signal
-  pg_ctl start -D ${!REPLICA_VAR} -l /dev/null
+  pg_ctl start -D ${!REPLICA_VAR}
 done
 
 # Wait up to 30 seconds for new master to accept connections.
@@ -219,9 +220,16 @@ INSERT INTO gp_segment_configuration_tmp SELECT * FROM gp_segment_configuration;
 DELETE FROM gp_segment_configuration WHERE preferred_role='m';
 "
 
-# Restart the cluster to get the MPP parts working.
-echo "Restarting cluster now that the new cluster is properly configured..."
+echo "Restoring cluster configuration to normal GPDB cluster configuration..."
 export COORDINATOR_DATA_DIRECTORY=$REPLICA_MASTER
+export MASTER_DATA_DIRECTORY=$REPLICA_MASTER
+for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3; do
+  REPLICA_VAR=REPLICA_$segment_role
+  mv ${!REPLICA_VAR}/postgresql.cluster.conf ${!REPLICA_VAR}/postgresql.conf
+  mv ${!REPLICA_VAR}/postgresql.cluster.auto.conf ${!REPLICA_VAR}/postgresql.auto.conf
+done
+
+echo "Restarting cluster now that the new cluster is properly configured..."
 gpstop -ar
 
 echo "Reconfiguring replica master's gp_segment_configuration after restart..."
@@ -235,7 +243,7 @@ DROP TABLE gp_segment_configuration_tmp;
 echo "Recovering standby and mirrors..."
 gprecoverseg -a -v -F
 
-exit 0
+gpstop -ar
 
 # Run validation test to confirm we have gone back in time.
 run_test gpdb_pitr_validate_new
