@@ -21,10 +21,17 @@ MASTER=${DATADIR}/qddir/demoDataDir-1
 PRIMARY1=${DATADIR}/dbfast1/demoDataDir0
 PRIMARY2=${DATADIR}/dbfast2/demoDataDir1
 PRIMARY3=${DATADIR}/dbfast3/demoDataDir2
+MIRROR1=${DATADIR}/dbfast_mirror1/demoDataDir0
+MIRROR2=${DATADIR}/dbfast_mirror2/demoDataDir1
+MIRROR3=${DATADIR}/dbfast_mirror3/demoDataDir2
 MASTER_PORT=7000
 PRIMARY1_PORT=7002
 PRIMARY2_PORT=7003
 PRIMARY3_PORT=7004
+# Mirrors copy primaries' data
+MIRROR1_PORT=7002
+MIRROR2_PORT=7003
+MIRROR3_PORT=7004
 
 # Set up temporary directories to store the basebackups and the WAL
 # archives that will be used for Point-In-Time Recovery later.
@@ -37,6 +44,10 @@ REPLICA_STANDBY=$TEMP_DIR/replica_s
 REPLICA_MIRROR1=$TEMP_DIR/replica_m1
 REPLICA_MIRROR2=$TEMP_DIR/replica_m2
 REPLICA_MIRROR3=$TEMP_DIR/replica_m3
+
+REPLICA_MIRROR1_PORT=7005
+REPLICA_MIRROR2_PORT=7006
+REPLICA_MIRROR3_PORT=7007
 
 ARCHIVE_PREFIX=$TEMP_DIR/archive_seg
 
@@ -92,7 +103,7 @@ gpstop -ar -q
 # Create the basebackups which will be our replicas for Point-In-Time
 # Recovery later.
 echo "Creating basebackups..."
-for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3; do
+for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3 MIRROR1 MIRROR2 MIRROR3; do
   PORT_VAR=${segment_role}_PORT
   REPLICA_VAR=REPLICA_$segment_role
   REPLICA_DBID_VAR=REPLICA_${segment_role}_DBID
@@ -119,6 +130,13 @@ psql gpdb_pitr_database -f sql/gpdb_pitr_step3c.sql
 echo "Stopping gpdemo cluster to now focus on PITR cluster..."
 gpstop -a -q
 
+# Copy configuration files for mirror from original mirror data directories
+for segment_role in MIRROR1 MIRROR2 MIRROR3; do
+  REPLICA_VAR=REPLICA_$segment_role
+  cp -f ${!segment_role}/postgresql.conf ${!REPLICA_VAR}/postgresql.conf
+  cp -f ${!segment_role}/postgresql.auto.conf ${!REPLICA_VAR}/postgresql.auto.conf
+done
+
 # Appending recovery settings to postgresql.conf in all the replicas to setup
 # for Point-In-Time Recovery. Specifically, we need to have the restore_command
 # and recovery_target_name set up properly. We'll also need to empty out the
@@ -139,6 +157,20 @@ recovery_end_command = 'touch ${!REPLICA_VAR}/recovery_finished'" >> ${!REPLICA_
   mv ${!REPLICA_VAR}/postgresql.auto.conf ${!REPLICA_VAR}/postgresql.cluster.auto.conf
   touch ${!REPLICA_VAR}/recovery.signal
   pg_ctl start -D ${!REPLICA_VAR}
+done
+
+for sn in 1 2 3; do
+  MIRROR_VAR=REPLICA_MIRROR$sn
+  cp ${!MIRROR_VAR}/postgresql.conf ${!MIRROR_VAR}/postgresql.cluster.conf
+  REPLICA_PORT=PRIMARY${sn}_PORT
+  REPLICA_MIRROR_PORT=REPLICA_MIRROR${sn}_PORT
+  echo "
+hot_standby = on
+port = ${!REPLICA_MIRROR_PORT}  # There is port set above, but this setting rewrites it
+" >> ${!MIRROR_VAR}/postgresql.conf
+  mv ${!MIRROR_VAR}/postgresql.auto.conf ${!MIRROR_VAR}/postgresql.cluster.auto.conf
+  touch ${!MIRROR_VAR}/standby.signal
+  pg_ctl start -D ${!MIRROR_VAR}
 done
 
 # Wait up to 30 seconds for new master to accept connections.
@@ -201,6 +233,15 @@ done
 echo "Sleeping for 3 seconds until promotion is complete..."
 sleep 3
 
+echo "Restoring cluster configuration to normal GPDB cluster configuration..."
+export COORDINATOR_DATA_DIRECTORY=$REPLICA_MASTER
+export MASTER_DATA_DIRECTORY=$REPLICA_MASTER
+for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3 MIRROR1 MIRROR2 MIRROR3; do
+  REPLICA_VAR=REPLICA_$segment_role
+  mv ${!REPLICA_VAR}/postgresql.cluster.conf ${!REPLICA_VAR}/postgresql.conf
+  mv ${!REPLICA_VAR}/postgresql.cluster.auto.conf ${!REPLICA_VAR}/postgresql.auto.conf
+done
+
 # Reconfigure the segment configuration on the replica master so that
 # the other replicas are recognized as primary segments.
 echo "Configuring replica master's gp_segment_configuration..."
@@ -215,34 +256,20 @@ DELETE FROM gp_segment_configuration WHERE content = -1 AND preferred_role='m';
 UPDATE gp_segment_configuration SET dbid=${REPLICA_MIRROR1_DBID}, datadir='${REPLICA_MIRROR1}', status='d', mode='n' WHERE content = 0 AND preferred_role='m';
 UPDATE gp_segment_configuration SET dbid=${REPLICA_MIRROR2_DBID}, datadir='${REPLICA_MIRROR2}', status='d', mode='n' WHERE content = 1 AND preferred_role='m';
 UPDATE gp_segment_configuration SET dbid=${REPLICA_MIRROR3_DBID}, datadir='${REPLICA_MIRROR3}', status='d', mode='n' WHERE content = 2 AND preferred_role='m';
-CREATE TABLE gp_segment_configuration_tmp(LIKE gp_segment_configuration);
-INSERT INTO gp_segment_configuration_tmp SELECT * FROM gp_segment_configuration;
-DELETE FROM gp_segment_configuration WHERE preferred_role='m';
 "
 
-echo "Restoring cluster configuration to normal GPDB cluster configuration..."
-export COORDINATOR_DATA_DIRECTORY=$REPLICA_MASTER
-export MASTER_DATA_DIRECTORY=$REPLICA_MASTER
-for segment_role in MASTER PRIMARY1 PRIMARY2 PRIMARY3; do
-  REPLICA_VAR=REPLICA_$segment_role
-  mv ${!REPLICA_VAR}/postgresql.cluster.conf ${!REPLICA_VAR}/postgresql.conf
-  mv ${!REPLICA_VAR}/postgresql.cluster.auto.conf ${!REPLICA_VAR}/postgresql.auto.conf
-done
-
-echo "Restarting cluster now that the new cluster is properly configured..."
 gpstop -ar
 
-echo "Reconfiguring replica master's gp_segment_configuration after restart..."
+echo "Recovering mirrors..."
+gprecoverseg -v -a
+
 psql postgres -c "
+SELECT * FROM gp_segment_configuration;
 SET allow_system_table_mods=true;
-DELETE FROM gp_segment_configuration;
-INSERT INTO gp_segment_configuration SELECT * FROM gp_segment_configuration_tmp;
-DROP TABLE gp_segment_configuration_tmp;
+UPDATE gp_segment_configuration SET status='u';
 "
 
-echo "Recovering standby and mirrors..."
-gprecoverseg -a -v -F
-
+echo "Restarting cluster after all operations..."
 gpstop -ar
 
 # Run validation test to confirm we have gone back in time.
