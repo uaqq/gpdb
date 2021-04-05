@@ -223,15 +223,13 @@ done
 # Promote cluster
 for segment_n in -1; do
   PORT=$((7000))
-  psql postgres -c "SELECT pg_promote(false); SELECT pg_wal_replay_resume();" -ea -p $PORT
+  psql postgres -c "SELECT pg_wal_replay_resume(); SELECT pg_promote(true); SELECT pg_create_physical_replication_slot('internal_wal_replication_slot');" -ea -p $PORT
 done
 for segment_n in 0 1 2; do
   PORT=$((7002 + $segment_n))
-  psql postgres -c "SELECT pg_promote(false); SELECT pg_wal_replay_resume();" -ea -p $PORT
+  psql postgres -c "SELECT pg_wal_replay_resume(); SELECT pg_promote(true); SELECT pg_create_physical_replication_slot('internal_wal_replication_slot');" -ea -p $PORT
 done
 
-echo "Sleeping for 3 seconds until promotion is complete..."
-sleep 3
 
 echo "Restoring cluster configuration to normal GPDB cluster configuration..."
 export COORDINATOR_DATA_DIRECTORY=$REPLICA_MASTER
