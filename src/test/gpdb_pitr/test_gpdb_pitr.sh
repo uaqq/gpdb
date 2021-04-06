@@ -220,10 +220,16 @@ for segment_n in 0 1 2; do
   psql postgres -c "SELECT pg_last_wal_replay_lsn();" -ea -p $PORT
 done
 
+
+for sn in 1 2 3; do
+  MIRROR_VAR=REPLICA_MIRROR$sn
+  pg_ctl stop -D ${!MIRROR_VAR}
+done
+
 # Promote cluster
 for segment_n in -1; do
   PORT=$((7000))
-  psql postgres -c "SELECT pg_wal_replay_resume(); SELECT pg_promote(true); SELECT pg_create_physical_replication_slot('internal_wal_replication_slot');" -ea -p $PORT
+  psql postgres -c "SELECT pg_wal_replay_resume(); SELECT pg_promote(true);" -ea -p $PORT
 done
 for segment_n in 0 1 2; do
   PORT=$((7002 + $segment_n))
