@@ -6,6 +6,14 @@ RUN_STAMP=$(date +%M)
 
 # Initial state: gpdemo with ONE primary-mirror pair
 
+DIR_TEMP=$PWD/temp
+
+[ -d ${DIR_TEMP} ] && rm -rf ${DIR_TEMP}
+mkdir ${DIR_TEMP}
+
+
+# Original cluster
+
 DIR_DATA="${COORDINATOR_DATA_DIRECTORY%*/*/*}"
 
 COORDINATOR_DIR=${DIR_DATA}/qddir/demoDataDir-1
@@ -18,116 +26,124 @@ MIRROR1_DIR=${DIR_DATA}/dbfast_mirror1/demoDataDir0
 MIRROR1_PORT=7003
 
 
-# Replica server
+# Replica (a single PostgreSQL instance, for segment '1' of the original cluster)
 
-DIR_TEMP=$PWD/temp
+REPLICA_DBID=2
+REPLICA_DIR=${DIR_TEMP}/replica
 
-REPLICA_COORDINATOR_DIR=${DIR_TEMP}/replica_c
-REPLICA_COORDINATOR_DBID=10
-
-REPLICA_PRIMARY1_DBID=2
-REPLICA_PRIMARY1_DIR=${DIR_TEMP}/replica_p1
-REPLICA_PRIMARY1_ARCHIVE=${REPLICA_PRIMARY1_DIR}/pg_wal
+WAL_ARCHIVE_DIR=${DIR_TEMP}/wal_archive
+mkdir ${WAL_ARCHIVE_DIR}
 
 
-RECEIVEWAL_PID=-1
+# Script run variables
+
+RECEIVEWAL_PRIMARY_PID=-1
+RECEIVEWAL_MIRROR_PID=-1
 
 
-# Assume the GPDB cluster is running normally at this point
+# ASSUME the GPDB cluster is running normally at this point
 
-[ -d ${DIR_TEMP} ] && rm -rf ${DIR_TEMP}
-mkdir ${DIR_TEMP}
 
-echo "(1) Create basebackup of primary1"
-pg_basebackup -h localhost -p ${PRIMARY1_PORT} -X stream -D ${REPLICA_PRIMARY1_DIR} --target-gp-dbid ${REPLICA_PRIMARY1_DBID}
-echo "(1) FINISHED"
+echo ">>> Creating basebackup of primary1"
+pg_basebackup -h localhost -p ${PRIMARY1_PORT} -X stream -D ${REPLICA_DIR} --target-gp-dbid ${REPLICA_DBID}
+echo "<<<"
 
-echo "(2) Launching pg_receivewal for WALs from primary1"
-pg_receivewal -h localhost -p ${PRIMARY1_PORT} -D ${REPLICA_PRIMARY1_ARCHIVE} >>${DIR_TEMP}/receivewal.log 2>&1 &
-RECEIVEWAL_PID=$!
-echo "(2) FINISHED"
-
-echo "(3) Generating some changes"
-psql postgres -ea -c "DROP SCHEMA IF EXISTS receivewal CASCADE; CREATE SCHEMA receivewal; CHECKPOINT; CREATE TABLE receivewal.t(i INT); INSERT INTO receivewal.t VALUES (${RUN_STAMP});"
-echo "(3) FINISHED"
-
-echo "(4) Creating restore point 1"
-psql postgres -ea -c "SELECT gp_create_restore_point('rp1');"
-echo "(4) FINISHED"
-
-echo "(5) Generating faulty changes on primary1 and creating a restore point"
-echo "(5) In a real installation, these would originate from actions performed cluster-wide"
-PGOPTIONS="-c gp_role=utility" psql postgres -ea -c "INSERT INTO receivewal.t VALUES (663), (664), (${RUN_STAMP});" -p 7002
-PGOPTIONS="-c gp_role=utility" psql postgres -ea -c "SELECT pg_create_restore_point('rpfaulty');" -p 7002
-echo "(5) FINISHED"
-
-echo "(6) Stopping primary1 and making sure GPDB acknowledges that primary1 is now unresponsive. Stopping pg_receivewal"
-PRIMARY1_PID=$(ps ax | grep postgres | grep "${PRIMARY1_DIR}" | awk '{print $1}')
-kill -s SIGKILL ${PRIMARY1_PID}
-rm -f /tmp/.s.PGSQL.7002.lock
-kill -s SIGKILL ${RECEIVEWAL_PID}
-RECEIVEWAL_PID=-1
-psql postgres -ea -c 'CHECKPOINT;'
-gpstate
-echo "(6) FINISHED"
-
-echo "(7) Hacky renaming of WAL files obtained by pg_receivewal"
-ls -ltrh ${REPLICA_PRIMARY1_ARCHIVE}
-FILE_TO_RENAME_WITH_PATH=$(ls -1 ${REPLICA_PRIMARY1_ARCHIVE}/*.partial | tail -n 1)
-RESULTING_FILE_WITH_PATH="${FILE_TO_RENAME_WITH_PATH%.*}"
-cp ${FILE_TO_RENAME_WITH_PATH} ${RESULTING_FILE_WITH_PATH}
-ls -ltrh ${REPLICA_PRIMARY1_ARCHIVE}
-echo "(7) FINISHED"
-
-echo "(8) Starting recovery on replica"
-cat ${REPLICA_PRIMARY1_DIR}/postgresql.conf | sed -e "s/^port.*/port = 7007/" > ${REPLICA_PRIMARY1_DIR}/postgresql.backup.conf
-cp -f ${REPLICA_PRIMARY1_DIR}/postgresql.backup.conf ${REPLICA_PRIMARY1_DIR}/postgresql.conf
+echo ">>> Modifying primary1's configuration to enable WAL archival"
 echo "
-restore_command = 'ls ${REPLICA_PRIMARY1_ARCHIVE}/%f > /dev/null 2>&1'
+wait_for_replication_threshold = 0
+archive_mode = 'always'
+archive_command = '$PWD/archive_command.sh %p ${WAL_ARCHIVE_DIR}/%f'
+" >> ${PRIMARY1_DIR}/postgresql.conf
+echo "
+wait_for_replication_threshold = 0
+archive_mode = 'always'
+archive_command = '$PWD/archive_command.sh %p ${WAL_ARCHIVE_DIR}/%f'
+" >> ${MIRROR1_DIR}/postgresql.conf
+echo "<<<"
+
+echo ">>> Restarting cluster to start archival"
+gpstop -M smart -a -r
+echo "<<<"
+
+echo ">>> Generating changes and creating a restore point"
+psql postgres -ea -c "CHECKPOINT;"
+psql postgres -ea -c "DROP SCHEMA IF EXISTS faulty CASCADE; CREATE SCHEMA faulty;"
+psql postgres -ea -c "CREATE TABLE faulty.t(i INT);"
+psql postgres -ea -c "SELECT gp_create_restore_point('rp1');"
+psql postgres -ea -c "INSERT INTO faulty.t(i) VALUES (1), (3), (5), (7);"
+sleep 1
+echo "<<<"
+
+echo ">>> Renaming of WAL files in the archive"
+ls -ltrh ${WAL_ARCHIVE_DIR}/*.partial
+FILE_TO_RENAME_WITH_PATH=$(ls -1 ${WAL_ARCHIVE_DIR}/*.partial | tail -n 1)
+RESULTING_FILE_WITH_PATH="${FILE_TO_RENAME_WITH_PATH%.*}"
+cp -f ${FILE_TO_RENAME_WITH_PATH} ${RESULTING_FILE_WITH_PATH}
+echo "<<<"
+
+echo ">>> Preparing recovery on replica"
+cat ${REPLICA_DIR}/postgresql.conf | sed -e "s/^port.*/port = 7070/" > ${REPLICA_DIR}/postgresql.backup.conf
+cp -f ${REPLICA_DIR}/postgresql.backup.conf ${REPLICA_DIR}/postgresql.conf
+echo "
+restore_command = 'cp \"${WAL_ARCHIVE_DIR}/%f\" \"%p\"'
 recovery_target_name = 'rp2'
-recovery_target_action = 'pause'
+recovery_target_action = 'promote'
 hot_standby = on
 gp_pause_on_restore_point_replay = on
-" >> ${REPLICA_PRIMARY1_DIR}/postgresql.conf
-touch ${REPLICA_PRIMARY1_DIR}/recovery.signal
-pg_ctl start -D ${REPLICA_PRIMARY1_DIR}
-echo "(8) FINISHED"
+" >> ${REPLICA_DIR}/postgresql.conf
+touch ${REPLICA_DIR}/recovery.signal
+echo "<<<"
 
-echo "(8.1) At this point, replica is stopped at 'rp1', and it will continue to replay the CURRENT WAL until it reaches 'rpfaulty'."
-echo "(8.1) Let's provide newer files from mirror. GPDB permits clusters that do not have primaries"
+echo ">>> Stopping primary1"
+pg_ctl stop -D ${PRIMARY1_DIR}
+echo "<<<"
 
-echo "(9) Restarting cluster (with mirror1 down) and launching pg_receivewal for WALs from mirror1"
-gpstop -M fast -a -r
-pg_receivewal -h localhost -p ${MIRROR1_PORT} -D ${REPLICA_PRIMARY1_ARCHIVE} >>${DIR_TEMP}/receivewal.log 2>&1 &
-RECEIVEWAL_PID=$!
-echo "(9) FINISHED"
+echo ">>> Creating a CHECKPOINT. When it fails, the mirror is promoted, and the cluster acknowledges that the primary is down. Generating some cluster-wide changes"
+psql postgres -ea -c "CHECKPOINT;"
+psql postgres -ea -c "INSERT INTO faulty.t(i) VALUES (2), (4), (6), (8);"
+echo "<<<"
 
-echo "(10) Generating some changes"
-psql postgres -ea -c "INSERT INTO receivewal.t VALUES (61), (62), (${RUN_STAMP});"
-echo "(10) FINISHED"
+echo ">>> Starting primary1 outside the cluster. Generating faulty changes there, and interrupting its transaction (because it can't be replicated)"
+pg_ctl start -D ${PRIMARY1_DIR}
+PGOPTIONS="-c gp_role=utility" psql postgres -p 7002 -ea -c "INSERT INTO faulty.t(i) SELECT generate_series(10, 1000 * 1000 * 16) AS i;" &
+PSQL_PID=$!
+sleep 5
+kill -s SIGKILL ${PSQL_PID}
+echo "<<<"
 
-echo "(10.1) Sleeping for 3 seconds to wait for WAL transmission"
-sleep 3
-echo "(10.1) FINISHED"
-
-echo "(11) Hacky renaming of WAL files obtained by pg_receivewal"
-ls -ltrh ${REPLICA_PRIMARY1_ARCHIVE}
-FILE_TO_RENAME_WITH_PATH=$(ls -1 ${REPLICA_PRIMARY1_ARCHIVE}/*.partial | tail -n 1)
+echo ">>> Renaming of WAL files in the archive"
+ls -ltrh ${WAL_ARCHIVE_DIR}/*.partial
+# The first file is obtained from mirror
+FILE_TO_RENAME_WITH_PATH=$(ls -1 ${WAL_ARCHIVE_DIR}/*.partial | tail -n 1)
 RESULTING_FILE_WITH_PATH="${FILE_TO_RENAME_WITH_PATH%.*}"
-cp ${FILE_TO_RENAME_WITH_PATH} ${RESULTING_FILE_WITH_PATH}
-ls -ltrh ${REPLICA_PRIMARY1_ARCHIVE}
-echo "(12) FINISHED"
+mv -f ${FILE_TO_RENAME_WITH_PATH} ${RESULTING_FILE_WITH_PATH}
+# The second file is the last file generated by primary1 without the cluster
+FILE_TO_RENAME_WITH_PATH=$(ls -1 ${WAL_ARCHIVE_DIR}/*.partial | tail -n 1)
+RESULTING_FILE_WITH_PATH="${FILE_TO_RENAME_WITH_PATH%.*}"
+mv -f ${FILE_TO_RENAME_WITH_PATH} ${RESULTING_FILE_WITH_PATH}
+ls -ltrh ${WAL_ARCHIVE_DIR}
+echo "<<<"
 
-echo "(13) Continuing recovery on replica"
-psql postgres -ea -c "SELECT pg_wal_replay_resume();" -p 7007
-echo "(13) FINISHED"
+echo ">>> Suppose history file (generated by mirror when it is promoted) has not been received yet. Move them into a temporary folder"
+mkdir ${WAL_ARCHIVE_DIR}/temp
+mv ${WAL_ARCHIVE_DIR}/00000002.history ${WAL_ARCHIVE_DIR}/temp/
+echo "<<<"
 
-echo "(13.1) Sleeping for 3 seconds to wait for recovery completion"
-sleep 3
-echo "(13.1) FINISHED"
+echo ">>> Starting recovery."
+pg_ctl start -D ${REPLICA_DIR}
+echo "<<<"
 
-echo "(14) At this point, replica has reached state in which cluster has never been. Illustrating this"
-psql postgres -ea -c "SELECT * FROM receivewal.t;" -p 7007
-echo "(14) FINISHED"
+echo ">>> Stopping primary1 and cluster. After this, a correct WAL is sent to the replica's archive"
+pg_ctl stop -D ${PRIMARY1_DIR}
+gpstop -M smart -a
+echo "<<<"
 
-echo "(15) The replica has now been promoted because it has read its WAL completely"
+echo ">>> Restoring history file and resuming recovery. The replica could switch to correct timeline"
+mv ${WAL_ARCHIVE_DIR}/temp/00000002.history ${WAL_ARCHIVE_DIR}/
+psql postgres -p 7070 -ea -c "SELECT pg_wal_replay_resume();"
+sleep 5
+echo "<<<"
+
+echo ">>> Observe faulty? state of the replica"
+psql postgres -p 7070 -ea -c "SELECT COUNT(*) FROM faulty.t;"
+echo "<<<"
