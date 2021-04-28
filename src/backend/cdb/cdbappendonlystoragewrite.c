@@ -478,7 +478,7 @@ AppendOnlyStorageWrite_FlushAndCloseFile(
 	 */
 	if (!RelFileNodeBackendIsTemp(storageWrite->relFileNode) &&
 		FileSync(storageWrite->file, WAIT_EVENT_DATA_FILE_SYNC) != 0)
-		ereport(ERROR,
+		ereport(data_sync_elevel(ERROR),
 				(errcode_for_file_access(),
 				 errmsg("Could not flush (fsync) Append-Only segment file '%s' to disk for relation '%s': %m",
 						storageWrite->segmentFileName,
