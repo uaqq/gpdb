@@ -490,6 +490,14 @@ BEGIN;
 CREATE INDEX std_index on concur_heap(f2);
 COMMIT;
 
+-- But can't do the same over partitioned table
+CREATE TABLE reindex_xact_part(i int) PARTITION BY RANGE(i);
+DO
+$$BEGIN
+REINDEX TABLE reindex_xact_part;
+END$$;
+DROP TABLE reindex_xact_part;
+
 -- Failed builds are left invalid by VACUUM FULL, fixed by REINDEX
 VACUUM FULL concur_heap;
 REINDEX TABLE concur_heap;

@@ -2788,7 +2788,7 @@ RangeVarCallbackForReindexIndex(const RangeVar *relation,
  *		Recreate all indexes of a table (and of its toast table, if any)
  */
 Oid
-ReindexTable(ReindexStmt *stmt)
+ReindexTable(ReindexStmt *stmt, bool isTopLevel)
 {
 	RangeVar   *relation = stmt->relation;
 	int			options = stmt->options;
@@ -2819,7 +2819,8 @@ ReindexTable(ReindexStmt *stmt)
 	 */
 	if (get_rel_relkind(heapOid) == RELKIND_PARTITIONED_TABLE)
 	{
-		// FIXME transasction block check?
+		if (Gp_role == GP_ROLE_DISPATCH)
+			PreventInTransactionBlock(isTopLevel, "REINDEX PARTITIONED TABLE");
 		List	   *prels;
 
 		prels = find_all_inheritors(heapOid,
