@@ -1431,7 +1431,7 @@ COMMIT;
 BEGIN;
 CREATE INDEX std_index on concur_heap(f2);
 COMMIT;
--- But can't do a regular index build in a transaction over partitioned table
+-- But can't do the same over partitioned table
 CREATE TABLE reindex_xact_part(i int) PARTITION BY RANGE(i);
 DO
 $$BEGIN
