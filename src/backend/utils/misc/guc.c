@@ -10090,14 +10090,6 @@ assign_effective_io_concurrency(int newval, void *extra)
 static bool
 check_client_connection_check_interval(int *newval, void **extra, GucSource source)
 {
-#ifndef POLLRDHUP
-	/* Linux only, for now.  See pq_check_connection(). */
-	if (*newval != 0)
-	{
-		GUC_check_errdetail("client_connection_check_interval must be set to 0 on platforms that lack POLLRDHUP.");
-		return false;
-	}
-#endif
 	return true;
 }
 

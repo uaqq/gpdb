@@ -2090,7 +2090,6 @@ pq_setkeepalivescount(int count, Port *port)
 bool
 pq_check_connection(void)
 {
-#if defined(POLLRDHUP)
 	/*
 	 * POLLRDHUP is a Linux extension to poll(2) to detect sockets closed by
 	 * the other end.  We don't have a portable way to do that without
@@ -2116,7 +2115,6 @@ pq_check_connection(void)
 	}
 	else if (rc == 1 && (pollfd.revents & (POLLHUP | POLLRDHUP)))
 		return false;
-#endif
 
 	return true;
 }
