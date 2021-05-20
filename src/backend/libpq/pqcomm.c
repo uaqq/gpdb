@@ -2101,7 +2101,7 @@ pq_check_connection(void)
 	int         rc;
 
 	pollfd.fd = MyProcPort->sock;
-	pollfd.events = POLLOUT | POLLIN | POLLRDHUP;
+	pollfd.events = POLLOUT | POLLIN;
 	pollfd.revents = 0;
 
 	rc = poll(&pollfd, 1, 0);
@@ -2113,7 +2113,7 @@ pq_check_connection(void)
 				 errmsg("could not poll socket: %m")));
 		return false;
 	}
-	else if (rc == 1 && (pollfd.revents & (POLLHUP | POLLRDHUP)))
+	else if (rc == 1 && (pollfd.revents & (POLLHUP)))
 		return false;
 
 	return true;
