@@ -584,10 +584,10 @@ ExecProcNodeGPDB(PlanState *node)
 
 	if (!node->fHadSentNodeStart)
 	{
+		node->fHadSentNodeStart = true;
 		/* GPDB hook for collecting query info */
 		if (query_info_collect_hook)
 			(*query_info_collect_hook)(METRICS_PLAN_NODE_EXECUTING, node);
-		node->fHadSentNodeStart = true;
 	}
 
 	if (node->instrument)
@@ -662,10 +662,10 @@ MultiExecProcNode(PlanState *node)
 	
 	if (!node->fHadSentNodeStart)
 	{
+		node->fHadSentNodeStart = true;
 		/* GPDB hook for collecting query info */
 		if (query_info_collect_hook)
 			(*query_info_collect_hook)(METRICS_PLAN_NODE_EXECUTING, node);
-		node->fHadSentNodeStart = true;
 	}
 
 	if (node->chgParam != NULL) /* something changed */
