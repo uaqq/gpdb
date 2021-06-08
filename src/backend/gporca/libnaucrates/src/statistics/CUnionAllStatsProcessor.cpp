@@ -56,10 +56,15 @@ CUnionAllStatsProcessor::CreateStatsForUnionAll(
 
 			const CHistogram *first_child_histogram =
 				stats_first_child->GetHistogram(first_child_colid);
-			GPOS_ASSERT(NULL != first_child_histogram);
 			const CHistogram *second_child_histogram =
 				stats_second_child->GetHistogram(second_child_colid);
-			GPOS_ASSERT(NULL != second_child_histogram);
+
+			/*
+			 * Neccessary columns on which statistics is delivered to upper plan
+			 * nodes already have to have statistics in child nodes
+			 */
+			if (first_child_histogram == NULL || second_child_histogram == NULL)
+				continue;
 
 			if (first_child_histogram->IsWellDefined() ||
 				second_child_histogram->IsWellDefined())
