@@ -475,24 +475,13 @@ CLogicalSetOp::PpcDeriveConstraintIntersectUnion(CMemoryPool *mp,
 //
 //---------------------------------------------------------------------------
 CColRefSet *
-CLogicalSetOp::PcrsStat(CMemoryPool *mp,
+CLogicalSetOp::PcrsStat(CMemoryPool *,		  // mp
 						CExpressionHandle &,  //exprhdl,
-						CColRefSet *pcrsInput,
+						CColRefSet *,		  //pcrsInput
 						ULONG child_index) const
 {
-	CColRefSet *pcrs = GPOS_NEW(mp) CColRefSet(mp);
-	const ULONG length = m_pdrgpcrOutput->Size();
-
-	for (ULONG ul = 0; ul < length; ul++)
-	{
-		CColRef *outputColref = (*m_pdrgpcrOutput)[ul];
-
-		if (!pcrsInput->FMember(outputColref))
-			continue;
-
-		CColRef *childColref = (*(*m_pdrgpdrgpcrInput)[child_index])[ul];
-		pcrs->Include(childColref);
-	}
+	CColRefSet *pcrs = (*m_pdrgpcrsInput)[child_index];
+	pcrs->AddRef();
 
 	return pcrs;
 }

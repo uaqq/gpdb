@@ -20,7 +20,8 @@ CStatistics *
 CUnionAllStatsProcessor::CreateStatsForUnionAll(
 	CMemoryPool *mp, const CStatistics *stats_first_child,
 	const CStatistics *stats_second_child, ULongPtrArray *output_colids,
-	ULongPtrArray *first_child_colids, ULongPtrArray *second_child_colids)
+	ULongPtrArray *first_child_colids, ULongPtrArray *second_child_colids,
+	CColRefSet *output_pcrsStat)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != stats_second_child);
@@ -54,17 +55,15 @@ CUnionAllStatsProcessor::CreateStatsForUnionAll(
 			ULONG first_child_colid = *(*first_child_colids)[ul];
 			ULONG second_child_colid = *(*second_child_colids)[ul];
 
+			if (!output_pcrsStat->CBitSet::Get(output_colid))
+				continue;
+
 			const CHistogram *first_child_histogram =
 				stats_first_child->GetHistogram(first_child_colid);
+			GPOS_ASSERT(NULL != first_child_histogram);
 			const CHistogram *second_child_histogram =
 				stats_second_child->GetHistogram(second_child_colid);
-
-			/*
-			 * Neccessary columns on which statistics is delivered to upper plan
-			 * nodes already have to have statistics in child nodes
-			 */
-			if (first_child_histogram == NULL || second_child_histogram == NULL)
-				continue;
+			GPOS_ASSERT(NULL != second_child_histogram);
 
 			if (first_child_histogram->IsWellDefined() ||
 				second_child_histogram->IsWellDefined())
