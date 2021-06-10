@@ -607,6 +607,9 @@ ExecProcNodeGPDB(PlanState *node)
 	if (node->instrument)
 		InstrStopNode(node->instrument, TupIsNull(result) ? 0.0 : 1.0);
 
+	if (query_info_collect_hook)
+		(*query_info_collect_hook)(METRICS_PLAN_NODE_IN_PROGRESS, node);
+
 	if (node->plan)
 		TRACE_POSTGRESQL_EXECPROCNODE_EXIT(GpIdentity.segindex, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
@@ -698,6 +701,9 @@ MultiExecProcNode(PlanState *node)
 			result = NULL;
 			break;
 	}
+
+	if (query_info_collect_hook)
+		(*query_info_collect_hook)(METRICS_PLAN_NODE_IN_PROGRESS, node);
 
 	TRACE_POSTGRESQL_EXECPROCNODE_EXIT(GpIdentity.segindex, currentSliceId, nodeTag(node), node->plan->plan_node_id);
 
