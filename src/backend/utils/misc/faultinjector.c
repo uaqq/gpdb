@@ -273,6 +273,8 @@ FaultInjectorIdentifierEnumToString[] = {
 		/* inject fault in ExecSort before doing the actual sort */
 	_("execsort_mksort_mergeruns"),
 		/* inject fault in MKSort during the mergeruns phase */
+	_("execrescansort"),
+		/* inject fault at the end of ExecReScanSort */
 	_("execshare_input_next"),
 		/* inject fault after shared input scan retrieved a tuple */
 	_("base_backup_post_create_checkpoint"),
@@ -373,6 +375,8 @@ FaultInjectorIdentifierEnumToString[] = {
 		/* inject fault when creating new TOAST tables, to modify the chunk size */
 	_("abort_after_procarray_end"),
 		/* inject fault in AbortTransaction after ProcArrayEndTransaction */
+	_("cdbdisp_finish_command"),
+		/* inject fault in cdbdisp_finishCommand */
 	_("not recognized"),
 };
 
@@ -1228,6 +1232,7 @@ FaultInjector_NewHashEntry(
 		case WorkfileHashJoinFailure:
 		case UpdateCommittedEofInPersistentTable:
 		case ExecSortBeforeSorting:
+		case ExecReScanSortEndOfFunc:
 		case FaultDuringExecDynamicTableScan:
 		case FaultExecHashJoinNewBatch:
 		case RunawayCleanup:

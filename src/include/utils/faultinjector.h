@@ -178,6 +178,7 @@ typedef enum FaultInjectorIdentifier_e {
 
 	ExecSortBeforeSorting,
 	ExecSortMKSortMergeRuns,
+	ExecReScanSortEndOfFunc,
 	ExecShareInputNext,
 	BaseBackupPostCreateCheckpoint,
 
@@ -253,6 +254,8 @@ typedef enum FaultInjectorIdentifier_e {
 	DynamicIndexScanContextReset,
 
 	AbortAfterProcarrayEnd,
+
+	CdbDispFinishCommand,
 
 	/* INSERT has to be done before that line */
 	FaultInjectorIdMax,
