@@ -65,6 +65,8 @@ Datum		view_has_unknown_casts(PG_FUNCTION_ARGS);
 
 Datum 		view_references_deprecated_tables(PG_FUNCTION_ARGS);
 
+Datum 		view_references_deprecated_columns(PG_FUNCTION_ARGS);
+
 PG_FUNCTION_INFO_V1(add_pg_enum_label);
 
 PG_FUNCTION_INFO_V1(create_empty_extension);
@@ -74,6 +76,8 @@ PG_FUNCTION_INFO_V1(view_has_anyarray_casts);
 PG_FUNCTION_INFO_V1(view_has_unknown_casts);
 
 PG_FUNCTION_INFO_V1(view_references_deprecated_tables);
+
+PG_FUNCTION_INFO_V1(view_references_deprecated_columns);
 
 static bool check_node_anyarray_walker(Node *node, void *context);
 
@@ -774,11 +778,11 @@ check_node_unknown_walker(Node *node, void *context)
 	{
 		FuncExpr *fe = (FuncExpr *) node;
 		/*
-		 * Check to see if the FuncExpr has an unknown::cstring cast.
+		 * Check to see if the FuncExpr has an unknown::cstring explicit cast.
 		 *
 		 * If it has no such cast yet, check its arguments.
 		 */
-		if ((fe->funcresulttype != CSTRINGOID) || !fe->args || (list_length(fe->args) != 1))
+		if ((fe->funcresulttype != CSTRINGOID) || !fe->args || (list_length(fe->args) != 1) || (fe->funcformat == COERCE_IMPLICIT_CAST))
 			return expression_tree_walker(node, check_node_unknown_walker, context);
 
 		Node *head = lfirst(((List *)fe->args)->head);
@@ -812,10 +816,33 @@ view_references_deprecated_tables(PG_FUNCTION_ARGS)
 	if(rel->rd_rel->relkind == RELKIND_VIEW)
 	{
 		viewquery = get_view_query(rel);
-		found = query_tree_walker(viewquery,
-								  check_node_deprecated_tables_walker,
-								  NULL,
-								  QTW_EXAMINE_RTES);
+		found = check_node_deprecated_tables_walker((Node *) viewquery, NULL);
+	}
+	else
+		found = false;
+
+	relation_close(rel, AccessShareLock);
+
+	PG_RETURN_BOOL(found);
+}
+
+Datum
+view_references_deprecated_columns(PG_FUNCTION_ARGS)
+{
+	Oid			view_oid = PG_GETARG_OID(0);
+	Relation 	rel = try_relation_open(view_oid, AccessShareLock, false);
+	Query		*viewquery;
+	bool		found;
+	DeprecatedColumnsWalkerContext context;
+
+	if (!RelationIsValid(rel))
+		elog(ERROR, "Could not open relation file for relation oid %u", view_oid);
+
+	if(rel->rd_rel->relkind == RELKIND_VIEW)
+	{
+		viewquery = get_view_query(rel);
+		context.rtableStack = NIL;
+		found = check_node_deprecated_columns_walker((Node *) viewquery, &context);
 	}
 	else
 		found = false;
