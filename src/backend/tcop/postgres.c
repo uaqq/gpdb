@@ -1582,6 +1582,7 @@ exec_simple_query(const char *query_string)
 	bool		was_logged = false;
 	bool		isTopLevel;
 	char		msec_str[32];
+	bool		setResultFormatToBinary;
 
 	if (Gp_role != GP_ROLE_EXECUTE)
 		increment_command_count();
@@ -1594,6 +1595,10 @@ exec_simple_query(const char *query_string)
 	pgstat_report_activity(STATE_RUNNING, query_string);
 
 	TRACE_POSTGRESQL_QUERY_START(query_string);
+
+	setResultFormatToBinary = !strncmp("select pg_catalog.gp_acquire_sample_rows(",
+									debug_query_string,
+									strlen("select pg_catalog.gp_acquire_sample_rows("));
 
 	/*
 	 * We use save_log_statement_stats so ShowUsage doesn't report incorrect
@@ -1799,6 +1804,15 @@ exec_simple_query(const char *query_string)
 					(fportal->cursorOptions & CURSOR_OPT_BINARY))
 					format = 1; /* BINARY */
 			}
+		}
+		if (setResultFormatToBinary)
+		{
+			format = 1;
+#ifdef MY_DEBUG
+			ereport(NOTICE,
+					(errmsg("Setting format to: %d (binary)\n",
+							format)));
+#endif
 		}
 		PortalSetResultFormat(portal, 1, &format);
 

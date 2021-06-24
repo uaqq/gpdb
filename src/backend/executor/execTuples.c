@@ -1382,6 +1382,73 @@ BuildTupleFromCStrings(AttInMetadata *attinmeta, char **values)
 }
 
 /*
+ * BuildTupleFromValues - build a HeapTuple given user data in binary form.
+ * values is an array binary data, one for each attribute of the return tuple.
+ * A NULL string pointer indicates we want to create a NULL field.
+ */
+HeapTuple
+BuildTupleFromValues(AttInMetadata *attinmeta, char **values)
+{
+	TupleDesc	tupdesc = attinmeta->tupdesc;
+	int			natts = tupdesc->natts;
+	Datum	   *dvalues;
+	bool	   *nulls;
+	int			i;
+	HeapTuple	tuple;
+
+	dvalues = (Datum *) palloc(natts * sizeof(Datum));
+	nulls = (bool *) palloc(natts * sizeof(bool));
+
+	/* Call the "in" function for each non-dropped attribute */
+	for (i = 0; i < natts; i++)
+	{
+		if (!tupdesc->attrs[i]->attisdropped)
+		{
+			/* Non-dropped attributes */
+			switch(tupdesc->attrs[i]->atttypid)
+			{
+				case FLOAT8OID:
+					dvalues[i] = Float8GetDatum(*(float8*)values[i]);
+					break;
+				default:
+						elog(ERROR, "Unsupported atttypid %u for attribute %d", tupdesc->attrs[i]->atttypid, i);
+
+			}
+#if 0
+			dvalues[i] = InputFunctionCall(&attinmeta->attinfuncs[i],
+										   values[i],
+										   attinmeta->attioparams[i],
+										   attinmeta->atttypmods[i]);
+#endif
+			if (values[i] != NULL)
+				nulls[i] = false;
+			else
+				nulls[i] = true;
+		}
+		else
+		{
+			/* Handle dropped attributes by setting to NULL */
+			dvalues[i] = (Datum) 0;
+			nulls[i] = true;
+		}
+	}
+
+	/*
+	 * Form a tuple
+	 */
+	tuple = heap_form_tuple(tupdesc, dvalues, nulls);
+
+	/*
+	 * Release locally palloc'd space.  XXX would probably be good to pfree
+	 * values of pass-by-reference datums, as well.
+	 */
+	pfree(dvalues);
+	pfree(nulls);
+
+	return tuple;
+}
+
+/*
  * HeapTupleHeaderGetDatum - convert a HeapTupleHeader pointer to a Datum.
  *
  * This must *not* get applied to an on-disk tuple; the tuple should be
