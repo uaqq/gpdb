@@ -2495,6 +2495,277 @@ parse_record_to_string(char *string, TupleDesc tupdesc, char** values, bool *nul
 }
 
 /*
+ * parse_binary_record_to_values
+ *
+ * CDB: a copy of record_in, but only parse the record binary
+ * into separate binary values for each column.
+ */
+static void
+parse_binary_record_to_values(char *string, TupleDesc tupdesc, char** values, bool *nulls)
+{
+
+	char *currentBytePtr = string;
+	int	ncolumns;
+	int currentColumn = 0;
+	
+	ncolumns = tupdesc->natts;
+
+	int numberOfAttributes = htonl(*(int*)currentBytePtr);
+	currentBytePtr += sizeof(int);
+
+#ifdef MY_DEBUG
+	ereport(NOTICE,
+		(errmsg("Number of attributes: %d and ncolumns: %d\n",
+				numberOfAttributes, ncolumns)));
+#endif
+
+	for (currentColumn = 0; currentColumn < ncolumns; currentColumn++)
+	{
+		Oid			typeoid;
+
+		typeoid = htonl(*(int*)(currentBytePtr));
+		currentBytePtr += sizeof(int);
+
+/*
+		ereport(NOTICE,
+			(errmsg("typeoid: %u\n",
+					typeoid)));
+*/
+		int length = htonl(*(int*)(currentBytePtr));
+		currentBytePtr += sizeof(int);
+
+/*
+		ereport(NOTICE,
+			(errmsg("length: %u\n",
+					length)));
+*/
+#ifdef MY_DEBUG
+		ereport(NOTICE,
+			(errmsg("currentColumn: %u;	typeoid: %u; length: %u\n",
+					currentColumn, typeoid, length)));
+#endif
+		if (length == 0xffffffff)
+		{
+			/* It means null value */
+#ifdef MY_DEBUG
+			ereport(NOTICE,
+			(errmsg("length is max - it means no value\n")));
+#endif
+			values[currentColumn] = NULL;
+			nulls[currentColumn] = true;
+		}
+		else
+		{
+			/* Extract data for this column */
+
+			switch (typeoid)
+			{
+				case INT4OID:
+					/* Fall through */
+				case FLOAT8OID:
+					values[currentColumn] = palloc(length);
+					{
+						char *cPtrValue = values[currentColumn];
+						for (int i = length; i > 0; i--)
+						{
+							*cPtrValue = *(currentBytePtr + i - 1);
+							cPtrValue++;
+						}						
+					}
+					break;
+				case BYTEAOID:
+					/* Fall through */
+				case TEXTOID:
+					 /* Alloc 1 byte more for terminating null byte as it is string */
+					values[currentColumn] = palloc(length + 1);
+					 /* Add terminating null byte */
+					*(values[currentColumn] + length) ='\0';
+					memcpy(values[currentColumn], currentBytePtr, length);			
+					break;
+				default:
+					values[currentColumn] = palloc(length);
+					memcpy(values[currentColumn], currentBytePtr, length);			
+			}
+
+			nulls[currentColumn] = false;
+#ifdef MY_DEBUG
+
+			{
+				char *buf = palloc(length*3 + 1);
+				char *bufPtr = buf;
+				char *cptrValue = currentBytePtr;
+				for (int j = 0; j <  length; j++)
+				{
+					bufPtr += sprintf(bufPtr, "%02hhx ", *cptrValue++);
+				}
+
+				ereport(NOTICE,
+					(errmsg("%s\n",
+							buf)));
+			}
+
+			{
+				char *buf = palloc(length*3 + 1);
+				char *bufPtr = buf;
+				char *cptrValue = values[currentColumn];
+				for (int j = 0; j <  length; j++)
+				{
+					bufPtr += sprintf(bufPtr, "%02hhx ", *cptrValue++);
+				}
+
+				ereport(NOTICE,
+					(errmsg("%s\n",
+							buf)));
+			}
+#endif			
+			currentBytePtr += length;
+		}
+	}
+
+	return;
+#if 0
+	char	*ptr;
+	int	ncolumns;
+	int	i;
+	bool	needComma;
+	StringInfoData	buf;
+
+	Assert(string != NULL);
+	Assert(values != NULL);
+	Assert(nulls != NULL);
+	
+	ncolumns = tupdesc->natts;
+	needComma = false;
+
+	/*
+	 * Scan the string.  We use "buf" to accumulate the de-quoted data for
+	 * each column, which is then fed to the appropriate input converter.
+	 */
+	ptr = string;
+
+	/* Allow leading whitespace */
+	while (*ptr && isspace((unsigned char) *ptr))
+		ptr++;
+	if (*ptr++ != '(')
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+				 errmsg("malformed record literal: \"%s\"", string),
+				 errdetail("Missing left parenthesis.")));
+	}
+
+	initStringInfo(&buf);
+
+	for (i = 0; i < ncolumns; i++)
+	{
+		/* Ignore dropped columns in datatype, but fill with nulls */
+		if (tupdesc->attrs[i]->attisdropped)
+		{
+			values[i] = NULL;
+			nulls[i] = true;
+			continue;
+		}
+
+		if (needComma)
+		{
+			/* Skip comma that separates prior field from this one */
+			if (*ptr == ',')
+				ptr++;
+			else
+			{
+				/* *ptr must be ')' */
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+						 errmsg("malformed record literal: \"%s\"", string),
+						 errdetail("Too few columns.")));
+			}
+		}
+
+		/* Check for null: completely empty input means null */
+		if (*ptr == ',' || *ptr == ')')
+		{
+			values[i] = NULL;
+			nulls[i] = true;
+		}
+		else
+		{
+			/* Extract string for this column */
+			bool		inquote = false;
+
+			resetStringInfo(&buf);
+			while (inquote || !(*ptr == ',' || *ptr == ')'))
+			{
+				char		ch = *ptr++;
+
+				if (ch == '\0')
+				{
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+							 errmsg("malformed record literal: \"%s\"",
+									string),
+							 errdetail("Unexpected end of input.")));
+				}
+				if (ch == '\\')
+				{
+					if (*ptr == '\0')
+					{
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+								 errmsg("malformed record literal: \"%s\"",
+										string),
+								 errdetail("Unexpected end of input.")));
+					}
+					appendStringInfoChar(&buf, *ptr++);
+				}
+				else if (ch == '"')
+				{
+					if (!inquote)
+						inquote = true;
+					else if (*ptr == '"')
+					{
+						/* doubled quote within quote sequence */
+						appendStringInfoChar(&buf, *ptr++);
+					}
+					else
+						inquote = false;
+				}
+				else
+					appendStringInfoChar(&buf, ch);
+			}
+
+			values[i] = palloc(strlen(buf.data) + 1);
+			memcpy(values[i], buf.data, strlen(buf.data) + 1);
+			nulls[i] = false;
+		}
+
+		/*
+		 * Prep for next column
+		 */
+		needComma = true;
+	}
+
+	if (*ptr++ != ')')
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+				 errmsg("malformed record literal: \"%s\"", string),
+				 errdetail("Too many columns.")));
+	}
+	/* Allow trailing whitespace */
+	while (*ptr && isspace((unsigned char) *ptr))
+		ptr++;
+	if (*ptr)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+				 errmsg("malformed record literal: \"%s\"", string),
+				 errdetail("Junk after right parenthesis.")));
+	}
+
+#endif
+}
+
+/*
  * Collect a sample from segments.
  *
  * Calls the gp_acquire_sample_rows() helper function on each segment,
@@ -2672,18 +2943,92 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 			if (rowStr == NULL)
 				elog(ERROR, "got NULL pointer from return value of gp_acquire_sample_rows");
 
-			parse_record_to_string(rowStr, funcTupleDesc, funcRetValues, funcRetNulls);
+			{
+#ifdef MY_DEBUG
+
+				int datalength = PQgetlength(pgresult, rowno, 0);
+				char *buf = palloc(datalength*3 + 1);
+				char *bufPtr = buf;
+
+
+				ereport(NOTICE,
+					(errmsg("resultno %d tuple %d length: %d\n",
+							resultno, rowno, datalength)));
+
+#endif
+#if 0
+				char *currentBytePtr = rowStr;
+				int numberOfAttributes = htonl(*(int*)currentBytePtr);
+				currentBytePtr += sizeof(int);
+
+
+				//memcpy(&numberOfAttributes, rowStr, sizeof(int));
+
+				ereport(NOTICE,
+					(errmsg("Number of attributes: %d\n",
+							numberOfAttributes)));
+
+				Oid			typoid;
+
+				char *typeidPtr = rowStr+4;
+				typoid = htonl(*(int*)(currentBytePtr));
+				currentBytePtr += sizeof(int);
+
+				ereport(NOTICE,
+					(errmsg("typoid: %u\n",
+							typoid)));
+
+				int length = htonl(*(int*)(currentBytePtr));
+				currentBytePtr += sizeof(int);
+
+				ereport(NOTICE,
+					(errmsg("length: %u\n",
+							length)));
+
+#endif								
+#ifdef MY_DEBUG
+				
+				char *cptrValue = rowStr;
+				for (int j = 0; j <  datalength; j++)
+				{
+					bufPtr += sprintf(bufPtr, "%02hhx ", *cptrValue++);
+				}
+
+				ereport(NOTICE,
+					(errmsg("Tuple %d: %s\n",
+							rowno, buf)));
+				pfree(buf);
+#endif
+			}	
+
+			parse_binary_record_to_values(rowStr, funcTupleDesc, funcRetValues, funcRetNulls);
+
+			//continue;
+
+			//parse_record_to_string(rowStr, funcTupleDesc, funcRetValues, funcRetNulls);
 
 			if (!funcRetNulls[0])
 			{
 				/* This is a summary row. */
 				if (got_summary)
 					elog(ERROR, "got duplicate summary row from gp_acquire_sample_rows");
+				
+				//memcpy(&this_totalrows, funcRetValues[0], sizeof(double));
 
+				this_totalrows = *(double*)funcRetValues[0];
+				this_totaldeadrows = *(double*)funcRetValues[1];
+
+#ifdef MY_DEBUG
+				ereport(NOTICE,
+					(errmsg("Got this_totalrows %f; this_totaldeadrows %f\n",
+							this_totalrows, this_totaldeadrows)));
+#endif
+/*
 				this_totalrows = DatumGetFloat8(DirectFunctionCall1(float8in,
 																	CStringGetDatum(funcRetValues[0])));
 				this_totaldeadrows = DatumGetFloat8(DirectFunctionCall1(float8in,
 																		CStringGetDatum(funcRetValues[1])));
+*/
 				got_summary = true;
 			}
 			else
@@ -2714,6 +3059,7 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 					}
 				}
 
+#if 0
 				/* Process the columns */
 				index = 0;
 				for (i = 0; i < relDesc->natts; i++)
@@ -2731,6 +3077,8 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 				}
 
 				rows[sampleTuples] = BuildTupleFromCStrings(attinmeta, values);
+#endif
+				rows[sampleTuples] = BuildTupleFromValues(attinmeta, funcRetValues + 3);
 				sampleTuples++;
 
 				/*
@@ -2739,6 +3087,8 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 				 */
 			}
 		}
+
+		//continue;
 
 		if (!got_summary)
 			elog(ERROR, "did not get summary row from gp_acquire_sample_rows");
@@ -2757,6 +3107,7 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 		(*totalrows) += this_totalrows;
 		(*totaldeadrows) += this_totaldeadrows;
 	}
+
 	for (i = 0; i < funcTupleDesc->natts; i++)
 	{
 		if (funcRetValues[i])
