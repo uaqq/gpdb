@@ -1419,10 +1419,7 @@ BuildTupleFromValues(AttInMetadata *attinmeta, char **values)
 					break;
 				case TEXTOID:
 					{
-						text *rawstr_text;
-
-						rawstr_text = cstring_to_text(values[i]);
-						dvalues[i] = PointerGetDatum(rawstr_text);
+						dvalues[i] = CStringGetTextDatum(values[i]);
 					}
 					break;
 				default:
