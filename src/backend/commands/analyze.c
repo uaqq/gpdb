@@ -2943,51 +2943,16 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 			if (rowStr == NULL)
 				elog(ERROR, "got NULL pointer from return value of gp_acquire_sample_rows");
 
-			{
 #ifdef MY_DEBUG
-
+			{
 				int datalength = PQgetlength(pgresult, rowno, 0);
 				char *buf = palloc(datalength*3 + 1);
 				char *bufPtr = buf;
-
 
 				ereport(NOTICE,
 					(errmsg("resultno %d tuple %d length: %d\n",
 							resultno, rowno, datalength)));
 
-#endif
-#if 0
-				char *currentBytePtr = rowStr;
-				int numberOfAttributes = htonl(*(int*)currentBytePtr);
-				currentBytePtr += sizeof(int);
-
-
-				//memcpy(&numberOfAttributes, rowStr, sizeof(int));
-
-				ereport(NOTICE,
-					(errmsg("Number of attributes: %d\n",
-							numberOfAttributes)));
-
-				Oid			typoid;
-
-				char *typeidPtr = rowStr+4;
-				typoid = htonl(*(int*)(currentBytePtr));
-				currentBytePtr += sizeof(int);
-
-				ereport(NOTICE,
-					(errmsg("typoid: %u\n",
-							typoid)));
-
-				int length = htonl(*(int*)(currentBytePtr));
-				currentBytePtr += sizeof(int);
-
-				ereport(NOTICE,
-					(errmsg("length: %u\n",
-							length)));
-
-#endif								
-#ifdef MY_DEBUG
-				
 				char *cptrValue = rowStr;
 				for (int j = 0; j <  datalength; j++)
 				{
@@ -2998,14 +2963,10 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 					(errmsg("Tuple %d: %s\n",
 							rowno, buf)));
 				pfree(buf);
-#endif
 			}	
+#endif
 
 			parse_binary_record_to_values(rowStr, funcTupleDesc, funcRetValues, funcRetNulls);
-
-			//continue;
-
-			//parse_record_to_string(rowStr, funcTupleDesc, funcRetValues, funcRetNulls);
 
 			if (!funcRetNulls[0])
 			{
@@ -3013,8 +2974,6 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 				if (got_summary)
 					elog(ERROR, "got duplicate summary row from gp_acquire_sample_rows");
 				
-				//memcpy(&this_totalrows, funcRetValues[0], sizeof(double));
-
 				this_totalrows = *(double*)funcRetValues[0];
 				this_totaldeadrows = *(double*)funcRetValues[1];
 
@@ -3023,12 +2982,6 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 					(errmsg("Got this_totalrows %f; this_totaldeadrows %f\n",
 							this_totalrows, this_totaldeadrows)));
 #endif
-/*
-				this_totalrows = DatumGetFloat8(DirectFunctionCall1(float8in,
-																	CStringGetDatum(funcRetValues[0])));
-				this_totaldeadrows = DatumGetFloat8(DirectFunctionCall1(float8in,
-																		CStringGetDatum(funcRetValues[1])));
-*/
 				got_summary = true;
 			}
 			else
@@ -3059,25 +3012,6 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 					}
 				}
 
-#if 0
-				/* Process the columns */
-				index = 0;
-				for (i = 0; i < relDesc->natts; i++)
-				{
-					Form_pg_attribute attr = relDesc->attrs[i];
-
-					if (attr->attisdropped)
-						continue;
-
-					if (funcRetNulls[3 + index])
-						values[i] = NULL;
-					else
-						values[i] = funcRetValues[3 + index];
-					index++; /* Move index to the next result set attribute */
-				}
-
-				rows[sampleTuples] = BuildTupleFromCStrings(attinmeta, values);
-#endif
 				rows[sampleTuples] = BuildTupleFromValues(attinmeta, funcRetValues + 3);
 				sampleTuples++;
 
@@ -3087,8 +3021,6 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 				 */
 			}
 		}
-
-		//continue;
 
 		if (!got_summary)
 			elog(ERROR, "did not get summary row from gp_acquire_sample_rows");
