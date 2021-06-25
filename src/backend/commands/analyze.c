@@ -2526,19 +2526,9 @@ parse_binary_record_to_values(char *string, TupleDesc tupdesc, char** values, bo
 		typeoid = htonl(*(int*)(currentBytePtr));
 		currentBytePtr += sizeof(int);
 
-/*
-		ereport(NOTICE,
-			(errmsg("typeoid: %u\n",
-					typeoid)));
-*/
 		int length = htonl(*(int*)(currentBytePtr));
 		currentBytePtr += sizeof(int);
 
-/*
-		ereport(NOTICE,
-			(errmsg("length: %u\n",
-					length)));
-*/
 #ifdef MY_DEBUG
 		ereport(NOTICE,
 			(errmsg("currentColumn: %u;	typeoid: %u; length: %u\n",
