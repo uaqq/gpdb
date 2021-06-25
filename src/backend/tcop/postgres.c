@@ -483,7 +483,8 @@ SocketBackend(StringInfo inBuf)
 				}
 			}
 			break;
-
+		case 'A':				/* Greenplum Database dispatched statement from QD - binary mode */
+			/* Fall through */
 		case 'M':				/* Greenplum Database dispatched statement from QD */
 
 			doing_extended_query_message = false;
@@ -1572,7 +1573,7 @@ restore_guc_to_QE(void )
  * Execute a "simple Query" protocol message.
  */
 static void
-exec_simple_query(const char *query_string)
+exec_simple_query(const char *query_string, bool isAnalyze)
 {
 	CommandDest dest = whereToSendOutput;
 	MemoryContext oldcontext;
@@ -1582,7 +1583,6 @@ exec_simple_query(const char *query_string)
 	bool		was_logged = false;
 	bool		isTopLevel;
 	char		msec_str[32];
-	bool		setResultFormatToBinary;
 
 	if (Gp_role != GP_ROLE_EXECUTE)
 		increment_command_count();
@@ -1595,10 +1595,6 @@ exec_simple_query(const char *query_string)
 	pgstat_report_activity(STATE_RUNNING, query_string);
 
 	TRACE_POSTGRESQL_QUERY_START(query_string);
-
-	setResultFormatToBinary = !strncmp("select pg_catalog.gp_acquire_sample_rows(",
-									debug_query_string,
-									strlen("select pg_catalog.gp_acquire_sample_rows("));
 
 	/*
 	 * We use save_log_statement_stats so ShowUsage doesn't report incorrect
@@ -1805,12 +1801,12 @@ exec_simple_query(const char *query_string)
 					format = 1; /* BINARY */
 			}
 		}
-		if (setResultFormatToBinary)
+		if (isAnalyze)
 		{
 			format = 1;
 #ifdef MY_DEBUG
 			ereport(NOTICE,
-					(errmsg("Setting format to: %d (binary)\n",
+					(errmsg("Setting format to %d (binary)\n",
 							format)));
 #endif
 		}
@@ -5253,11 +5249,13 @@ PostgresMain(int argc, char *argv[],
 					else if (IsFaultHandler)
 						HandleFaultMessage(query_string);
 					else
-						exec_simple_query(query_string);
+						exec_simple_query(query_string, false);
 
 					send_ready_for_query = true;
 				}
 				break;
+			case 'A':
+				/* Fall through */
             case 'M': /* MPP dispatched stmt from QD */
 				{
 					/*
@@ -5395,7 +5393,7 @@ PostgresMain(int argc, char *argv[],
 						}
 						else
 						{
-							exec_simple_query(query_string);
+							exec_simple_query(query_string, ('A' == firstchar));
 						}
 					}
 					else
