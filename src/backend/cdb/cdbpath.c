@@ -882,8 +882,12 @@ cdbpath_distkeys_from_preds(PlannerInfo *root,
  */
 
 static bool
-join_paths_relids_overlap_walker(Path *path, Relids relids)
+join_paths_relids_overlap_walker(Node *path, Relids relids)
 {
+	if (!path){
+		return false;
+	}
+	
 	ListCell *lc;
 	List *bitmapquals = NULL;
 	if (IsA(path, BitmapAndPath))
@@ -896,14 +900,14 @@ join_paths_relids_overlap_walker(Path *path, Relids relids)
 		foreach(lc, bitmapquals)
 		{
 			Path *qual = (Path *) lfirst(lc);
-			if (join_paths_relids_overlap_walker(qual, relids))
+			if (join_paths_relids_overlap_walker((Node *) qual, relids))
 				return true;
 		}
 	} 
 	else if (IsA(path, BitmapHeapPath))
 	{
 		BitmapHeapPath *bhpath = (BitmapHeapPath *) path;
-		if (join_paths_relids_overlap_walker(bhpath->bitmapqual, relids))
+		if (join_paths_relids_overlap_walker((Node *) bhpath->bitmapqual, relids))
 			return true;
 	}
 	else if (IsA(path, IndexPath))
@@ -911,10 +915,18 @@ join_paths_relids_overlap_walker(Path *path, Relids relids)
 		IndexPath *ipath = (IndexPath *) path;
 		foreach(lc, ipath->indexclauses)
 		{
-			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-			if (bms_overlap(relids, rinfo->clause_relids))
+			Node *node = (Node *) lfirst(lc);
+			if (join_paths_relids_overlap_walker(node, relids))
 				return true;
 		}
+	}
+	else if (IsA(path, RestrictInfo))
+	{
+		RestrictInfo *rinfo = (RestrictInfo *) path;
+		if (bms_overlap(relids, rinfo->clause_relids))
+			return true;
+		if (join_paths_relids_overlap_walker((Node *) rinfo->clause, relids))
+			return true;
 	}
 
 	return false;
@@ -1538,7 +1550,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	 */
 	if (!CdbPathLocus_IsNull(outer.move_to))
 	{
-		if (join_paths_relids_overlap_walker(outer.path, inner.path->parent->relids))
+		if (join_paths_relids_overlap_walker((Node *) outer.path, inner.path->parent->relids))
 			goto fail;
 
 		outer.path = cdbpath_create_motion_path(root,
@@ -1555,7 +1567,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	 */
 	if (!CdbPathLocus_IsNull(inner.move_to))
 	{
-		if (join_paths_relids_overlap_walker(inner.path, outer.path->parent->relids))
+		if (join_paths_relids_overlap_walker((Node *) inner.path, outer.path->parent->relids))
 			goto fail;
 		
 		inner.path = cdbpath_create_motion_path(root,
