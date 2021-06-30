@@ -874,6 +874,51 @@ cdbpath_distkeys_from_preds(PlannerInfo *root,
 	return true;
 }								/* cdbpath_distkeys_from_preds */
 
+/*
+ * join_paths_relids_overlap_walker
+ *
+ * Check if it's safe to add motion node to one of join paths.
+ * 'path' under motion node should not contain any links to other path's 'relids'.
+ */
+
+static bool
+join_paths_relids_overlap_walker(Path *path, Relids relids)
+{
+	ListCell *lc;
+	List *bitmapquals = NULL;
+	if (IsA(path, BitmapAndPath))
+		bitmapquals = ((BitmapAndPath*)path)->bitmapquals;
+	else if (IsA(path, BitmapOrPath))
+		bitmapquals = ((BitmapOrPath*)path)->bitmapquals;
+
+	if (bitmapquals)
+	{		
+		foreach(lc, bitmapquals)
+		{
+			Path *qual = (Path *) lfirst(lc);
+			if (join_paths_relids_overlap_walker(qual, relids))
+				return true;
+		}
+	} 
+	else if (IsA(path, BitmapHeapPath))
+	{
+		BitmapHeapPath *bhpath = (BitmapHeapPath *) path;
+		if (join_paths_relids_overlap_walker(bhpath->bitmapqual, relids))
+			return true;
+	}
+	else if (IsA(path, IndexPath))
+	{
+		IndexPath *ipath = (IndexPath *) path;
+		foreach(lc, ipath->indexclauses)
+		{
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+			if (bms_overlap(relids, rinfo->clause_relids))
+				return true;
+		}
+	}
+
+	return false;
+}
 
 /*
  * cdbpath_motion_for_join
@@ -1493,6 +1538,9 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	 */
 	if (!CdbPathLocus_IsNull(outer.move_to))
 	{
+		if (join_paths_relids_overlap_walker(outer.path, inner.path->parent->relids))
+			goto fail;
+
 		outer.path = cdbpath_create_motion_path(root,
 												outer.path,
 												outer_pathkeys,
@@ -1507,6 +1555,9 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	 */
 	if (!CdbPathLocus_IsNull(inner.move_to))
 	{
+		if (join_paths_relids_overlap_walker(inner.path, outer.path->parent->relids))
+			goto fail;
+		
 		inner.path = cdbpath_create_motion_path(root,
 												inner.path,
 												inner_pathkeys,
