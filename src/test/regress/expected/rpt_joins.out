@@ -2154,7 +2154,7 @@ select max(c1) from pg_class left join t_5628 on true;
 (1 row)
 
 --
--- regression test for nest loop join of indexed rpt and entry, segment should not fall with segfault
+-- regression test for nest loop join of indexed rpt and entry, segment should not fall with segfault; see issue #12228
 --
 create table test_tz(tz interval) distributed replicated;
 insert into test_tz
