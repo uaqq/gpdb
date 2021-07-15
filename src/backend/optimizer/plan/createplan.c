@@ -2789,7 +2789,12 @@ create_subqueryscan_plan(PlannerInfo *root, Path *best_path,
 								  scan_relid,
 								  best_path->parent->subplan);
 
-	copy_path_costsize(root, &scan_plan->scan.plan, best_path);
+	/*
+	* costs was already copied from best_path->parent->subplan
+	* increase them with best_path's costs
+	*/
+	scan_plan->scan.plan.total_cost += best_path->total_cost;
+	scan_plan->scan.plan.startup_cost += best_path->startup_cost;
 
 	return scan_plan;
 }
@@ -2953,7 +2958,12 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
 								  scan_relid,
 								  best_path->parent->subplan);
 
-	copy_path_costsize(root, &scan_plan->scan.plan, best_path);
+	/*
+	* costs was already copied from best_path->parent->subplan
+	* increase them with best_path's costs
+	*/
+	scan_plan->scan.plan.total_cost += best_path->total_cost;
+	scan_plan->scan.plan.startup_cost += best_path->startup_cost;
 
 	return scan_plan;
 }
