@@ -11,6 +11,7 @@
 #include "catalog/namespace.h"
 #include "optimizer/walkers.h"
 #include "utils/lsyscache.h"
+#include "utils/syscache.h"
 
 #include "deprecated_objects.h"
 
@@ -60,7 +61,9 @@ static bool is_deprecated_table(Oid reloid)
 			return true;
 	}
 
-	gp_toolkit_oid = LookupExplicitNamespace("gp_toolkit");
+	gp_toolkit_oid = GetSysCacheOid(NAMESPACENAME,
+									CStringGetDatum("gp_toolkit"),
+									0, 0, 0);
 	if (OidIsValid(gp_toolkit_oid))
 	{
 		for (int i = 0; i < num_deprecated_tables_dynamic; i++)
@@ -133,11 +136,11 @@ static const DeprecatedColumnDynamic deprecated_columns_dynamic[] = {
 	{ "gp_resgroup_config", 7 }, /* gp_toolkit.gp_resgroup_config.proposed_memory_limit */
 	{ "gp_resgroup_config", 9 }, /* gp_toolkit.gp_resgroup_config.proposed_memory_shared_quota */
 	{ "gp_resgroup_config", 11 }, /* gp_toolkit.gp_resgroup_config.proposed_memory_spill_ratio */
-	{ "gp-workfile_entries", 6 }, /* gp_toolkit.workfile_entries.current_query */
-	{ "gp-workfile_entries", 13 }, /* gp_toolkit.workfile_entries.directory */
-	{ "gp-workfile_entries", 2 }, /* gp_toolkit.workfile_entries.procpid */
-	{ "gp-workfile_entries", 14 }, /* gp_toolkit.workfile_entries.state */
-	{ "gp-workfile_entries", 10 }, /* gp_toolkit.workfile_entries.workmem */
+	{ "gp_workfile_entries", 6 }, /* gp_toolkit.workfile_entries.current_query */
+	{ "gp_workfile_entries", 13 }, /* gp_toolkit.workfile_entries.directory */
+	{ "gp_workfile_entries", 2 }, /* gp_toolkit.workfile_entries.procpid */
+	{ "gp_workfile_entries", 14 }, /* gp_toolkit.workfile_entries.state */
+	{ "gp_workfile_entries", 10 }, /* gp_toolkit.workfile_entries.workmem */
 	{ "gp_workfile_usage_per_query", 6 }, /* gp_toolkit.gp_workfile_usage_per_query.current_query */
 	{ "gp_workfile_usage_per_query", 2 }, /* gp_toolkit.gp_workfile_usage_per_query.procpid */
 	{ "gp_workfile_usage_per_query", 8 } /* gp_toolkit.gp_workfile_usage_per_query.state */
@@ -155,7 +158,9 @@ static bool is_deprecated_column(Oid reloid, int attnum)
 			return true;
 	}
 
-	gp_toolkit_oid = LookupExplicitNamespace("gp_toolkit");
+	gp_toolkit_oid = GetSysCacheOid(NAMESPACENAME,
+												  CStringGetDatum("gp_toolkit"),
+												  0, 0, 0);
 	if (OidIsValid(gp_toolkit_oid))
 	{
 		for (int i = 0; i < num_deprecated_columns_dynamic; i++)
@@ -221,6 +226,11 @@ check_node_deprecated_columns_walker(Node *node, DeprecatedColumnsWalkerContext 
 	{
 		/*
 		 * Recurse into (sub)queries to search for deprecated columns.
+		 *
+		 * Pass QTW_IGNORE_JOINALIASES to avoid unnecessarily recursing into a
+		 * join RTE's joinaliasvars, since we already recurse into the query's
+		 * jointree expression. This is sufficient to handle joins with
+		 * deprecated columns in the ON/USING clauses, along with NATURAL JOINs.
 		 */
 		bool	retval;
 		Query	*query = (Query *) node;
@@ -228,7 +238,7 @@ check_node_deprecated_columns_walker(Node *node, DeprecatedColumnsWalkerContext 
 		retval = query_tree_walker(query,
 								 check_node_deprecated_columns_walker,
 								 context,
-								 0);
+								 QTW_IGNORE_JOINALIASES);
 		context->rtableStack = list_delete_first(context->rtableStack);
 		return retval;
 	}
