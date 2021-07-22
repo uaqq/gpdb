@@ -592,10 +592,10 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 * will generate unused initplans. Commenting out the following two
 	 * lines.
 	 */
-#if 0
+
 	if (parse->cteList)
 		SS_process_ctes(root);
-#endif
+
 
 	/*
 	 * Ensure that jointree has been normalized. See
