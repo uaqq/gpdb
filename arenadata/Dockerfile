@@ -62,7 +62,7 @@ RUN rpm -i $sigar && rpm -i $sigar_headers && mkdir -p /home/gpadmin/bin_gpdb
 ENV TARGET_OS_VERSION=7
 ENV TARGET_OS=centos
 ENV OUTPUT_ARTIFACT_DIR=bin_gpdb
-ENV CONFIGURE_FLAGS="--with-gssapi --enable-debug --enable-depend \
+ENV CONFIGURE_FLAGS="--with-gssapi --enable-debug --enable-depend --enable-cassert \
     --with-libraries=/home/gpadmin/bin_orca/lib \
     --with-includes=/home/gpadmin/bin_orca/include"
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/gpadmin/bin_orca/lib:/usr/lib64:/usr/local/lib
