@@ -2862,25 +2862,7 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, List *pathkeys,
 	pathnode->rescannable = false;
 	pathnode->sameslice_relids = NULL;
 
-	if (rel->subplan)
-	{
-		/* copy the cost estimates from the subpath */
-		double		numsegments;
-
-		if (CdbPathLocus_IsPartitioned(pathnode->locus))
-			numsegments = CdbPathLocus_NumSegments(pathnode->locus);
-		else
-			numsegments = 1;
-
-		pathnode->rows = clamp_row_est(rel->rows / numsegments);
-		pathnode->startup_cost = rel->subplan->startup_cost;
-		pathnode->total_cost = rel->subplan->total_cost;
-	}
-	else
-	{
-		/* Shared scan. We'll use the cost estimates from the CTE rel. */
-		cost_ctescan(pathnode, root, rel, pathnode->param_info);
-	}
+	cost_ctescan(pathnode, root, rel, pathnode->param_info);
 
 	return pathnode;
 }
