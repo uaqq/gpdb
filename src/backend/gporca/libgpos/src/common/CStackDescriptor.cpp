@@ -29,18 +29,14 @@ using namespace gpos;
 //---------------------------------------------------------------------------
 void
 CStackDescriptor::BackTrace(ULONG top_frames_to_skip)
+#ifdef GPOS_GET_FRAME_POINTER
 {
 	// get base pointer of current frame
 
 	ULONG gpos_stack_trace_depth_actual;
-	#ifdef GPOS_GET_FRAME_POINTER
 	ULONG_PTR current_frame;
 	GPOS_GET_FRAME_POINTER(current_frame);
 	gpos_stack_trace_depth_actual = GPOS_STACK_TRACE_DEPTH;
-	#else
-	void *current_frame[GPOS_STACK_TRACE_DEPTH];
-	gpos_stack_trace_depth_actual = backtrace(current_frame, GPOS_STACK_TRACE_DEPTH);
-	#endif
 
 	// reset stack depth
 	Reset();
@@ -87,6 +83,57 @@ CStackDescriptor::BackTrace(ULONG top_frames_to_skip)
 		next_frame = (void **) *next_frame;
 	}
 }
+#else
+{
+	// get base pointer of current frame
+
+	ULONG gpos_stack_trace_depth_actual;
+	void *frames[GPOS_STACK_TRACE_DEPTH];
+	gpos_stack_trace_depth_actual = backtrace(frames, GPOS_STACK_TRACE_DEPTH);
+
+	// reset stack depth
+	Reset();
+
+	// get stack start address
+	ULONG_PTR stack_start = 0;
+	IWorker *worker = IWorker::Self();
+	if (NULL == worker)
+	{
+		// no worker in stack, return immediately
+		return;
+	}
+
+	// get address from worker
+	stack_start = worker->GetStackStart();
+
+	// consider the first GPOS_STACK_TRACE_DEPTH frames below worker object
+	for (ULONG frame_counter = 0; frame_counter < gpos_stack_trace_depth_actual;
+		 frame_counter++)
+	{
+		// check if the frame pointer is after stack start and before previous frame
+		// note that stack is *assumed* to be growing *down*
+		if ((ULONG_PTR) frames[frame_counter] > stack_start ||
+			(
+				frame_counter > 0 &&
+				(ULONG_PTR) frames[frame_counter] < (ULONG_PTR) frames[frame_counter - 1]
+			)
+		)
+		{
+			break;
+		}
+
+		// skip top frames
+		if (0 < top_frames_to_skip)
+		{
+			top_frames_to_skip--;
+			continue;
+		}
+
+		// backtrace() produces pure return addresses
+		m_array_of_addresses[m_depth++] = frames[frame_counter];
+	}
+}
+#endif
 
 //---------------------------------------------------------------------------
 //	@function:
