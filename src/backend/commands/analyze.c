@@ -2469,6 +2469,7 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	 */
 
 	/* There is only one element in list due to simple select. */
+	Assert(linitial(raw_parsetree_list) == llast(raw_parsetree_list));
 	parsetree = (Node *) linitial(raw_parsetree_list);
 
 	querytree_list = pg_analyze_and_rewrite(parsetree,
@@ -2478,6 +2479,7 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	plantree_list = pg_plan_queries(querytree_list, 0, NULL);
 
 	/* There is only one statement in list due to simple select. */
+	Assert(linitial(plantree_list) == llast(plantree_list));
 	plan_stmt = (PlannedStmt *) linitial(plantree_list);
 
 	queryDesc = CreateQueryDesc(plan_stmt,
