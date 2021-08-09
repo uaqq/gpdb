@@ -2557,11 +2557,6 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	*totalrows = 0;
 	*totaldeadrows = 0;
 
-	if (!portal->holdStore)
-	{
-		elog(ERROR, "No tuples received.");
-	}
-
 	slot = MakeSingleTupleTableSlot(queryDesc->tupDesc);
 	while (tuplestore_gettupleslot(portal->holdStore, true, false, slot))
 	{
