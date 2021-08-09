@@ -2379,8 +2379,9 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	char	   *sql;
 	List	   *raw_parsetree_list;
 	Node	   *parsetree;
-	List	   *stmt_list;
-	Node	   *stmt;
+	List	   *querytree_list;
+	List	   *plantree_list;
+	PlannedStmt *plan_stmt;
 	Portal		portal;
 	DestReceiver *destReceiver;
 	QueryDesc  *queryDesc = NULL;
@@ -2468,18 +2469,18 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	 */
 
 	/* There is only one element in list due to simple select. */
-	parsetree = (Node *) lfirst(list_head(raw_parsetree_list));
+	parsetree = (Node *) linitial(raw_parsetree_list);
 
-	stmt_list = pg_analyze_and_rewrite(parsetree,
-									   sql,
-									   NULL,
-									   0);
-	stmt_list = pg_plan_queries(stmt_list, 0, NULL);
+	querytree_list = pg_analyze_and_rewrite(parsetree,
+											sql,
+											NULL,
+											0);
+	plantree_list = pg_plan_queries(querytree_list, 0, NULL);
 
 	/* There is only one statement in list due to simple select. */
-	stmt = (Node *) lfirst(list_head(stmt_list));
+	plan_stmt = (PlannedStmt *) linitial(plantree_list);
 
-	queryDesc = CreateQueryDesc((PlannedStmt *) stmt,
+	queryDesc = CreateQueryDesc(plan_stmt,
 								sql,
 								GetActiveSnapshot(),
 								InvalidSnapshot,
@@ -2703,7 +2704,8 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 
 	ExecutorEnd(queryDesc);
 	FreeQueryDesc(queryDesc);
-	list_free_deep(stmt_list);
+	list_free_deep(plantree_list);
+	list_free_deep(querytree_list);
 	list_free_deep(raw_parsetree_list);
 	PortalDrop(portal, false);
 
