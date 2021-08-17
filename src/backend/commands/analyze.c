@@ -2558,14 +2558,28 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	*totaldeadrows = 0;
 
 	slot = MakeSingleTupleTableSlot(queryDesc->tupDesc);
-	while (tuplestore_gettupleslot(portal->holdStore, true, false, slot))
+	for (;;)
 	{
-		TupleDesc	typeinfo = slot->tts_tupleDescriptor;
-		int			natts = typeinfo->natts;
+		MemoryContext oldcontext;
+		bool		ok;
+		TupleDesc	typeinfo;
+		int			natts;
 		Datum		attr;
 		bool		isnull;
 		double		this_totalrows = 0;
 		double		this_totaldeadrows = 0;
+
+		oldcontext = MemoryContextSwitchTo(portal->holdContext);
+
+		ok = tuplestore_gettupleslot(portal->holdStore, true, false, slot);
+
+		MemoryContextSwitchTo(oldcontext);
+
+		if (!ok)
+			break;
+
+		typeinfo = slot->tts_tupleDescriptor;
+		natts = typeinfo->natts;
 
 		/* There should be only one attribute with OID RECORDOID. */
 		if (1 != natts)
@@ -2696,7 +2710,8 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 
 			ReleaseTupleDesc(tupdesc);
 		}
-	}							/* while (tuplestore_gettupleslot(...)) */
+		ExecClearTuple(slot);
+	}
 	ExecDropSingleTupleTableSlot(slot);
 
 	ExecutorEnd(queryDesc);
