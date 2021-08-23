@@ -2560,7 +2560,6 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 	slot = MakeSingleTupleTableSlot(queryDesc->tupDesc);
 	for (;;)
 	{
-		MemoryContext oldcontext;
 		bool		ok;
 		TupleDesc	typeinfo;
 		int			natts;
@@ -2569,11 +2568,7 @@ acquire_sample_rows_dispatcher(Relation onerel, bool inh, int elevel,
 		double		this_totalrows = 0;
 		double		this_totaldeadrows = 0;
 
-		oldcontext = MemoryContextSwitchTo(portal->holdContext);
-
 		ok = tuplestore_gettupleslot(portal->holdStore, true, false, slot);
-
-		MemoryContextSwitchTo(oldcontext);
 
 		if (!ok)
 			break;
