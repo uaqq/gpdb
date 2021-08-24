@@ -4737,7 +4737,9 @@ PostgresMain(int argc, char *argv[],
 		 */
 		pqsignal(SIGCHLD, SIG_DFL); /* system() requires this on some
 									 * platforms */
+
 #ifndef _WIN32
+		InitStandardHandlerForSigillSigsegvSigbus_OnMainThread();
 #ifdef SIGILL
 		pqsignal(SIGILL, CdbProgramErrorHandler);
 #endif
