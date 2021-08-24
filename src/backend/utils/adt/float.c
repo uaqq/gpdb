@@ -339,7 +339,7 @@ float8in(PG_FUNCTION_ARGS)
 }
 
 /* Convenience macro: set *have_error flag (if provided) or throw error */
-#define RETURN_ERROR(throw_error) \
+#define RETURN_ERROR(throw_error, have_error) \
 do { \
 	if (have_error) { \
 		*have_error = true; \
@@ -375,9 +375,11 @@ float8in_internal_opt_error(char *num, char **endptr_p,
 							const char *type_name, const char *orig_string,
 							bool *have_error)
 {
-	long double		val;
+	double		val;
 	char	   *endptr;
-	bool 		literal_inf = true;
+
+	if (have_error)
+		*have_error = false;
 
 	/* skip leading whitespace */
 	while (*num != '\0' && isspace((unsigned char) *num))
@@ -391,10 +393,11 @@ float8in_internal_opt_error(char *num, char **endptr_p,
 		RETURN_ERROR(ereport(ERROR,
 							 (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 							  errmsg("invalid input syntax for type %s: \"%s\"",
-									 type_name, orig_string))));
+									 type_name, orig_string))),
+					 have_error);
 
 	errno = 0;
-	val = strtold(num, &endptr);
+	val = strtod(num, &endptr);
 
 	/* did we not see anything that looks like a double? */
 	if (endptr == num || errno != 0)
@@ -416,7 +419,7 @@ float8in_internal_opt_error(char *num, char **endptr_p,
 			val = get_float8_nan();
 			endptr = num + 3;
 		}
-		else if (pg_strncasecmp(num, "Infinity", 8) == 0 || pg_strncasecmp(num, "+Infinity", 9) == 0)
+		else if (pg_strncasecmp(num, "Infinity", 8) == 0)
 		{
 			val = get_float8_infinity();
 			endptr = num + 8;
@@ -466,9 +469,9 @@ float8in_internal_opt_error(char *num, char **endptr_p,
 				errnumber[endptr - num] = '\0';
 				RETURN_ERROR(ereport(ERROR,
 									 (errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-									  errmsg("\"%s\" is out of range for "
-											 "type double precision",
-											 errnumber))));
+									  errmsg("\"%s\" is out of range for type double precision",
+											 errnumber))),
+							 have_error);
 			}
 		}
 		else
@@ -476,20 +479,9 @@ float8in_internal_opt_error(char *num, char **endptr_p,
 								 (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 								  errmsg("invalid input syntax for type "
 										 "%s: \"%s\"",
-										 type_name, orig_string))));
+										 type_name, orig_string))),
+						 have_error);
 	}
-#ifdef HAVE_BUGGY_SOLARIS_STRTOD
-	else
-	{
-		/*
-		 * Many versions of Solaris have a bug wherein strtod sets endptr to
-		 * point one byte beyond the end of the string when given "inf" or
-		 * "infinity".
-		 */
-		if (endptr != num && endptr[-1] == '\0')
-			endptr--;
-	}
-#endif							/* HAVE_BUGGY_SOLARIS_STRTOD */
 
 	/* skip trailing whitespace */
 	while (*endptr != '\0' && isspace((unsigned char) *endptr))
@@ -503,32 +495,8 @@ float8in_internal_opt_error(char *num, char **endptr_p,
 							 (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 							  errmsg("invalid input syntax for type "
 									 "%s: \"%s\"",
-									 type_name, orig_string))));
-
-	/*
-	 * strtod does not support values from 1e-323 to 1e-308 for double datatype in rhel6
-	 * due to changes in glibc. In order to overcome this issue we use strtold to parse
-	 * the string and store it in long double so that we get higher precision. We check if
-	 * this value is within allowed range for double using the below two checks:- 
-	 *
-	 * 1) Overflow - When we try to store a value > 1e308 in a double datatype, it gets represented 
-	 * internally as "inf". Hence in order to check for overflow, we use the isinf() method in order
-	 * to check if (double) val has overflowed. But "inf" is a legitimate value for float8, hence if the
-	 * user entered "inf"/"Infinity" we allow it. Otherwise we treat it as overflow.
-	 *
-	 * 2) Underflow - When we try to store a value < 1e-323, it gets converted to a 0.0. But "0.0" is a 
-	 * legitimate value allowed by float8 datatype. Hence we examine if the val is > 0 or < 0 with higher 
-	 * precision (as long double). Again, 0.0 is allowed for float8. If the user entered 0.0, val will be 0.0
-	 * in both higher precision and when rounded down and we allow it. Otherwise in higher precision, 
-	 * val will be > 0 or < 0 and when rounded down to double it will be 0 which is treated as underflow.
-	 */
-
-	if ( pg_strncasecmp(num, "Infinity", 8) != 0  && pg_strncasecmp(num, "-Infinity", 9) != 0 &&\
-		 pg_strncasecmp(num, "Inf", 3) != 0 && pg_strncasecmp(num, "-Inf", 4) != 0 &&\
-		 pg_strncasecmp(num, "+Infinity", 9) != 0 && pg_strncasecmp(num, "+Inf", 4) != 0 )
-		literal_inf = false;
-
-	CHECKFLOATVAL((double) val, literal_inf, !(val > 0 || val < 0));
+									 type_name, orig_string))),
+					 have_error);
 
 	return val;
 }
