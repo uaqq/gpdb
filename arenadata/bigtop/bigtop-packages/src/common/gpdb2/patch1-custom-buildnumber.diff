@@ -1,0 +1,13 @@
+diff --git a/getversion b/getversion
+index 05078a0f..4f6d604f 100755
+--- a/getversion
++++ b/getversion
+@@ -5,7 +5,7 @@
+ pushd $(dirname "$0") > /dev/null
+ 
+ VERSION=$(perl -e 'while(<>){print $1 if (/^PACKAGE_VERSION='\''(.+)'\''$/)}' < configure)
+-BUILDNUMBER=dev
++BUILDNUMBER=${BUILDNUMBER:-dev}
+ 
+ # Call git describe, and convert it to a semi-semantic version, like
+ # 6.0.0-beta.0+dev.52.g123abc

@@ -1,0 +1,39 @@
+From ffee08a3a1a8c6f7f9557fb68c93fd8e00c03af9 Mon Sep 17 00:00:00 2001
+From: Artem Nurmatov <aspekt112@gmail.com>
+Date: Mon, 26 Mar 2018 19:07:38 +0300
+Subject: [PATCH] gpdb - change copy files pathes in gpperfmon Makefile
+
+---
+ gpAux/gpperfmon/src/gpmon/Makefile | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/gpAux/gpperfmon/src/gpmon/Makefile b/gpAux/gpperfmon/src/gpmon/Makefile
+index 6d503f9c83..f073664f18 100644
+--- a/gpAux/gpperfmon/src/gpmon/Makefile
++++ b/gpAux/gpperfmon/src/gpmon/Makefile
+@@ -46,14 +46,14 @@ endif
+ 	$(CC) $(INCS) $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
+ 
+ install: all
+-	mkdir -p $(prefix)/bin
+-	cp -p gpmmon $(prefix)/bin
+-	cp -p gpsmon $(prefix)/bin
+-	cp -p gpperfmoncat.sh $(prefix)/bin
+-	cp -p gpmon_catqrynow.py $(prefix)/sbin
+-	cp -p gpperfmon_install $(prefix)/bin
+-	mkdir -p $(prefix)/lib/gpperfmon
+-	cp -p gpperfmon.sql $(prefix)/lib/gpperfmon
++	mkdir -p $(DESTDIR)/$(prefix)/bin
++	cp -p gpmmon $(DESTDIR)/$(prefix)/bin
++	cp -p gpsmon $(DESTDIR)/$(prefix)/bin
++	cp -p gpperfmoncat.sh $(DESTDIR)/$(prefix)/bin
++	cp -p gpmon_catqrynow.py $(DESTDIR)/$(prefix)/sbin
++	cp -p gpperfmon_install $(DESTDIR)/$(prefix)/bin
++	mkdir -p $(DESTDIR)/$(prefix)/lib/gpperfmon
++	cp -p gpperfmon.sql $(DESTDIR)/$(prefix)/lib/gpperfmon
+ 
+ clean:
+ 	rm -rf *.o gpmmon gpsmon sigartest
+-- 
+2.14.1
+
