@@ -1240,7 +1240,8 @@ cdbpath_motion_for_join(PlannerInfo *root,
 										CdbPathLocus_NumSegments(outer.locus));
 		else
 		{
-			Assert(false);
+			//Assert(false);
+			elog(WARNING, "REPLICATED");
 			goto fail;
 		}
 	}
@@ -1251,7 +1252,8 @@ cdbpath_motion_for_join(PlannerInfo *root,
 										CdbPathLocus_NumSegments(inner.locus));
 		else
 		{
-			Assert(false);
+			//Assert(false);
+			elog(WARNING, "REPLICATED");
 			goto fail;
 		}
 	}

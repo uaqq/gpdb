@@ -598,7 +598,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 			}
 			else
 			{
-				if (plan->flow->flotype == FLOW_PARTITIONED || plan->flow->flotype == FLOW_REPLICATED ||
+				if (plan->flow->flotype == FLOW_PARTITIONED || /*plan->flow->flotype == FLOW_REPLICATED ||*/
 					(plan->flow->flotype == FLOW_SINGLETON &&
 					 plan->flow->locustype == CdbLocusType_SegmentGeneral))
 					bringResultToDispatcher = true;
