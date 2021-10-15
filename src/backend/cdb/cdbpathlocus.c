@@ -313,7 +313,10 @@ cdbpathlocus_from_subquery(struct PlannerInfo *root,
 			}
 			break;
 		case FLOW_REPLICATED:
-			CdbPathLocus_MakeReplicated(&locus, numsegments);
+			if (root->parse->commandType == CMD_UPDATE || root->parse->commandType == CMD_DELETE)
+				CdbPathLocus_MakeReplicated(&locus, numsegments);
+			else
+				CdbPathLocus_MakeSegmentGeneral(&locus, numsegments);
 			break;
 		case FLOW_PARTITIONED:
 			{
