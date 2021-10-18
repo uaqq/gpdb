@@ -313,7 +313,7 @@ cdbpathlocus_from_subquery(struct PlannerInfo *root,
 			}
 			break;
 		case FLOW_REPLICATED:
-			if (root->parse->commandType == CMD_UPDATE || root->parse->commandType == CMD_DELETE)
+			if (root->upd_del_replicated_table > 0)
 				CdbPathLocus_MakeReplicated(&locus, numsegments);
 			else
 				CdbPathLocus_MakeSegmentGeneral(&locus, numsegments);
