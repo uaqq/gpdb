@@ -754,14 +754,14 @@ explain (costs off)
          Group Key: ((t1.a || t1.b))
          ->  Sort
                Sort Key: ((t1.a || t1.b))
-               ->  Append
-                     ->  Redistribute Motion 3:3  (slice2; segments: 3)
-                           Hash Key: ((t1.a || t1.b))
+               ->  Redistribute Motion 3:3  (slice2; segments: 3)
+                     Hash Key: ((t1.a || t1.b))
+                     ->  Append
                            ->  Result
                                  Filter: (((t1.a || t1.b)) = 'ab'::text)
                                  ->  Seq Scan on t1
-                     ->  Index Scan using t2_pkey on t2
-                           Index Cond: (ab = 'ab'::text)
+                           ->  Index Scan using t2_pkey on t2
+                                 Index Cond: (ab = 'ab'::text)
  Optimizer: Pivotal Optimizer (GPORCA) version 3.83.0
 (14 rows)
 

@@ -11060,13 +11060,14 @@ explain (costs off) select count(*), t2.c from input_tab1 t1 left join input_tab
                            Group Key: input_tab2.c
                            ->  Sort
                                  Sort Key: input_tab2.c
-                                 ->  Hash Left Join
-                                       Hash Cond: (input_tab1.a = input_tab2.c)
-                                       ->  Seq Scan on input_tab1
-                                       ->  Hash
-                                             ->  Seq Scan on input_tab2
+                                 ->  Redistribute Motion 3:3  (slice3; segments: 3)
+                                       ->  Hash Left Join
+                                             Hash Cond: (input_tab1.a = input_tab2.c)
+                                             ->  Seq Scan on input_tab1
+                                             ->  Hash
+                                                   ->  Seq Scan on input_tab2
  Optimizer: Pivotal Optimizer (GPORCA) version 3.83.0
-(17 rows)
+(18 rows)
 
 select count(*), t2.c from input_tab1 t1 left join input_tab2 t2 on t1.a = t2.c group by t2.c;
  count | c 
@@ -11110,17 +11111,18 @@ FROM   (SELECT *
                                                   QUERY PLAN                                                   
 ---------------------------------------------------------------------------------------------------------------
  Aggregate  (cost=0.00..1293.00 rows=1 width=8)
-   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..1293.00 rows=4 width=1)
-         ->  Append  (cost=0.00..1293.00 rows=2 width=1)
-               ->  Hash Left Join  (cost=0.00..862.00 rows=1 width=3)
-                     Hash Cond: ((tab_1.id)::text = (tab_2.id)::text)
+   ->  Append  (cost=0.00..1293.00 rows=4 width=1)
+         ->  Hash Left Join  (cost=0.00..862.00 rows=3 width=3)
+               Hash Cond: ((tab_1.id)::text = (tab_2.id)::text)
+               ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=2 width=5)
                      ->  Seq Scan on tab_1  (cost=0.00..431.00 rows=1 width=5)
-                     ->  Hash  (cost=431.00..431.00 rows=1 width=7)
-                           ->  Broadcast Motion 3:3  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=7)
-                                 ->  Seq Scan on tab_2  (cost=0.00..431.00 rows=1 width=7)
+               ->  Hash  (cost=431.00..431.00 rows=1 width=7)
+                     ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=7)
+                           ->  Seq Scan on tab_2  (cost=0.00..431.00 rows=1 width=7)
+         ->  Gather Motion 3:1  (slice3; segments: 3)  (cost=0.00..431.00 rows=1 width=1)
                ->  Seq Scan on tab_3  (cost=0.00..431.00 rows=1 width=8)
- Optimizer: Pivotal Optimizer (GPORCA) version 3.83.0
-(11 rows)
+ Optimizer: Pivotal Optimizer (GPORCA)
+(12 rows)
 
 SELECT Count(*)
 FROM   (SELECT *
@@ -11356,16 +11358,17 @@ INSERT INTO csq_cast_param_inner VALUES
 EXPLAIN SELECT a FROM csq_cast_param_outer WHERE b in (SELECT CASE WHEN a > 1 THEN d ELSE '42' END FROM csq_cast_param_inner);
                                                 QUERY PLAN                                                 
 -----------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..1324032.56 rows=2 width=4)
-   ->  Seq Scan on csq_cast_param_outer  (cost=0.00..1324032.56 rows=1 width=4)
-         Filter: (SubPlan 1)
-         SubPlan 1
-           ->  Result  (cost=0.00..431.00 rows=2 width=4)
-                 ->  Materialize  (cost=0.00..431.00 rows=2 width=4)
-                       ->  Broadcast Motion 3:3  (slice2; segments: 3)  (cost=0.00..431.00 rows=2 width=4)
-                             ->  Seq Scan on csq_cast_param_inner  (cost=0.00..431.00 rows=1 width=4)
- Optimizer: Pivotal Optimizer (GPORCA) version 3.83.0
-(9 rows)
+ Result  (cost=0.00..1324032.49 rows=1 width=4)
+   Filter: (SubPlan 1)
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
+         ->  Seq Scan on csq_cast_param_outer  (cost=0.00..431.00 rows=1 width=8)
+   SubPlan 1
+     ->  Result  (cost=0.00..431.00 rows=1 width=4)
+           ->  Materialize  (cost=0.00..431.00 rows=1 width=4)
+                 ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
+                       ->  Seq Scan on csq_cast_param_inner  (cost=0.00..431.00 rows=1 width=4)
+ Optimizer: Pivotal Optimizer (GPORCA)
+(10 rows)
 
 SELECT a FROM csq_cast_param_outer WHERE b in (SELECT CASE WHEN a > 1 THEN d ELSE '42' END FROM csq_cast_param_inner);
  a 
@@ -11380,16 +11383,17 @@ CREATE CAST (myint AS numeric) WITH FUNCTION myint_numeric(myint) AS IMPLICIT;
 EXPLAIN SELECT a FROM csq_cast_param_outer WHERE b in (SELECT CASE WHEN a > 1 THEN d ELSE '42' END FROM csq_cast_param_inner);
                                                 QUERY PLAN                                                 
 -----------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..1324032.56 rows=2 width=4)
-   ->  Seq Scan on csq_cast_param_outer  (cost=0.00..1324032.56 rows=1 width=4)
-         Filter: (SubPlan 1)
-         SubPlan 1
-           ->  Result  (cost=0.00..431.00 rows=2 width=4)
-                 ->  Materialize  (cost=0.00..431.00 rows=2 width=4)
-                       ->  Broadcast Motion 3:3  (slice2; segments: 3)  (cost=0.00..431.00 rows=2 width=4)
-                             ->  Seq Scan on csq_cast_param_inner  (cost=0.00..431.00 rows=1 width=4)
- Optimizer: Pivotal Optimizer (GPORCA) version 3.83.0
-(9 rows)
+ Result  (cost=0.00..1324032.49 rows=1 width=4)
+   Filter: (SubPlan 1)
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
+         ->  Seq Scan on csq_cast_param_outer  (cost=0.00..431.00 rows=1 width=8)
+   SubPlan 1
+     ->  Result  (cost=0.00..431.00 rows=1 width=4)
+           ->  Materialize  (cost=0.00..431.00 rows=1 width=4)
+                 ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
+                       ->  Seq Scan on csq_cast_param_inner  (cost=0.00..431.00 rows=1 width=4)
+ Optimizer: Pivotal Optimizer (GPORCA)
+(10 rows)
 
 SELECT a FROM csq_cast_param_outer WHERE b in (SELECT CASE WHEN a > 1 THEN d ELSE '42' END FROM csq_cast_param_inner);
  a 
@@ -11666,16 +11670,17 @@ INSERT INTO varchar_sc_array_cmp VALUES ('a'), ('b'), ('c'), ('d');
 EXPLAIN SELECT * FROM varchar_sc_array_cmp t1, varchar_sc_array_cmp t2 where t1.a = t2.a and t1.a in ('b', 'c');
                                                       QUERY PLAN                                                      
 ----------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.00 rows=4 width=4)
-   ->  Hash Join  (cost=0.00..862.00 rows=2 width=4)
-         Hash Cond: ((varchar_sc_array_cmp.a)::text = (varchar_sc_array_cmp_1.a)::text)
-         ->  Seq Scan on varchar_sc_array_cmp  (cost=0.00..431.00 rows=1 width=2)
-               Filter: (((a)::text = 'b'::text) OR ((a)::text = 'c'::text))
-         ->  Hash  (cost=431.00..431.00 rows=1 width=2)
-               ->  Seq Scan on varchar_sc_array_cmp varchar_sc_array_cmp_1  (cost=0.00..431.00 rows=1 width=2)
-                     Filter: (((a)::text = ANY ('{b,c}'::text[])) AND (((a)::text = 'b'::text) OR ((a)::text = 'c'::text)))
+ Hash Join  (cost=0.00..862.00 rows=1 width=16)
+   Hash Cond: ((varchar_sc_array_cmp.a)::text = (varchar_sc_array_cmp_1.a)::text)
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
+         ->  Seq Scan on varchar_sc_array_cmp  (cost=0.00..431.00 rows=1 width=8)
+               Filter: (((a)::text = ANY ('{b,c}'::text[])) AND (a = ANY ('{b,c}'::character varying[])))
+   ->  Hash  (cost=431.00..431.00 rows=1 width=8)
+         ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
+               ->  Seq Scan on varchar_sc_array_cmp varchar_sc_array_cmp_1  (cost=0.00..431.00 rows=1 width=8)
+                     Filter: (a = ANY ('{b,c}'::character varying[]))
  Optimizer: Pivotal Optimizer (GPORCA)
-(9 rows)
+(10 rows)
 
 SELECT * FROM varchar_sc_array_cmp t1, varchar_sc_array_cmp t2 where t1.a = t2.a and t1.a in ('b', 'c');
  a | a 
@@ -11688,16 +11693,17 @@ SET optimizer_array_constraints=on;
 EXPLAIN SELECT * FROM varchar_sc_array_cmp t1, varchar_sc_array_cmp t2 where t1.a = t2.a and (t1.a in ('b', 'c') OR t1.a = 'a');
                                                   QUERY PLAN                                                   
 ---------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.00 rows=4 width=4)
-   ->  Hash Join  (cost=0.00..862.00 rows=2 width=4)
-         Hash Cond: ((varchar_sc_array_cmp.a)::text = (varchar_sc_array_cmp_1.a)::text)
-         ->  Seq Scan on varchar_sc_array_cmp  (cost=0.00..431.00 rows=1 width=2)
-               Filter: (a = ANY ('{a,b,c}'::character varying[]))
-         ->  Hash  (cost=431.00..431.00 rows=1 width=2)
-               ->  Seq Scan on varchar_sc_array_cmp varchar_sc_array_cmp_1  (cost=0.00..431.00 rows=1 width=2)
+ Hash Join  (cost=0.00..862.00 rows=1 width=16)
+   Hash Cond: ((varchar_sc_array_cmp.a)::text = (varchar_sc_array_cmp_1.a)::text)
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
+         ->  Seq Scan on varchar_sc_array_cmp  (cost=0.00..431.00 rows=1 width=8)
+               Filter: ((((a)::text = ANY ('{b,c}'::text[])) OR ((a)::text = 'a'::text)) AND (a = ANY ('{a,b,c}'::character varying[])))
+   ->  Hash  (cost=431.00..431.00 rows=1 width=8)
+         ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
+               ->  Seq Scan on varchar_sc_array_cmp varchar_sc_array_cmp_1  (cost=0.00..431.00 rows=1 width=8)
                      Filter: (a = ANY ('{a,b,c}'::character varying[]))
- Optimizer: Pivotal Optimizer (GPORCA) version 3.65.2
-(9 rows)
+ Optimizer: Pivotal Optimizer (GPORCA)
+(10 rows)
 
 SELECT * FROM varchar_sc_array_cmp t1, varchar_sc_array_cmp t2 where t1.a = t2.a and (t1.a in ('b', 'c') OR t1.a = 'a');
  a | a 
@@ -12706,7 +12712,7 @@ where out.b in (select coalesce(tcorr2_d.c, 99)
                                              group by a) tcorr2_d on tcorr1.a=tcorr2_d.a);
                                                      QUERY PLAN                                                     
 --------------------------------------------------------------------------------------------------------------------
- Result  (cost=0.00..1356692176.26 rows=1 width=8)
+ Result  (cost=0.00..1356692176.35 rows=1 width=8)
    Filter: (SubPlan 1)
    ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
          ->  Seq Scan on tcorr1  (cost=0.00..431.00 rows=1 width=8)
@@ -12830,7 +12836,7 @@ where out.b in (select coalesce(tcorr2_d.c, 99)
                                              group by a) tcorr2_d on tcorr1.a=tcorr2_d.a);
                                                      QUERY PLAN                                                     
 --------------------------------------------------------------------------------------------------------------------
- Result  (cost=0.00..1356692176.26 rows=1 width=8)
+ Result  (cost=0.00..1356692176.35 rows=1 width=8)
    Filter: (SubPlan 1)
    ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
          ->  Seq Scan on tcorr1  (cost=0.00..431.00 rows=1 width=8)
@@ -13645,33 +13651,32 @@ where  upper(coalesce(vendor, 'none')::text) <> 'some_vendor' and vendor_sla is 
 group by asset_records.uid, asset_records.hostname, asset_records.asset_type, asset_records.os, asset_records.create_ts;
                                                                                                          QUERY PLAN                                                                                                          
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Result
-   ->  Gather Motion 3:1  (slice1; segments: 3)
-         ->  GroupAggregate
-               Group Key: asset_records_1_prt_1.uid, asset_records_1_prt_1.hostname, asset_records_1_prt_1.asset_type, asset_records_1_prt_1.os, asset_records_1_prt_1.create_ts
-               ->  Sort
-                     Sort Key: asset_records_1_prt_1.uid, asset_records_1_prt_1.hostname, asset_records_1_prt_1.asset_type, asset_records_1_prt_1.os, asset_records_1_prt_1.create_ts
-                     ->  Hash Join
-                           Hash Cond: ((upper((asset_records_1_prt_1.hostname)::text) = upper((coverage.hostname)::text)) AND (asset_records_1_prt_1.create_ts = coverage.date))
-                           ->  Append
-                                 Partition Selectors: $0
-                                 ->  Seq Scan on asset_records_1_prt_1
-                                       Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
-                                 ->  Seq Scan on asset_records_1_prt_2
-                                       Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
-                                 ->  Seq Scan on asset_records_1_prt_3
-                                       Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
-                                 ->  Seq Scan on asset_records_1_prt_4
-                                       Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
-                                 ->  Seq Scan on asset_records_1_prt_5
-                                       Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
-                           ->  Hash
-                                 ->  Partition Selector (selector id: $0)
-                                       ->  Broadcast Motion 3:3  (slice2; segments: 3)
-                                             ->  Seq Scan on coverage
-                                                   Filter: (NOT (vendor_sla IS NULL))
+ Gather Motion 3:1  (slice1; segments: 3)
+   ->  GroupAggregate
+         Group Key: asset_records_1_prt_1.uid, asset_records_1_prt_1.hostname, asset_records_1_prt_1.asset_type, asset_records_1_prt_1.os, asset_records_1_prt_1.create_ts
+         ->  Sort
+               Sort Key: asset_records_1_prt_1.uid, asset_records_1_prt_1.hostname, asset_records_1_prt_1.asset_type, asset_records_1_prt_1.os, asset_records_1_prt_1.create_ts
+               ->  Hash Join
+                     Hash Cond: ((upper((asset_records_1_prt_1.hostname)::text) = upper((coverage.hostname)::text)) AND (asset_records_1_prt_1.create_ts = coverage.date))
+                     ->  Append
+                           Partition Selectors: $0
+                           ->  Seq Scan on asset_records_1_prt_1
+                                 Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
+                           ->  Seq Scan on asset_records_1_prt_2
+                                 Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
+                           ->  Seq Scan on asset_records_1_prt_3
+                                 Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
+                           ->  Seq Scan on asset_records_1_prt_4
+                                 Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
+                           ->  Seq Scan on asset_records_1_prt_5
+                                 Filter: ((upper((COALESCE(vendor, 'none'::character varying))::text) <> 'some_vendor'::text) AND (((asset_type)::text = 'xx'::text) OR ((asset_type)::text = 'yy'::text)) AND active)
+                     ->  Hash
+                           ->  Partition Selector (selector id: $0)
+                                 ->  Broadcast Motion 3:3  (slice2; segments: 3)
+                                       ->  Seq Scan on coverage
+                                             Filter: (NOT (vendor_sla IS NULL))
  Optimizer: Pivotal Optimizer (GPORCA)
-(26 rows)
+(25 rows)
 
 -- IndexApply-PartResolverExpand.mdp
 -- from comment
@@ -13732,20 +13737,18 @@ analyze infer_part_vc;
 explain (costs off) select * from infer_part_vc inner join infer_txt on (infer_part_vc.gender = infer_txt.a) and infer_txt.a = 'M';
                                  QUERY PLAN                                 
 ----------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)
-   ->  Hash Join
-         Hash Cond: ((infer_part_vc_1_prt_boys.gender)::text = infer_txt.a)
-         ->  Append
-               Partition Selectors: $0
-               ->  Seq Scan on infer_part_vc_1_prt_boys
-                     Filter: ((gender)::text = 'M'::text)
-         ->  Hash
-               ->  Partition Selector (selector id: $0)
-                     ->  Broadcast Motion 3:3  (slice2; segments: 3)
-                           ->  Seq Scan on infer_txt
-                                 Filter: (a = 'M'::text)
+ Hash Join
+   Hash Cond: (infer_txt.a = (infer_part_vc_1_prt_boys.gender)::text)
+   ->  Gather Motion 3:1  (slice1; segments: 3)
+         ->  Seq Scan on infer_txt
+               Filter: (a = 'M'::text)
+   ->  Hash
+         ->  Gather Motion 3:1  (slice2; segments: 3)
+               ->  Append
+                     ->  Seq Scan on infer_part_vc_1_prt_boys
+                           Filter: ((gender)::text = 'M'::text)
  Optimizer: Pivotal Optimizer (GPORCA)
-(13 rows)
+(11 rows)
 
 -- NewBtreeIndexScanCost.mdp
 -- from comment
@@ -13779,19 +13782,16 @@ CREATE TABLE ria (
 explain (costs off) select *  from oip oip  join ria a on ip=cidr and oip.oid=194073;
                             QUERY PLAN                            
 ------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)
-   ->  Hash Join
-         Hash Cond: (ria.ip = oip.cidr)
-         ->  Redistribute Motion 3:3  (slice2; segments: 3)
-               Hash Key: ria.ip
-               ->  Seq Scan on ria
-         ->  Hash
-               ->  Redistribute Motion 3:3  (slice3; segments: 3)
-                     Hash Key: oip.cidr
-                     ->  Seq Scan on oip
-                           Filter: (oid = 194073)
+ Hash Join
+   Hash Cond: (ria.ip = oip.cidr)
+   ->  Gather Motion 3:1  (slice1; segments: 3)
+         ->  Seq Scan on ria
+   ->  Hash
+         ->  Gather Motion 3:1  (slice2; segments: 3)
+               ->  Seq Scan on oip
+                     Filter: (oid = 194073)
  Optimizer: Pivotal Optimizer (GPORCA)
-(12 rows)
+(9 rows)
 
 -- PartTbl-ArrayCoerce.mdp
 -- from comment
@@ -13876,17 +13876,17 @@ where d.msisdn=f.subscriberaddress and
       (mkt_model like '%IPHONE%');
                                                                                             QUERY PLAN                                                                                             
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)
-   ->  Hash Join
-         Hash Cond: ((dim_customer_device.msisdn)::text = (stg_xdr_crce_cdr_1_prt_1.subscriberaddress)::text)
-         Join Filter: ((stg_xdr_crce_cdr_1_prt_1.sessioncreationtimestamp >= dim_customer_device.start_dtm) AND (stg_xdr_crce_cdr_1_prt_1.sessioncreationtimestamp < dim_customer_device.end_dtm))
+ Hash Join
+   Hash Cond: ((dim_customer_device.msisdn)::text = (stg_xdr_crce_cdr_1_prt_1.subscriberaddress)::text)
+   Join Filter: ((stg_xdr_crce_cdr_1_prt_1.sessioncreationtimestamp >= dim_customer_device.start_dtm) AND (stg_xdr_crce_cdr_1_prt_1.sessioncreationtimestamp < dim_customer_device.end_dtm))
+   ->  Gather Motion 3:1  (slice1; segments: 3)
          ->  Seq Scan on dim_customer_device
                Filter: ((mkt_model)::text ~~ '%IPHONE%'::text)
-         ->  Hash
-               ->  Broadcast Motion 3:3  (slice2; segments: 3)
-                     ->  Append
-                           ->  Seq Scan on stg_xdr_crce_cdr_1_prt_1
-                           ->  Seq Scan on stg_xdr_crce_cdr_1_prt_2
+   ->  Hash
+         ->  Gather Motion 3:1  (slice2; segments: 3)
+               ->  Append
+                     ->  Seq Scan on stg_xdr_crce_cdr_1_prt_1
+                     ->  Seq Scan on stg_xdr_crce_cdr_1_prt_2
  Optimizer: Pivotal Optimizer (GPORCA)
 (12 rows)
 

@@ -409,12 +409,16 @@ where x.a > random();
  Gather Motion 3:1  (slice1; segments: 3)
    ->  Nested Loop
          Join Filter: true
-         ->  Seq Scan on t_hashdist
-         ->  Result
-               Filter: ((generate_series.generate_series)::double precision > random())
-               ->  Function Scan on generate_series
+         ->  Broadcast Motion 3:3  (slice2; segments: 3)
+               ->  Seq Scan on t_hashdist
+         ->  Materialize
+               ->  Result
+                     One-Time Filter: (gp_execution_segment() = ###)
+                     ->  Result
+                           Filter: ((generate_series.generate_series)::double precision > random())
+                           ->  Function Scan on generate_series
  Optimizer: Pivotal Optimizer (GPORCA)
-(8 rows)
+(12 rows)
 
 ---- join qual
 explain (costs off) select * from
@@ -427,13 +431,17 @@ where x.a + y.a > random();
  Gather Motion 3:1  (slice1; segments: 3)
    ->  Nested Loop
          Join Filter: true
-         ->  Seq Scan on t_hashdist
-         ->  Nested Loop
-               Join Filter: (((generate_series_1.generate_series + generate_series.generate_series))::double precision > random())
-               ->  Function Scan on generate_series generate_series_1
-               ->  Function Scan on generate_series
+         ->  Broadcast Motion 3:3  (slice2; segments: 3)
+               ->  Seq Scan on t_hashdist
+         ->  Materialize
+               ->  Result
+                     One-Time Filter: (gp_execution_segment() = ###)
+                     ->  Nested Loop
+                           Join Filter: (((generate_series_1.generate_series + generate_series.generate_series))::double precision > random())
+                           ->  Function Scan on generate_series generate_series_1
+                           ->  Function Scan on generate_series
  Optimizer: Pivotal Optimizer (GPORCA)
-(9 rows)
+(12 rows)
 
 ---- sublink & subquery
 explain (costs off) select * from t_hashdist where a > All (select random() from generate_series(1, 10));
@@ -547,14 +555,18 @@ explain (costs off) select * from t_hashdist cross join (select a, count(1) as s
  Gather Motion 3:1  (slice1; segments: 3)
    ->  Nested Loop
          Join Filter: true
-         ->  Seq Scan on t_hashdist
-         ->  Result
-               Filter: (((count(1)))::double precision > random())
-               ->  HashAggregate
-                     Group Key: generate_series.generate_series
-                     ->  Function Scan on generate_series
+         ->  Broadcast Motion 3:3  (slice2; segments: 3)
+               ->  Seq Scan on t_hashdist
+         ->  Materialize
+               ->  Result
+                     One-Time Filter: (gp_execution_segment() = ###)
+                     ->  Result
+                           Filter: (((count(1)))::double precision > random())
+                           ->  HashAggregate
+                                 Group Key: generate_series.generate_series
+                                 ->  Function Scan on generate_series
  Optimizer: Pivotal Optimizer (GPORCA)
-(10 rows)
+(14 rows)
 
 -- limit
 explain (costs off) select * from t_hashdist cross join (select * from generate_series(1, 10) limit random()) x;
@@ -563,11 +575,15 @@ explain (costs off) select * from t_hashdist cross join (select * from generate_
  Gather Motion 3:1  (slice1; segments: 3)
    ->  Nested Loop
          Join Filter: true
-         ->  Seq Scan on t_hashdist
-         ->  Limit
-               ->  Function Scan on generate_series
+         ->  Broadcast Motion 3:3  (slice2; segments: 3)
+               ->  Seq Scan on t_hashdist
+         ->  Materialize
+               ->  Result
+                     One-Time Filter: (gp_execution_segment() = ###)
+                     ->  Limit
+                           ->  Function Scan on generate_series
  Optimizer: Pivotal Optimizer (GPORCA)
-(7 rows)
+(11 rows)
 
 -- CTAS on general locus into replicated table
 create temp SEQUENCE test_seq;

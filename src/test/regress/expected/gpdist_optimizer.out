@@ -675,24 +675,27 @@ create temporary table c as select generate_series(3, 7) as i distributed by (i)
 explain (costs off) select * from a full join b on (a.i=b.i) full join c on (b.i=c.i);
                       QUERY PLAN                      
 ------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)
-   ->  Merge Full Join
-         Merge Cond: (b.i = c.i)
-         ->  Sort
-               Sort Key: b.i
-               ->  Merge Full Join
-                     Merge Cond: (a.i = b.i)
+ Merge Full Join
+   Merge Cond: (b.i = c.i)
+   ->  Sort
+         Sort Key: b.i
+         ->  Merge Full Join
+               Merge Cond: (a.i = b.i)
+               ->  Gather Motion 3:1  (slice1; segments: 3)
+                     Merge Key: a.i
                      ->  Sort
                            Sort Key: a.i
                            ->  Seq Scan on a
-                     ->  Sort
-                           Sort Key: b.i
+               ->  Sort
+                     Sort Key: b.i
+                     ->  Gather Motion 3:1  (slice2; segments: 3)
                            ->  Seq Scan on b
-         ->  Sort
-               Sort Key: c.i
+   ->  Sort
+         Sort Key: c.i
+         ->  Gather Motion 3:1  (slice3; segments: 3)
                ->  Seq Scan on c
  Optimizer: Pivotal Optimizer (GPORCA) version 3.43.1
-(17 rows)
+(20 rows)
 
 select * from a full join b on (a.i=b.i) full join c on (b.i=c.i);
  i | i | i 

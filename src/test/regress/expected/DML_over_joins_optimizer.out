@@ -1600,14 +1600,20 @@ explain (costs off) delete from tab1 using tab2 where tab1.b = tab2.b;
                           QUERY PLAN                           
 ---------------------------------------------------------------
  Delete on tab1
-   ->  Hash Join
-         Hash Cond: (tab1_1.b = tab2.b)
-         ->  Seq Scan on tab1 tab1_1
-         ->  Hash
-               ->  Broadcast Motion 3:3  (slice1; segments: 3)
-                     ->  Seq Scan on tab2
+   ->  Result
+         ->  Redistribute Motion 3:3  (slice1; segments: 3)
+               Hash Key: tab1_1.a
+               ->  Hash Join
+                     Hash Cond: (tab1_1.b = tab2.b)
+                     ->  Redistribute Motion 3:3  (slice2; segments: 3)
+                           Hash Key: tab1_1.b
+                           ->  Seq Scan on tab1 tab1_1
+                     ->  Hash
+                           ->  Redistribute Motion 3:3  (slice3; segments: 3)
+                                 Hash Key: tab2.b
+                                 ->  Seq Scan on tab2
  Optimizer: Pivotal Optimizer (GPORCA) version 3.86.0
-(8 rows)
+(14 rows)
 
 alter table tab1 set distributed by (b);
 create table tab3 (a int, b int) distributed by (b);

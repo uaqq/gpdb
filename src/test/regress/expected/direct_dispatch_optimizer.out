@@ -392,9 +392,9 @@ INFO:  Distributed transaction command 'Distributed Commit Prepared' to ALL cont
 EXPLAIN SELECT a.* FROM MPP_22019_a a INNER JOIN MPP_22019_b b ON a.i = b.i WHERE a.j NOT IN (SELECT j FROM MPP_22019_a a2 where a2.j = b.j) and a.i = 1;
                                                 QUERY PLAN                                                 
 -----------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..1765376.88 rows=1 width=8)
-   ->  Result  (cost=0.00..1765376.88 rows=1 width=8)
-         Filter: (SubPlan 1)
+ Result  (cost=0.00..1765377.23 rows=1 width=8)
+   Filter: (SubPlan 1)
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.00 rows=1 width=12)
          ->  Hash Join  (cost=0.00..862.00 rows=1 width=12)
                Hash Cond: (mpp_22019_a.i = mpp_22019_b.i)
                ->  Seq Scan on mpp_22019_a  (cost=0.00..431.00 rows=1 width=8)
@@ -402,13 +402,13 @@ EXPLAIN SELECT a.* FROM MPP_22019_a a INNER JOIN MPP_22019_b b ON a.i = b.i WHER
                ->  Hash  (cost=431.00..431.00 rows=1 width=8)
                      ->  Seq Scan on mpp_22019_b  (cost=0.00..431.00 rows=1 width=8)
                            Filter: (i = 1)
-         SubPlan 1
-           ->  Result  (cost=0.00..431.00 rows=1 width=4)
-                 Filter: (mpp_22019_a_1.j = mpp_22019_b.j)
-                 ->  Materialize  (cost=0.00..431.00 rows=1 width=4)
-                       ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
-                             ->  Seq Scan on mpp_22019_a mpp_22019_a_1  (cost=0.00..431.00 rows=1 width=4)
- Optimizer: Pivotal Optimizer (GPORCA) version 3.83.0
+   SubPlan 1
+     ->  Result  (cost=0.00..431.00 rows=1 width=4)
+           Filter: (mpp_22019_a_1.j = mpp_22019_b.j)
+           ->  Materialize  (cost=0.00..431.00 rows=1 width=4)
+                 ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
+                       ->  Seq Scan on mpp_22019_a mpp_22019_a_1  (cost=0.00..431.00 rows=1 width=4)
+ Optimizer: Pivotal Optimizer (GPORCA)
 (17 rows)
 
 SELECT a.* FROM MPP_22019_a a INNER JOIN MPP_22019_b b ON a.i = b.i WHERE a.j NOT IN (SELECT j FROM MPP_22019_a a2 where a2.j = b.j) and a.i = 1;
@@ -734,16 +734,15 @@ INFO:  (slice 1) Dispatch command to PARTIAL contents: 1 2
 explain (costs off) select t1.gp_segment_id, t2.gp_segment_id, * from t_test_dd_via_segid t1, t_test_dd_via_segid t2 where t1.gp_segment_id=t2.id;
                                     QUERY PLAN                                     
 -----------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)
-   ->  Hash Join
-         Hash Cond: (t_test_dd_via_segid.gp_segment_id = t_test_dd_via_segid_1.id)
-         ->  Redistribute Motion 3:3  (slice2; segments: 3)
-               Hash Key: t_test_dd_via_segid.gp_segment_id
-               ->  Seq Scan on t_test_dd_via_segid
-         ->  Hash
+ Hash Join
+   Hash Cond: (t_test_dd_via_segid.gp_segment_id = t_test_dd_via_segid_1.id)
+   ->  Gather Motion 3:1  (slice1; segments: 3)
+         ->  Seq Scan on t_test_dd_via_segid
+   ->  Hash
+         ->  Gather Motion 3:1  (slice2; segments: 3)
                ->  Seq Scan on t_test_dd_via_segid t_test_dd_via_segid_1
  Optimizer: Pivotal Optimizer (GPORCA)
-(9 rows)
+(8 rows)
 
 select t1.gp_segment_id, t2.gp_segment_id, * from t_test_dd_via_segid t1, t_test_dd_via_segid t2 where t1.gp_segment_id=t2.id;
 INFO:  (slice 2) Dispatch command to ALL contents: 0 1 2

@@ -1621,22 +1621,24 @@ select t1.* from smallt as t1, smallt as t2 where t1.i = t2.i and t1.i < 2;
 explain analyze select t1.* from smallt as t1, smallt as t2 where t1.i = t2.i and t1.i < 2;
                                                          QUERY PLAN                                                          
 -----------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..862.02 rows=200 width=15) (actual time=1.423..1.484 rows=100 loops=2)
-   ->  Hash Join  (cost=0.00..862.01 rows=67 width=15) (actual time=0.289..1.208 rows=50 loops=2)
-         Hash Cond: smallt.i = smallt_1.i
-         Extra Text: (seg0)   Hash chain length 10.0 avg, 10 max, using 1 of 524288 buckets.
- 
-         ->  Seq Scan on smallt  (cost=0.00..431.00 rows=7 width=15) (actual time=0.002..0.007 rows=5 loops=2)
-               Filter: i < 2
-         ->  Hash  (cost=431.00..431.00 rows=7 width=4) (actual time=0.049..0.049 rows=5 loops=2)
-               ->  Seq Scan on smallt smallt_1  (cost=0.00..431.00 rows=7 width=4) (actual time=0.037..0.044 rows=5 loops=2)
-                     Filter: i < 2
-   (slice0)    Executor memory: 322K bytes.
-   (slice1)    Executor memory: 4182K bytes avg x 3 workers, 4182K bytes max (seg0).  Work_mem: 1K bytes max.
+ Hash Join  (cost=0.00..862.02 rows=200 width=15) (actual time=2.093..2.198 rows=200 loops=1)
+   Hash Cond: (smallt.i = smallt_1.i)
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=20 width=15) (actual time=0.013..0.021 rows=20 loops=1)
+         ->  Seq Scan on smallt  (cost=0.00..431.00 rows=7 width=15) (actual time=0.024..0.031 rows=20 loops=1)
+               Filter: (i < 2)
+   ->  Hash  (cost=431.00..431.00 rows=20 width=4) (actual time=1.697..1.698 rows=20 loops=1)
+         Buckets: 524288  Batches: 1  Memory Usage: 4097kB
+         ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=20 width=4) (actual time=1.660..1.669 rows=20 loops=1)
+               ->  Seq Scan on smallt smallt_1  (cost=0.00..431.00 rows=7 width=4) (actual time=0.036..0.046 rows=20 loops=1)
+                     Filter: (i < 2)
+ Planning Time: 28.538 ms
+   (slice0)    Executor memory: 4161K bytes.  Work_mem: 4097K bytes max.
+   (slice1)    Executor memory: 13K bytes avg x 3 workers, 13K bytes max (seg0).
+   (slice2)    Executor memory: 36K bytes avg x 3 workers, 36K bytes max (seg0).
  Memory used:  128000kB
- Optimizer: Pivotal Optimizer (GPORCA) version 2.74.0
- Total runtime: 3.631 ms
-(15 rows)
+ Optimizer: Pivotal Optimizer (GPORCA)
+ Execution Time: 3.023 ms
+(17 rows)
 
 select t1.* from smallt as t1, smallt as t2 where t1.d = t2.d and t1.i < 2;
  i |    t    |     d      
