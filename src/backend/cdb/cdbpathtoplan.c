@@ -48,14 +48,8 @@ cdbpathtoplan_create_flow(PlannerInfo *root,
 	}
 	else if (CdbPathLocus_IsSegmentGeneral(locus))
 	{
-		if (root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT){
-			flow = makeFlow(FLOW_REPLICATED, locus.numsegments);
-			flow->segindex = -1;
-		}
-		else {
-			flow = makeFlow(FLOW_SINGLETON, locus.numsegments);
-			flow->segindex = 0;
-		}
+		flow = makeFlow(FLOW_SINGLETON, locus.numsegments);
+		flow->segindex = 0;
 	}
 	else if (CdbPathLocus_IsReplicated(locus))
 	{

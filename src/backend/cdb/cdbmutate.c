@@ -600,8 +600,13 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 			{
 				if (plan->flow->flotype == FLOW_PARTITIONED || (plan->flow->flotype == FLOW_REPLICATED /*&& optimizer_enable_indexonlyscan*/) ||
 					(plan->flow->flotype == FLOW_SINGLETON &&
-					 (plan->flow->locustype == CdbLocusType_SegmentGeneral || plan->flow->locustype == CdbLocusType_SingleQE)))
+					 (plan->flow->locustype == CdbLocusType_SegmentGeneral)))
 					bringResultToDispatcher = true;
+				if (plan->flow->flotype == FLOW_REPLICATED){
+					plan->flow->locustype = CdbLocusType_SegmentGeneral;
+					plan->flow->segindex = 0;
+				}
+
 
 				needToAssignDirectDispatchContentIds = root->config->gp_enable_direct_dispatch;
 			}
