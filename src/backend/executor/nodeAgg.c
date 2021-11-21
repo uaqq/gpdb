@@ -1135,9 +1135,15 @@ agg_retrieve_direct(AggState *aggstate)
 
 	uint64      input_grouping = node->inputGrouping;
 	bool        input_has_grouping = node->inputHasGrouping;
-	bool        is_final_rollup_agg =
-		(node->lastAgg ||
-		 (input_has_grouping && node->numNullCols == 0));
+
+	/*
+	 * The final Agg node brings back all rollup results from different
+	 * segments. This node is very similar to the non-rollup Agg node, except
+	 * that we need a way to know this to properly set GROUPING value during
+	 * execution.
+	 */
+	bool        is_final_agg_over_rollup =
+		(input_has_grouping && node->numNullCols == 0);
 	bool        is_middle_rollup_agg =
 		(input_has_grouping && node->numNullCols > 0);
 
@@ -1421,7 +1427,6 @@ agg_retrieve_direct(AggState *aggstate)
 			/* finalize the pass-through tuple */
 			ResetExprContext(tmpcontext);
 			tmpcontext->ecxt_outertuple = outerslot;
-
 			advance_aggregates(aggstate, perpassthru, &(aggstate->mem_manager));
 		}
 
@@ -1470,27 +1475,25 @@ agg_retrieve_direct(AggState *aggstate)
 			econtext->ecxt_outertuple = firstSlot;
 
 		/*
-		 * We obtain GROUP_ID from the input tuples when this is
-		 * the middle Agg or final Agg in a ROLLUP.
+		 * Set GROUP_ID and GROUPING values.
+		 * We obtain these values from the input tuples when the node the middle
+		 * Agg in a ROLLUP or final Agg over it.
 		 */
-		if ((is_final_rollup_agg ||
-			(passthru_ready && is_middle_rollup_agg)) &&
-			input_has_grouping)
+		if (is_final_agg_over_rollup ||
+			(passthru_ready && is_middle_rollup_agg))
+		{
 			econtext->group_id =
 				get_grouping_groupid(econtext->ecxt_outertuple,
 									 node->grpColIdx[node->numCols-node->numNullCols-1]);
-		else
-			econtext->group_id = node->rollupGSTimes;
-
-		/* Set GROUPING value */
-		if ((is_final_rollup_agg ||
-			 (passthru_ready && is_middle_rollup_agg)) &&
-			input_has_grouping)
 			econtext->grouping =
 				get_grouping_groupid(econtext->ecxt_outertuple,
 									 node->grpColIdx[node->numCols-node->numNullCols-2]);
+		}
 		else
+		{
+			econtext->group_id = node->rollupGSTimes;
 			econtext->grouping = node->grouping;
+		}
 
 		/*
 		 * When some grouping columns do not appear in this Agg node,
@@ -1576,9 +1579,15 @@ agg_retrieve_hash_table(AggState *aggstate)
 	int			aggno;
 	Agg		   *node = (Agg *) aggstate->ss.ps.plan;
 	bool        input_has_grouping = node->inputHasGrouping;
-	bool        is_final_rollup_agg =
-		(node->lastAgg ||
-		 (input_has_grouping && node->numNullCols == 0));
+
+	/*
+	 * The final Agg node brings back all rollup results from different
+	 * segments. This node is very similar to the non-rollup Agg node, except
+	 * that we need a way to know this to properly set GROUPING value during
+	 * execution.
+	 */
+	bool        is_final_agg_over_rollup =
+		(input_has_grouping && node->numNullCols == 0);
 
 	/*
 	 * get state info from node
@@ -1639,7 +1648,7 @@ agg_retrieve_hash_table(AggState *aggstate)
 		 */
 		econtext->ecxt_outertuple = firstSlot;
 
-		if (is_final_rollup_agg && input_has_grouping)
+		if (is_final_agg_over_rollup)
 		{
 			econtext->group_id =
 				get_grouping_groupid(econtext->ecxt_outertuple,
