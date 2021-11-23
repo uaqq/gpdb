@@ -112,17 +112,17 @@ InsertInitialAOCSFileSegInfo(Relation prel, int4 segno, int4 nvp)
 
     segtup = heap_form_tuple(RelationGetDescr(segrel), values, nulls);
 
-    simple_heap_insert(segrel, segtup);
-    CatalogUpdateIndexes(segrel, segtup);
+	simple_heap_insert(segrel, segtup);
+	CatalogUpdateIndexes(segrel, segtup);
 
     heap_freetuple(segtup);
     heap_close(segrel, RowExclusiveLock);
 
-    CommandCounterIncrement();
+	CommandCounterIncrement();
 
-    pfree(vpinfo);
-    pfree(nulls);
-    pfree(values);
+	pfree(vpinfo);
+	pfree(nulls);
+	pfree(values);
 }
 
 /* 

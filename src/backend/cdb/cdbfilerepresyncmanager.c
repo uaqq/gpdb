@@ -1195,8 +1195,8 @@ FileRepPrimary_RunResyncManager(void)
 											   &entry.relFileNode, 
 											   AccessExclusiveLock);
 
-				if (Debug_filerep_print)
-					elog(LOG, "Not adding this entry to hash table %s", entry.fileName);
+				elog(LOG, "Not adding this entry to hash table %s", entry.fileName);
+
 				continue;
 		}
 
@@ -1856,20 +1856,27 @@ FileRepResync_UpdateEntry(
 		
 		Assert(fileRepResyncShmem->resyncInProgressCount >= 0);
 
+		elog(LOG, "FileRepResync_UpdateEntry() identifier:'%s' fileRepResyncState:'%d' "
+				  "resyncCompletedCount:'%d' relStorageMgr: '%s' "
+				  "mirrorDataSynchronizationState: '%s' TID: %s "
+				  "serial number: " INT64_FORMAT " mirrorAppendOnlyLossEof: " INT64_FORMAT " mirrorAppendOnlyNewEof: " INT64_FORMAT,
+			 entryLocal->fileName,
+			 entryLocal->fileRepResyncState,
+			 fileRepResyncShmem->resyncCompletedCount,
+			 PersistentFileSysRelStorageMgr_Name(entryLocal->relStorageMgr),
+			 MirroredRelDataSynchronizationState_Name(entryLocal->mirrorDataSynchronizationState),
+			 ItemPointerToString(&entryLocal->persistentTid),
+			 entryLocal->persistentSerialNum,
+			 entryLocal->mirrorAppendOnlyLossEof,
+			 entryLocal->mirrorAppendOnlyNewEof);
+
 	} else {
 		Assert(0);
 		status = STATUS_ERROR;
+		elog(WARNING, "FileRepResync_UpdateEntry(): could not find entry for identifier: '%s'",
+			 entry->fileName);
 	}
-
-	if (Debug_filerep_print)
-	{	
-		elog(LOG, "FileRepResync_UpdateEntry() identifier:'%s' state:'%d' resyncCompletedCount:'%d' ",
-			 entry->fileName,
-			 entry->fileRepResyncState,
-			 fileRepResyncShmem->resyncCompletedCount);
-	}
-	
 	FileRepResync_LockRelease();
-	
+
 	return status;
 }
