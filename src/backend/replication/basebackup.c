@@ -410,8 +410,8 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 			{
 				Assert(lnext(lc) == NULL);
 			}
-			else
-				pq_putemptymessage('c');		/* CopyDone */
+			//else
+				//pq_putemptymessage('c');		/* CopyDone */
 		}
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(base_backup_cleanup, (Datum) 0);

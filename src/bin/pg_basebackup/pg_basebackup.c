@@ -1899,7 +1899,7 @@ BaseBackup(const char *argv0)
 
 	if (showprogress && !verbose)
 		fprintf(stderr, "waiting for checkpoint\r");
-	streamwal = false;
+	//streamwal = false;
 	basebkp =
 		psprintf("BASE_BACKUP LABEL '%s' %s %s %s %s %s %s",
 				 escaped_label,
