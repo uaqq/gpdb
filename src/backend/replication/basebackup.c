@@ -228,7 +228,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 
 	startptr = do_pg_start_backup(opt->label, opt->fastcheckpoint, &starttli,
 								  &labelfile);
-	startptr = 600000000;
+	//startptr = 600000000;
 	Assert(!XLogRecPtrIsInvalid(startptr));
 
 	elogif(!debug_basebackup, LOG,
@@ -657,8 +657,131 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 		}
 
 		/* Send CopyDone message for the last tar file */
+		//pq_putemptymessage('c');
+	}
+	//----------------------------------------------------------
+	elogif(!debug_basebackup, LOG, "we are here");
+	if (true)
+	{
+		struct dirent *rlde;
+		char		XLogArchiveStatusDir[MAXPGPATH];
+		DIR		   *rldir;
+		List	   *walFileList = NIL;
+		char	  **walFiles;
+		int			nWalFiles;
+		char		pathbuf[MAXPGPATH];
+		int			i;
+		struct stat statbuf;
+		ListCell   *lc;
+
+		snprintf(XLogArchiveStatusDir, MAXPGPATH, XLOGDIR "/archive_status");
+		rldir = AllocateDir(XLogArchiveStatusDir);
+		if (rldir == NULL)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					errmsg("could not open archive status directory \"%s\": %m",
+							XLogArchiveStatusDir)));
+
+		while ((rlde = ReadDir(rldir, XLogArchiveStatusDir)) != NULL)
+		{
+			int			basenamelen = (int) strlen(rlde->d_name) - 6;
+
+			if (basenamelen >= MIN_XFN_CHARS &&
+				basenamelen <= MAX_XFN_CHARS &&
+				strspn(rlde->d_name, "0123456789ABCDEF") >= basenamelen &&
+				strcmp(rlde->d_name + basenamelen, ".ready") == 0)
+			{
+				rlde->d_name[strlen(rlde->d_name) - 6] = '\0';
+				//elog(WARNING, 'sending %s', rlde->d_name);				
+				walFileList = lappend(walFileList, pstrdup(rlde->d_name));
+			}
+		}
+		FreeDir(rldir);
+
+		nWalFiles = list_length(walFileList);
+		walFiles = palloc(nWalFiles * sizeof(char *));
+		i = 0;
+		foreach(lc, walFileList)
+		{
+			walFiles[i++] = lfirst(lc);
+			//elogif(!debug_basebackup, LOG, 'sending %s', walFiles[i -1]);
+		}
+		qsort(walFiles, nWalFiles, sizeof(char *), compareWalFileNames);
+
+		for (i = 0; i < nWalFiles; i++)
+		{
+			FILE	   *fp;
+			char		buf[TAR_SEND_SIZE];
+			size_t		cnt;
+			pgoff_t		len = 0;
+
+			snprintf(pathbuf, MAXPGPATH, XLOGDIR "/%s", walFiles[i]);
+
+			fp = AllocateFile(pathbuf, "rb");
+			if (fp == NULL)
+			{
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not open file \"%s\": %m", pathbuf)));
+			}
+
+			if (fstat(fileno(fp), &statbuf) != 0)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not stat file \"%s\": %m",
+								pathbuf)));
+			/*if (statbuf.st_size != XLogSegSize)
+			{
+				ereport(ERROR,
+						(errcode_for_file_access(),
+					errmsg("unexpected WAL file size \"%s\"", walFiles[i])));
+			}*/
+
+			/* send the WAL file itself */
+			_tarWriteHeader(pathbuf, NULL, &statbuf);
+
+			while ((cnt = fread(buf, 1, Min(sizeof(buf), XLogSegSize - len), fp)) > 0)
+			{
+				/* Send the chunk as a CopyData message */
+				if (pq_putmessage('d', buf, cnt))
+					ereport(ERROR,
+							(errmsg("base backup could not send data, aborting backup")));
+
+				len += cnt;
+				throttle(cnt);
+
+				if (len == XLogSegSize)
+					break;
+			}
+
+			/*if (len != XLogSegSize)
+			{
+				ereport(ERROR,
+						(errcode_for_file_access(),
+					errmsg("unexpected WAL file size \"%s\"", walFiles[i])));
+			}*/
+
+			elogif(!debug_basebackup, LOG,
+				   "basebackup perform -- Sent xlog file %s", walFiles[i]);
+
+			/* XLogSegSize is a multiple of 512, so no need for padding */
+
+			FreeFile(fp);
+
+			/*
+			 * Mark file as archived, otherwise files can get archived again
+			 * after promotion of a new node. This is in line with
+			 * walreceiver.c always doing a XLogArchiveForceDone() after a
+			 * complete segment.
+			 */
+			StatusFilePath(pathbuf, walFiles[i], ".done");
+			sendFileWithContent(pathbuf, "");
+		}
+
+		/* Send CopyDone message for the last tar file */
 		pq_putemptymessage('c');
 	}
+	//----------------------------------------------------------
 	SendXlogRecPtrResult(endptr, endtli);
 }
 
