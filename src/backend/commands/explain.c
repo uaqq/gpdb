@@ -1247,6 +1247,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			 */
 			scaleFactor = CdbPathLocus_NumSegments(*(plan->flow));
 		}
+		else if (plan->flow == NULL && plan->motionNode == NULL)
+		{
+			scaleFactor = 1.0;
+		}
 		else
 		{
 			/*
