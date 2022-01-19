@@ -244,6 +244,12 @@ CPhysicalSequence::PdsRequired(CMemoryPool *mp,
 		return GPOS_NEW(mp) CDistributionSpecSingleton(pdss->Est());
 	}
 
+	if (CDistributionSpec::EdtStrictReplicated == pds->Edt())
+	{
+		return GPOS_NEW(mp) CDistributionSpecSingleton(
+			CDistributionSpecSingleton::EstSegment);
+	}
+
 	if (CDistributionSpec::EdtUniversal == pds->Edt())
 	{
 		// first child is universal, impose no requirements on second child
