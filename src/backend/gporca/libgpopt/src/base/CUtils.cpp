@@ -4343,7 +4343,17 @@ CUtils::ValidateCTEProducerConsumerLocality(
 	// since the child of Gather motion executes on segments
 	else if (COperator::EopPhysicalMotionGather == pop->Eopid())
 	{
-		eelt = EeltSegments;
+		CDrvdPropPlan *pdpplanChild = CDrvdPropPlan::Pdpplan((*pexpr)[0]->PdpDerive());
+		CDistributionSpec *pdsChild = pdpplanChild->Pds();
+		
+		if (CDistributionSpec::EdtSingleton == pdsChild->Edt())
+		{
+			eelt = EeltSingleton;
+		}
+		else
+		{
+			eelt = EeltSegments;
+		}
 	}
 	else if (COperator::EopPhysicalMotionHashDistribute == pop->Eopid() ||
 			 COperator::EopPhysicalMotionRandom == pop->Eopid() ||
