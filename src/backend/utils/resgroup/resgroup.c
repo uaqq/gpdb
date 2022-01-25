@@ -69,6 +69,7 @@
 #include "utils/session_state.h"
 #include "utils/tqual.h"
 #include "utils/vmem_tracker.h"
+#include "access/xact.h"
 
 #define InvalidSlotId	(-1)
 #define RESGROUP_MAX_SLOTS	(MaxConnections)
@@ -314,7 +315,7 @@ static int32 mempoolAutoReserve(ResGroupData *group, const ResGroupCaps *caps);
 static ResGroupData *groupHashNew(Oid groupId);
 static ResGroupData *groupHashFind(Oid groupId, bool raise);
 static ResGroupData *groupHashRemove(Oid groupId);
-static void waitOnGroup(ResGroupData *group, bool isMoveQuery);
+static void waitOnGroup(ResGroupData *group);
 static ResGroupData *createGroup(Oid groupId, const ResGroupCaps *caps);
 static void removeGroup(Oid groupId);
 static void AtProcExit_ResGroup(int code, Datum arg);
@@ -1913,6 +1914,12 @@ groupAcquireSlot(ResGroupInfo *pGroupInfo, bool isMoveQuery)
 		}
 	}
 
+	/* don't wait for a slot when target process prepares moving */
+	if (isMoveQuery) {
+		LWLockRelease(ResGroupLock);
+		return NULL;
+	}
+
 	/*
 	 * Add into group wait queue (if not waiting yet).
 	 */
@@ -1929,7 +1936,7 @@ groupAcquireSlot(ResGroupInfo *pGroupInfo, bool isMoveQuery)
 	 * if i am waken up by DROP RESOURCE GROUP statement, the
 	 * resSlot will be NULL.
 	 */
-	waitOnGroup(group, isMoveQuery);
+	waitOnGroup(group);
 
 	if (MyProc->resSlot == NULL)
 		return NULL;
@@ -2870,7 +2877,7 @@ SwitchResGroupOnSegment(const char *buf, int len)
  * Wait on the queue of resource group
  */
 static void
-waitOnGroup(ResGroupData *group, bool isMoveQuery)
+waitOnGroup(ResGroupData *group)
 {
 	int64 timeout = -1;
 	int64 curTime;
@@ -2882,7 +2889,7 @@ waitOnGroup(ResGroupData *group, bool isMoveQuery)
 	const char *queueStr = " queuing";
 
 	Assert(!LWLockHeldExclusiveByMe(ResGroupLock));
-	Assert(!selfIsAssigned() || isMoveQuery);
+	Assert(!selfIsAssigned());
 
 	pgstat_report_resgroup(GetCurrentTimestamp(), group->groupId);
 
@@ -4607,38 +4614,157 @@ SessionGetResGroupGlobalShareMemUsage(SessionState *session)
 	}
 }
 
+static bool
+hasEnoughMemory(int32 memUsed, int32 availMem)
+{
+	return memUsed < availMem;
+}
+
+/*
+ * Check if there are enough memory to move the query to the destination group
+ */
+void
+MoveQueryCheck(int sessionId, Oid groupId)
+{
+	char *cmd;
+	CdbPgResults cdb_pgresults = {NULL, 0};
+	int32 sessionMem = ResGroupGetSessionMemUsage(sessionId);
+	int32 availMem = ResGroupGetGroupAvailableMem(groupId);
+
+	if (sessionMem < 0)
+		elog(ERROR, "the process to move has ended");
+
+	if (!hasEnoughMemory(sessionMem, availMem))
+		elog(ERROR, "group %d doesn't have enough memory on master, expect:%d, available:%d", groupId, sessionMem, availMem);
+
+	cmd = psprintf("SELECT session_mem, available_mem from gp_toolkit.pg_resgroup_check_move_query(%d, %d)", sessionId, groupId);
+
+	CdbDispatchCommand(cmd, DF_WITH_SNAPSHOT, &cdb_pgresults);
+
+	for (int i = 0; i < cdb_pgresults.numResults; i++)
+	{
+		int i_session_mem;
+		int i_available_mem;
+		struct pg_result *pgresult = cdb_pgresults.pg_results[i];
+		if (PQresultStatus(pgresult) != PGRES_TUPLES_OK)
+		{
+			cdbdisp_clearCdbPgResults(&cdb_pgresults);
+			elog(ERROR, "pg_resgroup_check_move_query: resultStatus not tuples_Ok: %s %s",
+				 PQresStatus(PQresultStatus(pgresult)), PQresultErrorMessage(pgresult));
+		}
+
+		Assert(PQntuples(pgresult) == 1);
+		i_session_mem = PQfnumber(pgresult, "session_mem");
+		i_available_mem = PQfnumber(pgresult, "available_mem");
+		Assert(!PQgetisnull(pgresult, 0, i_session_mem));
+		Assert(!PQgetisnull(pgresult, 0, i_available_mem));
+		sessionMem = pg_atoi(PQgetvalue(pgresult, 0, i_session_mem), sizeof(int32), 0);
+		availMem = pg_atoi(PQgetvalue(pgresult, 0, i_available_mem), sizeof(int32), 0);
+		if (sessionMem <= 0)
+			continue;
+		if (!hasEnoughMemory(sessionMem, availMem))
+			elog(ERROR, "group %d doesn't have enough memory on segment, expect:%d, available:%d", groupId, sessionMem, availMem);
+	}
+
+	cdbdisp_clearCdbPgResults(&cdb_pgresults);
+}
+
+void
+HandleMoveResourceGroup(void)
+{
+	if (!IsTransactionState() || !selfIsAssigned())
+	{
+		elog(WARNING,
+			"can't move process to another group at current xact state");
+		return;
+	}
+	
+	MyProc->movetoGroupPending = true;
+	InterruptPending = true;
+}
+
 /*
  * move a proc to a resource group
  */
 void
-HandleMoveResourceGroup(void)
+MoveResourceGroup(void)
 {
 	ResGroupSlotData *slot;
+	Oid groupId;
 	ResGroupData *group;
-	ResGroupData *oldGroup;
 
 	/* transaction has finished */
-	if (!selfIsAssigned())
+	if (!IsTransactionState() || !selfIsAssigned())
+	{
+		elog(WARNING,
+			"can't move process to another group at current xact state");
 		return;
+	}
+
+	groupId = MyProc->movetoGroupId;
+	MyProc->movetoGroupId = InvalidOid;
+	Assert(groupId != InvalidOid);
 
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
-		slot = (ResGroupSlotData *)MyProc->movetoResSlot;
-		group = slot->group;
-		MyProc->movetoResSlot = NULL;
+		ResGroupInfo groupInfo;
+		char *cmd;
+
+		LWLockAcquire(ResGroupLock, LW_SHARED);
+		group = groupHashFind(groupId, false);
+		LWLockRelease(ResGroupLock);
+		if (!group)
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					(errmsg("can't find group id: %d", groupId))));
+			return;
+		}
+
+		groupInfo.group = group;
+		groupInfo.groupId = groupId;
+		slot = groupAcquireSlot(&groupInfo, true);
+		if (!slot)
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+					(errmsg("cannot get slot in resource group %d", groupId))));
+			return;
+		}
+
+		PG_TRY();
+		{
+			SIMPLE_FAULT_INJECTOR("resource_group_move_handler_try1");
+			
+			MoveQueryCheck(MyProc->mppSessionId, groupId);
+
+			cmd = psprintf("SELECT gp_toolkit.pg_resgroup_move_query(%d, %d)",
+					MyProc->mppSessionId,
+					groupId);
+			CdbDispatchCommand(cmd, 0, NULL);
+		}
+		PG_CATCH();
+		{
+			LWLockAcquire(ResGroupLock, LW_EXCLUSIVE);
+			groupReleaseSlot(group, slot, true);
+			LWLockRelease(ResGroupLock);
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
 
 		/* unassign the old resource group and release the old slot */
 		UnassignResGroup(true);
 
+		sessionSetSlot(slot);
+		/* Add proc memory accounting info into group and slot */
+		selfAttachResGroup(group, slot);
+
+		/* Init self */
+		self->caps = slot->caps;
+
 		PG_TRY();
 		{
-			sessionSetSlot(slot);
-
-			/* Add proc memory accounting info into group and slot */
-			selfAttachResGroup(group, slot);
-
-			/* Init self */
-			self->caps = slot->caps;
+			SIMPLE_FAULT_INJECTOR("resource_group_move_handler_try2");
 
 			/* Add into cgroup */
 			ResGroupOps_AssignGroup(self->groupId, &(self->caps), MyProcPid);
@@ -4649,13 +4775,14 @@ HandleMoveResourceGroup(void)
 			PG_RE_THROW();
 		}
 		PG_END_TRY();
+
 		pgstat_report_resgroup(0, self->groupId);
+		elog(NOTICE, "process moved to another group");
 	}
 	else if (Gp_role == GP_ROLE_EXECUTE)
 	{
-		Oid groupId = MyProc->movetoGroupId;
-		MyProc->movetoGroupId = InvalidOid;
-
+		ResGroupData *oldGroup;
+		
 		slot = sessionGetSlot();
 		Assert(slot != NULL);
 
@@ -4711,112 +4838,6 @@ HandleMoveResourceGroup(void)
 	}
 }
 
-static bool
-hasEnoughMemory(int32 memUsed, int32 availMem)
-{
-	return memUsed < availMem;
-}
-
-/*
- * Check if there are enough memory to move the query to the destination group
- */
-static void
-moveQueryCheck(int sessionId, Oid groupId)
-{
-	char *cmd;
-	CdbPgResults cdb_pgresults = {NULL, 0};
-	int32 sessionMem = ResGroupGetSessionMemUsage(sessionId);
-	int32 availMem = ResGroupGetGroupAvailableMem(groupId);
-
-	if (sessionMem < 0)
-		elog(ERROR, "the process to move has ended");
-
-	if (!hasEnoughMemory(sessionMem, availMem))
-		elog(ERROR, "group %d doesn't have enough memory on master, expect:%d, available:%d", groupId, sessionMem, availMem);
-
-	cmd = psprintf("SELECT session_mem, available_mem from gp_toolkit.pg_resgroup_check_move_query(%d, %d)", sessionId, groupId);
-
-	CdbDispatchCommand(cmd, DF_WITH_SNAPSHOT, &cdb_pgresults);
-
-	for (int i = 0; i < cdb_pgresults.numResults; i++)
-	{
-		int i_session_mem;
-		int i_available_mem;
-		struct pg_result *pgresult = cdb_pgresults.pg_results[i];
-		if (PQresultStatus(pgresult) != PGRES_TUPLES_OK)
-		{
-			cdbdisp_clearCdbPgResults(&cdb_pgresults);
-			elog(ERROR, "pg_resgroup_check_move_query: resultStatus not tuples_Ok: %s %s",
-				 PQresStatus(PQresultStatus(pgresult)), PQresultErrorMessage(pgresult));
-		}
-
-		Assert(PQntuples(pgresult) == 1);
-		i_session_mem = PQfnumber(pgresult, "session_mem");
-		i_available_mem = PQfnumber(pgresult, "available_mem");
-		Assert(!PQgetisnull(pgresult, 0, i_session_mem));
-		Assert(!PQgetisnull(pgresult, 0, i_available_mem));
-		sessionMem = pg_atoi(PQgetvalue(pgresult, 0, i_session_mem), sizeof(int32), 0);
-		availMem = pg_atoi(PQgetvalue(pgresult, 0, i_available_mem), sizeof(int32), 0);
-		if (sessionMem <= 0)
-			continue;
-		if (!hasEnoughMemory(sessionMem, availMem))
-			elog(ERROR, "group %d doesn't have enough memory on segment, expect:%d, available:%d", groupId, sessionMem, availMem);
-	}
-
-	cdbdisp_clearCdbPgResults(&cdb_pgresults);
-}
-
-void
-ResGroupMoveQuery(int sessionId, Oid groupId, const char *groupName)
-{
-	ResGroupInfo groupInfo;
-	ResGroupData *group;
-	ResGroupSlotData *slot;
-	char *cmd;
-
-	Assert(pResGroupControl != NULL);
-	Assert(pResGroupControl->segmentsOnMaster > 0);
-	Assert(Gp_role == GP_ROLE_DISPATCH);
-
-	LWLockAcquire(ResGroupLock, LW_SHARED);
-	group = groupHashFind(groupId, false);
-	if (!group)
-	{
-		LWLockRelease(ResGroupLock);
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 (errmsg("invalid resource group id: %d", groupId))));
-	}
-	LWLockRelease(ResGroupLock);
-
-	groupInfo.group = group;
-	groupInfo.groupId = groupId;
-	slot = groupAcquireSlot(&groupInfo, true);
-	if (slot == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
-				 (errmsg("cannot get slot in resource group %d", groupId))));
-
-	PG_TRY();
-	{
-		moveQueryCheck(sessionId, groupId);
-
-		ResGroupSignalMoveQuery(sessionId, slot, groupId);
-
-		cmd = psprintf("SELECT gp_toolkit.pg_resgroup_move_query(%d, %s)",
-				sessionId,
-				quote_literal_cstr(groupName));
-		CdbDispatchCommand(cmd, 0, NULL);
-	}
-	PG_CATCH();
-	{
-		LWLockAcquire(ResGroupLock, LW_EXCLUSIVE);
-		groupReleaseSlot(group, slot, true);
-		LWLockRelease(ResGroupLock);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-}
 /*
  * get resource group id by session id
  */

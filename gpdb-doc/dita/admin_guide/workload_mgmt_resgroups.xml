@@ -1075,6 +1075,9 @@ gpstart
         (pid) of the running query, as well as the name of the resource group
         to which you want to move the query. The signature of the function follows:</p>
       <codeblock>pg_resgroup_move_query( pid int4, group_name text );</codeblock>
+      <p>Additionally, you can use overloaded version of <codeph>pg_resgroup_move_query()</codeph>,
+        which takes group oid as second argument.</p>
+      <codeblock>pg_resgroup_move_query( pid int4, group_oid oid );</codeblock>
       <p>You can obtain the pid of a running query from the
         <codeph>pg_stat_activity</codeph> system view as described in
         <xref href="#topic27" type="topic" format="dita"/>. Use the
@@ -1104,6 +1107,10 @@ gpstart
         query to the destination resource group. Greenplum Database assigns
         subsequent queries that you submit in the session to the original
         resource group.</p>
+      <p>The moving of query is not a synchronous operation. The target process
+      will move itself to a new group only if it will be safe (inside next
+      <codeph>CHECK_FOR_INTERRUPTS()</codeph> call). To get the group used currently,
+      you can use <codeph>pg_stat_activity</codeph> system view.</p>
       <note>Greenplum Database version 6.8 introduced support for moving a query
         to a different resource group.<ul>
         <li>If you upgraded from a previous Greenplum 6.x installation, you must
@@ -1119,7 +1126,14 @@ CREATE FUNCTION gp_toolkit.pg_resgroup_move_query(session_id int4, groupid text)
 RETURNS bool
 AS 'gp_resource_group', 'pg_resgroup_move_query'
 VOLATILE LANGUAGE C;
-GRANT EXECUTE ON FUNCTION gp_toolkit.pg_resgroup_move_query(int4, text) TO public;</codeblock></li>
+GRANT EXECUTE ON FUNCTION gp_toolkit.pg_resgroup_move_query(int4, text) TO public;
+
+CREATE FUNCTION gp_toolkit.pg_resgroup_move_query(session_id int4, groupid oid)
+RETURNS bool
+AS 'gp_resource_group', 'pg_resgroup_move_query_by_oid'
+VOLATILE LANGUAGE C;
+
+GRANT EXECUTE ON FUNCTION gp_toolkit.pg_resgroup_move_query(int4, oid) TO public;</codeblock></li>
         <li>If you register the supporting functions and then you downgrade
           your Greenplum Database installation to version 6.7.x or older,
           manually drop these functions as follows:

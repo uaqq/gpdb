@@ -3997,6 +3997,12 @@ ProcessInterrupts(const char* filename, int lineno)
 						 errmsg("canceling statement due to user request")));
 		}
 	}
+
+	if (MyProc->movetoGroupPending)
+	{
+		MyProc->movetoGroupPending = false;
+		MoveResourceGroup();
+	}
 	/* If we get here, do nothing (probably, QueryCancelPending was reset) */
 }
 

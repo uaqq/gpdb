@@ -1946,6 +1946,13 @@ VOLATILE LANGUAGE C;
 
 GRANT EXECUTE ON FUNCTION gp_toolkit.pg_resgroup_move_query(int4, text) TO public;
 
+CREATE FUNCTION gp_toolkit.pg_resgroup_move_query(session_id int4, groupid oid)
+RETURNS bool
+AS 'gp_resource_group', 'pg_resgroup_move_query_by_oid'
+VOLATILE LANGUAGE C;
+
+GRANT EXECUTE ON FUNCTION gp_toolkit.pg_resgroup_move_query(int4, oid) TO public;
+
 --------------------------------------------------------------------------------
 -- AO/CO diagnostics functions
 --------------------------------------------------------------------------------

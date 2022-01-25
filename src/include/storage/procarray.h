@@ -106,6 +106,6 @@ extern void ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 								TransactionId *catalog_xmin);
 extern DistributedTransactionId LocalXidGetDistributedXid(TransactionId xid);
 extern int GetSessionIdByPid(int pid);
-extern void ResGroupSignalMoveQuery(int sessionId, void *slot, Oid groupId);
+extern bool ResGroupSignalMoveQuery(int sessionId, Oid groupId);
 
 #endif   /* PROCARRAY_H */

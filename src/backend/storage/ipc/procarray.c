@@ -455,6 +455,7 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid, bool lockHeld)
 		pgxact->delayChkpt = false;		/* be sure this is cleared in abort */
 		proc->recoveryConflictPending = false;
 		proc->serializableIsoLevel = false;
+		proc->movetoGroupPending = false;
 
 		/* Clear the subtransaction-XID cache too while holding the lock */
 		pgxact->nxids = 0;
@@ -484,6 +485,7 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid, bool lockHeld)
 		pgxact->delayChkpt = false;		/* be sure this is cleared in abort */
 		proc->recoveryConflictPending = false;
 		proc->serializableIsoLevel = false;
+		proc->movetoGroupPending = false;
 
 		Assert(pgxact->nxids == 0);
 		Assert(pgxact->overflowed == false);
@@ -4929,12 +4931,20 @@ GetSessionIdByPid(int pid)
  * Set the destination group slot or group id in PGPROC, and send a signal to the proc.
  * slot is NULL on QE.
  */
-void
-ResGroupSignalMoveQuery(int sessionId, void *slot, Oid groupId)
+bool
+ResGroupSignalMoveQuery(int sessionId, Oid groupId)
 {
 	pid_t pid;
 	BackendId backendId;
 	ProcArrayStruct *arrayP = procArray;
+	bool sent = false;
+
+	Assert(groupId != InvalidOid);
+
+	SIMPLE_FAULT_INJECTOR("resource_group_move_signal");
+
+	if (Gp_role != GP_ROLE_DISPATCH && Gp_role != GP_ROLE_EXECUTE)
+		return false;
 
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 	for (int i = 0; i < arrayP->numProcs; i++)
@@ -4945,22 +4955,18 @@ ResGroupSignalMoveQuery(int sessionId, void *slot, Oid groupId)
 
 		pid = proc->pid;
 		backendId = proc->backendId;
+		proc->movetoGroupId = groupId;
+		if (SendProcSignal(pid, PROCSIG_RESOURCE_GROUP_MOVE_QUERY, backendId))
+			continue;
+		sent = true;
+		/*
+		 * don't break for executors, need to signal all the procs of this
+		 * session
+		 */
 		if (Gp_role == GP_ROLE_DISPATCH)
-		{
-			Assert(proc->movetoResSlot == NULL);
-			Assert(slot != NULL);
-			proc->movetoResSlot = slot;
-			SendProcSignal(pid, PROCSIG_RESOURCE_GROUP_MOVE_QUERY, backendId);
 			break;
-		}
-		else if (Gp_role == GP_ROLE_EXECUTE)
-		{
-			Assert(groupId != InvalidOid);
-			Assert(proc->movetoGroupId == InvalidOid);
-			proc->movetoGroupId = groupId;
-			SendProcSignal(pid, PROCSIG_RESOURCE_GROUP_MOVE_QUERY, backendId);
-			/* don't break, need to signal all the procs of this session */
-		}
 	}
 	LWLockRelease(ProcArrayLock);
+
+	return sent;
 }

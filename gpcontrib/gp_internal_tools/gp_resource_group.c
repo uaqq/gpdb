@@ -30,9 +30,11 @@ PG_MODULE_MAGIC;
 
 extern Datum pg_resgroup_check_move_query(PG_FUNCTION_ARGS);
 extern Datum pg_resgroup_move_query(PG_FUNCTION_ARGS);
+extern Datum pg_resgroup_move_query_by_oid(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(pg_resgroup_check_move_query);
 PG_FUNCTION_INFO_V1(pg_resgroup_move_query);
+PG_FUNCTION_INFO_V1(pg_resgroup_move_query_by_oid);
 
 Datum
 pg_resgroup_check_move_query(PG_FUNCTION_ARGS)
@@ -61,34 +63,25 @@ pg_resgroup_check_move_query(PG_FUNCTION_ARGS)
 /*
  * move a query to a resource group
  */
-Datum
-pg_resgroup_move_query(PG_FUNCTION_ARGS)
+static Datum
+pg_resgroup_move_query_internal(PG_FUNCTION_ARGS, Oid groupId)
 {
 	int sessionId;
-	Oid groupId;
-	const char *groupName;
-
+	
 	if (!IsResGroupEnabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 (errmsg("resource group is not enabled"))));
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to move query"))));
-
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		Oid currentGroupId;
 		pid_t pid = PG_GETARG_INT32(0);
-		groupName = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
-		groupId = GetResGroupIdForName(groupName);
-		if (groupId == InvalidOid)
+		if (!superuser())
 			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_OBJECT),
-					 (errmsg("cannot find resource group: %s", groupName))));
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 (errmsg("must be superuser to move query"))));
 
 		sessionId = GetSessionIdByPid(pid);
 		if (sessionId == -1)
@@ -104,16 +97,53 @@ pg_resgroup_move_query(PG_FUNCTION_ARGS)
 		if (currentGroupId == groupId)
 			PG_RETURN_BOOL(true);
 
-		ResGroupMoveQuery(sessionId, groupId, groupName);
+		MoveQueryCheck(sessionId, groupId);
+
+		if (!ResGroupSignalMoveQuery(sessionId, groupId))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 (errmsg("can't send signal; is target process alive?"))));
 	}
 	else if (Gp_role == GP_ROLE_EXECUTE)
 	{
 		sessionId = PG_GETARG_INT32(0);
-		groupName = text_to_cstring(PG_GETARG_TEXT_PP(1));
-		groupId = GetResGroupIdForName(groupName);
-		Assert(groupId != InvalidOid);
-		ResGroupSignalMoveQuery(sessionId, NULL, groupId);
+		/*
+		 * no need to interrupt the whole execution here, 
+		 * do the best on another executors
+		 */
+		if (!ResGroupSignalMoveQuery(sessionId, groupId))
+			ereport(WARNING,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 (errmsg("can't send signal; is target process alive?"))));
 	}
 
 	PG_RETURN_BOOL(true);
+}
+
+Datum
+pg_resgroup_move_query(PG_FUNCTION_ARGS)
+{
+	const char *groupName = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	Oid groupId;
+
+	groupId = GetResGroupIdForName(groupName);
+	if (groupId == InvalidOid)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+					(errmsg("cannot find resource group: %s", groupName))));
+	
+	return pg_resgroup_move_query_internal(fcinfo, groupId);
+}
+
+Datum
+pg_resgroup_move_query_by_oid(PG_FUNCTION_ARGS)
+{
+	Oid groupId = PG_GETARG_OID(1);
+
+	if (!GetResGroupNameForId(groupId))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+					(errmsg("cannot find resource group by given oid"))));
+	
+	return pg_resgroup_move_query_internal(fcinfo, groupId);
 }

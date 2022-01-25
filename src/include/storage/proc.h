@@ -187,8 +187,8 @@ struct PGPROC
 	void		*resSlot;	/* the resource group slot granted.
 							 * NULL indicates the resource group is
 							 * locked for drop. */
-	void		*movetoResSlot; /* the resource group slot move to, valid only on QD */
 	Oid			movetoGroupId;  /* the resource group id move to */
+	bool		movetoGroupPending; /* interruption flag for group moving */
 
 	/* Per-backend LWLock.  Protects fields below. */
 	LWLock	   *backendLock;	/* protects the fields below */
