@@ -6021,3 +6021,8 @@ disable_client_wait_timeout_interrupt(void)
 	if (DoingCommandRead)
 		DisableClientWaitTimeoutInterrupt();
 }
+
+inline bool
+CancelRequested() {
+	return InterruptPending && (ProcDiePending || QueryCancelPending);
+}
