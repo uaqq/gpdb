@@ -1084,7 +1084,18 @@ gpstart
         subject to the limits configured for the destination resource group:</p>
       <ul>
         <li>If the group has already reached its concurrent task limit,
-          Greenplum Database queues the query until a slot opens.</li>
+          Greenplum Database queues the query until a slot opens or for
+          <codeph>gp_resource_group_queuing_timeout</codeph> milliseconds if set.</li>
+        <li>If the group has a free slot, <codeph>pg_resgroup_move_query()</codeph> tries
+          to give slot control away to the target process for up to
+          <codeph>gp_resource_group_move_timeout</codeph> milliseconds. If target process
+          can't handle movement request until <codeph>gp_resource_group_queuing_timeout</codeph>
+          exceeds, Greenplum Database returns the error:
+          <codeph>target process failed to move to a new group</codeph></li>
+        <li>If <codeph>pg_resgroup_move_query()</codeph> was cancelled, but target process
+          already got all slot control, then segment's processes will not be moved to new group.
+          Such inconsistent state will be fixed by the end of transaction or by the any next
+          command dispatched by target process inside same transaction.</li>
         <li>If the destination resource group does not have enough memory
           available to service the query's current memory requirements,
           Greenplum Database returns the error: 
@@ -1104,6 +1115,10 @@ gpstart
         query to the destination resource group. Greenplum Database assigns
         subsequent queries that you submit in the session to the original
         resource group.</p>
+      <p>Successful return of <codeph>pg_resgroup_move_query()</codeph>
+        doesn't mean target process was successfully moved. Process movement
+        is asynchronous. The current resource group can be checked via
+        <codeph>pg_stat_activity</codeph> system view.</p>
       <note>Greenplum Database version 6.8 introduced support for moving a query
         to a different resource group.<ul>
         <li>If you upgraded from a previous Greenplum 6.x installation, you must
