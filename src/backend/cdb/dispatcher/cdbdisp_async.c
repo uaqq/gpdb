@@ -483,6 +483,11 @@ checkDispatchResult(CdbDispatcherState *ds, int timeout_sec)
 		if (proc_exit_inprogress)
 			break;
 
+		/*
+		 * Current loop might last for the long time so check on interrupts.
+		 * If error will be thrown then ordinarily cancel all activities on
+		 * segments and re-throw this error at the end of current function.
+		 */
 		PG_TRY();
 		{
 			CHECK_FOR_INTERRUPTS();
