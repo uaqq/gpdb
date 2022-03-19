@@ -106,7 +106,11 @@
 #include "cdb/memquota.h"
 #include "cdb/cdbtargeteddispatch.h"
 #include "cdb/cdbutil.h"
+#include "cdb/cdbendpoint.h"
 
+#define IS_PARALLEL_RETRIEVE_CURSOR(queryDesc)	(queryDesc->ddesc &&	\
+										queryDesc->ddesc->parallelCursorName &&	\
+										strlen(queryDesc->ddesc->parallelCursorName) > 0)
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -206,6 +210,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	GpExecIdentity exec_identity;
 	bool		shouldDispatch;
 	bool		needDtx;
+	List 		*toplevelOidCache = NIL;
 
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
@@ -581,11 +586,16 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 			 *
 			 * For details please see github issue https://github.com/greenplum-db/gpdb/issues/10760
 			 */
-			List *toplevelOidCache = NIL;
 			if (queryDesc->ddesc != NULL)
 			{
 				queryDesc->ddesc->sliceTable = estate->es_sliceTable;
-				toplevelOidCache = GetAssignedOidsForDispatch();
+				/*
+				 * For CTAS querys that contain initplan, we need to copy a new oid dispatch list,
+				 * since the preprocess_initplan will start a subtransaction, and if it's rollbacked,
+				 * the memory context of 'Oid dispatch context' will be reset, which will cause invalid
+				 * list reference during the serialization of dispatch_oids when dispatching plan.
+				 */
+				toplevelOidCache = copyObject(GetAssignedOidsForDispatch());
 			}
 
 			/*
@@ -640,6 +650,12 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 				CdbDispatchPlan(queryDesc,
 								estate->es_param_exec_vals,
 								needDtx, true);
+			}
+
+			if (toplevelOidCache != NIL)
+			{
+				list_free(toplevelOidCache);
+				toplevelOidCache = NIL;
 			}
 		}
 
@@ -701,6 +717,11 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 	PG_CATCH();
 	{
+		if (toplevelOidCache != NIL)
+		{
+			list_free(toplevelOidCache);
+			toplevelOidCache = NIL;
+		}
 		mppExecutorCleanup(queryDesc);
 		PG_RE_THROW();
 	}
@@ -773,6 +794,8 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	DestReceiver *dest;
 	bool		sendTuples;
 	MemoryContext oldcontext;
+	bool		endpointCreated = false;
+
 	/*
 	 * NOTE: Any local vars that are set in the PG_TRY block and examined in the
 	 * PG_CATCH block should be declared 'volatile'. (setjmp shenanigans)
@@ -892,22 +915,60 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		}
 		else if (exec_identity == GP_ROOT_SLICE)
 		{
+			DestReceiver *endpointDest;
+
 			/*
-			 * Run a root slice
-			 * It corresponds to the "normal" path through the executor
-			 * in that we enter the plan at the top and count on the
-			 * motion nodes at the fringe of the top slice to return
-			 * without ever calling nodes below them.
+			 * When run a root slice, and it is a PARALLEL RETRIEVE CURSOR, it means
+			 * QD become the end point for connection. It is true, for
+			 * instance, SELECT * FROM foo LIMIT 10, and the result should
+			 * go out from QD.
+			 *
+			 * For the scenario: endpoint on QE, the query plan is changed,
+			 * the root slice also exists on QE.
 			 */
-			ExecutePlan(estate,
-						queryDesc->planstate,
-						queryDesc->plannedstmt->parallelModeNeeded,
-						operation,
-						sendTuples,
-						count,
-						direction,
-						dest,
-						execute_once);
+			if (IS_PARALLEL_RETRIEVE_CURSOR(queryDesc))
+			{
+				SetupEndpointExecState(queryDesc->tupDesc,
+									   queryDesc->ddesc->parallelCursorName,
+									   operation,
+									   &endpointDest);
+				endpointCreated = true;
+
+				/*
+				 * Once the endpoint has been created in shared memory, send acknowledge
+				 * message to QD so DECLARE PARALLEL RETRIEVE CURSOR statement can finish.
+				 */
+				EndpointNotifyQD(ENDPOINT_READY_ACK_MSG);
+
+				ExecutePlan(estate,
+							queryDesc->planstate,
+							queryDesc->plannedstmt->parallelModeNeeded,
+							operation,
+							true,
+							count,
+							direction,
+							endpointDest,
+							execute_once);
+			}
+			else
+			{
+				/*
+				 * Run a root slice
+				 * It corresponds to the "normal" path through the executor
+				 * in that we enter the plan at the top and count on the
+				 * motion nodes at the fringe of the top slice to return
+				 * without ever calling nodes below them.
+				 */
+				ExecutePlan(estate,
+							queryDesc->planstate,
+							queryDesc->plannedstmt->parallelModeNeeded,
+							operation,
+							sendTuples,
+							count,
+							direction,
+							dest,
+							execute_once);
+			}
 		}
 		else
 		{
@@ -953,6 +1014,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	/*
 	 * shutdown tuple receiver, if we started it
 	 */
+	if (endpointCreated)
+		DestroyEndpointExecState();
+
 	if (sendTuples)
 		dest->rShutdown(dest);
 

@@ -94,6 +94,7 @@ typedef enum UpperRelationKind
 	UPPERREL_CDB_FIRST_STAGE_GROUP_AGG,
 	UPPERREL_WINDOW,			/* result of window functions, if any */
 	UPPERREL_DISTINCT,			/* result of "SELECT DISTINCT", if any */
+	UPPERREL_CDB_FIRST_STAGE_DISTINCT,
 	UPPERREL_ORDERED,			/* result of ORDER BY, if any */
 	UPPERREL_FINAL				/* result of any remaining top-level actions */
 	/* NB: UPPERREL_FINAL must be last enum entry; it's used to size arrays */
@@ -212,6 +213,7 @@ typedef struct PlannerGlobal
 	/* GPDB: flags to support COPY's IGNORE EXTERNAL PARTITIONS option. */
 	bool		skip_foreign_partitions;	/* don't expand foreign partitions */
 	bool		foreign_partition_was_skipped; /* foreign partition was skipped */
+	bool		is_parallel_cursor;
 
 	/*
 	 * Slice table. Built by cdbllize_build_slice_table() near the end of

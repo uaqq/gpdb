@@ -33,6 +33,7 @@
 #include "catalog/objectaccess.h"
 #include "catalog/pg_sequence.h"
 #include "catalog/pg_type.h"
+#include "commands/async.h"
 #include "commands/defrem.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
@@ -77,6 +78,16 @@ typedef struct sequence_magic
 	uint32		magic;
 } sequence_magic;
 
+typedef struct SeqTableKey
+{
+	Oid relid;						/* pg_class OID of this sequence */
+	bool called_from_dispatcher;	/* sequence called from dispatcher */
+}
+#if defined(pg_attribute_packed)
+			pg_attribute_packed()
+#endif
+SeqTableKey;
+
 /*
  * We store a SeqTable item for every sequence we have touched in the current
  * session.  This is needed to hold onto nextval/currval state.  (We can't
@@ -85,7 +96,7 @@ typedef struct sequence_magic
  */
 typedef struct SeqTableData
 {
-	Oid			relid;			/* pg_class OID of this sequence (hash key) */
+	SeqTableKey	key;			/* sequence data hash key */
 	Oid			filenode;		/* last seen relfilenode of this sequence */
 	LocalTransactionId lxid;	/* xact in which we last did a seq op */
 	bool		last_valid;		/* do we have a valid "last" value? */
@@ -99,16 +110,6 @@ typedef struct SeqTableData
 typedef SeqTableData *SeqTable;
 
 static HTAB *seqhashtab = NULL; /* hash table for SeqTable items */
-
-typedef struct SeqTableKey
-{
-	Oid relid;
-	bool called_from_dispatcher;
-}
-#if defined(pg_attribute_packed)
-			pg_attribute_packed()
-#endif
-SeqTableKey;
 
 /*
  * last_used_seq is updated by nextval() to point to the last used
@@ -707,7 +708,7 @@ nextval_internal(Oid relid, bool check_permissions, bool called_from_dispatcher)
 	init_sequence_internal(relid, &elm, &seqrel, called_from_dispatcher);
 
 	if (check_permissions &&
-		pg_class_aclcheck(elm->relid, GetUserId(),
+		pg_class_aclcheck(elm->key.relid, GetUserId(),
 						  ACL_USAGE | ACL_UPDATE) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -965,7 +966,7 @@ currval_oid(PG_FUNCTION_ARGS)
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
 
-	if (pg_class_aclcheck(elm->relid, GetUserId(),
+	if (pg_class_aclcheck(elm->key.relid, GetUserId(),
 						  ACL_SELECT | ACL_USAGE) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -1005,7 +1006,7 @@ lastval(PG_FUNCTION_ARGS)
 				 errmsg("lastval is not yet defined in this session")));
 
 	/* Someone may have dropped the sequence since the last nextval() */
-	if (!SearchSysCacheExists1(RELOID, ObjectIdGetDatum(last_used_seq->relid)))
+	if (!SearchSysCacheExists1(RELOID, ObjectIdGetDatum(last_used_seq->key.relid)))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("lastval is not yet defined in this session")));
@@ -1015,7 +1016,7 @@ lastval(PG_FUNCTION_ARGS)
 	/* nextval() must have already been called for this sequence */
 	Assert(last_used_seq->last_valid);
 
-	if (pg_class_aclcheck(last_used_seq->relid, GetUserId(),
+	if (pg_class_aclcheck(last_used_seq->key.relid, GetUserId(),
 						  ACL_SELECT | ACL_USAGE) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -1064,7 +1065,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
 
-	if (pg_class_aclcheck(elm->relid, GetUserId(), ACL_UPDATE) != ACLCHECK_OK)
+	if (pg_class_aclcheck(elm->key.relid, GetUserId(), ACL_UPDATE) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied for sequence %s",
@@ -1210,7 +1211,7 @@ lock_and_open_sequence(SeqTable seq)
 		currentOwner = CurrentResourceOwner;
 		CurrentResourceOwner = TopTransactionResourceOwner;
 
-		LockRelationOid(seq->relid, RowExclusiveLock);
+		LockRelationOid(seq->key.relid, RowExclusiveLock);
 
 		CurrentResourceOwner = currentOwner;
 
@@ -1219,7 +1220,7 @@ lock_and_open_sequence(SeqTable seq)
 	}
 
 	/* We now know we have the lock, and can safely open the rel */
-	return relation_open(seq->relid, NoLock);
+	return relation_open(seq->key.relid, NoLock);
 }
 
 /*
@@ -2122,7 +2123,7 @@ seq_mask(char *page, BlockNumber blkno)
 /*
  * CDB: forward a nextval request from qExec to the QD
  */
-void
+static void
 cdb_sequence_nextval_qe(Relation	seqrel,
 						int64   *plast,
 						int64   *pcached,
@@ -2151,11 +2152,7 @@ cdb_sequence_nextval_qe(Relation	seqrel,
 	 */
 	char payload[128];
 	snprintf(payload, sizeof(payload), "%d:%d", dbid, seq_oid);
-	pq_beginmessage(&buf, 'A');
-	pq_sendint(&buf, gp_session_id, sizeof(int32));
-	pq_sendstring(&buf, "nextval"); /* channel */
-	pq_sendstring(&buf, payload);
-	pq_endmessage(&buf);
+	NotifyMyFrontEnd("nextval", payload, gp_session_id);
 	pq_flush();
 
 	/*

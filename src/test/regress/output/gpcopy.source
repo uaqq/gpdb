@@ -226,11 +226,9 @@ SELECT * FROM copy_regression_text2;
 COPY copy_regression_text3 from stdin with delimiter '|' escape '#';
 COPY copy_regression_text3 from stdin with delimiter '|' escape 'off';
 COPY copy_regression_text3 from stdin with delimiter '|';
--- This works in PostgreSQL, and these days in GPDB as well, but used to not
--- work until GPDB 6. This is just one line, because the newlines are
--- escaped. (Even on PostgreSQL, the COPY documentation recommends not to do
--- this, but let's test it.)
 COPY copy_regression_text3 from stdin with delimiter '|';
+ERROR:  missing data for column "b"
+CONTEXT:  COPY copy_regression_text3, line 2: "and another one\"
 COPY copy_regression_text3 from stdin with delimiter '|';
 SELECT * FROM copy_regression_text3 ORDER BY b,a;
                  a                  | b |      c      |      d      |      e       
@@ -241,13 +239,10 @@ SELECT * FROM copy_regression_text3 ORDER BY b,a;
  a single backslash \ in col a      | 4 | c text data | d text data | e text data
  c:\\file\data\neew\path            | 5 | c text data | d text data | e text data
  the at sign: @                     | 6 | c text data | d text data | e text data
- an embedded linefeed              +| 7 | c text data | d text data | e text data
- and another one                   +|   |             |             | 
-  in column a                       |   |             |             | 
  an embedded linefeed sequence     +| 7 | c text data | d text data | e text data
  in column a                        |   |             |             | 
  a single backslash \ in col a      | 8 | c text data | d text data | e text data
-(9 rows)
+(8 rows)
 
 DROP TABLE copy_regression_text1;
 DROP TABLE copy_regression_text2;
@@ -1200,7 +1195,7 @@ CONTEXT:  COPY copy_on_segment_check_tow_dsitkey, line 2: "1,1"
 -- COPY FRON ON SEGMENT DISTRIBUTED RANDOMLY
 CREATE TABLE COPY_ON_SEGMENT_DIST_RANDOMLY(a int) DISTRIBUTED RANDOMLY;
 COPY COPY_ON_SEGMENT_DIST_RANDOMLY FROM PROGRAM 'echo <SEGID>' ON SEGMENT;
--- COPY FROM ON SEGMENT partitoned table
+-- COPY FROM ON SEGMENT partitioned table
 CREATE TABLE COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED(a int) DISTRIBUTED BY (a) PARTITION BY range(a) ( START (0) END (10) EVERY (5));
 INSERT INTO COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED SELECT generate_series(0,9);
 COPY COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED to '/tmp/COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED<SEGID>.csv' ON SEGMENT CSV;
@@ -1236,10 +1231,10 @@ COPY COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED_1_prt_2 to '/tmp/COPY_ON_SEGMENT_CH
 COPY COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED FROM '/tmp/COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED<SEGID>.csv' ON SEGMENT CSV;
 ERROR:  value of distribution key doesn't belong to segment with ID 0, it belongs to segment with ID 2  (seg0 127.0.0.1:40000 pid=31639)
 CONTEXT:  COPY copy_on_segment_check_distkey_partioned, line 3: "5"
--- COPY FROM ON SEGMENT partitoned table distributed randomly
+-- COPY FROM ON SEGMENT partitioned table distributed randomly
 CREATE TABLE COPY_ON_SEGMENT_PARTION_DIST_RANDOMLY (a int) DISTRIBUTED RANDOMLY PARTITION BY range(a) ( START (0) END (10) EVERY (5));
 COPY COPY_ON_SEGMENT_PARTION_DIST_RANDOMLY FROM PROGRAM 'echo <SEGID>' ON SEGMENT;
--- COPY FROM partitoned table
+-- COPY FROM partitioned table
 TRUNCATE COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED;
 INSERT INTO COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED SELECT generate_series(0,9);
 SELECT COUNT(*) FROM COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED;

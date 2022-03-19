@@ -556,6 +556,7 @@ cdbdisp_buildUtilityQueryParms(struct Node *stmt,
 	QueryDispatchDesc *qddesc;
 	PlannedStmt *pstmt;
 	DispatchCommandQueryParms *pQueryParms;
+	Oid	save_userid;
 
 	Assert(stmt != NULL);
 	Assert(stmt->type < 1000);
@@ -589,6 +590,7 @@ cdbdisp_buildUtilityQueryParms(struct Node *stmt,
 	{
 		qddesc = makeNode(QueryDispatchDesc);
 		qddesc->oidAssignments = oid_assignments;
+		GetUserIdAndSecContext(&save_userid, &qddesc->secContext);
 
 		serializedQueryDispatchDesc = serializeNode((Node *) qddesc, &serializedQueryDispatchDesc_len,
 													NULL /* uncompressed_size */ );
@@ -624,6 +626,7 @@ cdbdisp_buildPlanQueryParms(struct QueryDesc *queryDesc,
 				splan_len_uncompressed,
 				sddesc_len,
 				rootIdx;
+	Oid			save_userid;
 
 	rootIdx = RootSliceIndex(queryDesc->estate);
 
@@ -653,6 +656,7 @@ cdbdisp_buildPlanQueryParms(struct QueryDesc *queryDesc,
 
 	Assert(splan != NULL && splan_len > 0 && splan_len_uncompressed > 0);
 
+	GetUserIdAndSecContext(&save_userid, &queryDesc->ddesc->secContext);
 	sddesc = serializeNode((Node *) queryDesc->ddesc, &sddesc_len, NULL /* uncompressed_size */ );
 
 	pQueryParms->strCommand = queryDesc->sourceText;
@@ -1141,6 +1145,9 @@ cdbdisp_dispatchX(QueryDesc* queryDesc,
 					primaryGang->type == GANGTYPE_SINGLETON_READER ||
 					primaryGang->type == GANGTYPE_ENTRYDB_READER);
 
+		if (si == slice->rootIndex)
+			ds->rootGangSize = primaryGang->size;
+
 		if (Test_print_direct_dispatch_info)
 			elog(INFO, "(slice %d) Dispatch command to %s", slice->sliceIndex,
 						segmentsToContentStr(slice->segments));
@@ -1152,7 +1159,7 @@ cdbdisp_dispatchX(QueryDesc* queryDesc,
 		{
 			if (ds->primaryResults->errcode)
 				break;
-			if (InterruptPending)
+			if (CancelRequested())
 				break;
 		}
 		SIMPLE_FAULT_INJECTOR("before_one_slice_dispatched");

@@ -36,6 +36,7 @@
 #include "catalog/index.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_attribute_encoding.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_opclass.h"
@@ -373,40 +374,9 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 	 */
 	if (stmt->relKind == RELKIND_RELATION)
 	{
-#if 0
-		int			numsegments = -1;
-
-		/* GPDB_12_MERGE_FIXME */
-		AssertImply(stmt->is_part_parent,
-					stmt->distributedBy == NULL);
-		AssertImply(stmt->is_part_child,
-					stmt->distributedBy != NULL);
-
-		/*
-		 * We want children have the same numsegments with parent.  As
-		 * transformDistributedBy() always set numsegments to DEFAULT, does
-		 * this meet our expectation?  No, because DEFAULT does not always
-		 * equal to DEFAULT itself.  When DEFAULT is set to RANDOM a different
-		 * value is returned each time.
-		 *
-		 * So we have to save the parent numsegments here.
-		 */
-		if (stmt->is_part_child)
-			numsegments = stmt->distributedBy->numsegments;
-#endif
-
 		stmt->distributedBy = transformDistributedBy(pstate, &cxt,
 													 stmt->distributedBy,
 													 likeDistributedBy, bQuiet);
-
-		/*
-		 * And force set it on children after transformDistributedBy().
-		 */
-		/* GPDB_12_MERGE_FIXME */
-#if 0
-		if (stmt->is_part_child)
-			stmt->distributedBy->numsegments = numsegments;
-#endif
 	}
 
 	if (IsA(stmt, CreateForeignTableStmt))
@@ -4831,56 +4801,6 @@ getLikeDistributionPolicy(TableLikeClause *e)
 	return likeDistributedBy;
 }
 
-
-/*
- * GPDB_12_MERGE_FIXME:
- *		This function seems to be better suited in pg_type.
- *		Also consider renaming to match the rest of the family of functions.
- */
-List *
-TypeNameGetStorageDirective(TypeName *typname)
-{
-	Relation	rel;
-	ScanKeyData scankey;
-	SysScanDesc sscan;
-	HeapTuple	tuple;
-	Oid			typid;
-	List	   *out = NIL;
-
-	typid = typenameTypeId(NULL, typname);
-
-	rel = heap_open(TypeEncodingRelationId, AccessShareLock);
-
-	/* SELECT typoptions FROM pg_type_encoding where typid = :1 */
-	ScanKeyInit(&scankey,
-				Anum_pg_type_encoding_typid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(typid));
-	sscan = systable_beginscan(rel, TypeEncodingTypidIndexId,
-							   true, NULL, 1, &scankey);
-	tuple = systable_getnext(sscan);
-	if (HeapTupleIsValid(tuple))
-	{
-		Datum options;
-		bool isnull;
-
-		options = heap_getattr(tuple,
-							   Anum_pg_type_encoding_typoptions,
-							   RelationGetDescr(rel),
-							   &isnull);
-
-		if (isnull)
-			elog(ERROR, "null typoptions attribute encountered for pg_type_encoding for typid %d",
-				 typid);
-
-		out = untransformRelOptions(options);
-	}
-
-	systable_endscan(sscan);
-	heap_close(rel, AccessShareLock);
-
-	return out;
-}
 
 /*
  * transformPartitionCmd

@@ -438,8 +438,10 @@ cdbCopyEndInternal(CdbCopy *c, char *abort_msg,
 	struct pollfd	*pollRead;
 	bool		io_errors = false;
 	StringInfoData io_err_msg;
-	Bitmapset	   *oidMap = NULL;
+	List           *oidList = NIL;
 	int				nest_level;
+
+	SIMPLE_FAULT_INJECTOR("cdb_copy_end_internal_start");
 
 	initStringInfo(&io_err_msg);
 
@@ -519,7 +521,7 @@ cdbCopyEndInternal(CdbCopy *c, char *abort_msg,
 
 		while (PQisBusy(q->conn) && PQstatus(q->conn) == CONNECTION_OK)
 		{
-			if ((Gp_role == GP_ROLE_DISPATCH) && InterruptPending)
+			if ((Gp_role == GP_ROLE_DISPATCH) && CancelRequested())
 			{
 				PQrequestCancel(q->conn);
 			}
@@ -564,7 +566,7 @@ cdbCopyEndInternal(CdbCopy *c, char *abort_msg,
 					first_error = cdbdisp_get_PQerror(res);
 			}
 
-			pgstat_combine_one_qe_result(&oidMap, res, nest_level, q->segindex);
+			pgstat_combine_one_qe_result(&oidList, res, nest_level, q->segindex);
 
 			if (q->conn->wrote_xlog)
 			{
@@ -642,7 +644,7 @@ cdbCopyEndInternal(CdbCopy *c, char *abort_msg,
 				segment_rows_rejected = res->numRejected;
 
 			/*
-			 * When COPY FROM ON SEGMENT, need to calculate the number of this
+			 * When COPY FROM, need to calculate the number of this
 			 * segment's completed rows
 			 */
 			if (res->numCompleted > 0)
@@ -690,7 +692,12 @@ cdbCopyEndInternal(CdbCopy *c, char *abort_msg,
 		elog(LOG, "COPY signals FTS to probe segments");
 
 		SendPostmasterSignal(PMSIGNAL_WAKEN_FTS);
-		DisconnectAndDestroyAllGangs(true);
+		/*
+		 * Before error out, we need to reset the session. Gang will be cleaned up
+		 * when next transaction start, since it will find FTS version bump and
+		 * call cdbcomponent_updateCdbComponents().
+		 */
+		resetSessionForPrimaryGangLoss();
 
 		ereport(ERROR,
 				(errcode(ERRCODE_GP_INTERCONNECTION_ERROR),

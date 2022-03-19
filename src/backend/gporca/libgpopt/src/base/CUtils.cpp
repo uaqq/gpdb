@@ -53,12 +53,14 @@
 #include "gpopt/operators/CScalarArrayCoerceExpr.h"
 #include "gpopt/operators/CScalarCast.h"
 #include "gpopt/operators/CScalarCmp.h"
+#include "gpopt/operators/CScalarCoerceViaIO.h"
 #include "gpopt/operators/CScalarIdent.h"
 #include "gpopt/operators/CScalarIsDistinctFrom.h"
 #include "gpopt/operators/CScalarNullTest.h"
 #include "gpopt/operators/CScalarOp.h"
 #include "gpopt/operators/CScalarProjectElement.h"
 #include "gpopt/operators/CScalarProjectList.h"
+#include "gpopt/operators/CScalarValuesList.h"
 #include "gpopt/optimizer/COptimizerConfig.h"
 #include "gpopt/search/CMemo.h"
 #include "gpopt/translate/CTranslatorExprToDXLUtils.h"
@@ -1728,8 +1730,8 @@ CUtils::PopAggFunc(
 	CMemoryPool *mp, IMDId *pmdidAggFunc, const CWStringConst *pstrAggFunc,
 	BOOL is_distinct, EAggfuncStage eaggfuncstage, BOOL fSplit,
 	IMDId *
-		pmdidResolvedReturnType	 // return type to be used if original return type is ambiguous
-)
+		pmdidResolvedReturnType,  // return type to be used if original return type is ambiguous
+	EAggfuncKind aggkind, ULongPtrArray *argtypes)
 {
 	GPOS_ASSERT(nullptr != pmdidAggFunc);
 	GPOS_ASSERT(nullptr != pstrAggFunc);
@@ -1738,7 +1740,7 @@ CUtils::PopAggFunc(
 
 	return GPOS_NEW(mp)
 		CScalarAggFunc(mp, pmdidAggFunc, pmdidResolvedReturnType, pstrAggFunc,
-					   is_distinct, eaggfuncstage, fSplit);
+					   is_distinct, eaggfuncstage, fSplit, aggkind, argtypes);
 }
 
 // generate an aggregate function
@@ -1750,14 +1752,37 @@ CUtils::PexprAggFunc(CMemoryPool *mp, IMDId *pmdidAggFunc,
 	GPOS_ASSERT(nullptr != pstrAggFunc);
 	GPOS_ASSERT(nullptr != colref);
 
+	// Add aggref->aggargtypes
+	ULongPtrArray *argtypes = GPOS_NEW(mp) ULongPtrArray(mp);
+	argtypes->Append(GPOS_NEW(mp) ULONG(
+		CMDIdGPDB::CastMdid(colref->RetrieveType()->MDId())->Oid()));
+
 	// generate aggregate function
-	CScalarAggFunc *popScAggFunc = PopAggFunc(
-		mp, pmdidAggFunc, pstrAggFunc, is_distinct, eaggfuncstage, fSplit);
+	CScalarAggFunc *popScAggFunc =
+		PopAggFunc(mp, pmdidAggFunc, pstrAggFunc, is_distinct, eaggfuncstage,
+				   fSplit, nullptr, EaggfunckindNormal, argtypes);
 
 	// generate function arguments
-	CExpression *pexprScalarIdent = PexprScalarIdent(mp, colref);
 	CExpressionArray *pdrgpexpr = GPOS_NEW(mp) CExpressionArray(mp);
-	pdrgpexpr->Append(pexprScalarIdent);
+
+	CExpression *pexprScalarIdent = PexprScalarIdent(mp, colref);
+	CExpressionArray *pdrgpexprArgs = GPOS_NEW(mp) CExpressionArray(mp);
+	pdrgpexprArgs->Append(pexprScalarIdent);
+
+	pdrgpexpr->Append(GPOS_NEW(mp) CExpression(
+		mp, GPOS_NEW(mp) CScalarValuesList(mp), pdrgpexprArgs));
+
+	pdrgpexpr->Append(GPOS_NEW(mp)
+						  CExpression(mp, GPOS_NEW(mp) CScalarValuesList(mp),
+									  GPOS_NEW(mp) CExpressionArray(mp)));
+
+	pdrgpexpr->Append(GPOS_NEW(mp)
+						  CExpression(mp, GPOS_NEW(mp) CScalarValuesList(mp),
+									  GPOS_NEW(mp) CExpressionArray(mp)));
+
+	pdrgpexpr->Append(GPOS_NEW(mp)
+						  CExpression(mp, GPOS_NEW(mp) CScalarValuesList(mp),
+									  GPOS_NEW(mp) CExpressionArray(mp)));
 
 	return GPOS_NEW(mp) CExpression(mp, popScAggFunc, pdrgpexpr);
 }
@@ -1774,9 +1799,27 @@ CUtils::PexprCountStar(CMemoryPool *mp)
 	CMDIdGPDB *mdid = GPOS_NEW(mp) CMDIdGPDB(GPDB_COUNT_STAR);
 	CWStringConst *str = GPOS_NEW(mp) CWStringConst(GPOS_WSZ_LIT("count"));
 
+	CScalarValuesList *popScalarValuesList = GPOS_NEW(mp) CScalarValuesList(mp);
+	CExpressionArray *pdrgpexprChildren = GPOS_NEW(mp) CExpressionArray(mp);
+	pdrgpexpr->Append(
+		GPOS_NEW(mp) CExpression(mp, popScalarValuesList, pdrgpexprChildren));
+
+	pdrgpexpr->Append(GPOS_NEW(mp)
+						  CExpression(mp, GPOS_NEW(mp) CScalarValuesList(mp),
+									  GPOS_NEW(mp) CExpressionArray(mp)));
+
+	pdrgpexpr->Append(GPOS_NEW(mp)
+						  CExpression(mp, GPOS_NEW(mp) CScalarValuesList(mp),
+									  GPOS_NEW(mp) CExpressionArray(mp)));
+
+	pdrgpexpr->Append(GPOS_NEW(mp)
+						  CExpression(mp, GPOS_NEW(mp) CScalarValuesList(mp),
+									  GPOS_NEW(mp) CExpressionArray(mp)));
+
 	CScalarAggFunc *popScAggFunc =
 		PopAggFunc(mp, mdid, str, false /*is_distinct*/,
-				   EaggfuncstageGlobal /*eaggfuncstage*/, false /*fSplit*/);
+				   EaggfuncstageGlobal /*eaggfuncstage*/, false /*fSplit*/,
+				   nullptr, EaggfunckindNormal, GPOS_NEW(mp) ULongPtrArray(mp));
 
 	CExpression *pexprCountStar =
 		GPOS_NEW(mp) CExpression(mp, popScAggFunc, pdrgpexpr);
@@ -3654,6 +3697,13 @@ CUtils::PexprCast(CMemoryPool *mp, CMDAccessor *md_accessor, CExpression *pexpr,
 				parrayCoerceCast->Location()),
 			pexpr);
 	}
+	else if (pmdcast->GetMDPathType() == IMDCast::EmdtCoerceViaIO)
+	{
+		CScalarCoerceViaIO *op = GPOS_NEW(mp)
+			CScalarCoerceViaIO(mp, mdid_dest, default_type_modifier,
+							   COperator::EcfImplicitCast, -1 /* location */);
+		pexprCast = GPOS_NEW(mp) CExpression(mp, op, pexpr);
+	}
 	else
 	{
 		CScalarCast *popCast =
@@ -3838,9 +3888,19 @@ CUtils::PcrMap(CColRef *pcrSource, CColRefArray *pdrgpcrSource,
 	return pcrTarget;
 }
 
+BOOL
+CUtils::FDuplicateHazardDistributionSpec(CDistributionSpec *pds)
+{
+	CDistributionSpec::EDistributionType edt = pds->Edt();
+
+	return CDistributionSpec::EdtStrictReplicated == edt ||
+		   CDistributionSpec::EdtUniversal == edt;
+}
+
 // Check if duplicate values can be generated when executing the given Motion expression,
-// duplicates occur if Motion's input has replicated/universal distribution,
-// which means that we have exactly the same copy of input on each host,
+// duplicates occur if Motion's input has strict-replicated/universal distribution,
+// which means that we have exactly the same copy of input on each host. Note that
+// tainted-replicated does not satisfy the assertion of identical input copies.
 BOOL
 CUtils::FDuplicateHazardMotion(CExpression *pexprMotion)
 {
@@ -3851,14 +3911,8 @@ CUtils::FDuplicateHazardMotion(CExpression *pexprMotion)
 	CDrvdPropPlan *pdpplanChild =
 		CDrvdPropPlan::Pdpplan(pexprChild->PdpDerive());
 	CDistributionSpec *pdsChild = pdpplanChild->Pds();
-	CDistributionSpec::EDistributionType edtChild = pdsChild->Edt();
 
-	BOOL fReplicatedInput =
-		CDistributionSpec::EdtStrictReplicated == edtChild ||
-		CDistributionSpec::EdtUniversal == edtChild ||
-		CDistributionSpec::EdtTaintedReplicated == edtChild;
-
-	return fReplicatedInput;
+	return CUtils::FDuplicateHazardDistributionSpec(pdsChild);
 }
 
 // Collapse the top two project nodes like this, if unable return NULL;
@@ -4431,6 +4485,28 @@ CUtils::FCrossJoin(CExpression *pexpr)
 	return fCrossJoin;
 }
 
+BOOL
+CUtils::IsHashJoinPossible(CMemoryPool *mp, CExpression *pexpr)
+{
+	GPOS_ASSERT(nullptr != pexpr);
+
+	CExpressionArray *expr_preds =
+		CCastUtils::PdrgpexprCastEquality(mp, (*pexpr)[2]);
+	BOOL has_hashable_pred = false;
+	ULONG ulPreds = expr_preds->Size();
+	for (ULONG ul = 0; ul < ulPreds && !has_hashable_pred; ul++)
+	{
+		CExpression *pred = (*expr_preds)[ul];
+		if (CPhysicalJoin::FHashJoinCompatible(pred, (*pexpr)[0], (*pexpr)[1]))
+		{
+			has_hashable_pred = true;
+		}
+	}
+	expr_preds->Release();
+
+	return has_hashable_pred;
+}
+
 // Determine whether a scalar expression consists only of a scalar id and NDV-preserving
 // functions plus casts. If so, return the corresponding CColRef.
 BOOL
@@ -4444,7 +4520,7 @@ CUtils::IsExprNDVPreserving(CExpression *pexpr,
 	// go down the expression tree, visiting the child containing a scalar ident until
 	// we found the ident or until we found a non-NDV-preserving function (at which point there
 	// is no more need to check)
-	while (1)
+	while (true)
 	{
 		COperator *pop = curr_expr->Pop();
 		ULONG child_with_scalar_ident = 0;

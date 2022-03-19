@@ -94,6 +94,7 @@
 #include "cdb/cdbdtxcontextinfo.h"
 #include "cdb/cdbdisp_query.h"
 #include "cdb/cdbdispatchresult.h"
+#include "cdb/cdbendpoint.h"
 #include "cdb/cdbgang.h"
 #include "cdb/ml_ipc.h"
 #include "utils/guc.h"
@@ -590,6 +591,7 @@ SocketBackend(StringInfo inBuf)
 		case 'd':				/* copy data */
 		case 'c':				/* copy done */
 		case 'f':				/* copy fail */
+		case '?':				/* Greenplum sequence response */
 			doing_extended_query_message = false;
 			/* these are only legal in protocol 3 */
 			if (PG_PROTOCOL_MAJOR(FrontendProtocol) < 3)
@@ -1206,6 +1208,10 @@ exec_mpp_query(const char *query_string,
 		ddesc = (QueryDispatchDesc *) deserializeNode(serializedQueryDispatchDesc,serializedQueryDispatchDesclen);
 		if (!ddesc || !IsA(ddesc, QueryDispatchDesc))
 			elog(ERROR, "MPPEXEC: received invalid QueryDispatchDesc with planned statement");
+		/*
+		 * Deserialize and apply security context from QD.
+		 */
+		SetUserIdAndSecContext(GetUserId(), ddesc->secContext);
 
         sliceTable = ddesc->sliceTable;
 
@@ -1632,6 +1638,13 @@ restore_guc_to_QE(void )
 			 * we can not keep alive gang anymore.
 			 */
 			DisconnectAndDestroyAllGangs(false);
+			/*
+			 * when qe elog an error, qd will use ReThrowError to
+			 * re throw the error, the errordata_stack_depth will ++,
+			 * when we catch the error we should reset errordata_stack_depth
+			 * by FlushErrorState.
+			 */
+			FlushErrorState();
 		}
 		PG_END_TRY();
 	}
@@ -1769,12 +1782,11 @@ exec_simple_query(const char *query_string)
 		}
 
 		/*
-		 * If are connected in utility mode, disallow PREPARE TRANSACTION
-		 * statements.
+		 * GPDB: If we are connected in utility mode, disallow PREPARE
+		 * TRANSACTION statements.
 		 */
-		TransactionStmt *transStmt = (TransactionStmt *) parsetree;
-		if (Gp_role == GP_ROLE_UTILITY && IsA(parsetree, TransactionStmt) &&
-			transStmt->kind == TRANS_STMT_PREPARE)
+		if (Gp_role == GP_ROLE_UTILITY && IsA(parsetree->stmt, TransactionStmt) &&
+			((TransactionStmt *) parsetree->stmt)->kind == TRANS_STMT_PREPARE)
 		{
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -3999,26 +4011,28 @@ ProcessInterrupts(const char* filename, int lineno)
 		 */
 		if (!DoingCommandRead)
 		{
+			StringInfoData cancel_msg_str;
+
 			LockErrorCleanup();
+			initStringInfo(&cancel_msg_str);
+
+			if (HasCancelMessage())
+			{
+				char *buffer = palloc0(MAX_CANCEL_MSG);
+
+				GetCancelMessage(&buffer, MAX_CANCEL_MSG);
+				appendStringInfo(&cancel_msg_str, ": \"%s\"", buffer);
+				pfree(buffer);
+			}
 
 			if (Gp_role == GP_ROLE_EXECUTE)
 				ereport(ERROR,
 						(errcode(ERRCODE_GP_OPERATION_CANCELED),
-						 errmsg("canceling MPP operation")));
-			else if (HasCancelMessage())
-			{
-				char   *buffer = palloc0(MAX_CANCEL_MSG);
-
-				GetCancelMessage(&buffer, MAX_CANCEL_MSG);
-				ereport(ERROR,
-						(errcode(ERRCODE_QUERY_CANCELED),
-						 errmsg("canceling statement due to user request: \"%s\"",
-								buffer)));
-			}
+						 errmsg("canceling MPP operation%s", cancel_msg_str.data)));
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_QUERY_CANCELED),
-						 errmsg("canceling statement due to user request")));
+						 errmsg("canceling statement due to user request%s", cancel_msg_str.data)));
 		}
 	}
 
@@ -4620,7 +4634,7 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 static void
 check_forbidden_in_gpdb_handlers(char firstchar)
 {
-	if (am_ftshandler || IsFaultHandler)
+	if (am_ftshandler || am_faulthandler)
 	{
 		switch (firstchar)
 		{
@@ -4637,6 +4651,15 @@ check_forbidden_in_gpdb_handlers(char firstchar)
 	}
 }
 
+static void
+forbidden_in_retrieve_handler(char firstchar)
+{
+	if (am_cursor_retrieve_handler)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROTOCOL_VIOLATION),
+				 errmsg("protocol '%c' is not supported in a GPDB parallel retrieve cursor connection",
+						firstchar)));
+}
 
 /* ----------------------------------------------------------------
  * PostgresMain
@@ -4899,7 +4922,7 @@ PostgresMain(int argc, char *argv[],
 	}
 
 	/* Also send GPDB QE-backend startup info (motion listener, version). */
-	if (!(am_ftshandler || IsFaultHandler) && Gp_role == GP_ROLE_EXECUTE)
+	if (!(am_ftshandler || am_faulthandler) && Gp_role == GP_ROLE_EXECUTE)
 	{
 #ifdef FAULT_INJECTOR
 		if (SIMPLE_FAULT_INJECTOR("send_qe_details_init_backend") != FaultInjectorTypeSkip)
@@ -5004,7 +5027,7 @@ PostgresMain(int argc, char *argv[],
 		 */
 		if (debug_query_string != NULL)
 		{
-			elog(LOG, "An exception was encountered during the execution of statement: %s", debug_query_string);
+			elog_exception_statement(debug_query_string);
 			debug_query_string = NULL;
 		}
 
@@ -5051,10 +5074,6 @@ PostgresMain(int argc, char *argv[],
 
 		/* We don't have a transaction command open anymore */
 		xact_started = false;
-
-		/* When QE error in creating extension, we must reset CurrentExtensionObject */
-		creating_extension = false;
-		CurrentExtensionObject = InvalidOid;
 
 		/* Inform Vmem tracker that the current process has finished cleanup */
 		RunawayCleaner_RunawayCleanupDoneForProcess(false /* ignoredCleanup */);
@@ -5144,9 +5163,19 @@ PostgresMain(int argc, char *argv[],
 		 */
 		if (send_ready_for_query)
 		{
+			char activity[50];
+			memset(activity, 0, sizeof(activity));
+			int remain = sizeof(activity);
+
+			if (am_cursor_retrieve_handler)
+			{
+				strncpy(activity, "[retrieve] ", sizeof(activity));
+				remain -= strlen(activity);
+			}
 			if (IsAbortedTransactionBlockState())
 			{
-				set_ps_display("idle in transaction (aborted)", false);
+				strncat(activity, "idle in transaction (aborted)", remain);
+				set_ps_display(activity, false);
 				pgstat_report_activity(STATE_IDLEINTRANSACTION_ABORTED, NULL);
 
 				/* Start the idle-in-transaction timer */
@@ -5159,7 +5188,8 @@ PostgresMain(int argc, char *argv[],
 			}
 			else if (IsTransactionOrTransactionBlock())
 			{
-				set_ps_display("idle in transaction", false);
+				strncat(activity, "idle in transaction", remain);
+				set_ps_display(activity, false);
 				pgstat_report_activity(STATE_IDLEINTRANSACTION, NULL);
 
 				/* Start the idle-in-transaction timer */
@@ -5176,7 +5206,8 @@ PostgresMain(int argc, char *argv[],
 				pgstat_report_stat(false);
 				pgstat_report_queuestat();
 
-				set_ps_display("idle", false);
+				strncat(activity, "idle", remain);
+				set_ps_display(activity, false);
 				pgstat_report_activity(STATE_IDLE, NULL);
 			}
 
@@ -5198,7 +5229,7 @@ PostgresMain(int argc, char *argv[],
 		 */
 		if (Gp_role == GP_ROLE_DISPATCH)
 		{
-			CheckForResetSession();
+			GpDropTempTables();
 			StartIdleResourceCleanupTimers();
 		}
 
@@ -5291,7 +5322,7 @@ PostgresMain(int argc, char *argv[],
 					}
 					else if (am_ftshandler)
 						HandleFtsMessage(query_string);
-					else if (IsFaultHandler)
+					else if (am_faulthandler)
 						HandleFaultMessage(query_string);
 					else
 						exec_simple_query(query_string);
@@ -5459,7 +5490,7 @@ PostgresMain(int argc, char *argv[],
 									   serializedPlantree, serializedPlantreelen,
 									   serializedQueryDispatchDesc, serializedQueryDispatchDesclen);
 
-					SetUserIdAndContext(GetOuterUserId(), false);
+					SetUserIdAndSecContext(GetOuterUserId(), 0);
 
 					send_ready_for_query = true;
 				}
@@ -5582,6 +5613,7 @@ PostgresMain(int argc, char *argv[],
 
 			case 'F':			/* fastpath function call */
 				forbidden_in_wal_sender(firstchar);
+				forbidden_in_retrieve_handler(firstchar);
 
 				/* Set statement_timestamp() */
 				SetCurrentStatementStartTimestamp();
@@ -5738,6 +5770,17 @@ PostgresMain(int argc, char *argv[],
 				 * Accept but ignore these messages, per protocol spec; we
 				 * probably got here because a COPY failed, and the frontend
 				 * is still sending data.
+				 */
+				break;
+			case '?':			/* Greenplum sequence response */
+				/*
+				 * Accept but ignore this message, when QE process nextval
+				 * it sends NOTIFY to QD and asks QD to send nextval back to
+				 * QE, we probably got here because getting nextval on QD is
+				 * failed, QD send '?' message back to QE and cancel all
+				 * unfinished QEs, if the QE receives cancel before '?' message,
+				 * the message will stay in the socket, next time when we ReadCommand
+				 * we should ignore it.
 				 */
 				break;
 
@@ -6018,4 +6061,12 @@ disable_client_wait_timeout_interrupt(void)
 {
 	if (DoingCommandRead)
 		DisableClientWaitTimeoutInterrupt();
+}
+
+/*
+ * Whether request on cancel or termination have arrived?
+ */
+inline bool
+CancelRequested() {
+	return InterruptPending && (ProcDiePending || QueryCancelPending);
 }

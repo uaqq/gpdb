@@ -239,6 +239,20 @@ init_tuplestore_state(ShareInputScanState *node)
 				tuplestore_make_shared(ts,
 									   get_shareinput_fileset(),
 									   rwfile_prefix);
+#ifdef FAULT_INJECTOR
+				if (SIMPLE_FAULT_INJECTOR("sisc_xslice_temp_files") == FaultInjectorTypeSkip)
+				{
+					const char *filename = tuplestore_get_buffilename(ts);
+					if (!filename)
+						ereport(NOTICE, (errmsg("sisc_xslice: buffilename is null")));
+					else if (strstr(filename, "base/" PG_TEMP_FILES_DIR) == filename)
+						ereport(NOTICE, (errmsg("sisc_xslice: Use default tablespace")));
+					else if (strstr(filename, "pg_tblspc/") == filename)
+						ereport(NOTICE, (errmsg("sisc_xslice: Use temp tablespace")));
+					else
+						ereport(NOTICE, (errmsg("sisc_xslice: Unexpected prefix of the tablespace path")));
+				}
+#endif
 			}
 			else
 			{
@@ -349,6 +363,15 @@ ExecShareInputScan(PlanState *pstate)
 	/* if first time call, need to initialize the tuplestore state.  */
 	if (!node->isready)
 		init_tuplestore_state(node);
+	
+	/*
+	 * Return NULL when necessary.
+	 * This could help improve performance, especially when tuplestore is huge, because ShareInputScan 
+	 * do not need to read tuple from tuplestore when discard_output is true, which means current 
+	 * ShareInputScan is one but not the last one of Sequence's subplans.
+	 */
+	if (sisc->discard_output)
+	  return NULL;
 
 	slot = node->ss.ps.ps_ResultTupleSlot;
 
@@ -454,7 +477,17 @@ ExecInitShareInputScan(ShareInputScan *node, EState *estate, int eflags)
 	}
 
 	local_state = list_nth(estate->es_sharenode, node->share_id);
-	local_state->nsharers++;
+
+	/*
+	 * To accumulate the number of CTE consumers executed in this slice.
+	 * This variable will be used by the last finishing CTE consumer
+	 * in current slice, to wake the corresponding CTE producer up for
+	 * cleaning the materialized tuplestore, during squelching.
+	 */
+	if (currentSliceId == node->this_slice_id &&
+		currentSliceId != node->producer_slice_id)
+		local_state->nsharers++;
+
 	if (childState)
 		local_state->childState = childState;
 	sisstate->local_state = local_state;

@@ -30,11 +30,13 @@
 #include "executor/executor.h"
 #include "executor/tstoreReceiver.h"
 #include "rewrite/rewriteHandler.h"
+#include "miscadmin.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
+#include "cdb/cdbendpoint.h"
 #include "cdb/cdbgang.h"
 #include "cdb/cdbvars.h"
 #include "postmaster/backoff.h"
@@ -71,6 +73,10 @@ PerformCursorOpen(DeclareCursorStmt *cstmt, ParamListInfo params,
 	 */
 	if (!(cstmt->options & CURSOR_OPT_HOLD))
 		RequireTransactionBlock(isTopLevel, "DECLARE CURSOR");
+	else if (InSecurityRestrictedOperation())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("cannot create a cursor WITH HOLD within security-restricted operation")));
 
 	/*
 	 * Parse analysis was done already, but we still have to run the rule
@@ -188,6 +194,9 @@ PerformCursorOpen(DeclareCursorStmt *cstmt, ParamListInfo params,
 
 	Assert(portal->strategy == PORTAL_ONE_SELECT);
 
+	if (PortalIsParallelRetrieveCursor(portal))
+		WaitEndpointsReady(portal->queryDesc->estate);
+
 	/*
 	 * We're done; the query won't actually be run until PerformPortalFetch is
 	 * called.
@@ -230,6 +239,23 @@ PerformPortalFetch(FetchStmt *stmt,
 				(errcode(ERRCODE_UNDEFINED_CURSOR),
 				 errmsg("cursor \"%s\" does not exist", stmt->portalname)));
 		return;					/* keep compiler happy */
+	}
+
+	if (PortalIsParallelRetrieveCursor(portal))
+	{
+		if (stmt->ismove)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("the 'MOVE' statement for PARALLEL RETRIEVE CURSOR is not supported")));
+		}
+		else
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("cannot specify 'FETCH' for PARALLEL RETRIEVE CURSOR"),
+					 errhint("Use 'RETRIEVE' statement on endpoint instead.")));
+		}
 	}
 
 	/* Adjust dest if needed.  MOVE wants destination DestNone */

@@ -17,7 +17,7 @@
         </section>
         <section id="section3">
             <title id="ke141293">Requirements</title>
-            <p>The client machine where <codeph>gpload</codeph> is executed must have the
+            <p>The client machine where <codeph>gpload</codeph> is run must have the
                 following:</p>
             <ul>
                 <li id="ke147925">The <codeph><xref href="gpfdist.xml#topic1" type="topic"
@@ -36,10 +36,10 @@
             <p><codeph>gpload</codeph> is a data loading utility that acts as an interface to the
                 Greenplum Database external table parallel loading feature. Using a load
                 specification defined in a YAML formatted control file, <codeph>gpload</codeph>
-                executes a load by invoking the Greenplum Database parallel file server
+                runs a load by invoking the Greenplum Database parallel file server
                         (<codeph><xref href="gpfdist.xml" type="topic" format="dita"/></codeph>),
                 creating an external table definition based on the source data defined, and
-                executing an <codeph>INSERT</codeph>, <codeph>UPDATE</codeph> or
+                running an <codeph>INSERT</codeph>, <codeph>UPDATE</codeph> or
                     <codeph>MERGE</codeph> operation to load the source data into the target table
                 in the database.
                 <note><codeph>gpfdist</codeph> is compatible only with
@@ -98,11 +98,11 @@
                 </plentry>
                 <plentry>
                     <pt>-D (debug mode)</pt>
-                    <pd>Check for error conditions, but do not execute the load. </pd>
+                    <pd>Check for error conditions, but do not run the load. </pd>
                 </plentry>
                 <plentry>
                     <pt>-v (verbose mode)</pt>
-                    <pd>Show verbose output of the load steps as they are executed.</pd>
+                    <pd>Show verbose output of the load steps as they are run.</pd>
                 </plentry>
                 <plentry>
                     <pt>-V (very verbose mode)</pt>
@@ -208,6 +208,7 @@
     - <xref href="#topic1/cfformat" format="dita">FORMAT</xref>: text | csv
     - <xref href="#topic1/cfdelimiter" format="dita">DELIMITER</xref>: '<varname>delimiter_character</varname>'
     - <xref href="#topic1/cfescape" format="dita">ESCAPE</xref>: '<varname>escape_character</varname>' | 'OFF'
+    - <xref href="#topic1/newline" format="dita">NEWLINE</xref>: 'LF' | 'CR' | 'CRLF'
     - <xref href="#topic1/cfnullas" format="dita">NULL_AS</xref>: '<varname>null_string</varname>'
     - <xref href="#topic1/cfillfields" format="dita">FILL_MISSING_FIELDS</xref>: true | false
     - <xref href="#topic1/cfforcenotnull" format="dita">FORCE_NOT_NULL</xref>: true | false
@@ -308,8 +309,8 @@
                                                   <codeph>gpfdist</codeph> parallel file server and
                                                   single and multiple <codeph>gpfdist</codeph>
                                                   instances, see <xref
-                                                  href="../../admin_guide/load/topics/g-loading-and-unloading-data.xml"
-                                                  />.</p><parml>
+                                                  href="../../admin_guide/load/topics/g-loading-and-unloading-data.html" format="html" scope="external"
+                                                  >Loading and Unloading Data</xref>.</p><parml>
                                                   <plentry>
                                                   <pt id="cfsourcelocalname">LOCAL_HOSTNAME</pt>
                                                   <pd>Optional. Specifies the host name or IP
@@ -373,7 +374,7 @@
                                                   matching to denote multiple files. The files
                                                   specified are assumed to be relative to the
                                                   current directory from which
-                                                  <codeph>gpload</codeph> is executed (or you can
+                                                  <codeph>gpload</codeph> is run (or you can
                                                   declare an absolute path).</p></pd>
                                                   </plentry>
                                                   <plentry>
@@ -471,8 +472,8 @@
                                                 format. Defaults to <codeph>TEXT</codeph> if not
                                                 specified. For more information about the format of
                                                 the source data, see <xref
-                                                  href="../../admin_guide/load/topics/g-loading-and-unloading-data.xml"
-                                                />.</pd>
+                                                  href="../../admin_guide/load/topics/g-loading-and-unloading-data.html" format="html" scope="external"
+                                                >Loading and Unloading Data</xref>.</pd>
                                         </plentry>
                                         <plentry>
                                             <pt id="cfdelimiter">DELIMITER</pt>
@@ -509,6 +510,20 @@
                                                 This is very useful for data such as text-formatted
                                                 web log data that has many embedded backslashes that
                                                 are not intended to be escapes.</pd>
+                                        </plentry>
+                                        <plentry>
+                                            <pt id="newline">NEWLINE</pt>
+                                            <pd>Specifies the type of newline used in your data files, one of:
+                                            <ul>
+                                             <li>LF (Line feed, 0x0A)</li>
+                                             <li>CR (Carriage return, 0x0D)</li>
+                                             <li>CRLF (Carriage return plus line feed, 0x0D 0x0A).</li>
+                                            </ul>
+                                            <p>If not specified, Greenplum Database detects the
+                                             newline type by examining the first row of data that
+                                             it receives, and uses the first newline type that it
+                                             encounters.</p>
+                                          </pd>
                                         </plentry>
                                         <plentry>
                                             <pt id="cfnullas">NULL_AS</pt>
@@ -599,18 +614,18 @@
                                                 processing. If the error limit is not reached, all
                                                 good rows will be loaded and any error rows will
                                                 either be discarded or captured as part of error log
-                                                information. The default is to abort the load
+                                                information. The default is to cancel the load
                                                 operation on the first error encountered. Note that
                                                 single row error isolation only applies to data rows
                                                 with format errors; for example, extra or missing
                                                 attributes, attributes of a wrong data type, or
                                                 invalid client encoding sequences. Constraint
                                                 errors, such as primary key violations, will still
-                                                cause the load operation to abort if encountered.
-                                                For information about handling load errors, see
-                                                  <xref
-                                                  href="../../admin_guide/load/topics/g-loading-and-unloading-data.xml"
-                                                />.</pd>
+                                                cause the load operation to be cancelled if
+                                                encountered. For information about handling load
+                                                errors, see <xref
+                                                  href="../../admin_guide/load/topics/g-loading-and-unloading-data.html" format="html" scope="external"
+                                                >Loading and Unloading Data</xref>.</pd>
                                         </plentry>
                                         <plentry>
                                             <pt id="cferrorlog">LOG_ERRORS</pt>

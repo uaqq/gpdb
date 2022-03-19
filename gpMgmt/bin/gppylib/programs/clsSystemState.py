@@ -7,7 +7,8 @@
 from gppylib.mainUtils import *
 
 from optparse import OptionGroup
-import sys
+import sys, os
+import re
 import collections
 import pgdb
 from contextlib import closing
@@ -18,6 +19,7 @@ from gppylib.db import dbconn
 from gppylib.gpparseopts import OptParser, OptChecker
 from gppylib.operations.startSegments import *
 from gppylib.operations.buildMirrorSegments import *
+from gppylib.operations.buildMirrorSegments import get_recovery_progress_file, get_recovery_progress_pattern
 from gppylib.system import configurationInterface as configInterface
 from gppylib.system.environment import GpCoordinatorEnvironment
 from gppylib.utils import TableLogger
@@ -64,6 +66,16 @@ CATEGORY__REPLICATION_INFO = "Replication Info"
 VALUE__REPL_SENT_LSN = FieldDefinition("WAL Sent Location", "sent_lsn", "text")
 VALUE__REPL_FLUSH_LSN = FieldDefinition("WAL Flush Location", "flush_lsn", "text")
 VALUE__REPL_REPLAY_LSN = FieldDefinition("WAL Replay Location", "replay_lsn", "text")
+VALUE__REPL_CURRENT_LSN = FieldDefinition("Current write location", "current_wal_lsn", "text")
+VALUE__REPL_SENT_LEFT = FieldDefinition("Bytes remaining to send to mirror", "sent_left", "int")
+VALUE__REPL_FLUSH_LEFT = FieldDefinition("Bytes received but remain to flush", "flush_left", "int")
+VALUE__REPL_REPLAY_LEFT = FieldDefinition("Bytes received but remain to replay", "replay_left", "int")
+VALUE__REPL_SYNC_REMAINING_BYTES = FieldDefinition("WAL sync remaining bytes", "wal_sync_bytes", "int")
+
+VALUE_RECOVERY_COMPLETED_BYTES = FieldDefinition("Completed bytes (kB)", "recovery_completed_bytes", "int")
+VALUE_RECOVERY_TOTAL_BYTES = FieldDefinition("Total bytes (kB)", "recovery_total_bytes", "int")
+VALUE_RECOVERY_PERCENTAGE = FieldDefinition("Percentage completed", "recovery_percentage", "int")
+VALUE_RECOVERY_TYPE = FieldDefinition("Recovery type", "recovery_type", "int")
 
 CATEGORY__STATUS = "Status"
 VALUE__COORDINATOR_REPORTS_STATUS = FieldDefinition("Configuration reports status as", "status_in_config", "text", "Config status")
@@ -132,6 +144,11 @@ class GpStateData:
             VALUE__REPL_SENT_LSN,
             VALUE__REPL_FLUSH_LSN,
             VALUE__REPL_REPLAY_LSN,
+            VALUE__REPL_CURRENT_LSN,
+            VALUE__REPL_SENT_LEFT,
+            VALUE__REPL_FLUSH_LEFT,
+            VALUE__REPL_REPLAY_LEFT,
+            VALUE__REPL_SYNC_REMAINING_BYTES,
         ]
 
         self.__entriesByCategory[CATEGORY__STATUS] = \
@@ -145,7 +162,9 @@ class GpStateData:
                     VALUE__HAS_DATABASE_STATUS_WARNING,
                     VALUE__VERSION_STRING, VALUE__POSTMASTER_PID_FILE_EXISTS, VALUE__LOCK_FILES_EXIST,
                     VALUE__ACTIVE_PID_INT, VALUE__POSTMASTER_PID_VALUE_INT,
-                    VALUE__POSTMASTER_PID_FILE, VALUE__POSTMASTER_PID_VALUE, VALUE__LOCK_FILES
+                    VALUE__POSTMASTER_PID_FILE, VALUE__POSTMASTER_PID_VALUE, VALUE__LOCK_FILES,
+                    VALUE_RECOVERY_COMPLETED_BYTES, VALUE_RECOVERY_TOTAL_BYTES, VALUE_RECOVERY_PERCENTAGE,
+                    VALUE_RECOVERY_TYPE
                     ]:
             self.__allValues[k] = True
 
@@ -642,12 +661,11 @@ class GpSystemStateProgram:
             pass # logger.info( "No segment pairs with switched roles")
 
         # segments that are not synchronized
-        unsyncedPrimaries = [s for s in gpArray.getSegDbList() if s.isSegmentPrimary(current_role=True) and \
-                                                    not s.isSegmentModeSynchronized()]
-        if unsyncedPrimaries:
+        unsync_segs = self._get_unsync_segs_add_wal_remaining_bytes(data, gpArray)
+        if unsync_segs:
             logger.info("----------------------------------------------------")
             logger.info("Unsynchronized Segment Pairs")
-            logSegments(unsyncedPrimaries, logAsPairs=True)
+            logSegments(unsync_segs, True, [VALUE__REPL_SYNC_REMAINING_BYTES])
             exitCode = 1
         else:
             pass # logger.info( "No segment pairs are in resynchronization")
@@ -663,6 +681,15 @@ class GpSystemStateProgram:
             pass # logger.info( "No segments are down")
 
         self.__addClusterDownWarning(gpArray, data)
+
+        recovery_progress_file = get_recovery_progress_file(gplog)
+        recovery_progress_segs = self._parse_recovery_progress_data(data, recovery_progress_file, gpArray)
+        if recovery_progress_segs:
+            logger.info("----------------------------------------------------")
+            logger.info("Segments in recovery")
+            logSegments(recovery_progress_segs, False, [VALUE_RECOVERY_TYPE, VALUE_RECOVERY_COMPLETED_BYTES, VALUE_RECOVERY_TOTAL_BYTES,
+                                                          VALUE_RECOVERY_PERCENTAGE])
+            exitCode = 1
 
         # final output -- no errors, then log this message
         if exitCode == 0:
@@ -929,6 +956,83 @@ class GpSystemStateProgram:
         return 1 if hasWarnings else 0
 
     @staticmethod
+    def _parse_recovery_progress_data(data, recovery_progress_file, gpArray):
+        """
+        helper function for adding recovery segments progress to GpstateData
+        :param gpArray: gpArray instance
+        :param recovery_progress_file: progress file written by gprecoverseg on the coordinator
+        returns recovery_progress_segs
+        """
+        if not os.path.exists(recovery_progress_file):
+            return []
+
+        recovery_progress_by_dbid = {}
+        with open(recovery_progress_file, 'r') as fp:
+            for line in fp:
+                recovery_type, dbid, progress = line.strip().split(':',2)
+                pattern = re.compile(get_recovery_progress_pattern())
+                if re.search(pattern, progress):
+                    bytes, units, precentage_str = progress.strip().split(' ',2)
+                    completed_bytes, total_bytes = bytes.split('/')
+                    percentage = re.search(r'(\d+\%)', precentage_str).group()
+                    recovery_progress_by_dbid[int(dbid)] = [recovery_type, completed_bytes, total_bytes, percentage]
+
+        # Now the catalog update happens before we run recovery,
+        # so now when we query gpArray here, it will have new address/port for the recovering segments
+        recovery_progress_segs = []
+        for seg in gpArray.getSegDbList():
+            dbid = seg.getSegmentDbId()
+            if dbid in recovery_progress_by_dbid.keys():
+                data.switchSegment(seg)
+                recovery_progress_segs.append(seg)
+                recovery_type, completed_bytes, total_bytes, percentage = recovery_progress_by_dbid[dbid]
+                data.addValue(VALUE_RECOVERY_TYPE, recovery_type)
+                data.addValue(VALUE_RECOVERY_COMPLETED_BYTES, completed_bytes)
+                data.addValue(VALUE_RECOVERY_TOTAL_BYTES, total_bytes)
+                data.addValue(VALUE_RECOVERY_PERCENTAGE, percentage)
+
+        return recovery_progress_segs
+
+
+    @staticmethod
+    def _get_unsync_segs_add_wal_remaining_bytes(data, gpArray):
+        """
+        helper function for adding WAL sync remaining bytes to GpstateData and get unsync segments
+        :param gpArray: gpArray instance
+        returns list of primary segments of pairs which aren't in sync state
+        """
+        unsync_segs = []
+        primaries = [s for s in gpArray.getSegDbList() if s.isSegmentPrimary(current_role=True)]
+        for s in primaries:
+            try:
+                data.switchSegment(s)
+                url = dbconn.DbURL(hostname=s.hostname, port=s.port, dbname='template1')
+                conn = dbconn.connect(url, utility=True)
+                with closing(conn) as conn:
+                    cursor = dbconn.query(conn,
+                                          "SELECT pg_wal_lsn_diff(pg_current_wal_flush_lsn(), sent_lsn)"
+                                          ",sync_state FROM pg_stat_replication")
+                    rows = cursor.fetchall()
+                    cursor.close()
+                    if rows:
+                        # wal connection is active.
+                        if rows[0][1] != 'sync':
+                            # walsender is in 'catchup' state
+                            wal_sync_bytes_out = rows[0][0]
+                            unsync_segs.append(s)
+                            data.addValue(VALUE__REPL_SYNC_REMAINING_BYTES, wal_sync_bytes_out)
+                    else:
+                        # no return value from pg_stat_replication, there isn't a replication connection
+                        wal_sync_bytes_out = 'Unknown'
+                        unsync_segs.append(s)
+                        data.addValue(VALUE__REPL_SYNC_REMAINING_BYTES, wal_sync_bytes_out)
+            except pgdb.InternalError:
+                logger.warning('could not query segment {} ({}:{})'.format(
+                    s.dbid, s.hostname, s.port
+                ))
+        return unsync_segs
+
+    @staticmethod
     def _add_replication_info(data, primary, mirror):
         """
         Adds WAL replication information for a segment to GpStateData.
@@ -949,6 +1053,7 @@ class GpSystemStateProgram:
         rows = []
         rewind_start_time = None
         rewinding = False
+        current_wal_lsn = None
         try:
             url = dbconn.DbURL(hostname=primary.hostname, port=primary.port, dbname='template1')
             conn = dbconn.connect(url, utility=True)
@@ -960,12 +1065,20 @@ class GpSystemStateProgram:
                            "sent_lsn - flush_lsn AS flush_left, "
                            "replay_lsn, "
                            "sent_lsn - replay_lsn AS replay_left, "
-                           "backend_start "
+                           "backend_start, "
+                           "pg_current_wal_lsn() - sent_lsn AS sent_left "
                     "FROM pg_stat_replication;"
                 )
 
                 rows = cursor.fetchall()
                 cursor.close()
+
+                # We need this separately since pg_stat_replication may not return a value if WAL connection is down
+                current_wal_lsn_cursor = dbconn.query(conn, "SELECT pg_current_wal_lsn();")
+                current_wal_lsn_row = current_wal_lsn_cursor.fetchall()
+                if current_wal_lsn_row:
+                    current_wal_lsn = current_wal_lsn_row[0][0]
+                current_wal_lsn_cursor.close()
 
                 if mirror.isSegmentDown():
                     cursor = dbconn.query(conn,
@@ -1011,6 +1124,11 @@ class GpSystemStateProgram:
         if start_time:
             data.addValue(VALUE__MIRROR_RECOVERY_START, start_time)
 
+        data.addValue(VALUE__REPL_CURRENT_LSN, current_wal_lsn if current_wal_lsn else 'Unknown', isWarning=(not current_wal_lsn))
+
+        # Set SENT_LEFT to unknown, and if we find a valid WAL connection, set it to correct value
+        data.addValue(VALUE__REPL_SENT_LEFT, 'Unknown', isWarning=True)
+
         # Now fill in the information for the standby connection. There should
         # be exactly one such entry; otherwise we bail.
         standby_connections = [r for r in rows if r[0] == 'gp_walreceiver']
@@ -1022,6 +1140,10 @@ class GpSystemStateProgram:
             return
 
         row = standby_connections[0]
+
+        sent_left = row[8]
+        if sent_left is not None:
+            data.addValue(VALUE__REPL_SENT_LEFT, sent_left, isWarning=False)
 
         GpSystemStateProgram._set_mirror_replication_values(data, mirror,
             state=row[1],
@@ -1062,21 +1184,13 @@ class GpSystemStateProgram:
             # better if we have access to pg_stat_replication.
             data.addValue(VALUE__MIRROR_STATUS, replication_state_to_string(state))
 
-        data.addValue(VALUE__REPL_SENT_LSN,
-                      sent_lsn if sent_lsn else 'Unknown',
-                      isWarning=(not sent_lsn))
-
-        if flush_lsn and flush_left:
-            flush_lsn += " ({} bytes left)".format(flush_left)
-        data.addValue(VALUE__REPL_FLUSH_LSN,
-                      flush_lsn if flush_lsn else 'Unknown',
-                      isWarning=(not flush_lsn))
-
-        if replay_lsn and replay_left:
-            replay_lsn += " ({} bytes left)".format(replay_left)
-        data.addValue(VALUE__REPL_REPLAY_LSN,
-                      replay_lsn if replay_lsn else 'Unknown',
-                      isWarning=(not replay_lsn))
+        mirror_wal_vars = [(VALUE__REPL_SENT_LSN, sent_lsn),
+                (VALUE__REPL_FLUSH_LSN, flush_lsn),
+                (VALUE__REPL_FLUSH_LEFT, flush_left),
+                (VALUE__REPL_REPLAY_LSN, replay_lsn),
+                (VALUE__REPL_REPLAY_LEFT, replay_left)]
+        for key, val in mirror_wal_vars:
+            data.addValue(key, val if val is not None else 'Unknown', isWarning=(val is None))
 
     def __buildGpStateData(self, gpArray, hostNameToResults):
         data = GpStateData()

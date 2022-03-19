@@ -1666,10 +1666,12 @@ appendonly_beginscan(Relation relation,
 	if (appendOnlyMetaDataSnapshot == SnapshotAny)
 	{
 		/*
-		 * the append-only meta data should never be fetched with
+		 * The append-only meta data should never be fetched with
 		 * SnapshotAny as bogus results are returned.
+		 * We use SnapshotSelf for metadata, as regular MVCC snapshot can hide
+		 * newly globally inserted tuples from global index build process.
 		 */
-		appendOnlyMetaDataSnapshot = GetTransactionSnapshot();
+		appendOnlyMetaDataSnapshot = SnapshotSelf;
 	}
 
 	/*
@@ -2082,28 +2084,14 @@ appendonly_fetch_init(Relation relation,
 					  Snapshot snapshot,
 					  Snapshot appendOnlyMetaDataSnapshot)
 {
-	AppendOnlyFetchDesc aoFetchDesc;
+	AppendOnlyFetchDesc				aoFetchDesc;
+	AppendOnlyStorageAttributes	   *attr;
+	PGFunction					   *fns;
+	StringInfoData					titleBuf;
+	FormData_pg_appendonly			aoFormData;
+	int								segno;
 
-	AppendOnlyStorageAttributes *attr;
-
-	PGFunction *fns;
-
-	StringInfoData titleBuf;
-	int32 blocksize;
-	int32 safefswritesize;
-	int16 compresslevel;
-	bool checksum;
-	NameData compresstype;
-	Oid			segrelid;
-	Oid			visimaprelid;
-	Oid			visimapidxid;
-
-	/* GPDB_12_MERGE_FIXME: Consolidate these calls together. */
-	GetAppendOnlyEntryAttributes(relation->rd_id, &blocksize, &safefswritesize, &compresslevel, &checksum, &compresstype);
-
-	GetAppendOnlyEntryAuxOids(relation->rd_id, NULL, &segrelid, NULL, NULL, &visimaprelid, &visimapidxid);
-
-	int segno;
+	GetAppendOnlyEntry(relation->rd_id, &aoFormData);
 
 	/*
 	 * increment relation ref count while scanning relation
@@ -2143,8 +2131,8 @@ appendonly_fetch_init(Relation relation,
 	/*
 	 * These attributes describe the AppendOnly format to be scanned.
 	 */
-	if (strcmp(NameStr(compresstype), "") == 0 ||
-		pg_strcasecmp(NameStr(compresstype), "none") == 0)
+	if (strcmp(NameStr(aoFormData.compresstype), "") == 0 ||
+		pg_strcasecmp(NameStr(aoFormData.compresstype), "none") == 0)
 	{
 		attr->compress = false;
 		attr->compressType = "none";
@@ -2152,12 +2140,12 @@ appendonly_fetch_init(Relation relation,
 	else
 	{
 		attr->compress = true;
-		attr->compressType = NameStr(compresstype);
+		attr->compressType = NameStr(aoFormData.compresstype);
 	}
-	attr->compressLevel = compresslevel;
-	attr->checksum = checksum;
-	attr->safeFSWriteSize = safefswritesize;
-	aoFetchDesc->usableBlockSize = blocksize;
+	attr->compressLevel = aoFormData.compresslevel;
+	attr->checksum = aoFormData.checksum;
+	attr->safeFSWriteSize = aoFormData.safefswritesize;
+	aoFetchDesc->usableBlockSize = aoFormData.blocksize;
 
 	/*
 	 * Get information about all the file segments we need to scan
@@ -2169,7 +2157,7 @@ appendonly_fetch_init(Relation relation,
 						  &aoFetchDesc->totalSegfiles);
 	for (segno = 0; segno < AOTupleId_MultiplierSegmentFileNum; ++segno)
 	{
-		aoFetchDesc->lastSequence[segno] = ReadLastSequence(segrelid, segno);
+		aoFetchDesc->lastSequence[segno] = ReadLastSequence(aoFormData.segrelid, segno);
 	}
 
 	AppendOnlyStorageRead_Init(
@@ -2181,7 +2169,7 @@ appendonly_fetch_init(Relation relation,
 							   &aoFetchDesc->storageAttributes);
 
 
-	fns = get_funcs_for_compression(NameStr(compresstype));
+	fns = get_funcs_for_compression(NameStr(aoFormData.compresstype));
 	aoFetchDesc->storageRead.compression_functions = fns;
 
 	if (fns)
@@ -2190,9 +2178,9 @@ appendonly_fetch_init(Relation relation,
 		CompressionState *cs;
 		StorageAttributes sa;
 
-		sa.comptype = NameStr(compresstype);
-		sa.complevel = compresslevel;
-		sa.blocksize = blocksize;
+		sa.comptype = NameStr(aoFormData.compresstype);
+		sa.complevel = aoFormData.compresslevel;
+		sa.blocksize = aoFormData.blocksize;
 
 
 		cs = callCompressionConstructor(cons, RelationGetDescr(relation),
@@ -2219,8 +2207,8 @@ appendonly_fetch_init(Relation relation,
 											NULL);
 
 	AppendOnlyVisimap_Init(&aoFetchDesc->visibilityMap,
-						   visimaprelid,
-						   visimapidxid,
+						   aoFormData.visimaprelid,
+						   aoFormData.visimapidxid,
 						   AccessShareLock,
 						   appendOnlyMetaDataSnapshot);
 
@@ -2368,10 +2356,9 @@ appendonly_fetch(AppendOnlyFetchDesc aoFetchDesc,
 	{
 #ifdef USE_ASSERT_CHECKING
 		/*
-		 * GPDB_12_MERGE_FIXME: we are getting this warning after building a
-		 * btree index.  May be, something changed in the way the index access
-		 * method returns the TIDs?  Does that warning make sense if scan
-		 * direction is backwards?
+		 * Currently, we only support Index Scan on bitmap index and Bitmap Index Scan
+		 * on AO tables, so normally the below warning should not happen.
+		 * See get_index_paths in indxpath.c.
 		 */
 		if (segmentFileNum < aoFetchDesc->currentSegmentFile.num)
 			ereport(WARNING,
@@ -2617,10 +2604,11 @@ appendonly_insert_init(Relation rel, int segno)
 	 * This GUC must have the same value on write and read.
 	 */
 /* 	aoInsertDesc->useNoToast = aoentry->notoast; */
+
 	/*
-	 * GPDB_12_MERGE_FIXME: we should simply never use toast for AO, variable
-	 * length blocks of AO should be able to accommodate variable length
-	 * datums.
+	 * Although variable length blocks of AO should be able to accommodate variable length
+	 * datums, we still need to keep TOAST for AO_ROW to benefit to performance when query
+	 * in-line data.
 	 */
 	aoInsertDesc->useNoToast = !(rel->rd_tableam->relation_needs_toast_table(rel));
 
@@ -2698,7 +2686,7 @@ appendonly_insert_init(Relation rel, int segno)
 								RelationGetRelationName(aoInsertDesc->aoi_rel),
 								aoInsertDesc->title,
 								&aoInsertDesc->storageAttributes,
-                                RelationNeedsWAL(aoInsertDesc->aoi_rel));
+								XLogIsNeeded() && RelationNeedsWAL(aoInsertDesc->aoi_rel));
 
 	aoInsertDesc->storageWrite.compression_functions = fns;
 	aoInsertDesc->storageWrite.compressionState = cs;

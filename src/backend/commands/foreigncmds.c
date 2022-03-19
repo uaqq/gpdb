@@ -188,11 +188,13 @@ transformGenericOptions(Oid catalogId,
 	result = optionListToArray(resultOptions);
 
 	/*
-	 * Check and separate out the mpp_execute option, fdwvalidator doesn't have
+	 * Check and separate out the extra options, fdwvalidator doesn't have
 	 * to handle it. USER MAPPING doesn't have the mpp_execute option.
 	 */
 	if (catalogId != UserMappingRelationId)
+	{
 		SeparateOutMppExecute(&resultOptions);
+	}
 
 	if (OidIsValid(fdwvalidator))
 	{
@@ -491,13 +493,12 @@ static Oid
 lookup_fdw_handler_func(DefElem *handler)
 {
 	Oid			handlerOid;
-	Oid			funcargtypes[1];	/* dummy */
 
 	if (handler == NULL || handler->arg == NULL)
 		return InvalidOid;
 
 	/* handlers have no arguments */
-	handlerOid = LookupFuncName((List *) handler->arg, 0, funcargtypes, false);
+	handlerOid = LookupFuncName((List *) handler->arg, 0, NULL, false);
 
 	/* check that handler has correct return type */
 	if (get_func_rettype(handlerOid) != FDW_HANDLEROID)

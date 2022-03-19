@@ -1993,6 +1993,7 @@ typedef enum AlterTableType
 
 	AT_SetDistributedBy,		/* SET DISTRIBUTED BY */
 	AT_ExpandTable,          /* EXPAND DISTRIBUTED */
+	AT_ExpandPartitionTablePrepare,	/* EXPAND PARTITION PREPARE */
 
 	/* GPDB: Legacy commands to manipulate partitions */
 	AT_PartAdd,					/* Add */
@@ -3179,6 +3180,7 @@ typedef struct SecLabelStmt
  * CURRENT OF. It can be passed to SPI_prepare_cursor.
  */
 #define CURSOR_OPT_UPDATABLE	0x0200	/* updateable with CURRENT OF, if possible */
+#define CURSOR_OPT_PARALLEL_RETRIEVE 0x0400	/* Cursor for parallel retrieving */
 
 /* GPDB additions */
 #define CURSOR_OPT_SKIP_FOREIGN_PARTITIONS	0x1000	/* don't expand foreign partitions */
@@ -3826,7 +3828,7 @@ typedef struct ReindexStmt
 	const char *name;			/* name of database to reindex */
 	int			options;		/* Reindex options flags */
 	bool		concurrent;		/* reindex concurrently? */
-	Oid			relid;			/* oid of TABLE, used by QE */
+	Oid			relid;			/* oid of table or index, used by QE */
 } ReindexStmt;
 
 /* ----------------------
@@ -3967,7 +3969,6 @@ typedef struct AlterTSConfigurationStmt
 	bool		missing_ok;		/* for DROP - skip error if missing? */
 } AlterTSConfigurationStmt;
 
-
 typedef struct CreatePublicationStmt
 {
 	NodeTag		type;
@@ -4026,5 +4027,13 @@ typedef struct DropSubscriptionStmt
 	bool		missing_ok;		/* Skip error if missing? */
 	DropBehavior behavior;		/* RESTRICT or CASCADE behavior */
 } DropSubscriptionStmt;
+
+typedef struct RetrieveStmt
+{
+	NodeTag		type;
+	char		*endpoint_name;
+	int64		count;
+	bool		is_all;
+} RetrieveStmt;
 
 #endif							/* PARSENODES_H */

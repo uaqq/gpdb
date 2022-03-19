@@ -38,6 +38,7 @@
 #include "catalog/storage_database.h"
 #include "commands/async.h"
 #include "commands/dbcommands.h"
+#include "commands/extension.h"
 #include "commands/resgroupcmds.h"
 #include "commands/tablecmds.h"
 #include "commands/trigger.h"
@@ -81,6 +82,7 @@
 #include "access/distributedlog.h"
 #include "catalog/oid_dispatch.h"
 #include "cdb/cdbdistributedsnapshot.h"
+#include "cdb/cdbendpoint.h"
 #include "cdb/cdbgang.h"
 #include "cdb/cdblocaldistribxact.h"
 #include "cdb/cdbtm.h"
@@ -2744,9 +2746,10 @@ CommitTransaction(void)
 
 	/*
 	 * Do pre-commit processing that involves calling user-defined code, such
-	 * as triggers.  Since closing cursors could queue trigger actions,
-	 * triggers could open cursors, etc, we have to keep looping until there's
-	 * nothing left to do.
+	 * as triggers.  SECURITY_RESTRICTED_OPERATION contexts must not queue an
+	 * action that would run here, because that would bypass the sandbox.
+	 * Since closing cursors could queue trigger actions, triggers could open
+	 * cursors, etc, we have to keep looping until there's nothing left to do.
 	 */
 	for (;;)
 	{
@@ -2764,15 +2767,15 @@ CommitTransaction(void)
 			break;
 	}
 
-	CallXactCallbacks(is_parallel_worker ? XACT_EVENT_PARALLEL_PRE_COMMIT
-					  : XACT_EVENT_PRE_COMMIT);
-
 	/*
 	 * The remaining actions cannot call any user-defined code, so it's safe
 	 * to start shutting down within-transaction services.  But note that most
 	 * of this stuff could still throw an error, which would switch us into
 	 * the transaction-abort path.
 	 */
+
+	CallXactCallbacks(is_parallel_worker ? XACT_EVENT_PARALLEL_PRE_COMMIT
+					  : XACT_EVENT_PRE_COMMIT);
 
 	/* If we might have parallel workers, clean them up now. */
 	if (IsInParallelMode())
@@ -3389,6 +3392,10 @@ AbortTransaction(void)
 
 	/* Make sure we have a valid memory context and resource owner */
 	AtAbort_Memory();
+
+	if (Gp_role == GP_ROLE_EXECUTE)
+		ResetExtensionCreatingGlobalVarsOnQE();
+
 	AtAbort_ResourceOwner();
 
 	/*
@@ -3473,6 +3480,7 @@ AbortTransaction(void)
 	 * do abort processing
 	 */
 	AfterTriggerEndXact(false); /* 'false' means it's abort */
+	AtAbort_EndpointExecState();
 	AtAbort_Portals();
 	AtAbort_DispatcherState();
 	AtEOXact_SharedSnapshot();
@@ -5658,6 +5666,15 @@ AbortOutOfAnyTransaction(void)
 
 	/* Ensure we're not running in a doomed memory context */
 	AtAbort_Memory();
+
+	/*
+	 * Greenplum specific behavior:
+	 * Some QEs might already be in Abort State, they still need
+	 * to reset Extension related global vars, so we invoke them
+	 * here (not AbortTransction).
+	 */
+	if (Gp_role == GP_ROLE_EXECUTE)
+		ResetExtensionCreatingGlobalVarsOnQE();
 
 	/*
 	 * Get out of any transaction or nested transaction

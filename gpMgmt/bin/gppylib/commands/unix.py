@@ -112,9 +112,9 @@ kill -9 all the processes associated with that segment.
 If pid is -1, then the postmaster is already stopped, 
 so we check for any leftover processes for that segment 
 and kill -9 those processes
-E.g postgres: port 45002, logger process
-    postgres: port 45002, sweeper process
-    postgres: port 45002, checkpoint process
+E.g postgres:  45002, logger process
+    postgres:  45002, sweeper process
+    postgres:  45002, checkpoint process
 """
 
 
@@ -129,7 +129,7 @@ def kill_9_segment_processes(datadir, port, pid):
         pid_list = [pid]
 
     cmd = Command('get a list of processes to kill -9',
-                  cmdStr='ps ux | grep "[p]ostgres:\s*port\s*%s" | awk \'{print $2}\'' % (port))
+                  cmdStr='ps ux | grep "[p]ostgres:\s*%s" | awk \'{print $2}\'' % (port))
 
     try:
         cmd.run(validateAfter=True)
@@ -227,7 +227,7 @@ class GenericPlatform():
         return findCmdInPath('tar')
 
     def getIfconfigCmd(self):
-        return findCmdInPath('ifconfig')
+        return findCmdInPath('ip') + " a"
 
 
 class LinuxPlatform(GenericPlatform):
@@ -488,17 +488,17 @@ class RemoveGlob(Command):
 class FileDirExists(Command):
     def __init__(self, name, directory, ctxt=LOCAL, remoteHost=None):
         self.directory = directory
-        cmdStr = """python3  -c "import os; print(os.path.exists('%s'))" """ % directory
+        cmdStr = "[ -d '%s' ]" % directory
         Command.__init__(self, name, cmdStr, ctxt, remoteHost)
 
     @staticmethod
     def remote(name, remote_host, directory):
         cmd = FileDirExists(name, directory, ctxt=REMOTE, remoteHost=remote_host)
-        cmd.run(validateAfter=True)
+        cmd.run(validateAfter=False)
         return cmd.filedir_exists()
 
     def filedir_exists(self):
-        return self.results.stdout.strip().upper() == 'TRUE'
+        return (not self.results.rc)
 
 
 # -------------scp------------------
@@ -581,8 +581,8 @@ class Hostname(Command):
 class PgPortIsActive(Command):
     def __init__(self, name, port, file, ctxt=LOCAL, remoteHost=None):
         self.port = port
-        cmdStr = "%s -an 2>/dev/null | %s %s | %s '{print $NF}'" % \
-                 (findCmdInPath('netstat'), findCmdInPath('grep'), file, findCmdInPath('awk'))
+        cmdStr = "%s -an 2>/dev/null |%s '{for (i =1; i<=NF ; i++) if ($i==\"%s\") print $i}'" % \
+                 (findCmdInPath('ss'), findCmdInPath('awk'), file)
         Command.__init__(self, name, cmdStr, ctxt, remoteHost)
 
     def contains_port(self):

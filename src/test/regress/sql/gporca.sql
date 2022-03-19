@@ -3246,6 +3246,195 @@ select * from sqall_t1 where a not in (
 	    select b.a from sqall_t1 a left join sqall_t1 b on false);
 reset optimizer_join_order;
 
+create table tt_varchar(
+	data character varying
+) distributed by (data);
+insert into tt_varchar values('test');
+create table tt_int(
+	id integer
+) distributed by (id);
+insert into tt_int values(1);
+
+set optimizer_enforce_subplans = 1;
+-- test collation in subplan testexpr
+select data from tt_varchar where data > any(select id::text from tt_int);
+-- test implicit coerce via io
+CREATE CAST (integer AS text) WITH INOUT AS IMPLICIT;
+select data from tt_varchar where data > any(select id from tt_int);
+
+DROP CAST (integer AS text);
+reset optimizer_enforce_subplans;
+
+create table left_outer_index_nl_foo (a integer, b integer, c integer) distributed randomly;
+create table left_outer_index_nl_bar (a integer, b integer, c integer) distributed randomly;
+create index left_outer_index_nl_bar_idx on left_outer_index_nl_bar using btree (b);
+
+insert into left_outer_index_nl_foo select i, i, i from generate_series(1, 4)i;
+insert into left_outer_index_nl_bar select i, i, i from generate_series(2, 6)i;
+
+analyze left_outer_index_nl_foo;
+analyze left_outer_index_nl_bar;
+
+set optimizer_enable_hashjoin=off;
+set enable_nestloop=on;
+set enable_hashjoin=off;
+
+--- verify that the inner half of a left outer nested loop join is non-randomly distributed
+explain select r.a, r.b, r.c, l.c from left_outer_index_nl_foo r left outer join left_outer_index_nl_bar l on r.b=l.b;
+select r.a, r.b, r.c, l.c from left_outer_index_nl_foo r left outer join left_outer_index_nl_bar l on r.b=l.b;
+
+create table left_outer_index_nl_foo_hash (a integer, b integer, c text);
+create table left_outer_index_nl_bar_hash (a integer, b integer, c text);
+create index left_outer_index_nl_bar_hash_idx on left_outer_index_nl_bar_hash using btree (b);
+
+insert into left_outer_index_nl_foo_hash select i, i, i from generate_series(1, 4)i;
+insert into left_outer_index_nl_bar_hash select i, i, i from generate_series(2, 6)i;
+
+analyze left_outer_index_nl_foo_hash;
+analyze left_outer_index_nl_bar_hash;
+
+--- verify that the inner half of a left outer nested loop join is non-randomly distributed
+explain select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_hash r left outer join left_outer_index_nl_bar l on r.b=l.b;
+select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_hash r left outer join left_outer_index_nl_bar l on r.b=l.b;
+
+--- verify that a motion is introduced such that joins on each segment are internal to that segment (distributed by join key)
+explain select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_hash r left outer join left_outer_index_nl_bar_hash l on r.b=l.b;
+select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_hash r left outer join left_outer_index_nl_bar_hash l on r.b=l.b;
+
+create table left_outer_index_nl_foo_repl (a integer, b integer, c integer) distributed replicated;
+create table left_outer_index_nl_bar_repl (a integer, b integer, c integer) distributed replicated;
+create index left_outer_index_nl_bar_repl_idx on left_outer_index_nl_bar_repl using btree (b);
+
+insert into left_outer_index_nl_foo_repl select i, i, i from generate_series(1, 4)i;
+insert into left_outer_index_nl_bar_repl select i, i, i from generate_series(2, 6)i;
+
+analyze left_outer_index_nl_foo_repl;
+analyze left_outer_index_nl_bar_repl;
+
+--- replicated on both sides shouldn't require a motion
+explain select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_repl r left outer join left_outer_index_nl_bar_repl l on r.b=l.b;
+select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_repl r left outer join left_outer_index_nl_bar_repl l on r.b=l.b;
+
+--- outer side replicated, inner side hashed can have interesting cases (gather + join on one segment of inner side and redistribute + join + gather are both valid)
+explain select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_repl r left outer join left_outer_index_nl_bar_hash l on r.b=l.b;
+select r.a, r.b, r.c, l.c from left_outer_index_nl_foo_repl r left outer join left_outer_index_nl_bar_hash l on r.b=l.b;
+
+reset optimizer_enable_hashjoin;
+reset enable_nestloop;
+reset enable_hashjoin;
+
+--- IS DISTINCT FROM FALSE previously simplified to IS TRUE, returning incorrect results for some hash anti joins
+--- the following tests were added to verify the behavior is correct
+CREATE TABLE tt1 (a int, b int);
+CREATE TABLE tt2 (c int, d int);
+
+INSERT INTO tt1 VALUES (1, NULL), (2, 2), (3, 4), (NULL, 5);
+INSERT INTO tt2 VALUES (1, 1), (2, NULL), (4, 4), (NULL, 2);
+
+ANALYZE tt1;
+ANALYZE tt2;
+
+EXPLAIN SELECT b FROM tt1 WHERE NOT EXISTS (SELECT * FROM tt2 WHERE (tt2.d = tt1.b) IS DISTINCT FROM false);
+SELECT b FROM tt1 WHERE NOT EXISTS (SELECT * FROM tt2 WHERE (tt2.d = tt1.b) IS DISTINCT FROM false);
+
+EXPLAIN SELECT b FROM tt1 WHERE NOT EXISTS (SELECT * FROM tt2 WHERE (tt2.d = tt1.b) IS DISTINCT FROM true);
+SELECT b FROM tt1 WHERE NOT EXISTS (SELECT * FROM tt2 WHERE (tt2.d = tt1.b) IS DISTINCT FROM true);
+
+EXPLAIN SELECT b FROM tt1 WHERE NOT EXISTS (SELECT * FROM tt2 WHERE (tt1.b = tt2.d) IS DISTINCT FROM NULL);
+SELECT b FROM tt1 WHERE NOT EXISTS (SELECT * FROM tt2 WHERE (tt1.b = tt2.d) IS DISTINCT FROM NULL);
+
+--- optimizer_xform_bind_threshold should limit the search space and quickly
+--- generate a plan (<100ms, but if this GUC is not set it will take minutes to
+--- optimize)
+create table binding (a int) distributed by (a);
+set optimizer_xform_bind_threshold=100;
+
+set statement_timeout = '15s';
+select a in (
+       select a from binding as t1 where a in (
+           select a from binding as t2 where a in (
+               select a from binding as t3 where a in (
+                   select a from binding as t4 join binding as t5 using(a) group by t4.a
+                   union
+                   select a from binding as t4 join binding as t5 using(a) group by t4.a
+                   union
+                   select a from binding as t4 join binding as t5 using(a) group by t4.a
+               )
+           )
+       )
+   ) from binding;
+reset optimizer_xform_bind_threshold;
+reset statement_timeout;
+
+-- an agg of a non-SRF with a nested SRF should be treated as a SRF, the
+-- optimizer must not eliminate the SRF or it can produce incorrect results
+set optimizer_trace_fallback = on;
+create table nested_srf(a text);
+insert into nested_srf values ('abc,def,ghi');
+
+select * from (select regexp_split_to_table((a)::text, ','::text) from nested_srf)a;
+select count(*) from (select regexp_split_to_table((a)::text, ','::text) from nested_srf)a;
+
+select * from (select trim(regexp_split_to_table((a)::text, ','::text)) from nested_srf)a;
+select count(*) from (select trim(regexp_split_to_table((a)::text, ','::text)) from nested_srf)a;
+
+select count(*) from (select trim( case when a!='abc' then  (regexp_split_to_table((a)::text, ','::text)) else ' ' end) from nested_srf)a;
+select count(*) from (select trim(coalesce(regexp_split_to_table((a)::text, ','::text),'')) from nested_srf)a;
+select count(regexp_split_to_table((a)::text, ','::text)) from nested_srf;
+
+truncate nested_srf;
+insert into nested_srf values (NULL);
+
+select * from (select trim(regexp_split_to_table((a)::text, ','::text)) from nested_srf)a;
+select count(*) from (select trim(regexp_split_to_table((a)::text, ','::text)) from nested_srf)a;
+
+reset optimizer_trace_fallback;
+--- if the inner child is already distributed on the join column, orca should
+--- not place any motion on the inner child
+CREATE TABLE tone (a int, b int, c int);
+insert into tone select i,i,i from generate_series(1, 10) i;
+ANALYZE tone;
+SET optimizer_enable_hashjoin=off;
+EXPLAIN (COSTS OFF) SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.a;
+SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.a;
+
+--- if the inner child is not distributed on the join column, orca should
+--- redistribute the inner child
+EXPLAIN (COSTS OFF) SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.b;
+SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.b;
+EXPLAIN (COSTS OFF) SELECT * FROM tone t1 LEFT OUTER JOIN (SELECT 1+t2.b as b from tone t2) t2 ON t1.a = t2.b;
+SELECT * FROM tone t1 LEFT OUTER JOIN (SELECT 1+t2.b as b from tone t2) t2 ON t1.a = t2.b;
+
+
+--- if the join condition does not involve a simple scalar ident, orca must
+--- broadcast the inner child
+EXPLAIN (COSTS OFF) SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.b-t1.a;
+SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.b-t1.a;
+
+--- orca should broadcast the inner child if the guc is set off
+SET optimizer_enable_redistribute_nestloop_loj_inner_child=off;
+EXPLAIN (COSTS OFF) SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.b;
+SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.b;
+
+EXPLAIN (COSTS OFF) SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.a;
+SELECT * FROM tone t1 LEFT OUTER JOIN tone t2 ON t1.a = t2.a;
+RESET optimizer_enable_redistribute_nestloop_loj_inner_child;
+RESET optimizer_enable_hashjoin;
+
+--- Test if orca can produce the correct plan for CTAS
+CREATE TABLE dist_tab_a (a varchar(15)) DISTRIBUTED BY(a);
+INSERT INTO dist_tab_a VALUES('1 '), ('2  '), ('3    ');
+CREATE TABLE dist_tab_b (a char(15), b bigint) DISTRIBUTED BY(a);
+INSERT INTO dist_tab_b VALUES('1 ', 1), ('2  ', 2), ('3    ', 3);
+EXPLAIN CREATE TABLE result_tab AS
+	(SELECT a.a, b.b FROM dist_tab_a a LEFT JOIN dist_tab_b b ON a.a=b.a) DISTRIBUTED BY(a);
+CREATE TABLE result_tab AS
+	(SELECT a.a, b.b FROM dist_tab_a a LEFT JOIN dist_tab_b b ON a.a=b.a) DISTRIBUTED BY(a);
+SELECT gp_segment_id, * FROM result_tab;
+DROP TABLE IF EXISTS dist_tab_a;
+DROP TABLE IF EXISTS dist_tab_b;
+DROP TABLE IF EXISTS result_tab;
+
 -- start_ignore
 DROP SCHEMA orca CASCADE;
 -- end_ignore

@@ -1813,7 +1813,7 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 	 * Loop through all the locks, sleeping on any in-progress insert older
 	 * than 'upto'.
 	 *
-	 * finishedUpto is our return value, indicating the point upto which all
+	 * finishedUpto is our return value, indicating the point up to which all
 	 * the WAL insertions have been finished. Initialize it to the head of
 	 * reserved WAL, and as we iterate through the insertion locks, back it
 	 * out for any insertion that's still in progress.
@@ -2107,7 +2107,7 @@ XLogRecPtrToBytePos(XLogRecPtr ptr)
 
 /*
  * Initialize XLOG buffers, writing out old buffers if they still contain
- * unwritten data, upto the page containing 'upto'. Or if 'opportunistic' is
+ * unwritten data, up to the page containing 'upto'. Or if 'opportunistic' is
  * true, initialize as many pages as we can without having to write out
  * unwritten data. Any new pages are initialized to zeros, with pages headers
  * initialized properly.
@@ -9063,32 +9063,6 @@ CreateCheckPoint(int flags)
 	TRACE_POSTGRESQL_CHECKPOINT_START(flags);
 
 	/*
-	 * When the crash happens, we need to handle the transactions that have
-	 * already inserted 'commit' record and haven't inserted 'forget' record.
-	 *
-	 * If the 'commit' record is logically before the checkpoint REDO pointer,
-	 * we save the transactions in checkpoint record, and these transactions
-	 * will be load into shared memory and mark as 'crash committed' during
-	 * redo checkpoint.
-	 * If the 'commit' record is logically after the checkpoint REDO pointer,
-	 * the transactions will be added to shared memory and mark as 'crash
-	 * committed' during redo xact.
-	 * All these transactions will be stored in the shutdown checkpoint record
-	 * after recovery, and they will be finally recovered in recoverTM().
-	 *
-	 * So if it's a shutdown checkpoint here, we should include all 'crash
-	 * committed' transactions, and if it's a normal checkpoint should include
-	 * all transactions whose 'commit' record is logically before checkpoint
-	 * REDO pointer.
-	 *
-	 * We don't hold the WALInsertLock, so there's a time window that allows
-	 * transactions insert 'commit' record and/or 'forget' record after
-	 * checkpoint REDO pointer. That's fine, resend 'commit prepared' to already
-	 * finished transactions is handled.
-	 */
-	getDtxCheckPointInfo(&dtxCheckPointInfo, &dtxCheckPointInfoSize);
-
-	/*
 	 * Get the other info we need for the checkpoint record.
 	 *
 	 * We don't need to save oldestClogXid in the checkpoint, it only matters
@@ -9158,6 +9132,8 @@ CreateCheckPoint(int flags)
 	 */
 	END_CRIT_SECTION();
 
+	SIMPLE_FAULT_INJECTOR("before_wait_VirtualXIDsDelayingChkpt");
+
 	/*
 	 * In some cases there are groups of actions that must all occur on one
 	 * side or the other of a checkpoint record. Before flushing the
@@ -9196,6 +9172,39 @@ CreateCheckPoint(int flags)
 		} while (HaveVirtualXIDsDelayingChkpt(vxids, nvxids));
 	}
 	pfree(vxids);
+
+	/*
+	 * When the crash happens, we need to handle the transactions that have
+	 * already inserted 'commit' record and haven't inserted 'forget' record.
+	 *
+	 * If the 'commit' record is logically before the checkpoint REDO pointer,
+	 * we save the transactions in checkpoint record, and these transactions
+	 * will be load into shared memory and mark as 'crash committed' during
+	 * redo checkpoint.
+	 * If the 'commit' record is logically after the checkpoint REDO pointer,
+	 * the transactions will be added to shared memory and mark as 'crash
+	 * committed' during redo xact.
+	 * All these transactions will be stored in the shutdown checkpoint record
+	 * after recovery, and they will be finally recovered in recoverTM().
+	 *
+	 * So if it's a shutdown checkpoint here, we should include all 'crash
+	 * committed' transactions, and if it's a normal checkpoint should include
+	 * all transactions whose 'commit' record is logically before checkpoint
+	 * REDO pointer.
+	 *
+	 * We don't hold the WALInsertLock, so there's a time window that allows
+	 * transactions insert 'commit' record and/or 'forget' record after
+	 * checkpoint REDO pointer. That's fine, resend 'commit prepared' to already
+	 * finished transactions is handled.
+	 *
+	 * Currently `MyTmGxact->includeInCkpt = true` and `XLogInsert(RM_XACT_ID, XLOG_XACT_DISTRIBUTED_COMMIT)`
+	 * is already protected by delayChkpt, so these are an atomic operation
+	 * from the outside perspective. getDtxCheckPointInfo() should be called
+	 * after HaveVirtualXIDsDelayingChkpt() otherwise some distributed transactions
+	 * with a state of DTX_STATE_INSERTED_COMMITTED may not be included in the
+	 * checkpoint record.
+	 */
+	getDtxCheckPointInfo(&dtxCheckPointInfo, &dtxCheckPointInfoSize);
 
 	CheckPointGuts(checkPoint.redo, flags);
 
@@ -12808,16 +12817,13 @@ SetWalWriterSleeping(bool sleeping)
 }
 
 /*
- * True if we are running standby-mode continuous recovery.
- * Note this would return false after finishing the recovery, even if
- * we are still on standby master with a primary master running.
- * Also this only works in the startup process as the StandbyMode
- * flag is not in shared memory.
+ * True if we are currently performing crash recovery.
+ * False if we are running standby-mode continuous or archive recovery. 
  */
 bool
-IsStandbyMode(void)
+IsCrashRecoveryOnly(void)
 {
-	return StandbyMode;
+	return !ArchiveRecoveryRequested && !StandbyModeRequested;
 }
 
 /*

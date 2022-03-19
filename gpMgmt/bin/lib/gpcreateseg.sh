@@ -129,9 +129,7 @@ CREATE_QES_PRIMARY () {
     
     $TRUSTED_SHELL ${GP_HOSTADDRESS} $cmd >> $LOG_FILE 2>&1
     RETVAL=$?
-    
-    BACKOUT_COMMAND "$TRUSTED_SHELL ${GP_HOSTADDRESS} \"$RM -rf $GP_DIR > /dev/null 2>&1\""
-    BACKOUT_COMMAND "$ECHO \"removing directory $GP_DIR on $GP_HOSTADDRESS\""
+
     PARA_EXIT $RETVAL "to start segment instance database $GP_HOSTADDRESS $GP_DIR"
     
     # Configure postgresql.conf
@@ -183,22 +181,22 @@ CREATE_QES_PRIMARY () {
         fi
     
         # Add all local IPV4 addresses
-        SEGMENT_IPV4_LOCAL_ADDRESS_ALL=(`$TRUSTED_SHELL $GP_HOSTADDRESS "$IPV4_ADDR_LIST_CMD | $GREP inet | $GREP -v \"127.0.0\" | $AWK '{print \\$2}' | $CUT -d'/' -f1"`)
+        SEGMENT_IPV4_LOCAL_ADDRESS_ALL=( $( REMOTE_EXECUTE_AND_GET_OUTPUT $GP_HOSTADDRESS "$IPV4_ADDR_LIST_CMD | $GREP inet | $GREP -v \"127.0.0\" | $AWK '{print \$2}' | $CUT -d'/' -f1" ))
         ADD_PG_HBA_ENTRIES "${SEGMENT_IPV4_LOCAL_ADDRESS_ALL[@]}"
     
         if [ x"" != x"$MIRROR_HOSTADDRESS" ]; then
           # Add all mirror segments local IPV4 addresses
-          MIRROR_SEGMENT_IPV4_LOCAL_ADDRESS_ALL=(`$TRUSTED_SHELL $MIRROR_HOSTADDRESS "$IPV4_ADDR_LIST_CMD | $GREP inet | $GREP -v \"127.0.0\" | $AWK '{print \\$2}' | $CUT -d'/' -f1"`)
+          MIRROR_SEGMENT_IPV4_LOCAL_ADDRESS_ALL=( $( REMOTE_EXECUTE_AND_GET_OUTPUT $MIRROR_HOSTADDRESS "$IPV4_ADDR_LIST_CMD | $GREP inet | $GREP -v \"127.0.0\" | $AWK '{print \$2}' | $CUT -d'/' -f1" ))
           ADD_PG_HBA_ENTRIES "${MIRROR_SEGMENT_IPV4_LOCAL_ADDRESS_ALL[@]}"
         fi
     
         # Add all local IPV6 addresses
-        SEGMENT_IPV6_LOCAL_ADDRESS_ALL=(`$TRUSTED_SHELL $GP_HOSTADDRESS "$IPV6_ADDR_LIST_CMD | $GREP inet6 | $AWK '{print \\$2}' | $CUT -d'/' -f1"`)
+        SEGMENT_IPV6_LOCAL_ADDRESS_ALL=( $( REMOTE_EXECUTE_AND_GET_OUTPUT $GP_HOSTADDRESS "$IPV6_ADDR_LIST_CMD | $GREP inet6 | $AWK '{print \$2}' | $CUT -d'/' -f1" ))
         ADD_PG_HBA_ENTRIES "${SEGMENT_IPV6_LOCAL_ADDRESS_ALL[@]}"
     
         if [ x"" != x"$MIRROR_HOSTADDRESS" ]; then
           # Add all mirror segments local IPV6 addresses
-          MIRROR_SEGMENT_IPV6_LOCAL_ADDRESS_ALL=(`$TRUSTED_SHELL $MIRROR_HOSTADDRESS "$IPV6_ADDR_LIST_CMD | $GREP inet6 | $AWK '{print \\$2}' | $CUT -d'/' -f1"`)
+          MIRROR_SEGMENT_IPV6_LOCAL_ADDRESS_ALL=( $( REMOTE_EXECUTE_AND_GET_OUTPUT $MIRROR_HOSTADDRESS "$IPV6_ADDR_LIST_CMD | $GREP inet6 | $AWK '{print \$2}' | $CUT -d'/' -f1" ))
           ADD_PG_HBA_ENTRIES "${MIRROR_SEGMENT_IPV6_LOCAL_ADDRESS_ALL[@]}"
         fi
     else # use hostnames in pg_hba.conf
@@ -228,8 +226,8 @@ CREATE_QES_MIRROR () {
     # Add the samehost replication entry to support single-host development
     local PG_HBA_ENTRIES="${PG_HBA_ENTRIES}"$'\n'"host replication ${GP_USER} samehost trust"
     if [ $HBA_HOSTNAMES -eq 0 ];then
-        local MIRROR_ADDRESSES=($($TRUSTED_SHELL ${GP_HOSTADDRESS} "${GPHOME}"/libexec/ifaddrs --no-loopback))
-        local PRIMARY_ADDRESSES=($($TRUSTED_SHELL ${PRIMARY_HOSTADDRESS} "${GPHOME}"/libexec/ifaddrs --no-loopback))
+        local MIRROR_ADDRESSES=($( REMOTE_EXECUTE_AND_GET_OUTPUT ${GP_HOSTADDRESS} "'${GPHOME}'/libexec/ifaddrs --no-loopback" ))
+        local PRIMARY_ADDRESSES=($( REMOTE_EXECUTE_AND_GET_OUTPUT ${PRIMARY_HOSTADDRESS} "'${GPHOME}'/libexec/ifaddrs --no-loopback"))
         for ADDR in "${MIRROR_ADDRESSES[@]}" "${PRIMARY_ADDRESSES[@]}"
         do
             CIDR_ADDR=$(GET_CIDRADDR $ADDR)
@@ -255,13 +253,9 @@ START_QE() {
 	$TRUSTED_SHELL ${GP_HOSTADDRESS} "$EXPORT_LIB_PATH;export PGPORT=${GP_PORT}; $PG_CTL $PG_CTL_WAIT -l $GP_DIR/log/startup.log -D $GP_DIR -o \"-p ${GP_PORT} -c gp_role=execute\" start" >> $LOG_FILE 2>&1
 	RETVAL=$?
 	if [ $RETVAL -ne 0 ]; then
-		BACKOUT_COMMAND "$TRUSTED_SHELL $GP_HOSTADDRESS \"${EXPORT_LIB_PATH};export PGPORT=${GP_PORT}; $PG_CTL -w -D $GP_DIR -o \"-i -p ${GP_PORT}\" -m immediate  stop\""
-		BACKOUT_COMMAND "$ECHO \"Stopping segment instance on $GP_HOSTADDRESS\""
 		$TRUSTED_SHELL ${GP_HOSTADDRESS} "$CAT ${GP_DIR}/log/startup.log "|$TEE -a $LOG_FILE
 		PARA_EXIT $RETVAL "Start segment instance database"
-	fi	
-	BACKOUT_COMMAND "$TRUSTED_SHELL $GP_HOSTADDRESS \"${EXPORT_LIB_PATH};export PGPORT=${GP_PORT}; $PG_CTL -w -D $GP_DIR -o \"-i -p ${GP_PORT}\" -m immediate  stop\""
-	BACKOUT_COMMAND "$ECHO \"Stopping segment instance on $GP_HOSTADDRESS\""
+	fi
 	LOG_MSG "[INFO][$INST_COUNT]:-Successfully started segment instance on $GP_HOSTADDRESS"
 }
 
@@ -325,7 +319,6 @@ if [ x"IS_MIRROR" == x"$PRIMARY_OR_MIRROR_IDENTIFIER" ]; then
 fi
 
 INST_COUNT=$1;shift		#Unique number for this parallel script, starts at 0
-BACKOUT_FILE=/tmp/gpsegcreate.sh_backout.$$
 LOG_FILE=$1;shift		#Central logging file
 LOG_MSG "[INFO][$INST_COUNT]:-Start Main"
 LOG_MSG "[INFO][$INST_COUNT]:-Command line options passed to utility = $*"

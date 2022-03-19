@@ -440,3 +440,37 @@ Feature: expand the cluster by adding more segments
         When the user runs gpexpand to redistribute
         Then the numsegments of table "public.test_matview" is 4
         And distribution information from table "public.test_matview" and "public.test_matview_base" in "gptest" are the same
+
+    @gpexpand_verify_partition_table
+    Scenario: Verify should succeed when expand partition table
+        Given the database is not running
+        And a working directory of the test as '/data/gpdata/gpexpand'
+        And a temporary directory under "/data/gpdata/gpexpand/expandedData" to expand into
+        And the cluster is generated with "1" primaries only
+        And database "gptest" exists
+        And the user create a partition table with name "partition_test"
+        And distribution information from table "partition_test" with data in "gptest" is saved
+        And there are no gpexpand_inputfiles
+        And the cluster is setup for an expansion on hosts "localhost"
+        When the user runs gpexpand interview to add 3 new segment and 0 new host "ignored.host"
+        Then the number of segments have been saved
+        When the user runs gpexpand with the latest gpexpand_inputfile with additional parameters "--silent"
+        Then verify that the cluster has 3 new segments
+        When the user runs gpexpand to redistribute
+        Then the numsegments of table "partition_test" is 4
+        Then distribution information from table "partition_test" with data in "gptest" is verified against saved data
+
+    @gpexpand_segment
+    Scenario: expand a cluster and check pg_hba entries on segment
+        Given the database is not running
+        And a working directory of the test as '/data/gpdata/gpexpand'
+        And a temporary directory under "/data/gpdata/gpexpand/expandedData" to expand into
+        And a cluster is created with mirrors on "mdw" and "sdw1"
+        And database "gptest" exists
+        And there are no gpexpand_inputfiles
+        And the cluster is setup for an expansion on hosts "mdw,sdw1,sdw2,sdw3"
+        And the new host "sdw2,sdw3" is ready to go
+        When the user runs gpexpand interview to add 0 new segment and 2 new host "sdw2,sdw3"
+        Then the number of segments have been saved
+        When the user runs gpexpand with the latest gpexpand_inputfile with additional parameters "--silent"
+        Then verify that pg_hba.conf file has "replication" entries in each segment data directories

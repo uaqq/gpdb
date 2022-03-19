@@ -12,16 +12,16 @@
       <codeblock><b>analyzedb</b> <b>-d</b> <varname>dbname</varname>
    { <b>-s</b> <varname>schema</varname>  | 
    { <b>-t</b> <varname>schema</varname>.<varname>table</varname> 
-     [ <b>-i</b> <varname>col1</varname>[, <varname>col2</varname>, ...] | 
-       <b>-x</b> <varname>col1</varname>[, <varname>col2</varname>, ...] ] } |
+     [ <b>-i</b> <varname>col1</varname>[,<varname>col2</varname>, ...] | 
+       <b>-x</b> <varname>col1</varname>[,<varname>col2</varname>, ...] ] } |
      { <b>-f</b> | <b>--file</b>} <varname>config-file</varname> }
    [ <b>-l</b> | <b>--list</b> ]
    [ <b>--gen_profile_only</b> ]   
    [ <b>-p</b> <varname>parallel-level</varname> ]
    [ <b>--full</b> ]
+   [ <b>--skip_root_stats</b> ]
    [ <b>--skip_orca_root_stats</b> ]
    [ <b>-v</b> | <b>--verbose</b> ]
-   [ <b>--debug</b> ]
    [ <b>-a</b> ]
 
 <b>analyzedb</b> { <b>--clean_last</b> | <b>--clean_all</b> }
@@ -102,13 +102,6 @@
             specified for the connection is used.</pd>
         </plentry>
         <plentry>
-          <pt> --debug</pt>
-          <pd>If specified, sets the logging level to debug. During command execution, debug level
-            information is written to the log file and to the command line. The information includes
-            the commands executed by the utility and the duration of each <codeph>ANALYZE</codeph>
-            operation.</pd>
-        </plentry>
-        <plentry>
           <pt>-f <varname>config-file</varname> | --file <varname>config-file</varname></pt>
           <pd>Text file that contains a list of tables to be analyzed. A relative file path from
             current directory can be specified.</pd>
@@ -128,7 +121,7 @@
               <cmdname>ANALYZE</cmdname> operation only on the columns <codeph>l_shipdate</codeph>
             and <codeph>l_receiptdate</codeph> in the table
             <codeph>public.lineitem</codeph>.<codeblock>public.nation
-public.lineitem -i l_shipdate, l_receiptdate </codeblock></pd>
+public.lineitem -i l_shipdate,l_receiptdate </codeblock></pd>
         </plentry>
         <plentry>
           <pt>--full</pt>
@@ -144,7 +137,7 @@ public.lineitem -i l_shipdate, l_receiptdate </codeblock></pd>
             and you want to update the <codeph>analyzedb</codeph> snapshot for the tables. </pd>
         </plentry>
         <plentry>
-          <pt>-i <varname>col1</varname>, <varname>col2</varname>, ...</pt>
+          <pt>-i <varname>col1</varname>,<varname>col2</varname>, ...</pt>
           <pd>Optional. Must be specified with the <cmdname>-t</cmdname> option. For the table
             specified with the <cmdname>-t</cmdname> option, collect statistics only for the
             specified columns. </pd>
@@ -160,6 +153,10 @@ public.lineitem -i l_shipdate, l_receiptdate </codeblock></pd>
           <pt>-p <varname>parallel-level</varname></pt>
           <pd>The number of tables that are analyzed in parallel. <varname>parallel level</varname>
             can be an integer between 1 and 10, inclusive. Default value is 5. </pd>
+        </plentry>
+        <plentry>
+          <pt>--skip_root_stats</pt>
+          <pd>This option is no longer used, you may remove it from your scripts.</pd>
         </plentry>
         <plentry>
           <pt>--skip_orca_root_stats</pt>
@@ -194,7 +191,7 @@ public.lineitem -i l_shipdate, l_receiptdate </codeblock></pd>
               <codeph>-s</codeph>.</pd>
         </plentry>
         <plentry>
-          <pt>-x <varname>col1</varname>, <varname>col2</varname>, ...</pt>
+          <pt>-x <varname>col1</varname>,<varname>col2</varname>, ...</pt>
           <pd>Optional. Must be specified with the <cmdname>-t</cmdname> option. For the table
             specified with the <cmdname>-t</cmdname> option, exclude statistics collection for the
             specified columns. Statistics are collected only on the columns that are not
@@ -229,12 +226,12 @@ public.lineitem -i l_shipdate, l_receiptdate </codeblock></pd>
       <p>An example that collects statistics only on a set of table columns. In the database
           <codeph>mytest</codeph>, collect statistics on the columns <codeph>shipdate</codeph> and
           <codeph>receiptdate</codeph> in the table <codeph>public.orders</codeph>:</p>
-      <codeblock>analyzedb -d mytest -t public.orders -i shipdate, receiptdate</codeblock>
+      <codeblock>analyzedb -d mytest -t public.orders -i shipdate,receiptdate</codeblock>
       <p>An example that collects statistics on a table and exclude a set of columns. In the
         database <codeph>mytest</codeph>, collect statistics on the table
           <codeph>public.foo</codeph>, and do not collect statistics on the columns
           <codeph>bar</codeph> and <codeph>test2</codeph>.</p>
-      <codeblock>analyzedb -d mytest -t public.foo -x bar, test2</codeblock>
+      <codeblock>analyzedb -d mytest -t public.foo -x bar,test2</codeblock>
       <p>An example that specifies a file that contains a list of tables. This command collect
         statistics on the tables listed in the file <codeph>analyze-tables</codeph> in the database
         named <codeph>mytest</codeph>.</p>
@@ -277,7 +274,7 @@ LANGUAGE plpythonu VOLATILE;</codeblock></p>
       <p>
         <ph otherprops="op-print"><cmdname>ANALYZE</cmdname> in the <cite>Greenplum Database
             Reference Guide</cite></ph>
-        <ph otherprops="op-help">
+        <ph>
           <codeph>
             <xref href="../../ref_guide/sql_commands/ANALYZE.xml#topic1"/>
           </codeph>

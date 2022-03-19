@@ -393,7 +393,7 @@ CTranslatorRelcacheToDXL::RetrieveRel(CMemoryPool *mp, CMDAccessor *md_accessor,
 		distr_op_families = RetrieveRelDistributionOpFamilies(mp, gp_policy);
 	}
 
-	convert_hash_to_random = false;
+	convert_hash_to_random = gpdb::IsChildPartDistributionMismatched(rel.get());
 
 	// collect relation indexes
 	md_index_info_array = RetrieveRelIndexInfo(mp, rel.get());
@@ -2097,6 +2097,12 @@ CTranslatorRelcacheToDXL::RetrieveCast(CMemoryPool *mp, IMDId *mdid)
 							true /*is_binary_coercible*/,
 							GPOS_NEW(mp) CMDIdGPDB(cast_fn_oid));
 			break;
+		case COERCION_PATH_COERCEVIAIO:
+			// uses IO functions from types, no function in the cast
+			GPOS_ASSERT(cast_fn_oid == 0);
+			return GPOS_NEW(mp) CMDCastGPDB(
+				mp, mdid, mdname, mdid_src, mdid_dest, is_binary_coercible,
+				GPOS_NEW(mp) CMDIdGPDB(cast_fn_oid), IMDCast::EmdtCoerceViaIO);
 		default:
 			break;
 	}

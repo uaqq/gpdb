@@ -2,7 +2,6 @@
 <!DOCTYPE topic
   PUBLIC "-//OASIS//DTD DITA Composite//EN" "ditabase.dtd">
 <topic id="topic1">
-    <!--install_guide/refs/gpstop.xml has a conref to this topic. -->
     <title id="jz143120">gpstop</title>
     <body>
         <p>Stops or restarts a Greenplum Database system.</p>
@@ -101,7 +100,7 @@
                 </plentry>
                 <plentry>
                     <pt>-M immediate</pt>
-                    <pd>Immediate shut down. Any transactions in progress are aborted.</pd>
+                    <pd>Immediate shut down. Any transactions in progress are cancelled.</pd>
                     <pd>This mode kills all <codeph>postgres</codeph> processes without allowing the
                         database server to complete transaction processing or clean up any temporary
                         or in-process work files.</pd>
@@ -131,7 +130,7 @@
                         seconds, <codeph>gpstop</codeph> displays a message indicating that one or
                         more segments are still in the process of shutting down and that you cannot
                         restart Greenplum Database until the segment instance(s) are stopped. This
-                        option is useful in situations where <codeph>gpstop</codeph> is executed and
+                        option is useful in situations where <codeph>gpstop</codeph> is run and
                         there are very large transactions that need to rollback. These large
                         transactions can take over a minute to rollback and surpass the default
                         timeout period of 120 seconds.</pd>

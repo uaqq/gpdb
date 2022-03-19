@@ -28,14 +28,6 @@
  */
 #define RESERVED_FTS_CONNECTIONS (1)
 
-
-/*
- * Automatic configuration file name for ALTER SYSTEM.
- * This file will be used to store values of configuration parameters
- * set by ALTER SYSTEM command.
- */
-#define PG_AUTOCONF_FILENAME		"postgresql.auto.conf"
-
 /* upper limit for GUC variables measured in kilobytes of memory */
 /* note that various places assume the byte size fits in a "long" variable */
 #if SIZEOF_SIZE_T > 4 && SIZEOF_LONG > 4
@@ -477,6 +469,7 @@ extern bool optimizer_xforms[OPTIMIZER_XFORMS_COUNT];
 extern char *optimizer_search_strategy_path;
 
 /* GUCs to tell Optimizer to enable a physical operator */
+extern bool optimizer_enable_nljoin;
 extern bool optimizer_enable_indexjoin;
 extern bool optimizer_enable_motions_masteronly_queries;
 extern bool optimizer_enable_motions;
@@ -514,6 +507,8 @@ extern bool optimizer_enable_hashagg;
 extern bool optimizer_enable_groupagg;
 extern bool optimizer_enable_mergejoin;
 extern bool optimizer_prune_unused_columns;
+extern bool optimizer_enable_redistribute_nestloop_loj_inner_child;
+extern bool optimizer_force_comprehensive_join_implementation;
 
 /* Optimizer plan enumeration related GUCs */
 extern bool optimizer_enumerate_plans;
@@ -545,6 +540,7 @@ extern int optimizer_join_order;
 extern int optimizer_join_arity_for_associativity_commutativity;
 extern int optimizer_cte_inlining_bound;
 extern int optimizer_push_group_by_below_setop_threshold;
+extern int optimizer_xform_bind_threshold;
 extern bool optimizer_force_multistage_agg;
 extern bool optimizer_force_three_stage_scalar_dqa;
 extern bool optimizer_force_expanded_distinct_aggs;

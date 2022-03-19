@@ -131,7 +131,7 @@ static void performDtxProtocolCommitPrepared(const char *gid, bool raiseErrorIfN
 static void performDtxProtocolAbortPrepared(const char *gid, bool raiseErrorIfNotFound);
 static void sendWaitGxidsToQD(List *waitGxids);
 
-extern void CheckForResetSession(void);
+extern void GpDropTempTables(void);
 
 /**
  * All assignments of the global DistributedTransactionContext should go through this function
@@ -1486,6 +1486,7 @@ insertingDistributedCommitted(void)
 void
 insertedDistributedCommitted(void)
 {
+	SIMPLE_FAULT_INJECTOR("start_insertedDistributedCommitted");
 	ereport(DTM_DEBUG5,
 			(errmsg("entering insertedDistributedCommitted"),
 			TM_ERRDETAIL));

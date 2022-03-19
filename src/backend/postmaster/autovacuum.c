@@ -2953,6 +2953,7 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 		tab->at_params.multixact_freeze_table_age = multixact_freeze_table_age;
 		tab->at_params.is_wraparound = wraparound;
 		tab->at_params.log_min_duration = log_min_duration;
+		tab->at_params.auto_stats = false;
 		tab->at_vacuum_cost_limit = vac_cost_limit;
 		tab->at_vacuum_cost_delay = vac_cost_delay;
 		tab->at_relname = NULL;
@@ -3172,16 +3173,11 @@ relation_needs_vacanalyze(Oid relid,
 	}
 
 	/*
-	 * GPDB: Autovacuum VACUUM is only enabled for catalog tables. In this
-	 * case we include tables in information_schema namespace.  (But ignore if
-	 * at risk of wrap around and proceed to vacuum)
+	 * GPDB: Autovacuum VACUUM is only enabled for catalog tables. (But ignore
+	 * if at risk of wrap around and proceed to vacuum)
 	 */
-	if (*dovacuum && !IsSystemClass(relid, classForm) &&
-		strcmp(get_namespace_name(classForm->relnamespace), "information_schema") != 0 &&
-		!force_vacuum)
-	{
+	if (!IsSystemClass(relid, classForm) && !force_vacuum)
 		*dovacuum = false;
-	}
 }
 
 /*

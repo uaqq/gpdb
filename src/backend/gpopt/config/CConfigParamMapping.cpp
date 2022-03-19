@@ -278,7 +278,18 @@ CConfigParamMapping::SConfigMappingElem CConfigParamMapping::m_elements[] = {
 	{EopttraceAllowGeneralPredicatesforDPE,
 	 &optimizer_enable_range_predicate_dpe,
 	 false,	 // m_negate_param
-	 GPOS_WSZ_LIT("Enable range predicates for dynamic partition elimination.")}
+	 GPOS_WSZ_LIT(
+		 "Enable range predicates for dynamic partition elimination.")},
+	{EopttraceEnableRedistributeNLLOJInnerChild,
+	 &optimizer_enable_redistribute_nestloop_loj_inner_child,
+	 false,	 // m_negate_param
+	 GPOS_WSZ_LIT(
+		 "Enable plan alternatives where NLJ's inner child is redistributed")},
+	{EopttraceForceComprehensiveJoinImplementation,
+	 &optimizer_force_comprehensive_join_implementation,
+	 false,	 // m_negate_param
+	 GPOS_WSZ_LIT(
+		 "Explore a nested loop join even if a hash join is possible")},
 
 };
 
@@ -331,6 +342,13 @@ CConfigParamMapping::PackConfigParamInBitset(
 				traceflag_bitset->ExchangeSet(EopttraceDisableXformBase + ul);
 			GPOS_ASSERT(!is_traceflag_set);
 		}
+	}
+
+	if (!optimizer_enable_nljoin)
+	{
+		CBitSet *nl_join_bitset = CXform::PbsNLJoinXforms(mp);
+		traceflag_bitset->Union(nl_join_bitset);
+		nl_join_bitset->Release();
 	}
 
 	if (!optimizer_enable_indexjoin)

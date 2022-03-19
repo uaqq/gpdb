@@ -8,8 +8,8 @@
     <section id="section2">
       <title>Synopsis</title>
       <codeblock><b>gpmovemirrors</b> <b>-i</b> <varname>move_config_file</varname> [<b>-d</b> <varname>coordinator_data_directory</varname>] 
-          [<b>-l</b> <varname>logfile_directory</varname>] 
-          [<b>-B</b> <varname>parallel_processes</varname>] [<b>-v</b>] [<b>--hba-hostnames</b> <varname>boolean</varname>] 
+          [<b>-l</b> <varname>logfile_directory</varname>] [<b>-b</b> <varname>segment_batch_size</varname>]
+          [<b>-B</b> <varname>batch_size</varname>] [<b>-v</b>] [<b>--hba-hostnames</b> <varname>boolean</varname>] 
 
 <b>gpmovemirrors</b> <b>-?</b> 
 
@@ -19,8 +19,6 @@
       <title>Description</title>
       <p>The <codeph>gpmovemirrors</codeph> utility moves mirror segment instances to new locations.
         You may want to move mirrors to new locations to optimize distribution or data storage.</p>
-      <p>Before moving segments, the utility verifies that they are mirrors, and that their
-        corresponding primary segments are up and are in synchronizing or resynchronizing mode.</p>
       <p>By default, the utility will prompt you for the file system location(s) where it will move
         the mirror segment data directories.</p>
       <p>You must make sure that the user who runs <codeph>gpmovemirrors</codeph> (the
@@ -33,10 +31,16 @@
       <title>Options</title>
       <parml>
         <plentry>
-          <pt>-B <varname>parallel_processes</varname></pt>
-          <pd>The number of mirror segments to move in parallel. If not specified, the utility will
-            start up to 4 parallel processes depending on how many mirror segment instances it needs
-            to move.</pd>
+          <pt>-b <varname>segment_batch_size</varname></pt>
+          <pd>The maximum number of segments per host to operate on in parallel. Valid values are
+              <codeph>1</codeph> to <codeph>128</codeph>. If not specified, the utility will start
+            recovering up to 64 segments in parallel on each host. </pd>
+        </plentry>
+        <plentry>
+          <pt>-B <varname>batch_size</varname></pt>
+          <pd>The number of hosts to work on in parallel. If not specified, the utility will start
+            working on up to 16 hosts in parallel. Valid values are <codeph>1</codeph> to
+              <codeph>64</codeph>. </pd>
         </plentry>
         <plentry>
           <pt>-d <varname>coordinator_data_directory</varname></pt>
@@ -52,8 +56,8 @@
             updating this file. For consistency, use the same value that was specified for
               <codeph>HBA_HOSTNAMES</codeph> when the Greenplum Database system was initialized. For
             information about how Greenplum Database resolves host names in the
-              <codeph>pg_hba.conf</codeph> file, see <xref href="../../admin_guide/client_auth.xml"
-            />.</pd>
+              <codeph>pg_hba.conf</codeph> file, see <xref href="../../admin_guide/client_auth.html" format="html" scope="external"
+            >Configuring Client Authentication</xref>.</pd>
         </plentry>
         <plentry>
           <pt>-i <varname>move_config_file</varname></pt>

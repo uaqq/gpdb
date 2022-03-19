@@ -17,9 +17,9 @@
 #include "gpos/common/CEnumSetIter.h"
 #include "gpos/common/CRefCount.h"
 
-#include "gpopt/base/CUtils.h"
 #include "gpopt/operators/CExpression.h"
-#include "gpopt/operators/CPhysicalHashJoin.h"
+#include "gpopt/operators/CPhysical.h"
+#include "gpopt/xforms/CXform.h"
 #include "gpopt/xforms/CXformContext.h"
 #include "gpopt/xforms/CXformResult.h"
 #include "naucrates/traceflags/traceflags.h"
@@ -222,6 +222,7 @@ public:
 		ExfExpandDynamicGetWithExternalPartitions____removed,
 		ExfLeftJoin2RightJoin,
 		ExfRightOuterJoin2HashJoin,
+		ExfImplementInnerJoin,
 		ExfInvalid,
 		ExfSentinel = ExfInvalid
 	};
@@ -308,6 +309,9 @@ public:
 	// equality function over xform ids
 	static BOOL FEqualIds(const CHAR *szIdOne, const CHAR *szIdTwo);
 
+	// returns a set containing all xforms related to nl join
+	// caller takes ownership of the returned set
+	static CBitSet *PbsNLJoinXforms(CMemoryPool *mp);
 
 	// returns a set containing all xforms related to index join
 	// caller takes ownership of the returned set
@@ -352,8 +356,8 @@ operator<<(IOstream &os, CXform &xform)
 }
 
 // shorthands for enum sets and iterators of xform ids
-typedef CEnumSet<CXform::EXformId, CXform::ExfSentinel> CXformSet;
-typedef CEnumSetIter<CXform::EXformId, CXform::ExfSentinel> CXformSetIter;
+using CXformSet = CEnumSet<CXform::EXformId, CXform::ExfSentinel>;
+using CXformSetIter = CEnumSetIter<CXform::EXformId, CXform::ExfSentinel>;
 }  // namespace gpopt
 
 

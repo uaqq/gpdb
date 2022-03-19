@@ -49,7 +49,10 @@
 
 static void ResCleanUpLock(LOCK *lock, PROCLOCK *proclock, uint32 hashcode, bool wakeupNeeded);
 
-static ResPortalIncrement *ResIncrementAdd(ResPortalIncrement *incSet, PROCLOCK *proclock, ResourceOwner owner);
+static ResPortalIncrement *ResIncrementAdd(ResPortalIncrement *incSet,
+										   PROCLOCK *proclock,
+										   ResourceOwner owner,
+										   ResIncrementAddStatus *status);
 static bool ResIncrementRemove(ResPortalTag *portaltag);
 
 static void ResWaitOnLock(LOCALLOCK *locallock, ResourceOwner owner, ResPortalIncrement *incrementSet);
@@ -139,6 +142,7 @@ ResLockAcquire(LOCKTAG *locktag, ResPortalIncrement *incrementSet)
 	ResourceOwner owner;
 	ResQueue	queue;
 	int			status;
+	ResIncrementAddStatus addStatus;
 
 	/* Setup the lock method bits. */
 	Assert(locktag->locktag_lockmethodid == RESOURCE_LOCKMETHOD);
@@ -335,7 +339,11 @@ ResLockAcquire(LOCKTAG *locktag, ResPortalIncrement *incrementSet)
 		lock->requested[lockmode]--;
 		Assert((lock->nRequested >= 0) && (lock->requested[lockmode] >= 0));
 
-		/* Clean up this lock. */
+		/*
+		 * Clean up the locallock. Since a single locallock can represent
+		 * multiple locked portals in the same backend, we can only remove it if
+		 * this is the last portal.
+		 */
 		if (proclock->nLocks == 0)
 			RemoveLocalLock(locallock);
 
@@ -355,17 +363,27 @@ ResLockAcquire(LOCKTAG *locktag, ResPortalIncrement *incrementSet)
 	 * Otherwise, we are going to take a lock, Add an increment to the
 	 * increment hash for this process.
 	 */
-	incrementSet = ResIncrementAdd(incrementSet, proclock, owner);
-	if (!incrementSet)
+	incrementSet = ResIncrementAdd(incrementSet, proclock, owner, &addStatus);
+	if (addStatus != RES_INCREMENT_ADD_OK)
 	{
+		/*
+		 * We have failed to add the increment. So decrement the requested
+		 * counters, relinquish locks and raise the appropriate error.
+		 */
 		lock->nRequested--;
 		lock->requested[lockmode]--;
 		LWLockRelease(ResQueueLock);
 		LWLockRelease(partitionLock);
-		ereport(ERROR,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of shared memory adding portal increments"),
-				 errhint("You may need to increase max_resource_portals_per_transaction.")));
+		if (addStatus == RES_INCREMENT_ADD_OOSM)
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+						errmsg("out of shared memory adding portal increments"),
+						errhint("You may need to increase max_resource_portals_per_transaction.")));
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+						errmsg("duplicate portal id %u for proc %d",
+							   incrementSet->portalId, incrementSet->pid)));
 	}
 
 	/*
@@ -387,7 +405,11 @@ ResLockAcquire(LOCKTAG *locktag, ResPortalIncrement *incrementSet)
 		lock->requested[lockmode]--;
 		Assert((lock->nRequested >= 0) && (lock->requested[lockmode] >= 0));
 
-		/* Clean up this lock. */
+		/*
+		 * Clean up the locallock. Since a single locallock can represent
+		 * multiple locked portals in the same backend, we can only remove it if
+		 * this is the last portal.
+		 */
 		if (proclock->nLocks == 0)
 			RemoveLocalLock(locallock);
 
@@ -560,17 +582,19 @@ ResLockRelease(LOCKTAG *locktag, uint32 resPortalId)
 		return false;
 	}
 
+	LWLockAcquire(ResQueueLock, LW_EXCLUSIVE);
+
 	/*
 	 * Double-check that we are actually holding a lock of the type we want to
 	 * Release.
 	 */
 	if (!(proclock->holdMask & LOCKBIT_ON(lockmode)) || proclock->nLocks <= 0)
 	{
-		LWLockRelease(partitionLock);
 		elog(DEBUG1, "Resource queue %d: proclock not held", locktag->locktag_field1);
 		RemoveLocalLock(locallock);
 		ResCleanUpLock(lock, proclock, hashcode, false);
-
+		LWLockRelease(ResQueueLock);
+		LWLockRelease(partitionLock);
 		return false;
 	}
 
@@ -581,12 +605,15 @@ ResLockRelease(LOCKTAG *locktag, uint32 resPortalId)
 	portalTag.pid = MyProc->pid;
 	portalTag.portalId = resPortalId;
 
-	LWLockAcquire(ResQueueLock, LW_EXCLUSIVE);
-
 	incrementSet = ResIncrementFind(&portalTag);
 	if (!incrementSet)
 	{
 		elog(DEBUG1, "Resource queue %d: increment not found on unlock", locktag->locktag_field1);
+		/*
+		 * Clean up the locallock. Since a single locallock can represent
+		 * multiple locked portals in the same backend, we can only remove it if
+		 * this is the last portal.
+		 */
 		if (proclock->nLocks == 0)
 		{
 			RemoveLocalLock(locallock);
@@ -606,6 +633,10 @@ ResLockRelease(LOCKTAG *locktag, uint32 resPortalId)
 
 	/*
 	 * Perform clean-up, waking up any waiters!
+	 *
+	 * Clean up the locallock. Since a single locallock can represent
+	 * multiple locked portals in the same backend, we can only remove it if
+	 * this is the last portal.
 	 */
 	if (proclock->nLocks == 0)
 		RemoveLocalLock(locallock);
@@ -978,6 +1009,20 @@ ResCleanUpLock(LOCK *lock, PROCLOCK *proclock, uint32 hashcode, bool wakeupNeede
 	Assert(LWLockHeldByMeInMode(ResQueueLock, LW_EXCLUSIVE));
 
 	/*
+	 * This check should really be an assertion. But to guard against edge cases
+	 * previously not encountered, PANIC instead.
+	 */
+	if (lock->tag.locktag_type != LOCKTAG_RESOURCE_QUEUE ||
+		proclock->tag.myLock->tag.locktag_type != LOCKTAG_RESOURCE_QUEUE)
+	{
+		ereport(PANIC,
+				errmsg("We are trying to clean up a non-resource queue lock"),
+				errdetail("lock's locktag type = %d and proclock's locktag type = %d",
+						  lock->tag.locktag_type,
+						  proclock->tag.myLock->tag.locktag_type));
+	}
+
+	/*
 	 * If this was my last hold on this lock, delete my entry in the proclock
 	 * table.
 	 */
@@ -1046,7 +1091,6 @@ ResWaitOnLock(LOCALLOCK *locallock, ResourceOwner owner, ResPortalIncrement *inc
 		set_ps_display(new_status, false);		/* truncate off " queuing" */
 		new_status[len] = '\0';
 	}
-	pgstat_report_wait_start(PG_WAIT_RESOURCE_QUEUE);
 
 	awaitedLock = locallock;
 	awaitedOwner = owner;
@@ -1064,7 +1108,6 @@ ResWaitOnLock(LOCALLOCK *locallock, ResourceOwner owner, ResPortalIncrement *inc
 		LWLockRelease(partitionLock);
 		DeadLockReport();
 	}
-	pgstat_report_wait_end();
 
 	awaitedLock = NULL;
 
@@ -1204,7 +1247,7 @@ ResProcWakeup(PGPROC *proc, int waitStatus)
 	proc->waitStatus = waitStatus;
 
 	/* And awaken it */
-	PGSemaphoreUnlock(proc->sem);
+	SetLatch(&proc->procLatch);
 
 	return retProc;
 }
@@ -1252,6 +1295,7 @@ ResRemoveFromWaitQueue(PGPROC *proc, uint32 hashcode)
 	/* Clean up the proc's own state */
 	proc->waitLock = NULL;
 	proc->waitProcLock = NULL;
+	proc->waitStatus = STATUS_ERROR;
 
 	/*
 	 * Remove the waited on portal increment.
@@ -1433,15 +1477,20 @@ ResPortalIncrementHashTableInit(void)
 /*
  * ResIncrementAdd -- Add a new increment element to the increment hash.
  *
- * Notes:
- *	Return a pointer to where the new increment is stored, or NULL if we
- *	are out of memory (or if we find a duplicate portalid).
+ * We return the increment added. We return NULL if we are run out of shared
+ * memory. In case there is an existing increment element in the hash table,
+ * we have encountered a duplicate portal - so we return the existing increment
+ * for ERROR reporting purposes. The status output argument is updated to
+ * indicate the outcome of the routine.
  *
  *	The resource queue lightweight lock (ResQueueLock) *must* be held for
  *	this operation.
  */
 static ResPortalIncrement *
-ResIncrementAdd(ResPortalIncrement *incSet, PROCLOCK *proclock, ResourceOwner owner)
+ResIncrementAdd(ResPortalIncrement *incSet,
+				PROCLOCK *proclock,
+				ResourceOwner owner,
+				ResIncrementAddStatus *status)
 {
 	ResPortalIncrement *incrementSet;
 	ResPortalTag portaltag;
@@ -1449,6 +1498,18 @@ ResIncrementAdd(ResPortalIncrement *incSet, PROCLOCK *proclock, ResourceOwner ow
 	bool		found;
 
 	Assert(LWLockHeldByMeInMode(ResQueueLock, LW_EXCLUSIVE));
+
+#ifdef FAULT_INJECTOR
+	/* Simulate an out-of-shared-memory error by bypassing the increment hash. */
+	if (FaultInjector_InjectFaultIfSet("res_increment_add_oosm",
+									   DDLNotSpecified,
+									   "",
+									   "") == FaultInjectorTypeSkip)
+	{
+		*status = RES_INCREMENT_ADD_OOSM;
+		return NULL;
+	}
+#endif
 
 	/* Set up the key. */
 	MemSet(&portaltag, 0, sizeof(ResPortalTag));
@@ -1461,6 +1522,7 @@ ResIncrementAdd(ResPortalIncrement *incSet, PROCLOCK *proclock, ResourceOwner ow
 
 	if (!incrementSet)
 	{
+		*status = RES_INCREMENT_ADD_OOSM;
 		return NULL;
 	}
 
@@ -1481,10 +1543,11 @@ ResIncrementAdd(ResPortalIncrement *incSet, PROCLOCK *proclock, ResourceOwner ow
 	{
 		/* We have added this portId before - something has gone wrong! */
 		ResIncrementRemove(&portaltag);
-		elog(WARNING, "duplicate portal id %u for proc %d", incSet->portalId, incSet->pid);
-		incrementSet = NULL;
+		*status = RES_INCREMENT_ADD_DUPLICATE_PORTAL;
+		return incrementSet;
 	}
 
+	*status = RES_INCREMENT_ADD_OK;
 	return incrementSet;
 }
 

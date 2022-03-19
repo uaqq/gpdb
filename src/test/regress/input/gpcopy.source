@@ -260,10 +260,6 @@ COPY copy_regression_text3 from stdin with delimiter '|';
 the at sign: \100|6|c text data|d text data|e text data
 a single backslash \\ in col a|8|c text data|d text data|e text data
 \.
--- This works in PostgreSQL, and these days in GPDB as well, but used to not
--- work until GPDB 6. This is just one line, because the newlines are
--- escaped. (Even on PostgreSQL, the COPY documentation recommends not to do
--- this, but let's test it.)
 COPY copy_regression_text3 from stdin with delimiter '|';
 an embedded linefeed \
 and another one\
@@ -1024,7 +1020,7 @@ COPY COPY_ON_SEGMENT_CHECK_TOW_DSITKEY FROM '/tmp/COPY_ON_SEGMENT_CHECK_TOW_DSIT
 CREATE TABLE COPY_ON_SEGMENT_DIST_RANDOMLY(a int) DISTRIBUTED RANDOMLY;
 COPY COPY_ON_SEGMENT_DIST_RANDOMLY FROM PROGRAM 'echo <SEGID>' ON SEGMENT;
 
--- COPY FROM ON SEGMENT partitoned table
+-- COPY FROM ON SEGMENT partitioned table
 CREATE TABLE COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED(a int) DISTRIBUTED BY (a) PARTITION BY range(a) ( START (0) END (10) EVERY (5));
 INSERT INTO COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED SELECT generate_series(0,9);
 COPY COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED to '/tmp/COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED<SEGID>.csv' ON SEGMENT CSV;
@@ -1050,11 +1046,11 @@ set gp_vmem_idle_resource_timeout=18000;
 COPY COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED_1_prt_2 to '/tmp/COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED0.csv' CSV;
 COPY COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED FROM '/tmp/COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED<SEGID>.csv' ON SEGMENT CSV;
 
--- COPY FROM ON SEGMENT partitoned table distributed randomly
+-- COPY FROM ON SEGMENT partitioned table distributed randomly
 CREATE TABLE COPY_ON_SEGMENT_PARTION_DIST_RANDOMLY (a int) DISTRIBUTED RANDOMLY PARTITION BY range(a) ( START (0) END (10) EVERY (5));
 COPY COPY_ON_SEGMENT_PARTION_DIST_RANDOMLY FROM PROGRAM 'echo <SEGID>' ON SEGMENT;
 
--- COPY FROM partitoned table
+-- COPY FROM partitioned table
 TRUNCATE COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED;
 INSERT INTO COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED SELECT generate_series(0,9);
 SELECT COUNT(*) FROM COPY_ON_SEGMENT_CHECK_DISTKEY_PARTIONED;

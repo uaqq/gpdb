@@ -1178,8 +1178,15 @@ static int local_send(request_t *r, const char* buf, int buflen)
 		{
 			gwarning(r, "gpfdist_send failed - the connection was terminated by the client (%d: %s)", e, strerror(e));
 			/* close stream and release fd & flock on pipe file*/
-			if (r->session)
+			if (r->session && r->is_get)
 				session_end(r->session, 0);
+			/* For post requests, the error msg may not be transmited
+ 			 * to the client side because of network failure. So the 
+ 			 * session has to be set an error to inform the client
+ 			 * through the following request response with an 
+ 			 * internal error. */
+			else if (r->session && !r->is_get)
+				session_end(r->session, 1);
 		} else {
 			if (!ok) {
 				gwarning(r, "gpfdist_send failed - due to (%d: %s)", e, strerror(e));
@@ -1657,6 +1664,13 @@ static int session_attach(request_t* r)
 
 	/* found a session in hashtable*/
 
+	/* if error, send an error and close */
+	if (session->is_error)
+	{
+		http_error(r, FDIST_INTERNAL_ERROR, "session error");
+		request_end(r, 1, 0);
+		return -1;
+	}
 	/* session already ended. send an empty response, and close. */
 	if (NULL == session->fstream)
 	{
@@ -1664,14 +1678,6 @@ static int session_attach(request_t* r)
 
 		http_empty(r);
 		request_end(r, 0, 0);
-		return -1;
-	}
-
-	/* if error, send an error and close */
-	if (session->is_error)
-	{
-		http_error(r, FDIST_INTERNAL_ERROR, "session error");
-		request_end(r, 1, 0);
 		return -1;
 	}
 
@@ -4033,6 +4039,8 @@ static SSL_CTX *initialize_ctx(void)
 	/* Create our context*/
 	ctx = SSL_CTX_new(SSLv23_server_method());
 
+	/* Disable old protocol versions */
+	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
 	/* Generate random seed */
 	if ( RAND_poll() == 0 )
 		gfatal(NULL,"Can't generate random seed for SSL");

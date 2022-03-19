@@ -73,8 +73,6 @@ CreateGangFunc pCreateGangFunc = cdbgang_createGang_async;
 static bool NeedResetSession = false;
 static Oid	OldTempNamespace = InvalidOid;
 
-static void resetSessionForPrimaryGangLoss(void);
-
 /*
  * cdbgang_createGang:
  *
@@ -274,7 +272,7 @@ buildGangDefinition(List *segments, SegmentType segmentType)
  * Add one GUC to the option string.
  */
 static void
-addOneOption(StringInfo string, struct config_generic *guc)
+addOneOption(StringInfo option, StringInfo diff, struct config_generic *guc)
 {
 	Assert(guc && (guc->flags & GUC_GPDB_NEED_SYNC));
 	switch (guc->vartype)
@@ -283,30 +281,36 @@ addOneOption(StringInfo string, struct config_generic *guc)
 			{
 				struct config_bool *bguc = (struct config_bool *) guc;
 
-				appendStringInfo(string, " -c %s=%s", guc->name, *(bguc->variable) ? "true" : "false");
+				appendStringInfo(option, " -c %s=%s", guc->name, (bguc->reset_val) ? "true" : "false");
+				if (bguc->reset_val != *bguc->variable)
+					appendStringInfo(diff, " %s=%s", guc->name, *(bguc->variable) ? "true" : "false");
 				break;
 			}
 		case PGC_INT:
 			{
 				struct config_int *iguc = (struct config_int *) guc;
 
-				appendStringInfo(string, " -c %s=%d", guc->name, *iguc->variable);
+				appendStringInfo(option, " -c %s=%d", guc->name, iguc->reset_val);
+				if (iguc->reset_val != *iguc->variable)
+					appendStringInfo(diff, " %s=%d", guc->name, *iguc->variable);
 				break;
 			}
 		case PGC_REAL:
 			{
 				struct config_real *rguc = (struct config_real *) guc;
 
-				appendStringInfo(string, " -c %s=%f", guc->name, *rguc->variable);
+				appendStringInfo(option, " -c %s=%f", guc->name, rguc->reset_val);
+				if (rguc->reset_val != *rguc->variable)
+					appendStringInfo(diff, " %s=%f", guc->name, *rguc->variable);
 				break;
 			}
 		case PGC_STRING:
 			{
 				struct config_string *sguc = (struct config_string *) guc;
-				const char *str = *sguc->variable;
+				const char *str = sguc->reset_val;
 				int			i;
 
-				appendStringInfo(string, " -c %s=", guc->name);
+				appendStringInfo(option, " -c %s=", guc->name);
 
 				/*
 				 * All whitespace characters must be escaped. See
@@ -315,20 +319,32 @@ addOneOption(StringInfo string, struct config_generic *guc)
 				for (i = 0; str[i] != '\0'; i++)
 				{
 					if (isspace((unsigned char) str[i]))
-						appendStringInfoChar(string, '\\');
+						appendStringInfoChar(option, '\\');
 
-					appendStringInfoChar(string, str[i]);
+					appendStringInfoChar(option, str[i]);
+				}
+				if (strcmp(str, *sguc->variable) != 0)
+				{
+					const char *p = *sguc->variable;
+					appendStringInfo(diff, " %s=", guc->name);
+					for (i = 0; p[i] != '\0'; i++)
+					{
+						if (isspace((unsigned char) p[i]))
+							appendStringInfoChar(diff, '\\');
+
+						appendStringInfoChar(diff, p[i]);
+					}
 				}
 				break;
 			}
 		case PGC_ENUM:
 			{
 				struct config_enum *eguc = (struct config_enum *) guc;
-				int			value = *eguc->variable;
+				int			value = eguc->reset_val;
 				const char *str = config_enum_lookup_by_value(eguc, value);
 				int			i;
 
-				appendStringInfo(string, " -c %s=", guc->name);
+				appendStringInfo(option, " -c %s=", guc->name);
 
 				/*
 				 * All whitespace characters must be escaped. See
@@ -338,9 +354,21 @@ addOneOption(StringInfo string, struct config_generic *guc)
 				for (i = 0; str[i] != '\0'; i++)
 				{
 					if (isspace((unsigned char) str[i]))
-						appendStringInfoChar(string, '\\');
+						appendStringInfoChar(option, '\\');
 
-					appendStringInfoChar(string, str[i]);
+					appendStringInfoChar(option, str[i]);
+				}
+				if (value != *eguc->variable)
+				{
+					const char *p = config_enum_lookup_by_value(eguc, *eguc->variable);
+					appendStringInfo(diff, " %s=", guc->name);
+					for (i = 0; p[i] != '\0'; i++)
+					{
+						if (isspace((unsigned char) p[i]))
+							appendStringInfoChar(diff, '\\');
+
+						appendStringInfoChar(diff, p[i]);
+					}
 				}
 				break;
 			}
@@ -348,24 +376,46 @@ addOneOption(StringInfo string, struct config_generic *guc)
 }
 
 /*
- * Add GUCs to option string.
+ * Add GUCs to option/diff_options string.
+ *
+ * `options` is a list of reset_val of the GUCs, not the GUC's current value.
+ * `diff_options` is a list of the GUCs' current value. If the GUC is unchanged,
+ * `diff_options` will omit it.
+ *
+ * In process_startup_options(), `options` is used to set the GUCs with
+ * PGC_S_CLIENT as its guc source. Then, `diff_options` is used to set the GUCs
+ * with PGC_S_SESSION as its guc source.
+ *
+ * With PGC_S_CLIENT, SetConfigOption() will set the GUC's reset_val
+ * when processing `options`, so the reset_val of the involved GUCs on all QD
+ * and QEs are the same.
+ *
+ * After applying `diff_options`, the GUCs' current value is set to the same
+ * value as the QD and the reset_val of the GUC will not change.
+ *
+ * At last, both the reset_val and current value of the GUC are consistent,
+ * even after RESET.
+ *
+ * See addOneOption() and process_startup_options() for more details.
  */
-char *
-makeOptions(void)
+void
+makeOptions(char **options, char **diff_options)
 {
 	struct config_generic **gucs = get_guc_variables();
 	int			ngucs = get_num_guc_variables();
 	CdbComponentDatabaseInfo *qdinfo = NULL;
-	StringInfoData string;
+	StringInfoData optionsStr;
+	StringInfoData diffStr;
 	int			i;
 
-	initStringInfo(&string);
+	initStringInfo(&optionsStr);
+	initStringInfo(&diffStr);
 
 	Assert(Gp_role == GP_ROLE_DISPATCH);
 
 	qdinfo = cdbcomponent_getComponentInfo(MASTER_CONTENT_ID); 
-	appendStringInfo(&string, " -c gp_qd_hostname=%s", qdinfo->config->hostip);
-	appendStringInfo(&string, " -c gp_qd_port=%d", qdinfo->config->port);
+	appendStringInfo(&optionsStr, " -c gp_qd_hostname=%s", qdinfo->config->hostip);
+	appendStringInfo(&optionsStr, " -c gp_qd_port=%d", qdinfo->config->port);
 
 	for (i = 0; i < ngucs; ++i)
 	{
@@ -375,10 +425,11 @@ makeOptions(void)
 			(guc->context == PGC_USERSET ||
 			 guc->context == PGC_BACKEND ||
 			 IsAuthenticatedUserSuperUser()))
-			addOneOption(&string, guc);
+			addOneOption(&optionsStr, &diffStr, guc);
 	}
 
-	return string.data;
+	*options = optionsStr.data;
+	*diff_options = diffStr.data;
 }
 
 /*
@@ -636,6 +687,11 @@ getCdbProcessesForQD(int isPrimary)
 	return list;
 }
 
+/*
+ * This function should not be used in the context of named portals
+ * as it destroys the CdbComponentsContext, which is accessed later
+ * during named portal cleanup.
+ */
 void
 DisconnectAndDestroyAllGangs(bool resetSession)
 {
@@ -667,81 +723,71 @@ DisconnectAndDestroyAllGangs(bool resetSession)
  * Destroy all idle (i.e available) QEs.
  * It is always safe to get rid of the reader QEs.
  *
- * If we are not in a transaction and we do not have a TempNamespace, destroy
- * writer QEs as well.
- *
  * call only from an idle session.
  */
 void DisconnectAndDestroyUnusedQEs(void)
 {
-	if (IsTransactionOrTransactionBlock() || TempNamespaceOidIsValid())
-	{
-		/*
-		 * If we are in a transaction, we can't release the writer gang,
-		 * as this will abort the transaction.
-		 *
-		 * If we have a TempNameSpace, we can't release the writer gang, as this
-		 * would drop any temp tables we own.
-		 *
-		 * Since we are idle, any reader gangs will be available but not allocated.
-		 */
-		cdbcomponent_cleanupIdleQEs(false);
-	}
-	else
-	{
-		/*
-		 * Get rid of ALL gangs... Readers and primary writer.
-		 * After this, we have no resources being consumed on the segDBs at all.
-		 *
-		 * Our session wasn't destroyed due to an fatal error or FTS action, so
-		 * we don't need to do anything special.  Specifically, we DON'T want
-		 * to act like we are now in a new session, since that would be confusing
-		 * in the log.
-		 *
-		 */
-		cdbcomponent_cleanupIdleQEs(true);
-	}
+	/*
+	 * Only release reader gangs, never writer gang. This helps to avoid the
+	 * shared snapshot collision error on next gang creation from hitting if
+	 * QE processes are slow to exit due to this cleanup.
+	 *
+	 * If we are in a transaction, we can't release the writer gang also, as
+	 * this will abort the transaction.
+	 *
+	 * If we have a TempNameSpace, we can't release the writer gang also, as
+	 * this would drop any temp tables we own.
+	 *
+	 * Since we are idle, any reader gangs will be available but not
+	 * allocated.
+	 */
+	cdbcomponent_cleanupIdleQEs(false);
 }
 
 /*
  * Drop any temporary tables associated with the current session and
  * use a new session id since we have effectively reset the session.
- *
- * Call this procedure outside of a transaction.
  */
 void
-CheckForResetSession(void)
+GpDropTempTables(void)
 {
 	int			oldSessionId = 0;
 	int			newSessionId = 0;
 	Oid			dropTempNamespaceOid;
 
-	if (!NeedResetSession)
+	/* No need to reset session or drop temp tables */
+	if (!NeedResetSession && OldTempNamespace == InvalidOid)
 		return;
 
 	/* Do the session id change early. */
-
-	/* If we have gangs, we can't change our session ID. */
-	Assert(!cdbcomponent_qesExist());
-
-	oldSessionId = gp_session_id;
-	ProcNewMppSessionId(&newSessionId);
-
-	gp_session_id = newSessionId;
-	gp_command_count = 0;
-	pgstat_report_sessionid(newSessionId);
-
-	/* Update the slotid for our singleton reader. */
-	if (SharedLocalSnapshotSlot != NULL)
+	if (NeedResetSession)
 	{
-		LWLockAcquire(SharedLocalSnapshotSlot->slotLock, LW_EXCLUSIVE);
-		SharedLocalSnapshotSlot->slotid = gp_session_id;
-		LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+		/* If we have gangs, we can't change our session ID. */
+		Assert(!cdbcomponent_qesExist());
+
+		oldSessionId = gp_session_id;
+		ProcNewMppSessionId(&newSessionId);
+
+		gp_session_id = newSessionId;
+		gp_command_count = 0;
+		pgstat_report_sessionid(newSessionId);
+
+		/* Update the slotid for our singleton reader. */
+		if (SharedLocalSnapshotSlot != NULL)
+		{
+			LWLockAcquire(SharedLocalSnapshotSlot->slotLock, LW_EXCLUSIVE);
+			SharedLocalSnapshotSlot->slotid = gp_session_id;
+			LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+		}
+
+		elog(LOG, "The previous session was reset because its gang was disconnected (session id = %d). "
+			 "The new session id = %d", oldSessionId, newSessionId);
 	}
 
-	elog(LOG, "The previous session was reset because its gang was disconnected (session id = %d). "
-		 "The new session id = %d", oldSessionId, newSessionId);
-
+	/*
+	 * When it's in transaction block, need to bump the session id, e.g. retry COMMIT PREPARED,
+	 * but defer drop temp table to the main loop in PostgresMain().
+	 */
 	if (IsTransactionOrTransactionBlock())
 	{
 		NeedResetSession = false;
@@ -774,7 +820,7 @@ CheckForResetSession(void)
 	}
 }
 
-static void
+void
 resetSessionForPrimaryGangLoss(void)
 {
 	if (ProcCanSetMppSessionId())
@@ -871,5 +917,5 @@ void
 ResetAllGangs(void)
 {
 	DisconnectAndDestroyAllGangs(true);
-	CheckForResetSession();
+	GpDropTempTables();
 }

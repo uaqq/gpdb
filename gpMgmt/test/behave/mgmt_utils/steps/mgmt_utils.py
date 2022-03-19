@@ -25,6 +25,7 @@ from gppylib.commands.gp import SegmentStart, GpStandbyStart, CoordinatorStop
 from gppylib.commands import gp
 from gppylib.commands.unix import findCmdInPath, Scp
 from gppylib.operations.startSegments import MIRROR_MODE_MIRRORLESS
+from gppylib.operations.buildMirrorSegments import get_recovery_progress_pattern
 from gppylib.operations.unix import ListRemoteFilesByPattern, CheckRemoteFile
 from test.behave_utils.gpfdist_utils.gpfdist_mgmt import Gpfdist
 from test.behave_utils.utils import *
@@ -45,7 +46,7 @@ def show_all_installed(gphome):
     name = x[0].lower()
     if 'ubuntu' in name:
         return "dpkg --get-selections --admindir=%s/share/packages/database/deb | awk '{print $1}'" % gphome
-    elif 'centos' in name:
+    elif 'centos' in name or 'rhel' in name:
         return "rpm -qa --dbpath %s/share/packages/database" % gphome
     else:
         raise Exception('UNKNOWN platform: %s' % str(x))
@@ -55,7 +56,7 @@ def remove_native_package_command(gphome, full_gppkg_name):
     name = x[0].lower()
     if 'ubuntu' in name:
         return 'fakeroot dpkg --force-not-root --log=/dev/null --instdir=%s --admindir=%s/share/packages/database/deb -r %s' % (gphome, gphome, full_gppkg_name)
-    elif 'centos' in name:
+    elif 'centos' in name or 'rhel' in name:
         return 'rpm -e %s --dbpath %s/share/packages/database' % (full_gppkg_name, gphome)
     else:
         raise Exception('UNKNOWN platform: %s' % str(x))
@@ -188,6 +189,16 @@ def impl(conetxt, tabname):
         sql = "create table t(i int, j int) partition by list(i) (values(2018), values(1218))"
         dbconn.execSQL(conn, sql)
         sql = ("alter table t exchange partition for (2018) with table {tabname} without validation").format(tabname=tabname)
+        dbconn.execSQL(conn, sql)
+        conn.commit()
+
+@given('the user create a partition table with name "{tabname}"')
+def impl(conetxt, tabname):
+    dbname = 'gptest'
+    with closing(dbconn.connect(dbconn.DbURL(dbname=dbname), unsetSearchPath=False)) as conn:
+        sql = "create table {tabname}(i int) partition by range(i) (start(0) end(10001) every(1000)) distributed by (i)".format(tabname=tabname)
+        dbconn.execSQL(conn, sql)
+        sql = "INSERT INTO {tabname} SELECT generate_series(1, 10000)".format(tabname=tabname)
         dbconn.execSQL(conn, sql)
         conn.commit()
 
@@ -339,7 +350,6 @@ def impl(context, env_var):
     if env_var in os.environ:
         del os.environ[env_var]
 
-
 @then('{env_var} environment variable should be restored')
 def impl(context, env_var):
     if not hasattr(context, 'orig_env'):
@@ -353,6 +363,147 @@ def impl(context, env_var):
     del context.orig_env[env_var]
 
 
+@given('all files in pg_wal directory are deleted from data directory of preferred primary of content {content_ids}')
+def impl(context, content_ids):
+    all_segments = GpArray.initFromCatalog(dbconn.DbURL()).getDbList()
+    segments = filter(lambda seg: seg.getSegmentPreferredRole() == ROLE_PRIMARY and
+                      seg.getSegmentContentId() in [int(c) for c in content_ids.split(',')], all_segments)
+    for seg in segments:
+        cmd = Command(name="Remove pg_wal files",
+                      cmdStr='rm -rf {}'.format(os.path.join(seg.getSegmentDataDirectory(), 'pg_wal')),
+                      remoteHost=seg.getSegmentHostName(), ctxt=REMOTE)
+        cmd.run(validateAfter=True)
+
+
+@given('the user {action} the walsender on the {segment} on content {content}')
+@when('the user {action} the walsender on the {segment} on content {content}')
+@then('the user {action} the walsender on the {segment} on content {content}')
+def impl(context, action, segment, content):
+    if segment == 'mirror':
+        role = "'m'"
+    elif segment == 'primary':
+        role = "'p'"
+    else:
+        raise Exception('segment role can only be primary or mirror')
+
+    create_fault_query = "CREATE EXTENSION IF NOT EXISTS gp_inject_fault;"
+    execute_sql('postgres', create_fault_query)
+
+    inject_fault_query = "SELECT gp_inject_fault_infinite('wal_sender_loop', '%s', dbid) FROM gp_segment_configuration WHERE content=%s AND role=%s;" % (action, content, role)
+    execute_sql('postgres', inject_fault_query)
+    return
+
+
+@given('the user skips walreceiver flushing on the {segment} on content {content}')
+@then('the user skips walreceiver flushing on the {segment} on content {content}')
+def impl(context, segment, content):
+    if segment == 'mirror':
+        role = "'m'"
+    elif segment == 'primary':
+        role = "'p'"
+    else:
+        raise Exception('segment role can only be primary or mirror')
+
+    create_fault_query = "CREATE EXTENSION IF NOT EXISTS gp_inject_fault;"
+    execute_sql('postgres', create_fault_query)
+
+    inject_fault_query = "SELECT gp_inject_fault_infinite('walrecv_skip_flush', 'skip', dbid) FROM gp_segment_configuration WHERE content=%s AND role=%s;" % (content, role)
+    execute_sql('postgres', inject_fault_query)
+    return
+
+
+@given('the user waits until all bytes are sent to mirror on content {content}')
+@then('the user waits until all bytes are sent to mirror on content {content}')
+def impl(context, content):
+    host, port = get_primary_segment_host_port_for_content(content)
+    query = "SELECT pg_current_wal_lsn() - sent_lsn FROM pg_stat_replication;"
+    desired_result = 0
+    dburl = dbconn.DbURL(hostname=host, port=port, dbname='template1')
+    wait_for_desired_query_result(dburl, query, desired_result, utility=True)
+
+@then('the user waits until recovery_progress.file is created in {logdir} and verifies its format')
+def impl(context, logdir):
+    attempt = 0
+    num_retries = 60000
+    log_dir = _get_gpAdminLogs_directory() if logdir == 'gpAdminLogs' else logdir
+    recovery_progress_file = '{}/recovery_progress.file'.format(log_dir)
+    while attempt < num_retries:
+        attempt += 1
+        if os.path.exists(recovery_progress_file):
+            with open(recovery_progress_file, 'r') as fp:
+                context.recovery_lines = fp.readlines()
+            for line in context.recovery_lines:
+                recovery_type, dbid, progress = line.strip().split(':', 2)
+                progress_pattern = re.compile(get_recovery_progress_pattern())
+                # TODO: assert progress line in the actual hosts bb/rewind progress file
+                if re.search(progress_pattern, progress) and dbid.isdigit() and recovery_type in ['full', 'incremental']:
+                    return
+                else:
+                    raise Exception('File present but incorrect format line "{}"'.format(line))
+        time.sleep(0.01)
+        if attempt == num_retries:
+            raise Exception('Timed out after {} retries'.format(num_retries))
+
+
+@then('verify that lines from recovery_progress.file are present in segment progress files in {logdir}')
+def impl(context, logdir):
+    all_progress_lines_by_dbid = {}
+    for line in context.recovery_lines:
+        recovery_type, dbid, line_from_combined_progress_file = line.strip().split(':', 2)
+        all_progress_lines_by_dbid[int(dbid)] = [recovery_type, line_from_combined_progress_file]
+
+    all_segments = GpArray.initFromCatalog(dbconn.DbURL()).getDbList()
+
+    log_dir = _get_gpAdminLogs_directory() if logdir == 'gpAdminLogs' else logdir
+    for seg in all_segments:
+        seg_dbid = seg.getSegmentDbId()
+        if seg_dbid in all_progress_lines_by_dbid:
+            recovery_type, line_from_combined_progress_file = all_progress_lines_by_dbid[seg_dbid]
+            process_name = 'pg_basebackup' if recovery_type == 'full' else 'pg_rewind'
+            seg_progress_file = '{}/{}.*.dbid{}.out'.format(log_dir, process_name, seg_dbid)
+            check_cmd_str = 'grep "{}" {}'.format(line_from_combined_progress_file, seg_progress_file)
+            check_cmd = Command(name='check line in segment progress file',
+                          cmdStr=check_cmd_str,
+                          ctxt=REMOTE,
+                          remoteHost=seg.getSegmentHostName())
+            check_cmd.run()
+            if check_cmd.get_return_code() != 0:
+                raise Exception('Expected line {} in segment progress file {} on host {} but not found.'
+                                .format(line_from_combined_progress_file, seg_progress_file, seg.getSegmentHostName()))
+
+
+@then('recovery_progress.file should not exist in {logdir}')
+def impl(context, logdir):
+    log_dir = _get_gpAdminLogs_directory() if logdir == 'gpAdminLogs' else logdir
+    if os.path.exists('{}/recovery_progress.file'.format(log_dir)):
+        raise Exception('recovery_progress.file is still present under {}'.format(log_dir))
+
+def backup_bashrc():
+    home_dir = os.environ.get('HOME')
+    file = home_dir + '/.bashrc'
+    backup_fle = home_dir + '/.bashrc.backup'
+    if (os.path.isfile(file)):
+        command = "cp -f %s %s" % (file, backup_fle)
+        result = run_cmd(command)
+        if (result[0] != 0):
+            raise Exception("Error while backing up bashrc file. STDERR:%s" % (result[2]))
+    return
+
+
+
+def restore_bashrc():
+    home_dir = os.environ.get('HOME')
+    file = home_dir + '/.bashrc'
+    backup_fle = home_dir + '/.bashrc.backup'
+    if (os.path.isfile(backup_fle)):
+        command = "mv -f %s %s" % (backup_fle, file)
+    else:
+        command = "rm -f %s" % (file)
+    result = run_cmd(command)
+    if (result[0] != 0):
+        raise Exception("Error while restoring up bashrc file. STDERR:%s" % (result[2]))
+
+
 @given('the user runs "{command}"')
 @when('the user runs "{command}"')
 @then('the user runs "{command}"')
@@ -360,9 +511,116 @@ def impl(context, command):
     run_gpcommand(context, command)
 
 
-@given('the user asynchronously sets up to end that process in {secs} seconds')
-def impl(context, secs):
-    command = "sleep %d; kill -9 %d" % (int(secs), context.asyncproc.pid)
+@when('the user sets banner on host')
+def impl(context):
+    file = '~/.bashrc'
+    command = "echo 'echo \"banner test\"' >> %s; source %s" % (file, file)
+    result = run_cmd(command)
+    if(result[0] != 0):
+        raise Exception("Error while updating the bashrc file:%s. STDERR:"% (file))
+
+@when('the user sets multi-line banner on host')
+def impl(context):
+    file = '~/.bashrc'
+    command = "echo 'echo -e \"banner test1\\nbanner test2\\nbanner test-3\\nbanner test4\"' >> %s; source %s" % (file, file)
+    result = run_cmd(command)
+    if(result[0] != 0):
+        raise Exception("Error while updating the bashrc file:%s. STDERR:"% (file))
+
+@when('the user sets banner with separator token on host')
+def impl(context):
+    file = '~/.bashrc'
+    token = 'GP_DELIMITER_FOR_IGNORING_BASH_BANNER'
+    command = "echo 'echo -e \"banner test1\\nbanner %s test2\\nbanner test-3\\nbanner test4\\nbanner test5 %s\"' >> %s; source %s" % (token, token, file, file)
+    result = run_cmd(command)
+    if(result[0] != 0):
+        raise Exception("Error while updating the bashrc file:%s. STDERR:"% (file))
+
+@given('source gp_bash_functions and run simple echo')
+@then('source gp_bash_functions and run simple echo')
+@when('source gp_bash_functions and run simple echo')
+def impl(context):
+    gp_bash_functions = os.getenv("GPHOME") + '/bin/lib/gp_bash_functions.sh'
+    message = 'Hello World. This is a simple command output'
+    command = "source %s; REMOTE_EXECUTE_AND_GET_OUTPUT localhost \"echo %s\"" %(gp_bash_functions, message)
+    result = run_cmd(command)
+    if(result[0] != 0):
+        raise Exception ("Expected error code is 0. Command returned error code:%s.\nStderr:%s\n" % (result[0], result[2]))
+    if(result[1].strip() != message):
+        raise Exception ("Expected output is: [%s] while received output is: [%s] Return code:%s" %(message, result[1], result[0]))
+
+@given('source gp_bash_functions and run complex command')
+@then('source gp_bash_functions and run complex command')
+@when('source gp_bash_functions and run complex command')
+def impl(context):
+    gp_bash_functions = os.getenv("GPHOME") + '/bin/lib/gp_bash_functions.sh'
+    message = 'Hello World. This is a simple command output'
+    command = "source %s; REMOTE_EXECUTE_AND_GET_OUTPUT localhost \"echo %s; hostname | wc -w | xargs\"" %(gp_bash_functions, message)
+    result = run_cmd(command)
+    if(result[0] != 0):
+        raise Exception ("Expected error code is 0. Command returned error code:%s.\nStderr:%s\n" % (result[0], result[2]))
+
+    message = message + "\n1"
+    if(result[1].strip() != message):
+        raise Exception ("Expected output is: [%s] while received output is:[%s] Return code:%s" %(message, result[1], result[0]))
+
+@given('source gp_bash_functions and run echo with separator token')
+@then('source gp_bash_functions and run echo with separator token')
+@when('source gp_bash_functions and run echo with separator token')
+def impl(context):
+    gp_bash_functions = os.getenv("GPHOME") + '/bin/lib/gp_bash_functions.sh'
+    message = 'Hello World. This is a simple command output'
+    token = 'GP_DELIMITER_FOR_IGNORING_BASH_BANNER'
+    command = "source %s; REMOTE_EXECUTE_AND_GET_OUTPUT localhost \"echo %s; echo %s; echo %s\"" %(gp_bash_functions, message, token, message)
+    result = run_cmd(command)
+    if(result[0] != 0):
+        raise Exception ("Expected error code is 0. Command returned error code:%s.\nStderr:%s\n" % (result[0], result[2]))
+
+    message = "%s\n%s\n%s" %(message, token, message)
+    if(result[1].strip() != message):
+        raise Exception ("Expected output is: [%s] while received output is:[%s] Return code:%s" %(message, result[1], result[0]))
+
+@given('the user asynchronously sets up to end {process_name} process in {secs} seconds')
+@when('the user asynchronously sets up to end {process_name} process in {secs} seconds')
+def impl(context, process_name, secs):
+    if process_name == 'that':
+        command = "sleep %d; kill -9 %d" % (int(secs), context.asyncproc.pid)
+    else:
+        command = "sleep %d; ps ux | grep %s | awk '{print $2}' | xargs kill" % (int(secs), process_name)
+    run_async_command(context, command)
+
+
+@when('the user asynchronously sets up to end {process_name} process when {log_msg} is printed in the logs')
+def impl(context, process_name, log_msg):
+    command = "while sleep 0.1; " \
+              "do if egrep --quiet %s  ~/gpAdminLogs/%s*log ; " \
+              "then ps ux | grep bin/%s |awk '{print $2}' | xargs kill ;break 2; " \
+              "fi; done" % (log_msg, process_name, process_name)
+    run_async_command(context, command)
+
+@then('the user asynchronously sets up to end {kill_process_name} process when {log_msg} is printed in the {logfile_name} logs')
+def impl(context, kill_process_name, log_msg, logfile_name):
+    command = "while sleep 0.1; " \
+              "do if egrep --quiet %s  ~/gpAdminLogs/%s*log ; " \
+              "then ps ux | grep bin/%s |awk '{print $2}' | xargs kill -2 ;break 2; " \
+              "fi; done" % (log_msg, logfile_name, kill_process_name)
+    run_async_command(context, command)
+
+
+@when('the user asynchronously sets up to end {process_name} process with SIGINT')
+def impl(context, process_name):
+    command = "ps ux | grep bin/%s | awk '{print $2}' | xargs kill -2" % (process_name)
+    run_async_command(context, command)
+
+@when('the user asynchronously sets up to end gpcreateseg process when it starts')
+def impl(context):
+    # We keep trying to find the gpcreateseg process using ps,grep
+    # and when we find it, we want to kill it only after the trap for ERROR_EXIT is setup (hence the sleep 1)
+    command = """timeout 10m
+    bash -c "while sleep 0.1;
+    do if ps ux | grep [g]pcreateseg ;
+    then sleep 1 && ps ux | grep [g]pcreateseg |awk '{print \$2}' | xargs kill ;
+    break 2; fi; done" """
     run_async_command(context, command)
 
 
@@ -383,6 +641,18 @@ def impl(context, ret_code):
                         "rc: %s\n"
                         "stdout: %s\n"
                         "stderr: %s" % (rc, stdout_value, stderr_value))
+
+
+@when('the user waits until saved async process is completed')
+@then('the user waits until saved async process is completed')
+def impl(context):
+    context.asyncproc.communicate2()
+
+
+@when('the user waits until {process_name} process is completed')
+def impl(context, process_name):
+    wait_process_command = "while ps ux | grep %s | grep -v grep; do sleep 0.1; done;" % process_name
+    run_cmd(wait_process_command)
 
 
 @given('a user runs "{command}" with gphome "{gphome}"')
@@ -476,6 +746,13 @@ def impl(context, HOST, port, dir, ctxt):
 def impl(context, command, err_msg):
     check_err_msg(context, err_msg)
 
+@then('{command} {state} print "{err_msg}" error message')
+def impl(context, command, state, err_msg):
+    if state == "should not":
+        check_string_not_present_err_msg(context, err_msg)
+    elif state == "should":
+        check_err_msg(context, err_msg)
+
 @when('{command} should print "{out_msg}" escaped to stdout')
 @then('{command} should print "{out_msg}" escaped to stdout')
 @then('{command} should print a "{out_msg}" escaped warning')
@@ -499,14 +776,53 @@ def impl(context, command, out_msg, num):
     msg_list = context.stdout_message.split('\n')
     msg_list = [x.strip() for x in msg_list]
 
-    count = msg_list.count(out_msg)
+    count = 0
+    for line in msg_list:
+        if out_msg in line:
+            count += 1
     if count != int(num):
-        raise Exception("Expected %s to occur %s times. Found %d" % (out_msg, num, count))
+        raise Exception("Expected %s to occur %s times. Found %d. stdout: %s" % (out_msg, num, count, msg_list))
 
+
+@given('the user records the current timestamp in log_timestamp table')
+@when('the user records the current timestamp in log_timestamp table')
+@then('the user records the current timestamp in log_timestamp table')
+def impl(context):
+    sql = "CREATE TABLE log_timestamp AS SELECT CURRENT_TIMESTAMP;"
+    rc, output, error = run_cmd("psql -d template1 -c \'%s\'" %sql)
+    if rc:
+        raise Exception(error)
+
+
+@then('the user drops log_timestamp table')
+def impl(context):
+    rc, output, error = run_cmd("psql -d template1 -c \"DROP TABLE log_timestamp;\"")
+    if rc:
+        raise Exception(error)
+
+
+@then('the pg_log files on primary segments should not contain "{msg}"')
+def impl(context, msg):
+
+    gparray = GpArray.initFromCatalog(dbconn.DbURL())
+    segments = gparray.getDbList()
+    conn = dbconn.connect(dbconn.DbURL(dbname='template1'), unsetSearchPath=False)
+
+    for seg in segments:
+        if seg.isSegmentPrimary():
+            segname = "seg"+str(seg.content)
+            sql = "select * from gp_toolkit.__gp_log_segment_ext where logsegment='%s' and logtime > (select * from log_timestamp) and logmessage like '%s'" %(segname, msg)
+            try:
+                cursor = dbconn.query(conn, sql)
+                if cursor.fetchone():
+                    raise Exception("Fatal message exists in pg_log file on primary segment %s" %segname)
+            finally:
+                pass
+    conn.close()
 
 def lines_matching_both(in_str, str_1, str_2):
     lines = [x.strip() for x in in_str.split('\n')]
-    return [x for x in lines if x.count(str_1) and x.count(str_2)]
+    return [line for line in lines if line.count(str_1) and line.count(str_2)]
 
 
 @then('check if {command} ran "{called_command}" {num} times with args "{args}"')
@@ -548,6 +864,21 @@ def impl(context):
 
     for i in range(times):
         if are_segments_synchronized():
+            return
+        time.sleep(sleeptime)
+
+    raise Exception('segments are not in sync after %d seconds' % (times * sleeptime))
+
+
+@then('the segments are synchronized for content {content_ids}')
+def impl(context, content_ids):
+    if content_ids == 'None':
+        return
+    times = 60
+    sleeptime = 10
+    content_ids_to_check = [int(c) for c in content_ids.split(',')]
+    for i in range(times):
+        if are_segments_synchronized_for_content_ids(content_ids_to_check):
             return
         time.sleep(sleeptime)
 
@@ -857,6 +1188,28 @@ def impl(context, options):
     context.execute_steps('''Then the user runs command "gpactivatestandby -a %s" from standby coordinator''' % options)
     context.standby_was_activated = True
 
+@then('gpintsystem logs should {contain} lines about running backout script')
+def impl(context, contain):
+    string_to_find = 'Run command bash .*backout_gpinitsystem.* on coordinator to remove these changes$'
+    command = "egrep '{}' ~/gpAdminLogs/gpinitsystem*log".format(string_to_find)
+    run_command(context, command)
+    if contain == "contain":
+        if has_exception(context):
+            raise context.exception
+        context.gpinit_backout_command = re.search('Run command(.*)on coordinator', context.stdout_message).group(1)
+    elif contain == "not contain":
+        if not has_exception(context):
+            raise Exception("Logs contain lines about running backout script")
+    else:
+        raise Exception("Incorrect step name, only use 'should contain' and 'should not contain'")
+
+@then('the user runs the gpinitsystem backout script')
+def impl(context):
+    command = context.gpinit_backout_command
+    run_command(context, command)
+    if has_exception(context):
+        raise context.exception
+
 @when('the user runs command "{command}" from standby coordinator')
 @then('the user runs command "{command}" from standby coordinator')
 def impl(context, command):
@@ -973,14 +1326,40 @@ def stop_all_primary_or_mirror_segments(context, segment_type):
     role = ROLE_PRIMARY if segment_type == 'primary' else ROLE_MIRROR
     stop_segments(context, lambda seg: seg.getSegmentRole() == role and seg.content != -1)
 
+@given('user stops all {segment_type} processes on "{hosts}"')
+@given('user stops all {segment_type} processes on "{hosts}"')
+@given('user stops all {segment_type} processes on "{hosts}"')
+def stop_all_primary_or_mirror_segments_on_hosts(context, segment_type, hosts):
+    hosts = hosts.split(',')
+    if segment_type not in ("primary", "mirror"):
+        raise Exception("Expected segment_type to be 'primary' or 'mirror', but found '%s'." % segment_type)
+
+    role = ROLE_PRIMARY if segment_type == 'primary' else ROLE_MIRROR
+    stop_segments(context, lambda seg: seg.getSegmentRole() == role and seg.content != -1 and seg.getSegmentHostName() in hosts)
+
+
 
 @given('the {role} on content {contentID} is stopped')
+@when('the {role} on content {contentID} is stopped')
+@then('the {role} on content {contentID} is stopped')
 def stop_segments_on_contentID(context, role, contentID):
     if role not in ("primary", "mirror"):
         raise Exception("Expected segment_type to be 'primary' or 'mirror', but found '%s'." % role)
 
     role = ROLE_PRIMARY if role == 'primary' else ROLE_MIRROR
     stop_segments(context, lambda seg: seg.getSegmentRole() == role and seg.content == int(contentID))
+
+@given('the {role} on content {contents} is stopped with the immediate flag')
+@when('the {role} on content {contents} is stopped with the immediate flag')
+@then('the {role} on content {contents} is stopped with the immediate flag')
+def stop_segments_on_contentID(context, role, contents):
+    if role not in ("primary", "mirror"):
+        raise Exception("Expected segment_type to be 'primary' or 'mirror', but found '%s'." % role)
+    content_ids = [int(i) for i in contents.split(',')]
+
+    role = ROLE_PRIMARY if role == 'primary' else ROLE_MIRROR
+    stop_segments_immediate(context, lambda seg: seg.getSegmentRole() == role and seg.content in content_ids)
+
 
 
 # where_clause is a lambda that takes a segment to select what segments to stop
@@ -992,10 +1371,43 @@ def stop_segments(context, where_clause):
         # For demo_cluster tests that run on the CI gives the error 'bash: pg_ctl: command not found'
         # Thus, need to add pg_ctl to the path when ssh'ing to a demo cluster.
         subprocess.check_call(['ssh', seg.getSegmentHostName(),
-                               'source %s/greenplum_path.sh && pg_ctl stop -m fast -D %s -w' % (
+                               'source %s/greenplum_path.sh && pg_ctl stop -m fast -D %s -w -t 120' % (
                                    pipes.quote(os.environ.get("GPHOME")), pipes.quote(seg.getSegmentDataDirectory()))
                                ])
 
+
+@given('user immediately stops all {segment_type} processes for content {content}')
+@then('user immediately stops all {segment_type} processes for content {content}')
+def stop_all_primary_or_mirror_segments(context, segment_type, content):
+    if segment_type not in ("primary", "mirror"):
+        raise Exception("Expected segment_type to be 'primary' or 'mirror', but found '%s'." % segment_type)
+    content_ids = [int(i) for i in content.split(',')]
+    role = ROLE_PRIMARY if segment_type == 'primary' else ROLE_MIRROR
+    stop_segments_immediate(context, lambda seg: seg.getSegmentRole() == role and seg.content in content_ids)
+
+
+@given('user immediately stops all {segment_type} processes')
+@when('user immediately stops all {segment_type} processes')
+@then('user immediately stops all {segment_type} processes')
+def stop_all_primary_or_mirror_segments(context, segment_type):
+    if segment_type not in ("primary", "mirror"):
+        raise Exception("Expected segment_type to be 'primary' or 'mirror', but found '%s'." % segment_type)
+
+    role = ROLE_PRIMARY if segment_type == 'primary' else ROLE_MIRROR
+    stop_segments_immediate(context, lambda seg: seg.getSegmentRole() == role and seg.content != -1)
+
+# where_clause is a lambda that takes a segment to select what segments to stop
+def stop_segments_immediate(context, where_clause):
+    gparray = GpArray.initFromCatalog(dbconn.DbURL())
+
+    segments = filter(where_clause, gparray.getDbList())
+    for seg in segments:
+        # For demo_cluster tests that run on the CI gives the error 'bash: pg_ctl: command not found'
+        # Thus, need to add pg_ctl to the path when ssh'ing to a demo cluster.
+        subprocess.check_call(['ssh', seg.getSegmentHostName(),
+                               'source %s/greenplum_path.sh && pg_ctl stop -m immediate -D %s -w' % (
+                                   pipes.quote(os.environ.get("GPHOME")), pipes.quote(seg.getSegmentDataDirectory()))
+                               ])
 
 @given('user can start transactions')
 @when('user can start transactions')
@@ -1016,7 +1428,7 @@ def impl(context, dbname):
     sql = context.text
     execute_sql(dbname, sql)
 
-
+@given('sql "{sql}" is executed in "{dbname}" db')
 @when('sql "{sql}" is executed in "{dbname}" db')
 @then('sql "{sql}" is executed in "{dbname}" db')
 def impl(context, sql, dbname):
@@ -1092,24 +1504,20 @@ def impl(context):
     return
 
 
-@given('the "{seg}" segment information is saved')
-@when('the "{seg}" segment information is saved')
-@then('the "{seg}" segment information is saved')
-def impl(context, seg):
-    gparray = GpArray.initFromCatalog(dbconn.DbURL())
+@then('verify that mirror on content {content_ids} is {expected_status}')
+def impl(context, content_ids, expected_status):
+    if content_ids == 'None':
+        return
+    if expected_status not in ('up', 'down'):
+        raise Exception("expected_status can only be 'up' or 'down'")
 
-    if seg == "primary":
-        primary_segs = [seg for seg in gparray.getDbList() if seg.isSegmentPrimary()]
-        context.pseg = primary_segs[0]
-        context.pseg_data_dir = context.pseg.getSegmentDataDirectory()
-        context.pseg_hostname = context.pseg.getSegmentHostName()
-        context.pseg_dbid = context.pseg.getSegmentDbId()
-    elif seg == "mirror":
-        mirror_segs = [seg for seg in gparray.getDbList() if seg.isSegmentMirror()]
-        context.mseg = mirror_segs[0]
-        context.mseg_hostname = context.mseg.getSegmentHostName()
-        context.mseg_dbid = context.mseg.getSegmentDbId()
-        context.mseg_data_dir = context.mseg.getSegmentDataDirectory()
+    for content in content_ids.split(','):
+        if expected_status == 'up' and not is_segment_running(ROLE_MIRROR, int(content)):
+            raise Exception("mirror for content {} is not up".format(content))
+        elif expected_status == 'down' and is_segment_running(ROLE_MIRROR, int(content)):
+            raise Exception("mirror for content {} is not down".format(content))
+
+    return
 
 
 @given('the cluster configuration has no segments where "{filter}"')
@@ -1552,6 +1960,50 @@ def impl(context, filename, some, output):
         err_str = "xx Expected stdout string '%s' and found: '%s'" % (regexStr, contents)
         raise Exception(err_str)
 
+@given('verify that pg_hba.conf file has "{type}" entries in each segment data directories')
+@then('verify that pg_hba.conf file has "{type}" entries in each segment data directories')
+def impl(context, type):
+    conn = dbconn.connect(dbconn.DbURL(dbname='template1'), unsetSearchPath=False)
+    try:
+        curs = dbconn.query(conn,
+                            "SELECT hostname, datadir FROM gp_segment_configuration WHERE role='p' AND content > -1;")
+        result = curs.fetchall()
+        segment_info = [(result[s][0], result[s][1]) for s in range(len(result))]
+    except Exception as e:
+        raise Exception("Could not retrieve segment information: %s" % e.message)
+    finally:
+        conn.close()
+
+    if (type == 'standby'):
+        checkForStandby = True
+    elif (type == 'replication'):
+        checkForStandby = False
+    else:
+        raise Exception("only 'standby' and 'replication' are valid inputs")
+
+    for info in segment_info:
+        host, datadir = info
+        filename = 'pg_hba.conf'
+        if checkForStandby:
+            standby_host = get_standby_host()
+            standby_host_address = gp.IfAddrs.list_addrs(standby_host)[0]
+            output = "host.*all.*" + standby_host_address + ".*trust"
+        else:
+            output = "host.*replication.*.*trust"
+
+        filepath = os.path.join(datadir, filename)
+        regex = "%s%s" % ("^[%s]*", output)
+        cmd_str = 'ssh %s "grep -c %s %s"' % (host, regex, filepath)
+        cmd = Command(name='Running remote command: %s' % cmd_str, cmdStr=cmd_str)
+        cmd.run(validateAfter=False)
+        try:
+            val = int(cmd.get_stdout().strip())
+            if not val:
+                raise Exception(
+                    'File %s on host %s does not have %s entry with "%s"(val error: %s)' % (filepath, host, type, output, val))
+        except:
+            raise Exception('File %s on host %s does not have %s entry start with "%s"(parse error)' % (filepath, host, type, output))
+
 @given('verify that the file "{filename}" in each segment data directory has "{some}" line starting with "{output}"')
 @then('verify that the file "{filename}" in each segment data directory has "{some}" line starting with "{output}"')
 def impl(context, filename, some, output):
@@ -1685,6 +2137,23 @@ def impl(context, dbname):
     drop_database_if_exists(context, dbname)
     create_database(context, dbname)
 
+@then('validate gpcheckcat logs contain skipping ACL and Owner tests')
+def imp(context):
+    dirname = 'gpAdminLogs'
+    absdirname = "%s/%s" % (os.path.expanduser("~"), dirname)
+    if not os.path.exists(absdirname):
+        raise Exception('No such directory: %s' % absdirname)
+    pattern = "%s/gpcheckcat_*.log" % (absdirname)
+    logs_for_a_util = glob.glob(pattern)
+    if not logs_for_a_util:
+        raise Exception('Logs matching "%s" were not created' % pattern)
+    rc, error, output = run_cmd("grep 'Default skipping test: acl' %s" % pattern)
+    if rc:
+        raise Exception("Error executing grep on gpcheckcat logs while finding ACL: %s" % error)
+
+    rc, error, output = run_cmd("grep 'Default skipping test: owner' %s" % pattern)
+    if rc:
+        raise Exception("Error executing grep on gpcheckcat logs while finding Owner: %s" % error)
 
 @then('validate and run gpcheckcat repair')
 def impl(context):
@@ -1805,6 +2274,17 @@ def impl(context, query, dbname, host, port):
     cmd = Command(name='Running Remote command: %s' % psql_cmd, cmdStr=psql_cmd)
     cmd.run(validateAfter=True)
     context.stdout_message = cmd.get_stdout()
+
+@when('The user runs psql "{psql_cmd}" against database "{dbname}" when utility mode is set to {utility_mode}')
+@then('The user runs psql "{psql_cmd}" against database "{dbname}" when utility mode is set to {utility_mode}')
+@given('The user runs psql "{psql_cmd}" against database "{dbname}" when utility mode is set to {utility_mode}')
+def impl(context, psql_cmd, dbname, utility_mode):
+    if utility_mode == "True":
+        cmd = "PGOPTIONS=\'-c gp_role=utility\' psql -d \'{}\' {};".format(dbname, psql_cmd)
+    else:
+        cmd = "psql -d \'{}\' {};".format(dbname, psql_cmd)
+
+    run_command(context, cmd)
 
 @then('table {table_name} exists in "{dbname}" on specified segment {host}:{port}')
 @when('table {table_name} exists in "{dbname}" on specified segment {host}:{port}')
@@ -2079,13 +2559,111 @@ def impl(context, location):
             'mv', '{}.bak'.format(greenplum_path), greenplum_path
         ])
 
+@given('all files in gpAdminLogs directory are deleted')
+@when('all files in gpAdminLogs directory are deleted')
+@then('all files in gpAdminLogs directory are deleted')
+def impl(context):
+    log_dir = _get_gpAdminLogs_directory()
+    files_found = glob.glob('%s/*' % (log_dir))
+    for file in files_found:
+        os.remove(file)
 
-@then('gpAdminLogs directory has no "{expected_file}" files')
-def impl(context, expected_file):
+@given('all files in gpAdminLogs directory are deleted on hosts {hosts}')
+def impl(context, hosts):
+    host_list = hosts.split(',')
+    log_dir = _get_gpAdminLogs_directory()
+    for host in host_list:
+        rm_cmd = Command(name="remove files in gpAdminLogs",
+                              cmdStr="rm -rf {}/*".format(log_dir),
+                              remoteHost=host, ctxt=REMOTE)
+        rm_cmd.run(validateAfter=True)
+
+@given('all files in "{dir}" directory are deleted on all hosts in the cluster')
+@then('all files in "{dir}" directory are deleted on all hosts in the cluster')
+def impl(context, dir):
+    host_list = GpArray.initFromCatalog(dbconn.DbURL()).getHostList()
+    for host in host_list:
+        rm_cmd = Command(name="remove files in {}".format(dir),
+                         cmdStr="rm -rf {}/*".format(dir),
+                         remoteHost=host, ctxt=REMOTE)
+        rm_cmd.run(validateAfter=True)
+
+@given('all files in gpAdminLogs directory are deleted on all hosts in the cluster')
+@when('all files in gpAdminLogs directory are deleted on all hosts in the cluster')
+@then('all files in gpAdminLogs directory are deleted on all hosts in the cluster')
+def impl(context):
+    host_list = GpArray.initFromCatalog(dbconn.DbURL()).getHostList()
+    log_dir = _get_gpAdminLogs_directory()
+    for host in host_list:
+        rm_cmd = Command(name="remove files in gpAdminLogs",
+                         cmdStr="rm -rf {}/*".format(log_dir),
+                         remoteHost=host, ctxt=REMOTE)
+        rm_cmd.run(validateAfter=True)
+
+
+@then('gpAdminLogs directory {has} "{expected_file}" files')
+def impl(context, has, expected_file):
     log_dir = _get_gpAdminLogs_directory()
     files_found = glob.glob('%s/%s' % (log_dir, expected_file))
-    if files_found:
+    if files_found and (has == 'has no'):
         raise Exception("expected no %s files in %s, but found %s" % (expected_file, log_dir, files_found))
+    if (not files_found) and (has == 'has'):
+        raise Exception("expected %s file in %s, but not found" % (expected_file, log_dir))
+
+
+@then('gpAdminLogs directory has "{expected_file}" files on respective hosts only for content {content_ids}')
+def impl(context, expected_file, content_ids):
+    content_list = [int(c) for c in content_ids.split(',')]
+    all_segments = GpArray.initFromCatalog(dbconn.DbURL()).getDbList()
+    segments = filter(lambda seg: seg.getSegmentRole() == ROLE_MIRROR and
+                                  seg.content in content_list, all_segments)
+    host_to_seg_dbids = {}
+    for seg in segments:
+        segHost = seg.getSegmentHostName()
+        if segHost in host_to_seg_dbids:
+            host_to_seg_dbids[segHost].append('dbid{}'.format(seg.dbid))
+        else:
+            host_to_seg_dbids[segHost] = ['dbid{}'.format(seg.dbid)]
+
+    for segHost, expected_files_on_host in host_to_seg_dbids.items():
+        log_dir = "%s/gpAdminLogs" % os.path.expanduser("~")
+        listdir_cmd = Command(name="list logfiles on host",
+                              cmdStr="ls -l {}/{}".format(log_dir, expected_file),
+                              remoteHost=segHost, ctxt=REMOTE)
+        listdir_cmd.run(validateAfter=True)
+        ls_outs = listdir_cmd.get_results().stdout.split('\n')
+        files_found = [ls_line.split(' ')[-1] for ls_line in ls_outs if ls_line]
+
+        if not files_found:
+            raise Exception("expected {} files in {} on host {}, but not found".format(expected_file, log_dir, segHost))
+
+        if len(files_found) != len(expected_files_on_host):
+            raise Exception("expected {} {} files in {} on host {}, but found {}: {}"
+                            .format(len(expected_files_on_host), expected_file, log_dir, segHost, len(files_found),
+                                    files_found))
+        for file in files_found:
+            if file.split('.')[-2] not in expected_files_on_host:
+                raise Exception("Found unexpected file {} in {}".format(file, log_dir))
+
+
+@then('gpAdminLogs directory {has} "{expected_file}" files on all segment hosts')
+def impl(context, has, expected_file):
+    all_segments = GpArray.initFromCatalog(dbconn.DbURL()).getDbList()
+    all_segment_hosts = [seg.getSegmentHostName() for seg in all_segments if seg.getSegmentContentId() >= 0]
+
+    for seg_host in all_segment_hosts:
+        log_dir = "%s/gpAdminLogs" % os.path.expanduser("~")
+        listdir_cmd = Command(name="list logfiles on host",
+                              cmdStr="ls -l {}/{} | wc -l".format(log_dir, expected_file),
+                              remoteHost=seg_host, ctxt=REMOTE)
+        listdir_cmd.run(validateAfter=True)
+        ls_outs = listdir_cmd.get_results().stdout
+        files_found = int(ls_outs)
+        if files_found > 0 and (has == 'has no'):
+            raise Exception("expected no {} files in {} on host {}, but found".format(expected_file, log_dir, seg_host))
+        if files_found == 0 and (has == 'has'):
+            raise Exception("expected {} files in {} on host {}, but not found".format(expected_file, log_dir, seg_host))
+
 
 @given('"{filepath}" is copied to the install directory')
 def impl(context, filepath):
@@ -2555,7 +3133,7 @@ def impl(context, hostnames):
 
 @given("a temporary directory under '{tmp_base_dir}' with mode '{mode}' is created")
 @given('a temporary directory under "{tmp_base_dir}" to expand into')
-def make_temp_dir(context,tmp_base_dir, mode=''):
+def make_temp_dir(context, tmp_base_dir, mode=''):
     if not tmp_base_dir:
         raise Exception("tmp_base_dir cannot be empty")
     if not os.path.exists(tmp_base_dir):
@@ -2563,7 +3141,7 @@ def make_temp_dir(context,tmp_base_dir, mode=''):
     context.temp_base_dir = tempfile.mkdtemp(dir=tmp_base_dir)
     if mode:
         os.chmod(path.normpath(path.join(tmp_base_dir, context.temp_base_dir)),
-                 int(mode,8))
+                 int(mode, 8))
 
 @given('the new host "{hostnames}" is ready to go')
 def impl(context, hostnames):
@@ -2738,11 +3316,14 @@ def impl(context, table_name, dbname):
 @given('distribution information from table "{table}" with data in "{dbname}" is saved')
 def impl(context, table, dbname):
     context.pre_redistribution_row_count = _get_row_count_per_segment(table, dbname)
+    context.pre_redistribution_dist_policy = _get_dist_policy_per_partition(table, dbname)
 
 @then('distribution information from table "{table}" with data in "{dbname}" is verified against saved data')
 def impl(context, table, dbname):
     pre_distribution_row_count = context.pre_redistribution_row_count
+    pre_redistribution_dist_policy = context.pre_redistribution_dist_policy
     post_distribution_row_count = _get_row_count_per_segment(table, dbname)
+    post_distribution_dist_policy = _get_dist_policy_per_partition(table, dbname)
 
     if len(pre_distribution_row_count) >= len(post_distribution_row_count):
         raise Exception("Failed to redistribute table. Expected to have more than %d segments, got %d segments" % (len(pre_distribution_row_count), len(post_distribution_row_count)))
@@ -2769,6 +3350,14 @@ def impl(context, table, dbname):
         raise Exception("Unexpected variance for redistributed data in table %s. Relative standard error %f exceeded tolerance factor of %f." %
                 (table, relative_std_error, tolerance))
 
+    for i in range(len(post_distribution_dist_policy)):
+        if(post_distribution_dist_policy[i][0] == pre_redistribution_dist_policy[i][0] or \
+           post_distribution_dist_policy[i][1] != pre_redistribution_dist_policy[i][1] or \
+           post_distribution_dist_policy[i][2] != pre_redistribution_dist_policy[i][2]):
+            raise Exception("""Redistributed policy does not match pre-redistribution policy.
+            before expanded: %s, after expanded: %s""" % (",".join(map(str, pre_redistribution_dist_policy[i])), \
+            ",".join(map(str, post_distribution_dist_policy[i]))))
+
 
 @then('the row count from table "{table_name}" in "{dbname}" is verified against the saved data')
 def impl(context, table_name, dbname):
@@ -2792,6 +3381,13 @@ def _get_row_count_per_segment(table, dbname):
         cursor = dbconn.query(conn, query)
         rows = cursor.fetchall()
     return [row[1] for row in rows] # indices are the gp segment id's, so no need to store them explicitly
+
+def _get_dist_policy_per_partition(table, dbname):
+    with closing(dbconn.connect(dbconn.DbURL(dbname=dbname), unsetSearchPath=False)) as conn:
+        query = "select * from gp_distribution_policy where localoid::regclass::text like '%s%%' order by localoid;" % table
+        cursor = dbconn.query(conn, query)
+        rows = cursor.fetchall()
+    return [row[2:5] for row in rows] # we only need numsegments、distkey、distclass
 
 @given('run rollback')
 @then('run rollback')

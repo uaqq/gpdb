@@ -260,6 +260,16 @@ CREATE PROTOCOL demoprot_non_superuser (readfunc = 'read_from_file', writefunc =
 CREATE TRUSTED PROTOCOL demoprot_non_superuser (readfunc = 'read_from_file', writefunc = 'write_to_file');
 RESET ROLE;
 
+-- Test "DROP OWNED BY" when everything of the protocol is granted to some user.
+-- GitHub Issue #12748: https://github.com/greenplum-db/gpdb/issues/12748
+CREATE TRUSTED PROTOCOL dummy_protocol_issue_12748 (readfunc = 'read_from_file', writefunc = 'write_to_file');
+CREATE ROLE test_role_issue_12748;
+GRANT ALL ON PROTOCOL dummy_protocol_issue_12748 TO test_role_issue_12748;
+DROP OWNED BY test_role_issue_12748;
+-- Clean up.
+DROP ROLE test_role_issue_12748;
+DROP PROTOCOL dummy_protocol_issue_12748;
+
 --
 -- WET tests
 --
@@ -3495,6 +3505,7 @@ select numsegments from gp_distribution_policy where localoid = 'ext_w_expand'::
 
 drop external table ext_w_expand;
 
+select gp_debug_reset_create_table_default_numsegments();
 
 --
 -- Test host name cannot be resolved
@@ -3583,4 +3594,3 @@ CREATE EXTERNAL WEB TABLE test_part_integrity_p2 (LIKE test_part_integrity_p1) E
 ALTER TABLE test_part_integrity ATTACH PARTITION test_part_integrity_p1 FOR VALUES IN (1);
 ALTER TABLE test_part_integrity ATTACH PARTITION test_part_integrity_p2 FOR VALUES IN (2);
 SELECT * FROM test_part_integrity;
-DROP TABLE test_part_integrity;

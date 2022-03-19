@@ -20,6 +20,7 @@
 #include "gpopt/operators/CLogicalDML.h"
 #include "gpopt/operators/CLogicalDynamicIndexGet.h"
 #include "gpopt/operators/CLogicalIndexGet.h"
+#include "gpopt/operators/CLogicalJoin.h"
 #include "gpopt/operators/CPhysicalJoin.h"
 #include "gpopt/operators/CPredicateUtils.h"
 #include "gpopt/xforms/CXform.h"
@@ -40,19 +41,19 @@ class CPartConstraint;
 class CTableDescriptor;
 
 // map of expression to array of expressions
-typedef CHashMap<CExpression, CExpressionArray, CExpression::HashValue,
-				 CUtils::Equals, CleanupRelease<CExpression>,
-				 CleanupRelease<CExpressionArray> >
-	ExprToExprArrayMap;
+using ExprToExprArrayMap =
+	CHashMap<CExpression, CExpressionArray, CExpression::HashValue,
+			 CUtils::Equals, CleanupRelease<CExpression>,
+			 CleanupRelease<CExpressionArray>>;
 
 // iterator of map of expression to array of expressions
-typedef CHashMapIter<CExpression, CExpressionArray, CExpression::HashValue,
-					 CUtils::Equals, CleanupRelease<CExpression>,
-					 CleanupRelease<CExpressionArray> >
-	ExprToExprArrayMapIter;
+using ExprToExprArrayMapIter =
+	CHashMapIter<CExpression, CExpressionArray, CExpression::HashValue,
+				 CUtils::Equals, CleanupRelease<CExpression>,
+				 CleanupRelease<CExpressionArray>>;
 
 // array of array of expressions
-typedef CDynamicPtrArray<CExpressionArray, CleanupRelease> CExpressionArrays;
+using CExpressionArrays = CDynamicPtrArray<CExpressionArray, CleanupRelease>;
 
 //---------------------------------------------------------------------------
 //	@class:
@@ -669,7 +670,9 @@ CXformUtils::AddHashOrMergeJoinAlternative(CMemoryPool *mp,
 	{
 		(*pexprJoin)[ul]->AddRef();
 	}
-	T *op = GPOS_NEW(mp) T(mp, pdrgpexprOuter, pdrgpexprInner, opfamilies);
+	CLogicalJoin *popLogicalJoin = CLogicalJoin::PopConvert(pexprJoin->Pop());
+	T *op = GPOS_NEW(mp) T(mp, pdrgpexprOuter, pdrgpexprInner, opfamilies,
+						   popLogicalJoin->OriginXform());
 	CExpression *pexprResult = GPOS_NEW(mp)
 		CExpression(mp, op, (*pexprJoin)[0], (*pexprJoin)[1], (*pexprJoin)[2]);
 	pxfres->Add(pexprResult);

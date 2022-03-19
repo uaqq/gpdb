@@ -11,6 +11,7 @@ from gppylib.gparray import *
 from .base import *
 from .unix import *
 from gppylib.commands.base import *
+from gppylib.commands.gp import RECOVERY_REWIND_APPNAME
 
 logger = get_default_logger()
 
@@ -65,15 +66,15 @@ class ReadPostmasterTempFile(Command):
             raise ExecutionError("Command did not complete successfully rc: %d" % self.results.rc, self)   
     
     def getResults(self):
-        if self.results.stderr.find("No such file or directory") != -1:
+        if self.results.rc != 0:
             return (False,-1,None)
         if self.results.stdout is None:
-            return (False,-2,None)
+            return (False,-1,None)
         
         lines = self.results.stdout.split()
         
         if len(lines) < 2:
-            return (False,-3,None)
+            return (False,-1,None)
         
         PID=int(self.results.stdout.split()[0])
         datadir = self.results.stdout.split()[1]
@@ -166,24 +167,55 @@ class PgControlData(Command):
             self.data = {}
             for l in self.results.stdout.split('\n'):
                 if len(l) > 0:
-                    (n,v) = l.split(':', 1)
+                    split_line = l.split(':', 1)
+                    # avoid ValueErrors when there is no value to the key
+                    n = split_line[0]
+                    v = split_line[1] if len(split_line) == 2 else ''
                     self.data[n.strip()] = v.strip() 
         return self.data[name]
 
     def get_datadir(self):
         return self.datadir
 
+class PgRewind(Command):
+    """
+    PgRewind is used to run pg_rewind using source server.
+    """
+    def __init__(self, name, target_datadir, source_host, source_port, progress_file):
+
+        # Construct the source server libpq connection string
+        # We set application_name here so gpstate can identify whether an
+        # incremental recovery is occurring.
+        source_server = "host={} port={} dbname=template1 application_name={}".format(
+                source_host, source_port, RECOVERY_REWIND_APPNAME
+                                                   )
+
+        # Build the pg_rewind command. Do not run pg_rewind if standby.signal
+        # file exists in target data directory because the target instance can
+        # be started up normally as a mirror for WAL replication catch up.
+        rewind_cmd = '[ -f %s/standby.signal ] || PGOPTIONS="-c gp_role=utility" $GPHOME/bin/pg_rewind ' \
+                     '--write-recovery-conf --slot="internal_wal_replication_slot" --source-server="%s" ' \
+                     '--target-pgdata=%s --progress' % (target_datadir, source_server, target_datadir)
+
+        # pg_rewind prints progress updates to stdout, but it also prints
+        # errors relating to relevant failures(like it will not rewind due to
+        # a corrupted pg_control file) to stderr.
+        rewind_cmd = rewind_cmd + " > {} 2>&1".format(pipes.quote(progress_file))
+        self.cmdStr = rewind_cmd
+
+        Command.__init__(self, name, self.cmdStr, LOCAL)
 
 class PgBaseBackup(Command):
-    def __init__(self, pgdata, host, port, create_slot=False, replication_slot_name=None, excludePaths=[], ctxt=LOCAL, remoteHost=None, forceoverwrite=False, target_gp_dbid=0, logfile=None,
-                 recovery_mode=True):
+    def __init__(self, target_datadir, source_host, source_port, create_slot=False, replication_slot_name=None,
+                 excludePaths=[], ctxt=LOCAL, remoteHost=None, forceoverwrite=False, target_gp_dbid=0,
+                 progress_file=None, recovery_mode=True):
         cmd_tokens = ['pg_basebackup', '-c', 'fast']
         cmd_tokens.append('-D')
-        cmd_tokens.append(pgdata)
+        cmd_tokens.append(target_datadir)
         cmd_tokens.append('-h')
-        cmd_tokens.append(host)
+        cmd_tokens.append(source_host)
         cmd_tokens.append('-p')
-        cmd_tokens.append(port)
+        cmd_tokens.append(source_port)
 
         if create_slot:
             cmd_tokens.append('--create-slot')
@@ -221,8 +253,8 @@ class PgBaseBackup(Command):
         cmd_tokens.append('--progress')
         cmd_tokens.append('--verbose')
 
-        if logfile:
-            cmd_tokens.append('> %s 2>&1' % pipes.quote(logfile))
+        if progress_file:
+            cmd_tokens.append('> %s 2>&1' % pipes.quote(progress_file))
 
         cmd_str = ' '.join(cmd_tokens)
 

@@ -27,6 +27,7 @@
 #include "naucrates/dxl/operators/CDXLNode.h"
 #include "naucrates/dxl/operators/CDXLScalarArrayRefIndexList.h"
 #include "naucrates/dxl/operators/CDXLScalarCast.h"
+#include "naucrates/dxl/operators/CDXLScalarCoerceViaIO.h"
 
 // fwd declarations
 namespace gpopt
@@ -149,6 +150,7 @@ private:
 	Expr *TranslateDXLSubplanTestExprToScalar(CDXLNode *test_expr_node,
 											  SubLinkType slink,
 											  CMappingColIdVar *colid_var,
+											  BOOL has_outer_refs,
 											  List **param_ids_list);
 
 	// translate subplan parameters
@@ -192,6 +194,11 @@ private:
 	static Expr *TranslateDXLScalarDMLActionToScalar(
 		const CDXLNode *dml_action_node, CMappingColIdVar *colid_var);
 
+	List *TranslateScalarListChildren(const CDXLNode *dxlnode,
+									  CMappingColIdVar *colid_var);
+
+	static Expr *TranslateDXLScalarSortGroupClauseToScalar(
+		const CDXLNode *dml_action_node, CMappingColIdVar *colid_var);
 
 	// translate children of DXL node, and add them to list
 	List *TranslateScalarChildren(List *list, const CDXLNode *dxlnode,
@@ -207,8 +214,10 @@ private:
 	static Const *ConvertDXLDatumToConstInt8(CDXLDatum *datum_dxl);
 	static Const *ConvertDXLDatumToConstBool(CDXLDatum *datum_dxl);
 	Const *TranslateDXLDatumGenericToScalar(CDXLDatum *datum_dxl);
-	Expr *TranslateRelabelTypeOrFuncExprFromDXL(
-		const CDXLScalarCast *scalar_cast, Expr *pexprChild);
+	Expr *TranslateDXLScalarCastWithChildExpr(const CDXLScalarCast *scalar_cast,
+											  Expr *child_expr);
+	Expr *TranslateDXLScalarCoerceViaIOWithChildExpr(
+		const CDXLScalarCoerceViaIO *dxl_coerce_via_io, Expr *child_expr);
 
 public:
 	CTranslatorDXLToScalar(const CTranslatorDXLToScalar &) = delete;
@@ -227,6 +236,9 @@ public:
 	// This function is called during the translation of DXL->Query or DXL->Query
 	Expr *TranslateDXLToScalar(const CDXLNode *scalar_op_node,
 							   CMappingColIdVar *colid_var);
+
+	Expr *TranslateDXLScalarValuesListToScalar(
+		const CDXLNode *scalar_values_list_node, CMappingColIdVar *colid_var);
 
 	// translate a scalar ident into an Expr
 	static Expr *TranslateDXLScalarIdentToScalar(const CDXLNode *scalar_id_node,

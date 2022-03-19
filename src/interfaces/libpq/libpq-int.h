@@ -249,7 +249,7 @@ struct pg_result
 
 	/* GPDB: number of rows rejected in SREH (protocol message 'j') */
 	int64		numRejected;
-	/* GPDB: number of rows completed when COPY FROM ON SEGMENT */
+	/* GPDB: number of rows completed when COPY FROM */
 	int64		numCompleted;
 	/* GPDB */
 	int		nWaits;
@@ -409,6 +409,7 @@ struct pg_conn
 #endif
     char       *gpconntype; /* type of connection */
     char       *gpqeid;        /* MPP: session id & startup info for qExec */
+    char       *diffoptions;  /* MPP: transfer changed GUCs(require sync) from QD to QEs */
 
 	/* Type of connection to make.  Possible values: any, read-write. */
 	char	   *target_session_attrs;

@@ -1044,3 +1044,149 @@ select * from foo where
 select * from foo where
   (case when foo.i in (select a.i from baz a) then foo.i else null end) in
   (select b.i from baz b);
+
+-- When creating plan with subquery and CTE, it sets the useless flow for the plan.
+-- But we only need flow for the topmost plan and child of the motion. See commit
+-- https://github.com/greenplum-db/gpdb/commit/93abe741cd67f04958e2951edff02b45ab6e280f for detail
+-- The extra flow will cause subplan set wrong motionType and cause an ERROR
+-- unexpected gang size: XX
+-- This related to issue: https://github.com/greenplum-db/gpdb/issues/12371
+create table extra_flow_dist(a int, b int, c date);
+create table extra_flow_dist1(a int, b int);
+
+insert into extra_flow_dist select i, i, '1949-10-01'::date from generate_series(1, 10)i;
+insert into extra_flow_dist1 select i, i from generate_series(20, 22)i;
+
+-- case 1 subplan with outer general locus (CTE and subquery)
+explain (verbose, costs off) with run_dt as (
+	select
+	(
+	  select c from extra_flow_dist where b = x  -- subplan's outer is the below general locus path
+	) dt
+	from (select ( max(1) ) x) a  -- general locus
+)
+select * from run_dt, extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+with run_dt as (
+	select
+	(
+	  select c from extra_flow_dist where b = x
+	) dt
+	from (select ( max(1) ) x) a
+)
+select * from run_dt, extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+create table extra_flow_rand(a int) distributed replicated;
+insert into extra_flow_rand values (1);
+
+-- case 2 for subplan with outer segment general locus (CTE and subquery)
+explain (verbose, costs off) with run_dt as (
+	select
+	(
+		select c from extra_flow_dist where b = x  -- subplan's outer is the below segment general locus path
+	) dt
+	from (select a x from extra_flow_rand) a  -- segment general locus
+)
+select * from run_dt, extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+with run_dt as (
+	select
+	(
+		select c from extra_flow_dist where b = x
+	) dt
+	from (select a x from extra_flow_rand) a
+)
+select * from run_dt, extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+-- case 3 for subplan with outer entry locus (CTE and subquery)
+explain (verbose, costs off) with run_dt as (
+	select
+	(
+		select c from extra_flow_dist where b = x  -- subplan's outer is the below entry locus path
+	) dt
+	from (select 1 x from pg_class limit 1) a  -- entry locus
+)
+select * from run_dt, extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+with run_dt as (
+	select
+	(
+		select c from extra_flow_dist where b = x  -- subplan's outer is the below entry locus path
+	) dt
+	from (select 1 x from pg_class limit 1) a  -- entry locus
+)
+select * from run_dt, extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+-- case 4 subplan with outer segment general locus without param in subplan (CTE and subquery)
+explain (verbose, costs off) with run_dt as (
+	select x, y dt
+	from (select a x from extra_flow_rand ) a  -- segment general locus
+	left join (select max(1) y) aaa
+	on a.x > any (select random() from extra_flow_dist)  -- subplan's outer is the above segment general locus path
+)
+select * from run_dt, extra_flow_dist1
+where dt < extra_flow_dist1.a;
+
+-- case 5 for subplan with outer entry locus without param in subplan (CTE and subquery)
+explain (verbose, costs off) with run_dt as (
+	select x, y dt
+	from (select relnatts x from pg_class ) a  -- entry locus
+	left join (select max(1) y) aaa
+	on a.x > any (select random() from extra_flow_dist)  -- subplan's outer is the above entry loucs
+)
+select * from run_dt, extra_flow_dist1
+where dt < extra_flow_dist1.a;
+
+-- case 6 without CTE, nested subquery should not add extral flow
+explain (verbose, costs off) select * from (
+	select dt from (
+		select
+		(
+			select c from extra_flow_dist where b = x  -- subplan's outer is the below general locus path
+		) dt
+		from (select ( max(1) ) x) a  -- general locus
+		union
+		select
+		(
+			select c from extra_flow_dist where b = x  -- subplan's outer is the below general locus path
+		) dt
+		from (select ( max(1) ) x) aa  -- general locus
+	) tbl
+) run_dt,
+extra_flow_dist1
+where dt < '2010-01-01'::date;
+
+-- Check DISTINCT ON clause and ORDER BY clause in SubLink, See https://github.com/greenplum-db/gpdb/issues/12656.
+-- For EXISTS SubLink, we don’t need to care about the data deduplication problem, we can delete DISTINCT ON clause and
+-- ORDER BY clause with confidence, because we only care about whether the data exists.
+-- But for ANY SubLink, wo can't do this, because we not only care about the existence of data, but also the content of
+-- the data.
+create table issue_12656 (
+    i int,
+    j int
+) distributed by (i);
+
+insert into issue_12656 values (1, 10001), (1, 10002);
+
+-- case 1, check basic DISTINCT ON
+explain (costs off, verbose)
+select * from issue_12656 where (i, j) in (select distinct on (i) i, j from issue_12656);
+
+select * from issue_12656 where (i, j) in (select distinct on (i) i, j from issue_12656);
+
+-- case 2, check DISTINCT ON and ORDER BY
+explain (costs off, verbose)
+select * from issue_12656 where (i, j) in (select distinct on (i) i, j from issue_12656 order by i, j asc);
+
+select * from issue_12656 where (i, j) in (select distinct on (i) i, j from issue_12656 order by i, j asc);
+
+explain (costs off, verbose)
+select * from issue_12656 where (i, j) in (select distinct on (i) i, j from issue_12656 order by i, j desc);
+
+select * from issue_12656 where (i, j) in (select distinct on (i) i, j from issue_12656 order by i, j desc);

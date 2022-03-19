@@ -183,7 +183,6 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	ScanKeyData key;
 	Relation	pgrel;
 	HeapTuple	tuple;
-	Oid			fargtypes[1];	/* dummy */
 	Oid			funcrettype;
 	Oid			trigoid;
 	char		internaltrigname[NAMEDATALEN];
@@ -703,7 +702,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	 * Find and validate the trigger function.
 	 */
 	if (!OidIsValid(funcoid))
-		funcoid = LookupFuncName(stmt->funcname, 0, fargtypes, false);
+		funcoid = LookupFuncName(stmt->funcname, 0, NULL, false);
 	if (!isInternal)
 	{
 		aclresult = pg_proc_aclcheck(funcoid, GetUserId(), ACL_EXECUTE);
@@ -4494,6 +4493,7 @@ afterTriggerMarkEvents(AfterTriggerEventList *events,
 					   bool immediate_only)
 {
 	bool		found = false;
+	bool		deferred_found = false;
 	AfterTriggerEvent event;
 	AfterTriggerEventChunk *chunk;
 
@@ -4529,12 +4529,23 @@ afterTriggerMarkEvents(AfterTriggerEventList *events,
 		 */
 		if (defer_it && move_list != NULL)
 		{
+			deferred_found = true;
 			/* add it to move_list */
 			afterTriggerAddEvent(move_list, event, evtshared);
 			/* mark original copy "done" so we don't do it again */
 			event->ate_flags |= AFTER_TRIGGER_DONE;
 		}
 	}
+
+	/*
+	 * We could allow deferred triggers if, before the end of the
+	 * security-restricted operation, we were to verify that a SET CONSTRAINTS
+	 * ... IMMEDIATE has fired all such triggers.  For now, don't bother.
+	 */
+	if (deferred_found && InSecurityRestrictedOperation())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("cannot fire deferred trigger within security-restricted operation")));
 
 	return found;
 }

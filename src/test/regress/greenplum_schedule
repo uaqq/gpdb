@@ -15,6 +15,12 @@
 #   hitting max_connections limit on segments.
 #
 
+test: gp_dispatch_keepalives
+
+# copy command
+# copy form a file with different EOL
+test: copy_eol
+
 # gp_toolkit performs a vacuum and checks that it truncated the relation. That
 # might not happen if other backends are holding transactions open, preventing
 # vacuum from removing dead tuples. And run gp_toolkit early to make some log
@@ -24,13 +30,14 @@ test: gp_toolkit
 test: python_processed64bit
 test: enable_autovacuum
 
+test: log_guc
 # enable query metrics cluster GUC
 test: instr_in_shmem_setup
 # run separately - because slot counter may influenced by other parallel queries
 test: instr_in_shmem
 
 test: createdb
-test: gp_aggregates gp_aggregates_costs gp_metadata variadic_parameters default_parameters function_extensions spi gp_xml shared_scan update_gp triggers_gp returning_gp resource_queue_with_rule gp_types gp_index cluster_gp combocid_gp gp_sort
+test: gp_aggregates gp_aggregates_costs gp_metadata variadic_parameters default_parameters function_extensions spi gp_xml shared_scan update_gp triggers_gp returning_gp resource_queue_with_rule gp_types gp_index cluster_gp combocid_gp gp_sort gp_prepared_xacts
 test: spi_processed64bit
 test: gp_tablespace_with_faults
 # below test(s) inject faults so each of them need to be in a separate group
@@ -44,10 +51,12 @@ test: leastsquares opr_sanity_gp decode_expr bitmapscan bitmapscan_ao case_gp li
 test: gpcopy
 
 test: orca_static_pruning orca_groupingsets_fallbacks
-test: filter gpctas gpdist gpdist_opclasses gpdist_legacy_opclasses matrix sublink table_functions olap_setup complex opclass_ddl information_schema guc_env_var gp_explain distributed_transactions explain_format olap_plans misc_jiras gp_copy_dtx
+test: filter gpctas gpdist gpdist_opclasses gpdist_legacy_opclasses matrix sublink table_functions olap_setup complex opclass_ddl information_schema guc_env_var gp_explain distributed_transactions explain_format olap_plans gp_copy_dtx
 # below test(s) inject faults so each of them need to be in a separate group
 test: guc_gp
 test: toast
+test: misc_jiras
+test: statement_mem_for_windowagg
 
 # namespace_gp test will show diff if concurrent tests use temporary tables.
 # So run it separately.
@@ -177,7 +186,7 @@ test: qp_misc_jiras qp_with_clause qp_executor qp_olap_windowerr qp_olap_window 
 test: qp_with_functional_inlining qp_with_functional_noinlining
 test: qp_functions_in_contexts_setup
 # test: qp_misc_rio_join_small qp_misc_rio qp_correlated_query qp_targeted_dispatch qp_gist_indexes2 qp_gist_indexes3 qp_gist_indexes4 qp_query_execution qp_functions_in_from qp_functions_in_select qp_functions_in_subquery qp_functions_in_subquery_column qp_functions_in_subquery_constant qp_functions_in_with
-test: qp_misc_rio_join_small qp_correlated_query qp_targeted_dispatch qp_gist_indexes2 qp_gist_indexes3 qp_gist_indexes4 qp_query_execution qp_functions_in_from qp_functions_in_select qp_functions_in_subquery qp_functions_in_subquery_column qp_functions_in_with
+test: qp_misc_rio_join_small qp_correlated_query qp_targeted_dispatch qp_gist_indexes2 qp_gist_indexes3 qp_gist_indexes4 qp_query_execution qp_functions_in_from qp_functions_in_select qp_functions_in_subquery qp_functions_in_subquery_column qp_functions_in_with correlated_subquery
 
 test: dpe qp_dpe qp_subquery qp_left_anti_semi_join qp_union_intersect qp_functions qp_functions_idf qp_regexp qp_resource_queue qp_orca_fallback
 
@@ -211,8 +220,8 @@ test: uaocs_compaction/index_stats
 test: uaocs_compaction/index
 test: uaocs_compaction/drop_column
 
-test: uao_ddl/cursor_row uao_ddl/cursor_column uao_ddl/alter_ao_table_statistics_row uao_ddl/alter_ao_table_statistics_column uao_ddl/alter_ao_table_setdefault_row uao_ddl/alter_ao_table_index_row uao_ddl/alter_ao_table_owner_column
-test: uao_ddl/alter_ao_table_owner_row uao_ddl/alter_ao_table_setstorage_row uao_ddl/alter_ao_table_constraint_row uao_ddl/alter_ao_table_constraint_column uao_ddl/alter_ao_table_index_column uao_ddl/blocksize_row uao_ddl/compresstype_column uao_ddl/alter_ao_table_setdefault_column uao_ddl/blocksize_column uao_ddl/temp_on_commit_delete_rows_row uao_ddl/temp_on_commit_delete_rows_column
+test: uao_ddl/cursor_row uao_ddl/cursor_column uao_ddl/alter_ao_table_statistics_row uao_ddl/alter_ao_table_statistics_column uao_ddl/alter_ao_table_setdefault_row uao_ddl/alter_ao_table_index_row uao_ddl/alter_ao_table_owner_column uao_ddl/spgist_over_ao_table_row
+test: uao_ddl/alter_ao_table_owner_row uao_ddl/alter_ao_table_setstorage_row uao_ddl/alter_ao_table_constraint_row uao_ddl/alter_ao_table_constraint_column uao_ddl/alter_ao_table_index_column uao_ddl/blocksize_row uao_ddl/compresstype_column uao_ddl/alter_ao_table_setdefault_column uao_ddl/blocksize_column uao_ddl/temp_on_commit_delete_rows_row uao_ddl/temp_on_commit_delete_rows_column uao_ddl/spgist_over_ao_table_column
 test: uao_ddl/alter_ao_table_setstorage_column uao_ddl/alter_ao_table_col_ddl_row uao_ddl/compresstype_row uao_ddl/alter_ao_table_col_ddl_column uao_ddl/alter_ao_part_tables_splitpartition_row uao_ddl/alter_ao_part_tables_splitpartition_column uao_ddl/create_ao_tables_row uao_ddl/create_ao_table_500cols_row uao_ddl/create_ao_tables_column uao_ddl/alter_ao_part_exch_row
 test: uao_ddl/alter_ao_part_exch_column uao_ddl/alter_ao_part_tables_row uao_ddl/create_ao_table_500cols_column uao_ddl/alter_ao_part_tables_column
 
@@ -224,7 +233,7 @@ test: uao_ddl/alter_drop_allcol_row uao_ddl/alter_drop_allcol_column uao_ddl/alt
 test: uao_dml/uao_dml_cursor_row uao_dml/uao_dml_select_row uao_dml/uao_dml_cursor_column uao_dml/uao_dml_select_column
 
 
-# diable autovacuum for the test
+# disable autovacuum for the test
 test: disable_autovacuum
 # Run uao[cs]_catalog_tables separately. They run VACUUM FULL on
 # append-optimized tables and assume that no AWAITING_DROP segfiles exist at
@@ -248,6 +257,8 @@ test: vacuum_full_heap
 test: vacuum_full_heap_bitmapindex
 # Check for shmem leak for instrumentation slots
 test: instr_in_shmem_verify
+# check autostats
+test: autostats
 test: enable_autovacuum
 
 test: ao_checksum_corruption AOCO_Compression AORO_Compression table_statistics
@@ -280,6 +291,6 @@ test: gangsize gang_reuse
 test: run_utility_gpexpand_phase1
 
 # check correct error message when create extension error on segment
-test: create_extension_gp_debug_segments
+test: create_extension_fail
 
 # end of tests

@@ -9,38 +9,18 @@ function set_env() {
     export TIMEFORMAT=$'\e[4;33mIt took %R seconds to complete this step\e[0m'
 }
 
-function os_id() {
-    if [[ -f "/etc/redhat-release" ]]; then
-        echo "centos"
-    else
-        echo "$(
-            . /etc/os-release
-            echo "${ID}"
-        )"
+function build_arch() {
+    if [[ ! -f /etc/os-release ]]; then
+        echo "unable to determine platform" && exit 1
     fi
-}
-
-function os_version() {
-    if [[ -f "/etc/redhat-release" ]]; then
-        echo "$(sed </etc/redhat-release 's/.*release *//' | cut -d. -f1)"
-    else
-        echo "$(
-            . /etc/os-release
-            echo "${VERSION_ID}"
-        )"
-    fi
-}
-
-build_arch() {
-    local id=$(os_id)
-    local version=$(os_version)
+    local id="$(. /etc/os-release && echo "${ID}")"
+    local version=$(. /etc/os-release && echo "${VERSION_ID}")
     # BLD_ARCH expects rhel{6,7,8}_x86_64 || photon3_x86_64 || sles12_x86_64 || ubuntu18.04_x86_64
     case ${id} in
-    photon | sles) version=$(os_version | cut -d. -f1) ;;
+    photon | sles | rhel) version=$(echo "${version}" | cut -d. -f1) ;;
     centos) id="rhel" ;;
     *) ;;
     esac
-
     echo "${id}${version}_x86_64"
 }
 
@@ -82,7 +62,8 @@ function make_cluster() {
     export BLDWRAP_POSTGRES_CONF_ADDONS=${BLDWRAP_POSTGRES_CONF_ADDONS}
     export STATEMENT_MEM=250MB
     pushd gpdb_src/gpAux/gpdemo
-    su gpadmin -c "source /usr/local/greenplum-db-devel/greenplum_path.sh; LANG=en_US.utf8 make create-demo-cluster"
+
+    su gpadmin -c "source /usr/local/greenplum-db-devel/greenplum_path.sh; LANG=en_US.utf8 make create-demo-cluster WITH_MIRRORS=${WITH_MIRRORS:-true}"
 
     if [[ "$MAKE_TEST_COMMAND" =~ gp_interconnect_type=proxy ]]; then
         # generate the addresses for proxy mode

@@ -86,9 +86,9 @@ using gpmd::CMDIdGPDB;
 class CConstraintInterval;
 class IConstExprEvaluator;
 
-typedef CDynamicPtrArray<CExpression, CleanupNULL> CExpressionJoinsArray;
+using CExpressionJoinsArray = CDynamicPtrArray<CExpression, CleanupNULL>;
 
-typedef BOOL(FnDXLPlanChecker)(CDXLNode *);
+using FnDXLPlanChecker = BOOL(CDXLNode *);
 
 //---------------------------------------------------------------------------
 //	@class:
@@ -351,6 +351,9 @@ public:
 
 	// generate left outer join on top of n-ary join expression
 	static CExpression *PexprLeftOuterJoinOnNAryJoin(CMemoryPool *mp);
+
+	// generate right outer join expression
+	static CExpression *PexprRightOuterJoin(CMemoryPool *mp);
 
 	// generate n-ary join on top of left outer join expression
 	static CExpression *PexprNAryJoinOnLeftOuterJoin(CMemoryPool *mp);

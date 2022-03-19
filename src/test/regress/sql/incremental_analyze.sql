@@ -854,3 +854,29 @@ SELECT count(*) from pg_statistic where starelid='foo'::regclass;
 ANALYZE (verbose, fullscan on) foo;
 ANALYZE (verbose, fullscan off) foo;
 reset optimizer_analyze_root_partition;
+
+-- Test merging of stats after the last partition is analyzed. Merging should
+-- be done for root without taking a sample from root if one of the column
+-- statistics collection is turned off
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c gp_hyperloglog_estimator) PARTITION BY RANGE (b) (START (1) END (3) EVERY (1));
+SET gp_autostats_mode=none;
+ALTER TABLE foo ALTER COLUMN c SET STATISTICS 0;
+INSERT INTO foo SELECT i,i%2+1, NULL FROM generate_series(1,100)i;
+ANALYZE VERBOSE foo_1_prt_1;
+ANALYZE VERBOSE foo_1_prt_2;
+SELECT tablename, attname, null_frac, n_distinct, most_common_vals, most_common_freqs, histogram_bounds FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+RESET gp_autostats_mode;
+
+-- analyze in transaction should merge leaves instead of resampling
+drop table if exists foo;
+create table foo (a int, b date) distributed by (a) partition by range(b) (partition "20210101" start ('20210101'::date) end ('20210201'::date), partition "20210201" start ('20210201'::date) end ('20210301'::date), partition "20210301" start ('20210301'::date) end ('20210401'::date));
+insert into foo select a, '20210101'::date+a from (select generate_series(1,80) a) t1;
+analyze verbose foo;
+
+-- we should see "analyzing "public.foo" inheritance tree" in the output below
+begin;
+truncate foo_1_prt_20210201;
+insert into foo select a, '20210101'::date+a from (select generate_series(31,40) a) t1;
+analyze verbose foo_1_prt_20210201;
+rollback;
