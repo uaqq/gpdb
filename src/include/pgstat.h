@@ -801,7 +801,9 @@ typedef struct PgBackendStatus
 	/* Times when current backend, transaction, and activity started */
 	TimestampTz st_proc_start_timestamp;
 	TimestampTz st_xact_start_timestamp;
-	TimestampTz st_activity_start_timestamp;
+    TimestampTz st_xact_block_start_timestamp;
+    TimestampTz st_xact_block_end_timestamp;
+    TimestampTz st_activity_start_timestamp;
 	/* the start time of queueing on resource group */
 	TimestampTz	st_resgroup_queue_start_timestamp;
 	TimestampTz st_state_start_timestamp;

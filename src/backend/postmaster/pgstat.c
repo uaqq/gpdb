@@ -2913,6 +2913,28 @@ gpstat_report_waiting(char reason)
 	 * protocol.  The update must appear atomic in any case.
 	 */
 	beentry->st_waiting = reason;
+
+    switch (reason)
+    {
+        case PGBE_WAITING_LOCK:
+            beentry->st_changecount++;
+            beentry->st_xact_block_start_timestamp = GetCurrentTimestamp();
+            beentry->st_xact_block_end_timestamp = 0;   /* reset blockend timestamp value since it might be new lock */
+            beentry->st_changecount++;
+            break;
+        case PGBE_WAITING_NONE:
+            if (beentry->st_xact_block_start_timestamp != 0)
+            {
+                beentry->st_changecount++;
+                beentry->st_xact_block_end_timestamp = GetCurrentTimestamp();
+                beentry->st_xact_block_start_timestamp = 0;
+                beentry->st_changecount++;
+            }
+            break;
+        default:
+            break;
+    }
+
 }
 
 
