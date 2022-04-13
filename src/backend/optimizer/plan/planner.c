@@ -1151,6 +1151,9 @@ inheritance_planner(PlannerInfo *root)
 	CdbLocusType append_locustype = CdbLocusType_Null;
 	bool		locus_ok = TRUE;
 
+	MemoryContext old_context = CurrentMemoryContext;
+	int			subplan_memorycontext_id = 0;
+	elog(NOTICE, "inheritance_planner with contexts");
 	/*
 	 * Greenplum specific behavior
 	 * Greenplum has a special path to handle semjoin,
@@ -1238,6 +1241,8 @@ inheritance_planner(PlannerInfo *root)
 		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(lc);
 		PlannerInfo subroot;
 		Plan	   *subplan;
+		MemoryContext subplan_memorycontext; /* OK to rewrite as parent context will track memory? */
+		char	subplan_memorycontext_name[15] = {0};
 
 		/* append_rel_list contains all append rels; ignore others */
 		if (appinfo->parent_relid != parentRTindex)
@@ -1389,6 +1394,20 @@ inheritance_planner(PlannerInfo *root)
 		/* hack to mark target relation as an inheritance partition */
 		subroot.hasInheritedTarget = true;
 
+		/*
+		* Set up a working context so that we can easily free whatever junk gets
+		* created.
+		* New context for each subplan, every iteration.
+		*/
+		sprintf(subplan_memorycontext_name, "subplan%d", subplan_memorycontext_id++);
+		elog(NOTICE, "inheritance_planner: create new subplan_memorycontext with name [%s]", subplan_memorycontext_name);
+
+		subplan_memorycontext = AllocSetContextCreate(old_context,
+											subplan_memorycontext_name,
+											ALLOCSET_DEFAULT_MINSIZE,
+											ALLOCSET_DEFAULT_INITSIZE,
+											ALLOCSET_DEFAULT_MAXSIZE);
+		MemoryContextSwitchTo(subplan_memorycontext); /* Ignore return value - current context */
 		/* Generate plan */
 		subplan = grouping_planner(&subroot, 0.0 /* retrieve all tuples */ );
 
@@ -1406,7 +1425,13 @@ inheritance_planner(PlannerInfo *root)
 		 * we might have inserted a dummy table with incorrect locus
 		 */
 		if (is_dummy_plan(subplan))
+		{
+			elog(NOTICE, "inheritance_planner free context");
+			/* Restore current context and release memory */
+			MemoryContextSwitchTo(old_context);
+			MemoryContextDelete(subplan_memorycontext);
 			continue;
+		}
 
 		/* MPP needs target loci to match. */
 		if (Gp_role == GP_ROLE_DISPATCH)
@@ -1539,6 +1564,8 @@ inheritance_planner(PlannerInfo *root)
 		 */
 		is_split_updates = lappend_int(is_split_updates, subroot.is_split_update);
 	}
+
+	MemoryContextSwitchTo(old_context);
 
 	Assert(parentPolicy != NULL);
 
