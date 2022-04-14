@@ -1153,7 +1153,9 @@ inheritance_planner(PlannerInfo *root)
 
 	MemoryContext old_context = CurrentMemoryContext;
 	int			subplan_memorycontext_id = 0;
+#ifdef MY_DEBUG
 	elog(NOTICE, "inheritance_planner with contexts");
+#endif
 	/*
 	 * Greenplum specific behavior
 	 * Greenplum has a special path to handle semjoin,
@@ -1400,8 +1402,9 @@ inheritance_planner(PlannerInfo *root)
 		* New context for each subplan, every iteration.
 		*/
 		sprintf(subplan_memorycontext_name, "subplan%d", subplan_memorycontext_id++);
+#ifdef MY_DEBUG
 		elog(NOTICE, "inheritance_planner: create new subplan_memorycontext with name [%s]", subplan_memorycontext_name);
-
+#endif
 		subplan_memorycontext = AllocSetContextCreate(old_context,
 											subplan_memorycontext_name,
 											ALLOCSET_DEFAULT_MINSIZE,
@@ -1426,7 +1429,9 @@ inheritance_planner(PlannerInfo *root)
 		 */
 		if (is_dummy_plan(subplan))
 		{
+#ifdef MY_DEBUG
 			elog(NOTICE, "inheritance_planner free context");
+#endif
 			/* Restore current context and release memory */
 			MemoryContextSwitchTo(old_context);
 			MemoryContextDelete(subplan_memorycontext);
