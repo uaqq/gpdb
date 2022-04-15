@@ -1151,11 +1151,8 @@ inheritance_planner(PlannerInfo *root)
 	CdbLocusType append_locustype = CdbLocusType_Null;
 	bool		locus_ok = TRUE;
 
-	MemoryContext old_context = CurrentMemoryContext;
+	MemoryContext caller_context;
 	int			subplan_memorycontext_id = 0;
-#ifdef MY_DEBUG
-	elog(NOTICE, "inheritance_planner with contexts");
-#endif
 	/*
 	 * Greenplum specific behavior
 	 * Greenplum has a special path to handle semjoin,
@@ -1242,6 +1239,7 @@ inheritance_planner(PlannerInfo *root)
 	{
 		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(lc);
 		PlannerInfo subroot;
+		PlannerInfo subroot_tmp;
 		Plan	   *subplan;
 		MemoryContext subplan_memorycontext; /* OK to rewrite as parent context will track memory? */
 		char	subplan_memorycontext_name[15] = {0};
@@ -1396,29 +1394,23 @@ inheritance_planner(PlannerInfo *root)
 		/* hack to mark target relation as an inheritance partition */
 		subroot.hasInheritedTarget = true;
 
+		/* Make a subroot copy in case of dummy subplan */
+		memcpy(&subroot_tmp, &subroot, sizeof(PlannerInfo));
+
 		/*
 		* Set up a working context so that we can easily free whatever junk gets
 		* created.
-		* New context for each subplan, every iteration.
+		* New context with new name for each subplan.
 		*/
 		sprintf(subplan_memorycontext_name, "subplan%d", subplan_memorycontext_id++);
-#ifdef MY_DEBUG
-		elog(NOTICE, "inheritance_planner: create new subplan_memorycontext with name [%s]", subplan_memorycontext_name);
-#endif
-		subplan_memorycontext = AllocSetContextCreate(old_context,
+		subplan_memorycontext = AllocSetContextCreate(CurrentMemoryContext,
 											subplan_memorycontext_name,
 											ALLOCSET_DEFAULT_MINSIZE,
 											ALLOCSET_DEFAULT_INITSIZE,
 											ALLOCSET_DEFAULT_MAXSIZE);
-		MemoryContextSwitchTo(subplan_memorycontext); /* Ignore return value - current context */
+		caller_context = MemoryContextSwitchTo(subplan_memorycontext);
 		/* Generate plan */
-		subplan = grouping_planner(&subroot, 0.0 /* retrieve all tuples */ );
-
-		/*
-		 * Planning may have modified the query result relation (if there were
-		 * security barrier quals on the result RTE).
-		 */
-		appinfo->child_relid = subroot.parse->resultRelation;
+		subplan = grouping_planner(&subroot_tmp, 0.0 /* retrieve all tuples */ );
 
 		/*
 		 * If this child rel was excluded by constraint exclusion, exclude it
@@ -1429,14 +1421,23 @@ inheritance_planner(PlannerInfo *root)
 		 */
 		if (is_dummy_plan(subplan))
 		{
-#ifdef MY_DEBUG
-			elog(NOTICE, "inheritance_planner free context");
-#endif
-			/* Restore current context and release memory */
-			MemoryContextSwitchTo(old_context);
+			/* Restore current context */
+			MemoryContextSwitchTo(caller_context);
+			/* Release memory from temporary suplan memory context. */
 			MemoryContextDelete(subplan_memorycontext);
 			continue;
 		}
+
+		/* Not a dummy subplan, use subroot */
+		memcpy(&subroot, &subroot_tmp, sizeof(PlannerInfo));
+		/* Restore current context */
+		MemoryContextSwitchTo(caller_context);
+
+		/*
+		 * Planning may have modified the query result relation (if there were
+		 * security barrier quals on the result RTE).
+		 */
+		appinfo->child_relid = subroot.parse->resultRelation;
 
 		/* MPP needs target loci to match. */
 		if (Gp_role == GP_ROLE_DISPATCH)
@@ -1569,8 +1570,6 @@ inheritance_planner(PlannerInfo *root)
 		 */
 		is_split_updates = lappend_int(is_split_updates, subroot.is_split_update);
 	}
-
-	MemoryContextSwitchTo(old_context);
 
 	Assert(parentPolicy != NULL);
 
