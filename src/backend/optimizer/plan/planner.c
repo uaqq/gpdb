@@ -1241,6 +1241,8 @@ inheritance_planner(PlannerInfo *root)
 		PlannerInfo subroot;
 		PlannerInfo subroot_tmp;
 		Plan	   *subplan;
+		List       *subplans_copy;
+		List       *subroots_copy;
 		MemoryContext subplan_memorycontext; /* OK to rewrite as parent context will track memory? */
 		char	subplan_memorycontext_name[15] = {0};
 
@@ -1396,6 +1398,9 @@ inheritance_planner(PlannerInfo *root)
 
 		/* Make a subroot copy in case of dummy subplan */
 		memcpy(&subroot_tmp, &subroot, sizeof(PlannerInfo));
+		/* Make global lists copy in case of dummy subplan */
+		subplans_copy = (List *) copyObject(root->glob->subplans);
+		subroots_copy = (List *) copyObject(root->glob->subroots);
 
 		/*
 		* Set up a working context so that we can easily free whatever junk gets
@@ -1425,6 +1430,13 @@ inheritance_planner(PlannerInfo *root)
 			MemoryContextSwitchTo(caller_context);
 			/* Release memory from temporary suplan memory context. */
 			MemoryContextDelete(subplan_memorycontext);
+			/* Restore global lists */
+			/* Risk of memory leackage */
+			root->glob->subplans = subplans_copy;
+			root->glob->subroots = subroots_copy;
+//			root->glob->subplans = (List *) copyObject(subplans_copy);
+//			root->glob->subroots = (List *) copyObject(subroots_copy);
+
 			continue;
 		}
 
