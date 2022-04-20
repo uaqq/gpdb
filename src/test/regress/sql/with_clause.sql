@@ -1,3 +1,8 @@
+-- start_ignore
+create extension if not exists gp_debug_numsegments;
+create language plpythonu;
+-- end_ignore
+
 drop table if exists with_test1 cascade;
 create table with_test1 (i int, t text, value int) distributed by (i);
 insert into with_test1 select i%10, 'text' || i%20, i%30 from generate_series(0, 99) i;
@@ -405,3 +410,146 @@ WITH e AS (
 ) SELECT * FROM r JOIN h USING (a) JOIN h i USING (a);
 DROP TABLE d;
 DROP TABLE r;
+
+--
+-- Test various SELECT statements over DML operations
+--
+create table with_dml(i integer, j integer) distributed by(i);
+create table with_dml_dr(i integer, j integer) distributed replicated;
+
+-- Test select over DML queries. Gather motion should be there, no matter
+-- what type of distribution is used. Before fix, motion was missed for
+-- distributed replicated table, which caused count(*) to return zero rows.
+explain (costs off)
+with cte as (
+    insert into with_dml select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte;
+with cte as (
+    insert into with_dml select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte;
+explain (costs off)
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte;
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte;
+
+explain (costs off)
+with cte as (
+    update with_dml set j = j + 1 where i <= 5 returning j
+) select count(*) from cte;
+with cte as (
+    update with_dml set j = j + 1 where i <= 5 returning j
+) select count(*) from cte;
+explain (costs off)
+with cte as (
+    update with_dml_dr set j = j + 1 where i <= 5 returning j
+) select count(*) from cte;
+with cte as (
+    update with_dml_dr set j = j + 1 where i <= 5 returning j
+) select count(*) from cte;
+
+explain (costs off)
+with cte as (
+    delete from with_dml where i > 0 returning i
+) select count(*) from cte;
+with cte as (
+    delete from with_dml where i > 0 returning i
+) select count(*) from cte;
+explain (costs off)
+with cte as (
+    delete from with_dml_dr where i > 0 returning i
+) select count(*) from cte;
+with cte as (
+    delete from with_dml_dr where i > 0 returning i
+) select count(*) from cte;
+
+-- Test joining, which caused "!(root->upd_del_replicated_table > 0)"
+-- (cdbpath.c:1105) or "!(((bool) 0))" (cdbpath.c:1243) assertion errors due
+-- to incompatibility of CdbLocusType_Replicated with select statements.
+explain (costs off)
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte join with_dml on cte.i = with_dml.i;
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte join with_dml on cte.i = with_dml.i;
+explain (costs off)
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+
+explain (costs off)
+with cte as (
+    update with_dml_dr set j = j + 1 where i <= 5 returning i
+) select count(*) from cte join with_dml on cte.i = with_dml.i;
+with cte as (
+    update with_dml_dr set j = j + 1 where i <= 5 returning i
+) select count(*) from cte join with_dml on cte.i = with_dml.i;
+explain (costs off)
+with cte as (
+    update with_dml_dr set j = j + 1 where i <= 5 returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+with cte as (
+    update with_dml_dr set j = j + 1 where i <= 5 returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+
+explain (costs off)
+with cte as (
+    delete from with_dml_dr where i > 0 returning i
+) select count(*) from cte join with_dml on cte.i = with_dml.i;
+with cte as (
+    delete from with_dml_dr where i > 0 returning i
+) select count(*) from cte join with_dml on cte.i = with_dml.i;
+explain (costs off)
+with cte as (
+    delete from with_dml_dr where i > 0 returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+with cte as (
+    delete from with_dml_dr where i > 0 returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+
+-- Test joining of replicated table (as CdbLocusType_Replicated) with various
+-- CdbLocusType_Entry scenarios.
+explain (costs off) with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte left join (select * from with_dml limit 5) lmt on cte.i = lmt.i;
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte left join (select * from with_dml limit 5) lmt on cte.i = lmt.i;
+-- execution(not planning) of this will raise:
+-- ERROR:  INSERT/UPDATE/DELETE must be executed by a writer segworker group
+explain (costs off) with cte as (                                                                                                                                                                
+    insert into with_dml_dr select i, i * 100 from generate_series(2658,2664) i
+    returning i
+) select count(*) from cte join pg_class on cte.i = oid;
+
+-- Test joining of one replicated table with another replicated table
+-- propagated on less segments.
+select gp_debug_set_create_table_default_numsegments(1);
+create table with_dml_dr_seg1(i integer, j integer) distributed replicated;
+select gp_debug_reset_create_table_default_numsegments();
+explain (costs off)
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte left join with_dml_dr_seg1 on cte.i = with_dml_dr_seg1.i;
+with cte as (
+    insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte left join with_dml_dr_seg1 on cte.i = with_dml_dr_seg1.i;
+truncate with_dml_dr;
