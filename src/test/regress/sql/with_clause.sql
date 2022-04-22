@@ -545,6 +545,7 @@ with cte as (
     returning i
 ) select count(*) from cte left join with_dml_dr_seg1 on cte.i = with_dml_dr_seg1.i;
 truncate with_dml_dr;
+drop table with_dml_dr_seg1;
 
 -- Test quals not pushing down to CTE with DML. Previosuly, pushing down to
 -- INSERT caused filtering of inserting dataset, which may lead to incomplete
