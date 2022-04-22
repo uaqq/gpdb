@@ -967,6 +967,11 @@ bool IsCurrentTransactionIdForReader(TransactionId xid)
 			}
 		}
 	}
+	else
+	{
+		LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+		elog(ERROR, "writer proc transaction id is invalid");
+	}
 
 	/* release the lock before accessing pg_subtrans */
 	LWLockRelease(SharedLocalSnapshotSlot->slotLock);
