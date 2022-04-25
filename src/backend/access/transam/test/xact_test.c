@@ -252,7 +252,7 @@ main(int argc, char* argv[])
 
 	const UnitTest tests[] = {
 		//unit_test(test_TransactionIdIsCurrentTransactionIdInternal),
-		unit_test(test_IsCurrentTransactionIdForReader)
+		//unit_test(test_IsCurrentTransactionIdForReader)
 	};
 
 	MemoryContextInit();
