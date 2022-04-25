@@ -1777,7 +1777,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		{
 			ExplainPropertyFloat("Startup Cost", plan->startup_cost, 2, es);
 			ExplainPropertyFloat("Total Cost", plan->total_cost, 2, es);
-			ExplainPropertyFloat("Plan Rows", plan->plan_rows, 0, es);
+			ExplainPropertyFloat("Plan Rows", ceil(plan->plan_rows / scaleFactor), 0, es);
 			ExplainPropertyInteger("Plan Width", plan->plan_width, es);
 		}
 	}
