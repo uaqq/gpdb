@@ -939,8 +939,14 @@ bool IsCurrentTransactionIdForReader(TransactionId xid)
 		elog(ERROR, "writer proc reference shared with reader is invalid");
 	}
 
+	if (!writer_xact)
+	{
+		LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+		return false;
+	}
+
 	TransactionId writer_xid = writer_xact->xid;
-	TransactionId writer_lxid = writer_proc->lxid;
+	//TransactionId writer_lxid = writer_proc->lxid;
 	bool overflowed = writer_xact->overflowed;
 	bool isCurrent = false;
 
@@ -968,11 +974,11 @@ bool IsCurrentTransactionIdForReader(TransactionId xid)
 			}
 		}
 	}
-	else if (!TransactionIdIsValid(writer_lxid))
+	/*else if (!TransactionIdIsValid(writer_lxid))
 	{
 		//LWLockRelease(SharedLocalSnapshotSlot->slotLock);
 		elog(WARNING, "writer proc transaction id is invalid");
-	}
+	}*/
 
 	/* release the lock before accessing pg_subtrans */
 	LWLockRelease(SharedLocalSnapshotSlot->slotLock);

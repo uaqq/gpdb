@@ -434,6 +434,13 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid, bool lockHeld)
 {
 	PGXACT	   *pgxact = &allPgXact[proc->pgprocno];
 
+	if (proc->mppIsWriter)
+	{
+		LWLockAcquire(SharedLocalSnapshotSlot->slotLock, LW_EXCLUSIVE);
+		SharedLocalSnapshotSlot->writer_xact = NULL;
+		LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+	}
+
 	if (TransactionIdIsValid(latestXid))
 	{
 		/*
