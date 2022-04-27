@@ -942,6 +942,7 @@ bool IsCurrentTransactionIdForReader(TransactionId xid)
 	if (!writer_xact)
 	{
 		LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+		elog(WARNING, "writer proc transaction id is invalid");
 		return false;
 	}
 
@@ -3346,6 +3347,12 @@ AbortTransaction(void)
 	 * RecordTransactionAbort.
 	 */
 	ProcArrayEndTransaction(MyProc, latestXid, false);
+	if (MyProc->mppIsWriter)
+	{
+		LWLockAcquire(SharedLocalSnapshotSlot->slotLock, LW_EXCLUSIVE);
+		SharedLocalSnapshotSlot->writer_xact = NULL;
+		LWLockRelease(SharedLocalSnapshotSlot->slotLock);
+	}
 
 	EndLocalDistribXact(false);
 
