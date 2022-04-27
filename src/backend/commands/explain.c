@@ -1463,6 +1463,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 						break;
 					case MOTIONTYPE_EXPLICIT:
 						sname = "Explicit Redistribute Motion";
+						/* scale the number of rows by the number of segments sending data */
+						scaleFactor = motion_snd;
 						break;
 					default:
 						sname = "???";
