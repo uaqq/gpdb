@@ -2,6 +2,19 @@ set optimizer to off;
 drop table  if exists pg_stat_test;
 create table pg_stat_test(a int);
 select
+    gp_segment_id,
+    schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd,
+    n_tup_del, n_tup_hot_upd, n_live_tup, n_dead_tup
+from gp_dist_random('pg_stat_all_tables_internal') where relname = 'pg_stat_test'
+order by gp_segment_id;
+ gp_segment_id | schemaname |   relname    | seq_scan | seq_tup_read | idx_scan | idx_tup_fetch | n_tup_ins | n_tup_upd | n_tup_del | n_tup_hot_upd | n_live_tup | n_dead_tup 
+---------------+------------+--------------+----------+--------------+----------+---------------+-----------+-----------+-----------+---------------+------------+------------
+             0 | public     | pg_stat_test |        0 |            0 |          |               |         0 |         0 |         0 |             0 |          0 |          0
+             1 | public     | pg_stat_test |        0 |            0 |          |               |         0 |         0 |         0 |             0 |          0 |          0
+             2 | public     | pg_stat_test |        0 |            0 |          |               |         0 |         0 |         0 |             0 |          0 |          0
+(3 rows)
+
+select
     schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd,
     n_tup_del, n_tup_hot_upd, n_live_tup, n_dead_tup
 from pg_stat_all_tables where relname = 'pg_stat_test';
@@ -45,6 +58,8 @@ select count(*) from pg_stat_test;
 (1 row)
 
 delete from pg_stat_test where a < 10;
+-- FIXME: update operation doesn't increment scan-related counters
+-- they are repaired after next selection query with index scan
 update pg_stat_test set a = 1000 where a > 90;
 set enable_seqscan to off;
 select pg_sleep(10);
@@ -59,6 +74,28 @@ select * from pg_stat_test where a = 1;
 (0 rows)
 
 reset enable_seqscan;
+-- wait until statistics on all segments will be updated
+select pg_sleep(1) from gp_dist_random('gp_id');
+ pg_sleep 
+----------
+ 
+ 
+ 
+(3 rows)
+
+select
+    gp_segment_id,
+    schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd,
+    n_tup_del, n_tup_hot_upd, n_live_tup, n_dead_tup
+from gp_dist_random('pg_stat_all_tables_internal') where relname = 'pg_stat_test'
+order by gp_segment_id;
+ gp_segment_id | schemaname |   relname    | seq_scan | seq_tup_read | idx_scan | idx_tup_fetch | n_tup_ins | n_tup_upd | n_tup_del | n_tup_hot_upd | n_live_tup | n_dead_tup 
+---------------+------------+--------------+----------+--------------+----------+---------------+-----------+-----------+-----------+---------------+------------+------------
+             0 | public     | pg_stat_test |        4 |          147 |        0 |             0 |        48 |         0 |        10 |             0 |         38 |         10
+             1 | public     | pg_stat_test |        4 |          147 |        1 |             0 |        37 |         0 |         4 |             0 |         33 |          4
+             2 | public     | pg_stat_test |        4 |           97 |        0 |             0 |        25 |         0 |         5 |             0 |         20 |          5
+(3 rows)
+
 select
     schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd,
     n_tup_del, n_tup_hot_upd, n_live_tup, n_dead_tup, n_mod_since_analyze
@@ -78,6 +115,18 @@ from pg_stat_user_tables where relname = 'pg_stat_test';
 (1 row)
 
 select
+    gp_segment_id,
+    schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch
+from gp_dist_random('pg_stat_all_indexes_internal') where relname = 'pg_stat_test'
+order by gp_segment_id;
+ gp_segment_id | schemaname |   relname    |       indexrelname       | idx_scan | idx_tup_read | idx_tup_fetch 
+---------------+------------+--------------+--------------------------+----------+--------------+---------------
+             0 | public     | pg_stat_test | pg_stat_user_table_index |        0 |            0 |             0
+             1 | public     | pg_stat_test | pg_stat_user_table_index |        1 |            1 |             0
+             2 | public     | pg_stat_test | pg_stat_user_table_index |        0 |            0 |             0
+(3 rows)
+
+select
     schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch
 from pg_stat_all_indexes where relname = 'pg_stat_test';
  schemaname |   relname    |       indexrelname       | idx_scan | idx_tup_read | idx_tup_fetch 
@@ -93,4 +142,42 @@ from pg_stat_user_indexes where relname = 'pg_stat_test';
  public     | pg_stat_test | pg_stat_user_table_index |        1 |            1 |             0
 (1 row)
 
+-- Verify transactional counters
+begin;
+insert into pg_stat_test select * from generate_series(1, 9);
+select count(*) from pg_stat_test;
+ count 
+-------
+   100
+(1 row)
+
+delete from pg_stat_test where a < 10;
+update pg_stat_test set a = 100 where a >= 1000;
+set enable_seqscan to off;
+select * from pg_stat_test where a = 1;
+ a 
+---
+(0 rows)
+
+reset enable_seqscan;
+-- FIXME: the last update operation haven't incremented scan-related counters
+select
+    gp_segment_id,
+    schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd,
+    n_tup_del, n_tup_hot_upd
+from gp_dist_random('pg_stat_xact_all_tables_internal') where relname = 'pg_stat_test'
+order by gp_segment_id;
+ gp_segment_id | schemaname |   relname    | seq_scan | seq_tup_read | idx_scan | idx_tup_fetch | n_tup_ins | n_tup_upd | n_tup_del | n_tup_hot_upd 
+---------------+------------+--------------+----------+--------------+----------+---------------+-----------+-----------+-----------+---------------
+             0 | public     | pg_stat_test |        2 |           86 |        0 |             0 |         5 |         0 |        15 |             0
+             1 | public     | pg_stat_test |        2 |           68 |        1 |             0 |         1 |         0 |         1 |             0
+             2 | public     | pg_stat_test |        2 |           46 |        0 |             0 |        13 |         0 |         3 |             0
+(3 rows)
+
+-- FIXME: distributed view pg_stat_xact_all_tables returns zero counters
+--  select
+    --  schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd,
+    --  n_tup_del, n_tup_hot_upd
+--  from pg_stat_xact_all_tables where relname = 'pg_stat_test';
+rollback;
 reset optimizer;

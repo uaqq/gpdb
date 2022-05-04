@@ -558,6 +558,7 @@ REVOKE EXECUTE ON FUNCTION pg_config() FROM PUBLIC;
 
 CREATE VIEW pg_stat_all_tables_internal AS
     SELECT
+            gp_execution_segment() AS gp_segment_id,
             C.oid AS relid,
             N.nspname AS schemaname,
             C.relname AS relname,
@@ -618,10 +619,10 @@ FROM
          relid,
          schemaname,
          relname,
-         case when d.policytype = 'r' then (sum(seq_scan)/d.numsegments)::bigint else sum(seq_scan) end seq_scan,
-         case when d.policytype = 'r' then (sum(seq_tup_read)/d.numsegments)::bigint else sum(seq_tup_read) end seq_tup_read,
-         case when d.policytype = 'r' then (sum(idx_scan)/d.numsegments)::bigint else sum(idx_scan) end idx_scan,
-         case when d.policytype = 'r' then (sum(idx_tup_fetch)/d.numsegments)::bigint else sum(idx_tup_fetch) end idx_tup_fetch,
+         sum(seq_scan) seq_scan,
+         sum(seq_tup_read) seq_tup_read,
+         sum(idx_scan) idx_scan,
+         sum(idx_tup_fetch) idx_tup_fetch,
          case when d.policytype = 'r' then (sum(n_tup_ins)/d.numsegments)::bigint else sum(n_tup_ins) end n_tup_ins,
          case when d.policytype = 'r' then (sum(n_tup_upd)/d.numsegments)::bigint else sum(n_tup_upd) end n_tup_upd,
          case when d.policytype = 'r' then (sum(n_tup_del)/d.numsegments)::bigint else sum(n_tup_del) end n_tup_del,
@@ -646,15 +647,37 @@ FROM
      UNION ALL
 
      SELECT
-         *
+         relid,
+         schemaname,
+         relname,
+         seq_scan,
+         seq_tup_read,
+         idx_scan,
+         idx_tup_fetch,
+         n_tup_ins,
+         n_tup_upd,
+         n_tup_del,
+         n_tup_hot_upd,
+         n_live_tup,
+         n_dead_tup,
+         n_mod_since_analyze,
+         last_vacuum,
+         last_autovacuum,
+         last_analyze,
+         last_autoanalyze,
+         vacuum_count,
+         autovacuum_count,
+         analyze_count,
+         autoanalyze_count
      FROM
          pg_stat_all_tables_internal
      WHERE
              relid < 16384) m, pg_stat_all_tables_internal s
 WHERE m.relid = s.relid;
 
-CREATE VIEW pg_stat_xact_all_tables AS
+CREATE VIEW pg_stat_xact_all_tables_internal AS
     SELECT
+            gp_execution_segment() AS gp_segment_id,
             C.oid AS relid,
             N.nspname AS schemaname,
             C.relname AS relname,
@@ -672,6 +695,45 @@ CREATE VIEW pg_stat_xact_all_tables AS
          LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
     WHERE C.relkind IN ('r', 't', 'm')
     GROUP BY C.oid, N.nspname, C.relname;
+
+CREATE VIEW pg_stat_xact_all_tables AS
+    SELECT
+        relid,
+        schemaname,
+        relname,
+        sum(seq_scan) seq_scan,
+        sum(seq_tup_read) seq_tup_read,
+        sum(idx_scan) idx_scan,
+        sum(idx_tup_fetch) idx_tup_fetch,
+        case when d.policytype = 'r' then (sum(n_tup_ins)/d.numsegments) else sum(n_tup_ins) end n_tup_ins,
+        case when d.policytype = 'r' then (sum(n_tup_upd)/d.numsegments) else sum(n_tup_upd) end n_tup_upd,
+        case when d.policytype = 'r' then (sum(n_tup_del)/d.numsegments) else sum(n_tup_del) end n_tup_del,
+        case when d.policytype = 'r' then (sum(n_tup_hot_upd)/d.numsegments) else sum(n_tup_hot_upd) end n_tup_hot_upd
+    FROM
+        gp_dist_random('pg_stat_xact_all_tables_internal') JOIN
+        gp_distribution_policy AS d ON relid = d.localoid
+    WHERE
+        relid >= 16384
+    GROUP BY relid, schemaname, relname, d.policytype, d.numsegments
+
+    UNION ALL
+
+    SELECT
+        relid,
+        schemaname,
+        relname,
+        seq_scan,
+        seq_tup_read,
+        idx_scan,
+        idx_tup_fetch,
+        n_tup_ins,
+        n_tup_upd,
+        n_tup_del,
+        n_tup_hot_upd
+    FROM
+        pg_stat_xact_all_tables_internal
+    WHERE
+        relid < 16384;
 
 CREATE VIEW pg_stat_sys_tables AS
     SELECT * FROM pg_stat_all_tables
@@ -693,8 +755,9 @@ CREATE VIEW pg_stat_xact_user_tables AS
     WHERE schemaname NOT IN ('pg_catalog', 'information_schema') AND
           schemaname !~ '^pg_toast';
 
-CREATE VIEW pg_statio_all_tables AS
+CREATE VIEW pg_statio_all_tables_internal AS
     SELECT
+            gp_execution_segment() AS gp_segment_id,
             C.oid AS relid,
             N.nspname AS schemaname,
             C.relname AS relname,
@@ -718,6 +781,44 @@ CREATE VIEW pg_statio_all_tables AS
     WHERE C.relkind IN ('r', 't', 'm')
     GROUP BY C.oid, N.nspname, C.relname, T.oid, X.indrelid;
 
+CREATE VIEW pg_statio_all_tables AS
+    SELECT
+        relid,
+        schemaname,
+        relname,
+        sum(heap_blks_read) heap_blks_read,
+        sum(heap_blks_hit) heap_blks_hit,
+        sum(idx_blks_read) idx_blks_read,
+        sum(idx_blks_hit) idx_blks_hit,
+        sum(toast_blks_read) toast_blks_read,
+        sum(toast_blks_hit) toast_blks_hit,
+        sum(tidx_blks_read) tidx_blks_read,
+        sum(tidx_blks_hit) tidx_blks_hit
+    FROM
+        gp_dist_random('pg_statio_all_tables_internal')
+    WHERE
+        relid >= 16384
+    GROUP BY relid, schemaname, relname
+
+    UNION ALL
+
+    SELECT
+        relid,
+        schemaname,
+        relname,
+        heap_blks_read,
+        heap_blks_hit,
+        idx_blks_read,
+        idx_blks_hit,
+        toast_blks_read,
+        toast_blks_hit,
+        tidx_blks_read,
+        tidx_blks_hit
+    FROM
+        pg_statio_all_tables_internal
+    WHERE
+        relid < 16384;
+
 CREATE VIEW pg_statio_sys_tables AS
     SELECT * FROM pg_statio_all_tables
     WHERE schemaname IN ('pg_catalog', 'information_schema') OR
@@ -730,6 +831,7 @@ CREATE VIEW pg_statio_user_tables AS
 
 CREATE VIEW pg_stat_all_indexes_internal AS
     SELECT
+            gp_execution_segment() AS gp_segment_id,
             C.oid AS relid,
             I.oid AS indexrelid,
             N.nspname AS schemaname,
@@ -747,40 +849,36 @@ CREATE VIEW pg_stat_all_indexes_internal AS
 -- Gather data from segments on user tables, and use data on coordinator on system tables.
 
 CREATE VIEW pg_stat_all_indexes AS
-SELECT
-    s.relid,
-    s.indexrelid,
-    s.schemaname,
-    s.relname,
-    s.indexrelname,
-    m.idx_scan,
-    m.idx_tup_read,
-    m.idx_tup_fetch
-FROM
-    (SELECT
-         relid,
-         indexrelid,
-         schemaname,
-         relname,
-         indexrelname,
-         sum(idx_scan) as idx_scan,
-         sum(idx_tup_read) as idx_tup_read,
-         sum(idx_tup_fetch) as idx_tup_fetch
-     FROM
-         gp_dist_random('pg_stat_all_indexes_internal')
-     WHERE
-             relid >= 16384
-     GROUP BY relid, indexrelid, schemaname, relname, indexrelname
+    SELECT
+        relid,
+        indexrelid,
+        schemaname,
+        relname,
+        indexrelname,
+        sum(idx_scan) idx_scan,
+        sum(idx_tup_read) idx_tup_read,
+        sum(idx_tup_fetch) idx_tup_fetch
+    FROM
+        gp_dist_random('pg_stat_all_indexes_internal')
+    WHERE
+        relid >= 16384
+    GROUP BY relid, indexrelid, schemaname, relname, indexrelname
 
-     UNION ALL
+    UNION ALL
 
-     SELECT
-         *
-     FROM
-         pg_stat_all_indexes_internal
-     WHERE
-             relid < 16384) m, pg_stat_all_indexes_internal s
-WHERE m.relid = s.relid;
+    SELECT
+        relid,
+        indexrelid,
+        schemaname,
+        relname,
+        indexrelname,
+        idx_scan,
+        idx_tup_read,
+        idx_tup_fetch
+    FROM
+        pg_stat_all_indexes_internal
+    WHERE
+        relid < 16384;
 
 CREATE VIEW pg_stat_sys_indexes AS
     SELECT * FROM pg_stat_all_indexes
@@ -792,8 +890,9 @@ CREATE VIEW pg_stat_user_indexes AS
     WHERE schemaname NOT IN ('pg_catalog', 'information_schema') AND
           schemaname !~ '^pg_toast';
 
-CREATE VIEW pg_statio_all_indexes AS
+CREATE VIEW pg_statio_all_indexes_internal AS
     SELECT
+            gp_execution_segment() AS gp_segment_id,
             C.oid AS relid,
             I.oid AS indexrelid,
             N.nspname AS schemaname,
@@ -807,6 +906,36 @@ CREATE VIEW pg_statio_all_indexes AS
             pg_class I ON I.oid = X.indexrelid
             LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
     WHERE C.relkind IN ('r', 't', 'm');
+
+CREATE VIEW pg_statio_all_indexes AS
+    SELECT
+        relid,
+        indexrelid,
+        schemaname,
+        relname,
+        indexrelname,
+        sum(idx_blks_read) idx_blks_read,
+        sum(idx_blks_hit) idx_blks_hit
+    FROM
+        gp_dist_random('pg_statio_all_indexes_internal')
+    WHERE
+        relid >= 16384
+    GROUP BY relid, indexrelid, schemaname, relname, indexrelname
+
+    UNION ALL
+
+    SELECT
+        relid,
+        indexrelid,
+        schemaname,
+        relname,
+        indexrelname,
+        idx_blks_read,
+        idx_blks_hit
+    FROM
+        pg_statio_all_indexes_internal
+    WHERE
+        relid < 16384;
 
 CREATE VIEW pg_statio_sys_indexes AS
     SELECT * FROM pg_statio_all_indexes
