@@ -186,7 +186,7 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			return (Path *) pathnode;
 		}
 
-		if (CdbPathLocus_IsSegmentGeneral(subpath->locus))
+		if (CdbPathLocus_IsSegmentGeneral(subpath->locus) || CdbPathLocus_IsReplicated(subpath->locus))
 		{
 			/*
 			 * Data is only available on segments, to distingush it with
@@ -219,8 +219,8 @@ cdbpath_create_motion_path(PlannerInfo *root,
 		}
 
 		/* replicated-->singleton would give redundant copies of the rows. */
-		if (CdbPathLocus_IsReplicated(subpath->locus))
-			goto invalid_motion_request;
+		//if (CdbPathLocus_IsReplicated(subpath->locus))
+		//	goto invalid_motion_request;
 
 		/*
 		 * Must be partitioned-->singleton. If caller gave pathkeys, they'll
@@ -341,7 +341,7 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			 * Assume that this case only can be generated in
 			 * UPDATE/DELETE statement
 			 */
-			if (root->upd_del_replicated_table == 0)
+			if (root->upd_del_replicated_table == 0 && !(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
 				goto invalid_motion_request;
 
 		}
