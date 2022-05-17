@@ -86,8 +86,10 @@ choose_setop_type(List *planlist)
 			case CdbLocusType_General:
 				break;
 
-			case CdbLocusType_Null:
 			case CdbLocusType_Replicated:
+				ok_general = ok_partitioned = ok_single_qe = FALSE;
+				break;
+			case CdbLocusType_Null:			
 			default:
 				return PSETOP_NONE;
 		}
@@ -178,10 +180,11 @@ adjust_setop_arguments(PlannerInfo *root, List *planlist, GpSetOpType setop_type
 
 					case CdbLocusType_Entry:
 					case CdbLocusType_General:
+					case CdbLocusType_Replicated:
 						break;
 
 					case CdbLocusType_Null:
-					case CdbLocusType_Replicated:
+					
 					case CdbLocusType_End:
 						ereport(ERROR, (
 										errcode(ERRCODE_INTERNAL_ERROR),
@@ -323,8 +326,8 @@ make_motion_gather(PlannerInfo *root, Plan *subplan, List *sortPathKeys, CdbLocu
 	Motion	   *motion;
 
 	Assert(subplan->flow != NULL);
-	Assert(subplan->flow->flotype == FLOW_PARTITIONED ||
-		   subplan->flow->flotype == FLOW_SINGLETON);
+	//Assert(subplan->flow->flotype == FLOW_PARTITIONED ||
+	//	   subplan->flow->flotype == FLOW_SINGLETON);
 
 	if (sortPathKeys)
 	{

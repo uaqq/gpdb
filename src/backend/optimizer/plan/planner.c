@@ -3018,7 +3018,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				result_plan->total_cost += motion_cost_per_row * result_plan->plan_rows;
 			}
 		}
-		else if ( result_plan->flow->flotype == FLOW_SINGLETON )
+		else if ( result_plan->flow->flotype == FLOW_SINGLETON || result_plan->flow->flotype == FLOW_REPLICATED)
 			; /* Already collocated. */
 		else
 		{
