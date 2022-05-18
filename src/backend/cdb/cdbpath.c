@@ -69,6 +69,17 @@ cdbpath_cost_motion(PlannerInfo *root, CdbMotionPath *motionpath)
 	motionpath->path.memory = subpath->memory;
 }								/* cdbpath_cost_motion */
 
+static bool
+hasSelectWithModifyingCTE(PlannerInfo *root)
+{
+	while (root)
+	{
+		if (root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT)
+			return true;
+		root = root->parent_root;
+	}
+	return false;
+}
 
 /*
  * cdbpath_create_motion_path
@@ -221,7 +232,7 @@ cdbpath_create_motion_path(PlannerInfo *root,
 		/* replicated-->singleton would give redundant copies of the rows. */
 		if (CdbPathLocus_IsReplicated(subpath->locus))
 		{
-			if (root->upd_del_replicated_table == 0 && !(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
+			if (root->upd_del_replicated_table == 0 && !hasSelectWithModifyingCTE(root))
 				goto invalid_motion_request;
 		}
 		else
@@ -345,7 +356,7 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			 * Assume that this case only can be generated in
 			 * UPDATE/DELETE statement
 			 */
-			if (root->upd_del_replicated_table == 0 && !(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
+			if (root->upd_del_replicated_table == 0 && !hasSelectWithModifyingCTE(root))
 				goto invalid_motion_request;
 
 		}
@@ -1106,8 +1117,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 
 			if (CdbPathLocus_IsReplicated(other->locus))
 			{
-				Assert(root->upd_del_replicated_table > 0 ||
-					   (root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT));
+				Assert(root->upd_del_replicated_table > 0 || hasSelectWithModifyingCTE(root));
 
 				/*
 				 * It only appear when we UPDATE a replicated table.
@@ -1266,7 +1276,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	else if (CdbPathLocus_IsReplicated(outer.locus))
 	{
 		if (root->upd_del_replicated_table > 0 ||
-			(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
+			hasSelectWithModifyingCTE(root))
 			CdbPathLocus_MakeReplicated(&inner.move_to,
 										CdbPathLocus_NumSegments(outer.locus));
 		else
@@ -1278,7 +1288,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	else if (CdbPathLocus_IsReplicated(inner.locus))
 	{
 		if (root->upd_del_replicated_table > 0 ||
-			(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
+			hasSelectWithModifyingCTE(root))
 			CdbPathLocus_MakeReplicated(&outer.move_to,
 										CdbPathLocus_NumSegments(inner.locus));
 		else
