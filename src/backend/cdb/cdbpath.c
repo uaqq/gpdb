@@ -69,6 +69,22 @@ cdbpath_cost_motion(PlannerInfo *root, CdbMotionPath *motionpath)
 	motionpath->path.memory = subpath->memory;
 }								/* cdbpath_cost_motion */
 
+/*
+ * Check if current root or any root's parent has SELECT query with modifying
+ * CTE inside.
+ */
+static bool
+hasModifyingCTESelectRecur(PlannerInfo *root)
+{
+	while (root)
+	{
+		if (root->parse->hasModifyingCTE &&
+			root->parse->commandType == CMD_SELECT)
+			return true;
+		root = root->parent_root;
+	}
+	return false;
+}
 
 /*
  * cdbpath_create_motion_path
@@ -225,9 +241,17 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			return (Path *) pathnode;
 		}
 
-		/* replicated-->singleton would give redundant copies of the rows. */
+		/*
+		 * replicated-->singleton would give redundant copies of the rows.
+		 * But there is an exception - DML over replicated table should pass
+		 * the check and add motion.
+		 */
 		if (CdbPathLocus_IsReplicated(subpath->locus))
-			goto invalid_motion_request;
+		{
+			if (root->upd_del_replicated_table == 0 &&
+				!hasModifyingCTESelectRecur(root))
+				goto invalid_motion_request;
+		}
 
 		/*
 		 * Must be partitioned-->singleton. If caller gave pathkeys, they'll
@@ -235,7 +259,7 @@ cdbpath_create_motion_path(PlannerInfo *root,
 		 * arbitrarily interleave the rows from the subpath partitions in no
 		 * special order.
 		 */
-		if (!CdbPathLocus_IsPartitioned(subpath->locus))
+		else if (!CdbPathLocus_IsPartitioned(subpath->locus))
 			goto invalid_motion_request;
 	}
 
@@ -344,11 +368,9 @@ cdbpath_create_motion_path(PlannerInfo *root,
 		}
 		else if (CdbPathLocus_IsReplicated(locus))
 		{
-			/*
-			 * Assume that this case only can be generated in
-			 * UPDATE/DELETE statement
-			 */
-			if (root->upd_del_replicated_table == 0)
+			/* Assume that this case only can be generated in DML statement. */
+			if (root->upd_del_replicated_table == 0 &&
+				!hasModifyingCTESelectRecur(root))
 				goto invalid_motion_request;
 
 		}
@@ -1110,7 +1132,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 			if (CdbPathLocus_IsReplicated(other->locus))
 			{
 				Assert(root->upd_del_replicated_table > 0 ||
-					   (root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT));
+					   hasModifyingCTESelectRecur(root));
 
 				/*
 				 * It only appear when we UPDATE a replicated table.
@@ -1269,7 +1291,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	else if (CdbPathLocus_IsReplicated(outer.locus))
 	{
 		if (root->upd_del_replicated_table > 0 ||
-			(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
+			hasModifyingCTESelectRecur(root))
 			CdbPathLocus_MakeReplicated(&inner.move_to,
 										CdbPathLocus_NumSegments(outer.locus));
 		else
@@ -1281,7 +1303,7 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	else if (CdbPathLocus_IsReplicated(inner.locus))
 	{
 		if (root->upd_del_replicated_table > 0 ||
-			(root->parse->hasModifyingCTE && root->parse->commandType == CMD_SELECT))
+			hasModifyingCTESelectRecur(root))
 			CdbPathLocus_MakeReplicated(&outer.move_to,
 										CdbPathLocus_NumSegments(inner.locus));
 		else

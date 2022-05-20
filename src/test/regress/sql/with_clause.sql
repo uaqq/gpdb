@@ -8,6 +8,12 @@ create language plpythonu;
 -- m/ERROR:  too much refs to non-SELECT CTE \(allpaths\.c:\d+\)/
 -- s/\d+/XXX/g
 --
+-- m/ERROR:  unexpected arguments to set operation \(cdbsetop\.c:\d+\)/
+-- s/\d+/XXX/g
+--
+-- m/ERROR:  unexpected input locus to distinct \(planner\.c:\d+\)/
+-- s/\d+/XXX/g
+--
 -- end_matchsubs
 
 drop table if exists with_test1 cascade;
@@ -561,6 +567,67 @@ with cte as (
 ) select count(*) from cte left join with_dml_dr_seg1 on cte.i = with_dml_dr_seg1.i;
 truncate with_dml_dr;
 drop table with_dml_dr_seg1;
+
+-- Test UNION ALL of CTE over replicated table with another table.
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte union all select * from with_dml;
+with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte union all select * from with_dml;
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte union all select * from with_dml_dr;
+with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte union all select * from with_dml_dr;
+truncate with_dml_dr;
+
+-- Test ORDER BY of CTE over replicated table.
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte order by i;
+with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte order by i;
+truncate with_dml_dr;
+
+-- Test select from CTE used as a part of subquery. Recursive iteration by
+-- roots helps us to detect modifying CTE and create valid plan.
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select count(*) from (select d.i from cte join with_dml d on d.i = cte.i) t;
+with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select count(*) from (select d.i from cte join with_dml d on d.i = cte.i) t;
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select count(*) from (select d.i from cte join with_dml_dr d on d.i = cte.i) t;
+with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select count(*) from (select d.i from cte join with_dml_dr d on d.i = cte.i) t;
+truncate with_dml_dr;
+
+-- Test still not working cases, which shows some user-friendly errors and not
+-- stopping cluster.
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select * from cte union select * from with_dml;
+explain (costs off) with cte as ( 
+    insert into with_dml_dr select i, i * 100  from generate_series(1,5) i 
+    returning i, j
+) select distinct count(*) from cte;
 
 -- Test quals not pushing down to CTE with DML. Previosuly, pushing down to
 -- INSERT caused filtering of inserting dataset, which may lead to incomplete
