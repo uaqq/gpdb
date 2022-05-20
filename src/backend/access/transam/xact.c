@@ -3040,7 +3040,7 @@ CommitTransaction(void)
 
 	/* Release resource group slot at the end of a transaction */
 	if (ShouldUnassignResGroup())
-		UnassignResGroup(false);
+		UnassignResGroup();
 }
 
 /*
@@ -3371,7 +3371,7 @@ PrepareTransaction(void)
 
 	/* Release resource group slot at the end of prepare transaction on segment */
 	if (ShouldUnassignResGroup())
-		UnassignResGroup(false);
+		UnassignResGroup();
 }
 
 
@@ -3625,7 +3625,7 @@ AbortTransaction(void)
 
 	/* Release resource group slot at the end of a transaction */
 	if (ShouldUnassignResGroup())
-		UnassignResGroup(false);
+		UnassignResGroup();
 }
 
 /*
@@ -3681,7 +3681,7 @@ CleanupTransaction(void)
 
 	/* Release resource group slot at the end of a transaction */
 	if (ShouldUnassignResGroup())
-		UnassignResGroup(false);
+		UnassignResGroup();
 }
 
 /*

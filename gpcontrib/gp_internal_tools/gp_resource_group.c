@@ -84,6 +84,11 @@ pg_resgroup_move_query(PG_FUNCTION_ARGS)
 		pid_t pid = PG_GETARG_INT32(0);
 		groupName = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
+		if (pid == MyProcPid)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 (errmsg("cannot move myself"))));
+
 		groupId = get_resgroup_oid(groupName, false);
 		sessionId = GetSessionIdByPid(pid);
 		if (sessionId == -1)
@@ -106,7 +111,8 @@ pg_resgroup_move_query(PG_FUNCTION_ARGS)
 		sessionId = PG_GETARG_INT32(0);
 		groupName = text_to_cstring(PG_GETARG_TEXT_PP(1));
 		groupId = get_resgroup_oid(groupName, false);
-		ResGroupSignalMoveQuery(sessionId, NULL, groupId);
+		if (!ResGroupMoveSignalTarget(sessionId, NULL, groupId, true))
+			elog(NOTICE, "cannot send signal to QE; ignoring...");
 	}
 
 	PG_RETURN_BOOL(true);
