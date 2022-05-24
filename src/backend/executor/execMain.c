@@ -3050,6 +3050,13 @@ ExecutePlan(EState *estate,
 	 * Make sure slice dependencies are met
 	 */
 	ExecSliceDependencyNode(planstate);
+	ListCell   *lp;
+	foreach(lp, estate->es_subplanstates)
+	{
+		PlanState	   *subplan = (PlanState *) lfirst(lp);
+
+		ExecSliceDependencyNode(subplan);
+	}
 
 #ifdef FAULT_INJECTOR
 	/* Inject a fault before tuple processing started */
