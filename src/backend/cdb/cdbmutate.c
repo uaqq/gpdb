@@ -1810,7 +1810,8 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerInfo *root)
 	else if (IsA(node, SubPlan))
 	{
 		SubPlan    *subplan = (SubPlan *) node;
-		plan_tree_base_prefix context = {root};
+		plan_tree_base_prefix context;
+		context.node = (Node *) root;
 		Plan	   *subplan_plan = plan_tree_base_subplan_get_plan(&context, subplan);
 		shareinput_walker(f, (Node *) subplan_plan, root);
 	}
@@ -2661,7 +2662,8 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 {
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
-	ListCell   *lp, *lr;
+	ShareInputContext context;
+	//ListCell   *lp, *lr;
 
 	ctxt->motStack = NULL;
 	ctxt->qdShares = NULL;
@@ -2677,8 +2679,7 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	 * The context is used to carry information from one pass to another, as
 	 * well as within a pass.
 	 */
-
-	ShareInputContext context;
+	
 	context.root = root;
 
 	/*
