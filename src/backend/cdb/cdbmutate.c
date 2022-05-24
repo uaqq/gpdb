@@ -1982,6 +1982,31 @@ shareinput_walker(SHAREINPUT_MUTATOR f, Node *node, PlannerInfo *root)
 	(*f) (node, root, true);
 }
 
+typedef struct ShareInputContext
+{
+	PlannerInfo *root;
+	SHAREINPUT_MUTATOR f;
+} ShareInputContext;
+
+static bool
+shareinput_walker2(Node *node, ShareInputContext *context)
+{
+	bool recursive_down;
+	bool ret;
+
+	if (node == NULL)
+		return false;
+	
+	recursive_down = (*context->f) (node, context->root, false);
+	if (recursive_down)
+	{
+		ret = plan_tree_walker(node, shareinput_walker2, context);
+	}
+	(*context->f) (node, context->root, true);
+
+	return ret;
+}
+
 typedef struct
 {
 	plan_tree_base_prefix base; /* Required prefix for
@@ -2653,6 +2678,9 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	 * well as within a pass.
 	 */
 
+	ShareInputContext context;
+	context.root = root;
+
 	/*
 	 * A subplan might have a SharedScan consumer while the SharedScan
 	 * producer is in the main plan, or vice versa. So in the first pass, we
@@ -2666,7 +2694,9 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 
 		shareinput_walker(shareinput_mutator_xslice_1, (Node *) subplan, subroot);
 	}*/
-	shareinput_walker(shareinput_mutator_xslice_1, (Node *) plan, root);
+	//shareinput_walker(shareinput_mutator_xslice_1, (Node *) plan, root);
+	context.f = shareinput_mutator_xslice_1;
+	plan_tree_walker((Node *) plan, shareinput_walker2, &context);
 
 	/* Now walk the tree again, and process all the consumers. */
 	/*forboth(lp, glob->subplans, lr, glob->subroots)
@@ -2676,7 +2706,9 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 
 		shareinput_walker(shareinput_mutator_xslice_2, (Node *) subplan, subroot);
 	}*/
-	shareinput_walker(shareinput_mutator_xslice_2, (Node *) plan, root);
+	//shareinput_walker(shareinput_mutator_xslice_2, (Node *) plan, root);
+	context.f = shareinput_mutator_xslice_2;
+	plan_tree_walker((Node *) plan, shareinput_walker2, &context);
 
 	/*forboth(lp, glob->subplans, lr, glob->subroots)
 	{
@@ -2685,7 +2717,9 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 
 		shareinput_walker(shareinput_mutator_xslice_3, (Node *) subplan, subroot);
 	}*/
-	shareinput_walker(shareinput_mutator_xslice_3, (Node *) plan, root);
+	//shareinput_walker(shareinput_mutator_xslice_3, (Node *) plan, root);
+	context.f = shareinput_mutator_xslice_3;
+	plan_tree_walker((Node *) plan, shareinput_walker2, &context);
 
 	/*forboth(lp, glob->subplans, lr, glob->subroots)
 	{
@@ -2694,7 +2728,9 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 
 		shareinput_walker(shareinput_mutator_xslice_4, (Node *) subplan, subroot);
 	}*/
-	shareinput_walker(shareinput_mutator_xslice_4, (Node *) plan, root);
+	//shareinput_walker(shareinput_mutator_xslice_4, (Node *) plan, root);
+	context.f = shareinput_mutator_xslice_4;
+	plan_tree_walker((Node *) plan, shareinput_walker2, &context);
 
 	return plan;
 }
