@@ -1993,7 +1993,7 @@ static bool
 shareinput_walker2(Node *node, ShareInputContext *context)
 {
 	bool recursive_down;
-	bool ret;
+	bool ret = false;
 
 	if (node == NULL)
 		return false;
