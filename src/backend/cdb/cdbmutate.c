@@ -2223,9 +2223,14 @@ Plan *
 apply_shareinput_dag_to_tree(PlannerInfo *root, Plan *plan)
 {
 	PlannerGlobal *glob = root->glob;
+	ShareInputContext context;
+	context.root = root;
+	context.f = shareinput_mutator_dag_to_tree;
 
 	glob->share.curr_rtable = root->parse->rtable;
-	shareinput_walker(shareinput_mutator_dag_to_tree, (Node *) plan, root);
+	//shareinput_walker(shareinput_mutator_dag_to_tree, (Node *) plan, root);
+	shareinput_walker2((Node *) plan, &context);
+	
 	return plan;
 }
 
@@ -2266,9 +2271,13 @@ void
 collect_shareinput_producers(PlannerInfo *root, Plan *plan)
 {
 	PlannerGlobal *glob = root->glob;
+	ShareInputContext context;
+	context.root = root;
+	context.f = collect_shareinput_producers_walker;
 
 	glob->share.curr_rtable = glob->finalrtable;
-	shareinput_walker(collect_shareinput_producers_walker, (Node *) plan, root);
+	//shareinput_walker(collect_shareinput_producers_walker, (Node *) plan, root);
+	shareinput_walker2((Node *) plan, &context);
 }
 
 /* Some helper: implements a stack using List. */
@@ -2308,7 +2317,12 @@ shareinput_peekmot(ApplyShareInputContext *ctxt)
 Plan *
 replace_shareinput_targetlists(PlannerInfo *root, Plan *plan)
 {
-	shareinput_walker(replace_shareinput_targetlists_walker, (Node *) plan, root);
+	ShareInputContext context;
+	context.root = root;
+	context.f = replace_shareinput_targetlists_walker;
+	
+	//shareinput_walker(replace_shareinput_targetlists_walker, (Node *) plan, root);
+	shareinput_walker2((Node *) plan, &context);
 	return plan;
 }
 
