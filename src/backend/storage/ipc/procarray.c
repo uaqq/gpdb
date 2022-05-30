@@ -5063,9 +5063,6 @@ ResGroupMoveSignalTarget(int sessionId, void *slot, Oid groupId,
 		/* only target process needs slot and callerPid to operate */
 		if (Gp_role == GP_ROLE_DISPATCH && proc->mppIsWriter)
 		{
-			Assert(proc->movetoResSlot == NULL);
-			Assert(slot != NULL);
-
 			/*
 			 * movetoCallerPid is a guard which marks there is currently
 			 * active initiator process
@@ -5076,6 +5073,9 @@ ResGroupMoveSignalTarget(int sessionId, void *slot, Oid groupId,
 				elog(NOTICE, "cannot move process, which is already moving");
 				break;
 			}
+			Assert(proc->movetoResSlot == NULL);
+			Assert(slot != NULL);
+
 			proc->movetoResSlot = slot;
 			proc->movetoCallerPid = MyProc->pid;
 		}
