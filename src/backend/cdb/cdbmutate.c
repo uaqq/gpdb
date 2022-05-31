@@ -2023,8 +2023,8 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 	if (IsA(node, SubPlan))
 	{
 		SubPlan    *subplan = (SubPlan *) node;
-		ListCell   *lp, *lr;
-		bool found = false;
+		//ListCell   *lp, *lr;
+		//bool found = false;
 		
 		Plan	   *i_subplan = (Plan *) list_nth(root->glob->subplans, subplan->plan_id - 1);
 		PlannerInfo *subroot =  (PlannerInfo *) list_nth(root->glob->subroots, subplan->plan_id - 1);
