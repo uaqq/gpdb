@@ -2025,11 +2025,24 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 		SubPlan    *subplan = (SubPlan *) node;
 		ListCell   *lp, *lr;
 		bool found = false;
+		
+		Plan	   *i_subplan = (Plan *) list_nth(root->glob->subplans, subplan->plan_id - 1);
+		PlannerInfo *subroot =  (PlannerInfo *) list_nth(root->glob->subroots, subplan->plan_id - 1);
 
-		forboth(lp, root->glob->subplans, lr, root->glob->subroots)
+		ShareInputContext context2;
+		context2.f = context->f;
+		context2.root = subroot;
+
+		return shareinput_walker2((Node *) i_subplan, &context2);
+
+
+		/*forboth(lp, root->glob->subplans, lr, root->glob->subroots)
 		{
 			Plan	   *i_subplan = (Plan *) lfirst(lp);
 			PlannerInfo *subroot =  (PlannerInfo *) lfirst(lr);
+
+			return (Plan *) list_nth(root->glob->subplans, subplan->plan_id - 1);
+
 			if (i_subplan == subplan)
 			{
 				ShareInputContext context2;
@@ -2046,7 +2059,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			ret = plan_tree_walker((Node *) subplan, shareinput_walker2, context);
 			//ret = shareinput_walker2((Node *) subplan, context);
 			return ret;
-		}
+		}*/
 	}
 	else if (recursive_down)
 	{
