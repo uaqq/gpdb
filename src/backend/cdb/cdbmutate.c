@@ -2015,8 +2015,8 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 	//if (!is_plan_node(node))
 	//	return plan_tree_walker(node, shareinput_walker2, context);
 
-	if (IsA(node, List))
-		return plan_tree_walker(node, shareinput_walker2, context);
+	//if (IsA(node, List))
+	//	return plan_tree_walker(node, shareinput_walker2, context);
 	
 	if (is_plan_node(node))
 		recursive_down = (*f) (node, root, false);
@@ -2024,6 +2024,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 	{
 		SubPlan    *subplan = (SubPlan *) node;
 		ListCell   *lp, *lr;
+		bool found = false;
 
 		forboth(lp, root->glob->subplans, lr, root->glob->subroots)
 		{
@@ -2031,17 +2032,25 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			PlannerInfo *subroot =  (PlannerInfo *) lfirst(lr);
 			if (i_subplan == subplan)
 			{
-				PlannerInfo *save_root = root;
-				context->root = subroot;
-				shareinput_walker2((Node *) subplan, &context);
-				context->root = save_root;
+				ShareInputContext context2;
+				context2.f = context->f;
+				context2.root = subroot;
+				//shareinput_walker2((Node *) subplan, &context2);
+				ret = plan_tree_walker((Node *) subplan, shareinput_walker2, &context2);
+				found = true;
 				break;
 			}
+		}
+		if (!found)
+		{
+			ret = plan_tree_walker((Node *) subplan, shareinput_walker2, context);
+			//ret = shareinput_walker2((Node *) subplan, context);
+			return ret;
 		}
 	}
 	else if (recursive_down)
 	{
-		if (IsA(node, Append))
+		/*if (IsA(node, Append))
 		{
 			ListCell   *cell;
 			Append	   *app = (Append *) node;
@@ -2057,7 +2066,8 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			foreach(cell, mt->plans)
 				shareinput_walker2((Node *) lfirst(cell), context);
 		}
-		else if (IsA(node, SubqueryScan))
+		else*/ 
+		 if (IsA(node, SubqueryScan))
 		{
 			SubqueryScan  *subqscan = (SubqueryScan *) node;
 			PlannerGlobal *glob = root->glob;
@@ -2092,6 +2102,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			}
 			context2.root = subroot;
 			shareinput_walker2((Node *) subqscan->subplan, &context2);
+			//ret = plan_tree_walker((Node *) subqscan->subplan, shareinput_walker2, &context2);
 			glob->share.curr_rtable = save_rtable;
 		}
 		else if (IsA(node, TableFunctionScan))
@@ -2123,9 +2134,10 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			}
 			context2.root = subroot;
 			shareinput_walker2((Node *)  tfscan->scan.plan.lefttree, &context2);
+			//ret = plan_tree_walker((Node *) tfscan->scan.plan.lefttree, shareinput_walker2, &context2);
 			glob->share.curr_rtable = save_rtable;
 		}
-		else if (IsA(node, BitmapAnd))
+		/*else if (IsA(node, BitmapAnd))
 		{
 			ListCell   *cell;
 			BitmapAnd  *ba = (BitmapAnd *) node;
@@ -2143,10 +2155,6 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 		}
 		else if (IsA(node, NestLoop))
 		{
-			/*
-			 * Nest loop join is strange.  Exec order depends on
-			 * prefetch_inner
-			 */
 			NestLoop   *nl = (NestLoop *) node;
 
 			if (nl->join.prefetch_inner)
@@ -2162,7 +2170,6 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 		}
 		else if (IsA(node, HashJoin))
 		{
-			/* Hash join the hash table is at inner */
 			shareinput_walker2((Node *) plan->righttree, context);
 			shareinput_walker2((Node *) plan->lefttree, context);
 		}
@@ -2194,12 +2201,13 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 		else if (IsA(node, FunctionScan))
 		{
 			shareinput_walker2((Node *) ((FunctionScan *) node)->functions, context);
-		}
+		}*/
 		else
 		{
-			shareinput_walker2((Node *) plan->lefttree, context);
+			/*shareinput_walker2((Node *) plan->lefttree, context);
 			shareinput_walker2((Node *) plan->righttree, context);
-			shareinput_walker2((Node *) plan->initPlan, context);
+			shareinput_walker2((Node *) plan->initPlan, context);*/
+			ret = plan_tree_walker(node, shareinput_walker2, context);
 		}
 	}
 	else
