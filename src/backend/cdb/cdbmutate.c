@@ -2079,7 +2079,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			foreach(cell, mt->plans)
 				shareinput_walker2((Node *) lfirst(cell), context);
 		}
-		else*/ 
+		else*/
 		 if (IsA(node, SubqueryScan))
 		{
 			SubqueryScan  *subqscan = (SubqueryScan *) node;
@@ -2165,7 +2165,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 
 			foreach(cell, bo->bitmapplans)
 				shareinput_walker2((Node *) lfirst(cell), context);
-		}
+		}*/
 		else if (IsA(node, NestLoop))
 		{
 			NestLoop   *nl = (NestLoop *) node;
@@ -2201,7 +2201,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 				shareinput_walker2((Node *) plan->lefttree, context);
 			}
 		}
-		else if (IsA(node, Sequence))
+		/*else if (IsA(node, Sequence))
 		{
 			ListCell   *cell = NULL;
 			Sequence   *sequence = (Sequence *) node;
