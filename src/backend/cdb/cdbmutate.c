@@ -2172,12 +2172,12 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 				ret = shareinput_walker2((Node *) plan->lefttree, context);
 				ret = shareinput_walker2((Node *) plan->righttree, context);
 			}
-		}/*
+		}
 		else if (IsA(node, HashJoin))
 		{
 			shareinput_walker2((Node *) plan->righttree, context);
 			ret = shareinput_walker2((Node *) plan->lefttree, context);
-		}
+		}/*
 		else if (IsA(node, MergeJoin))
 		{
 			MergeJoin  *mj = (MergeJoin *) node;
