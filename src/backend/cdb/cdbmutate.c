@@ -2082,21 +2082,12 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			ShareInputContext context2;
 			context2.f = context->f;
 
-			/*
-			 * If glob->finalrtable is not NULL, rtables have been flatten,
-			 * thus we should use glob->finalrtable instead.
-			 */
+
 			save_rtable = glob->share.curr_rtable;
 			if (root->glob->finalrtable == NULL)
 			{
 				rel = find_base_rel(root, subqscan->scan.scanrelid);
-				/*
-				 * The Assert() on RelOptInfo's subplan being
-				 * same as the subqueryscan's subplan, is valid
-				 * in Upstream but for not for GPDB, since we
-				 * create a new copy of the subplan if two
-				 * SubPlans refer to the same initplan.
-				 */
+	
 				subroot = rel->subroot;
 				glob->share.curr_rtable = subroot->parse->rtable;
 			}
@@ -2120,10 +2111,6 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			ShareInputContext context2;
 			context2.f = context->f;
 
-			/*
-			 * If glob->finalrtable is not NULL, rtables have been flatten,
-			 * thus we should use glob->finalrtable instead.
-			 */
 			save_rtable = glob->share.curr_rtable;
 			if (root->glob->finalrtable == NULL)
 			{
@@ -2165,19 +2152,23 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			if (nl->join.prefetch_inner)
 			{
 				ret = shareinput_walker2((Node *) plan->righttree, context);
-				ret = shareinput_walker2((Node *) plan->lefttree, context);
+				if (!ret)
+					ret = shareinput_walker2((Node *) plan->lefttree, context);
+				//ret = shareinput_walker2((Node *) plan->lefttree, context);
 			}
 			else
 			{
 				ret = shareinput_walker2((Node *) plan->lefttree, context);
-				ret = shareinput_walker2((Node *) plan->righttree, context);
+				if (!ret)
+					ret = shareinput_walker2((Node *) plan->righttree, context);
+				//ret = shareinput_walker2((Node *) plan->righttree, context);
 			}
-		}
+		}/*
 		else if (IsA(node, HashJoin))
 		{
 			shareinput_walker2((Node *) plan->righttree, context);
 			ret = shareinput_walker2((Node *) plan->lefttree, context);
-		}/*
+		}
 		else if (IsA(node, MergeJoin))
 		{
 			MergeJoin  *mj = (MergeJoin *) node;
