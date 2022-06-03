@@ -259,7 +259,6 @@ ExecInsert(TupleTableSlot *parentslot,
 							estate->es_result_relation_info->ri_RelationDesc->rd_rel->relname.data)));
 			}
 		}
-		estate->es_result_relation_info = resultRelInfo;
 	}
 	else
 	{
@@ -651,7 +650,9 @@ ExecDelete(ItemPointer tupleid,
 	/*
 	 * get information on the (current) result relation
 	 */
-	if (estate->es_result_partitions && planGen == PLANGEN_OPTIMIZER)
+	if (estate->es_result_partitions
+		&& estate->es_result_relation_info->ri_RelationDesc->rd_id == estate->es_result_partitions->part->parrelid
+		&& planGen == PLANGEN_OPTIMIZER)
 	{
 		Assert(estate->es_result_partitions->part->parrelid);
 
@@ -661,7 +662,6 @@ ExecDelete(ItemPointer tupleid,
 
 		/* Obtain part for current tuple. */
 		resultRelInfo = slot_get_partition(planSlot, estate);
-		estate->es_result_relation_info = resultRelInfo;
 
 #ifdef USE_ASSERT_CHECKING
 		Oid part = RelationGetRelid(resultRelInfo->ri_RelationDesc);
