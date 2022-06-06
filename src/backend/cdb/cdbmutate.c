@@ -2033,7 +2033,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 				
 				context2.f = context->f;
 				context2.root = subroot;
-				ret = shareinput_walker2((Node *) i_subplan, &context2);
+				shareinput_walker2((Node *) i_subplan, &context2);
 				//ret = plan_tree_walker((Node *) subplan, shareinput_walker2, &context2);
 				found = true;
 				break;
@@ -2041,11 +2041,11 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			}
 			if (!found)
 			{
-				ret = plan_tree_walker((Node *) subplan, shareinput_walker2, context);
+				plan_tree_walker((Node *) subplan, shareinput_walker2, context);
 				//ret = shareinput_walker2((Node *) subplan, context);
 				//return ret;
 			}
-			return ret;
+			return false;
 		}
 		else
 			return plan_tree_walker(node, shareinput_walker2, context);
@@ -2079,7 +2079,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 				glob->share.curr_rtable = glob->finalrtable;
 			}
 			context2.root = subroot;
-			ret = shareinput_walker2((Node *) subqscan->subplan, &context2);
+			shareinput_walker2((Node *) subqscan->subplan, &context2);
 			//ret = plan_tree_walker((Node *) subqscan->subplan, shareinput_walker2, &context2);
 			glob->share.curr_rtable = save_rtable;
 		}
@@ -2107,7 +2107,7 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 				glob->share.curr_rtable = glob->finalrtable;
 			}
 			context2.root = subroot;
-			ret = shareinput_walker2((Node *)  tfscan->scan.plan.lefttree, &context2);
+			shareinput_walker2((Node *)  tfscan->scan.plan.lefttree, &context2);
 			//ret = plan_tree_walker((Node *) tfscan->scan.plan.lefttree, shareinput_walker2, &context2);
 			glob->share.curr_rtable = save_rtable;
 		}
@@ -2117,82 +2117,60 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 
 			if (nl->join.prefetch_inner)
 			{
-				ret = shareinput_walker2((Node *) plan->righttree, context);
-				//if (!ret)
-					ret = shareinput_walker2((Node *) plan->lefttree, context);
+				shareinput_walker2((Node *) plan->righttree, context);
+				shareinput_walker2((Node *) plan->lefttree, context);
 			}
 			else
 			{
-				ret = shareinput_walker2((Node *) plan->lefttree, context);
-				//if (!ret)
-					ret = shareinput_walker2((Node *) plan->righttree, context);
+				shareinput_walker2((Node *) plan->lefttree, context);
+				shareinput_walker2((Node *) plan->righttree, context);
 			}
 		}
 		else if (IsA(node, HashJoin))
 		{
-			ret = shareinput_walker2((Node *) plan->targetlist, context);
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->qual, context);
+			shareinput_walker2((Node *) plan->targetlist, context);
+			shareinput_walker2((Node *) plan->qual, context);
 
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->righttree, context);
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->lefttree, context);
+			shareinput_walker2((Node *) plan->righttree, context);
+			shareinput_walker2((Node *) plan->lefttree, context);
 
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->initPlan, context);
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->flow, context);
-			if (!ret)
-				ret = shareinput_walker2(((HashJoin *) node)->hashclauses, context);
-			if (!ret)
-				ret = shareinput_walker2(((HashJoin *) node)->hashqualclauses, context);
+			shareinput_walker2((Node *) plan->initPlan, context);
+			shareinput_walker2((Node *) plan->flow, context);
+			shareinput_walker2(((HashJoin *) node)->hashclauses, context);
+			shareinput_walker2(((HashJoin *) node)->hashqualclauses, context);
 		}
 		else if (IsA(node, MergeJoin))
 		{
 			MergeJoin  *mj = (MergeJoin *) node;
 
-			ret = shareinput_walker2((Node *) plan->targetlist, context);
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->qual, context);
+			shareinput_walker2((Node *) plan->targetlist, context);
+			shareinput_walker2((Node *) plan->qual, context);
 
 			if (mj->unique_outer)
 			{
-				if (!ret)
-					ret = shareinput_walker2((Node *) plan->lefttree, context);
-				if (!ret)
-					ret = shareinput_walker2((Node *) plan->righttree, context);
+				shareinput_walker2((Node *) plan->lefttree, context);
+				shareinput_walker2((Node *) plan->righttree, context);
 			}
 			else
 			{
-				if (!ret)
-					ret = shareinput_walker2((Node *) plan->righttree, context);
-				if (!ret)
-					ret = shareinput_walker2((Node *) plan->lefttree, context);
+				shareinput_walker2((Node *) plan->righttree, context);
+				shareinput_walker2((Node *) plan->lefttree, context);
 			}
 
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->initPlan, context);
-			if (!ret)
-				ret = shareinput_walker2((Node *) plan->flow, context);
-			if (!ret)
-				ret = shareinput_walker2(((MergeJoin *) node)->mergeclauses, context);
+			shareinput_walker2((Node *) plan->initPlan, context);
+			shareinput_walker2((Node *) plan->flow, context);
+			shareinput_walker2(((MergeJoin *) node)->mergeclauses, context);
 		}
 		else
 		{
-			/*shareinput_walker2((Node *) plan->lefttree, context);
-			shareinput_walker2((Node *) plan->righttree, context);
-			shareinput_walker2((Node *) plan->initPlan, context);*/
-			ret = plan_tree_walker(node, shareinput_walker2, context);
+			plan_tree_walker(node, shareinput_walker2, context);
 		}
 	}
-	/*else
-		ret = plan_tree_walker(node, shareinput_walker2, context);*/
 
 	(*f) (node, root, true);
 	//recursive_down = ret;
 
-	return ret;
+	return false;
 }
 
 /*if (IsA(node, SubPlan))
