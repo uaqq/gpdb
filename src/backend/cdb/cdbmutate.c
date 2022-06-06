@@ -2131,40 +2131,52 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 		else if (IsA(node, HashJoin))
 		{
 			ret = shareinput_walker2((Node *) plan->targetlist, context);
-			ret = shareinput_walker2((Node *) plan->qual, context);
-			
-			ret = shareinput_walker2((Node *) plan->righttree, context);
-			//if (!ret)
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->qual, context);
+
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->righttree, context);
+			if (!ret)
 				ret = shareinput_walker2((Node *) plan->lefttree, context);
 
-			ret = shareinput_walker2((Node *) plan->initPlan, context);
-			ret = shareinput_walker2((Node *) plan->flow, context);
-			ret = shareinput_walker2(((HashJoin *) node)->hashclauses, context);
-			ret = shareinput_walker2(((HashJoin *) node)->hashqualclauses, context);
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->initPlan, context);
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->flow, context);
+			if (!ret)
+				ret = shareinput_walker2(((HashJoin *) node)->hashclauses, context);
+			if (!ret)
+				ret = shareinput_walker2(((HashJoin *) node)->hashqualclauses, context);
 		}
 		else if (IsA(node, MergeJoin))
 		{
 			MergeJoin  *mj = (MergeJoin *) node;
 
 			ret = shareinput_walker2((Node *) plan->targetlist, context);
-			ret = shareinput_walker2((Node *) plan->qual, context);
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->qual, context);
 
 			if (mj->unique_outer)
 			{
-				ret = shareinput_walker2((Node *) plan->lefttree, context);
-				//if (!ret)
+				if (!ret)
+					ret = shareinput_walker2((Node *) plan->lefttree, context);
+				if (!ret)
 					ret = shareinput_walker2((Node *) plan->righttree, context);
 			}
 			else
 			{
-				ret = shareinput_walker2((Node *) plan->righttree, context);
-				//if (!ret)
+				if (!ret)
+					ret = shareinput_walker2((Node *) plan->righttree, context);
+				if (!ret)
 					ret = shareinput_walker2((Node *) plan->lefttree, context);
 			}
 
-			ret = shareinput_walker2((Node *) plan->initPlan, context);
-			ret = shareinput_walker2((Node *) plan->flow, context);
-			ret = shareinput_walker2(((MergeJoin *) node)->mergeclauses, context);
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->initPlan, context);
+			if (!ret)
+				ret = shareinput_walker2((Node *) plan->flow, context);
+			if (!ret)
+				ret = shareinput_walker2(((MergeJoin *) node)->mergeclauses, context);
 		}
 		else
 		{
