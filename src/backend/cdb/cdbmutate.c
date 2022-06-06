@@ -2041,6 +2041,8 @@ shareinput_walker2(Node *node, ShareInputContext *context)
 			}
 			if (!found)
 			{
+				
+				elog(WARNING, "root plan");
 				plan_tree_walker((Node *) subplan, shareinput_walker2, context);
 				//ret = shareinput_walker2((Node *) subplan, context);
 				//return ret;
