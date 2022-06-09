@@ -4692,7 +4692,6 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	 * properties.  (The nargs check is just paranoia.)
 	 */
 	if (funcform->prolang != SQLlanguageId ||
-		funcform->prosecdef ||
 		funcform->proretset ||
 		funcform->prorettype == RECORDOID ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
@@ -5219,7 +5218,6 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	if (funcform->prolang != SQLlanguageId ||
 		funcform->proisstrict ||
 		funcform->provolatile == PROVOLATILE_VOLATILE ||
-		funcform->prosecdef ||
 		!funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig))
 	{
