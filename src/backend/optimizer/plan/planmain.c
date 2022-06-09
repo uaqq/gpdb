@@ -26,12 +26,15 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "optimizer/placeholder.h"
+#include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
+#include "optimizer/restrictinfo.h"
 
 #include "catalog/pg_proc.h"
 #include "cdb/cdbpath.h"        /* cdbpath_rows() */
 #include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
+#include "nodes/makefuncs.h"
 #include "optimizer/cost.h"
 
 static Bitmapset *distcols_in_groupclause(List *gc, Bitmapset *bms);
@@ -261,6 +264,91 @@ query_planner(PlannerInfo *root, List *tlist,
 			total_pages += (double) brel->pages;
 	}
 	root->total_table_pages = total_pages;
+
+	if (root->hasInheritedTarget)
+	{
+		int	childRTindex = root->parse->resultRelation;
+		RangeTblEntry *childRTE;
+		RelOptInfo *childrel;
+		List	   *childquals;
+		Node	   *childqual;
+
+		/* Check if child needs to be scanned as in set_append_rel_size. */
+		childRTE = root->simple_rte_array[childRTindex];
+
+		/*
+		 * The child rel's RelOptInfo was already created during
+		 * add_base_rels_to_query.
+		 */
+		childrel = find_base_rel(root, childRTindex);
+		Assert(childrel->reloptkind == RELOPT_BASEREL);
+
+		/*
+		 * We have to copy the parent's targetlist and quals to the child,
+		 * with appropriate substitution of variables.	However, only the
+		 * baserestrictinfo quals are needed before we can check for
+		 * constraint exclusion; so do that first and then check to see if we
+		 * can disregard this child.
+		 *
+		 * As of 8.4, the child rel's targetlist might contain non-Var
+		 * expressions, which means that substitution into the quals could
+		 * produce opportunities for const-simplification, and perhaps even
+		 * pseudoconstant quals.  To deal with this, we strip the RestrictInfo
+		 * nodes, do the substitution, do const-simplification, and then
+		 * reconstitute the RestrictInfo layer.
+		 */
+		childquals = get_all_actual_clauses(childrel->baserestrictinfo);
+		childqual = eval_const_expressions(root, (Node *)
+						   make_ands_explicit(childquals));
+		if (childqual && IsA(childqual, Const) &&
+			(((Const *) childqual)->constisnull ||
+			 !DatumGetBool(((Const *) childqual)->constvalue)))
+		{
+			/*
+			 * Restriction reduces to constant FALSE or constant NULL after
+			 * substitution, so this child need not be planned.
+			 */
+			Path	   *result_path;
+
+			/* We need a dummy joinrel to describe the empty set of baserels */
+			final_rel = build_empty_join_rel(root);
+
+			/* The only path for it is a trivial Result path */
+			result_path = (Path *) create_result_path(
+					list_make1(makeBoolConst(false, false)));
+			add_path(final_rel, result_path);
+
+			/* Select cheapest path (pretty easy in this case...) */
+			set_cheapest(final_rel);
+
+			return final_rel;
+		}
+		childquals = make_ands_implicit((Expr *) childqual);
+		childquals = make_restrictinfos_from_actual_clauses(root, childquals);
+		childrel->baserestrictinfo = childquals;
+
+		if (relation_excluded_by_constraints(root, childrel, childRTE))
+		{
+			/*
+			 * This child need not be planned, so we can omit it.
+			 */
+			Path	   *result_path;
+
+			/* We need a dummy joinrel to describe the empty set of baserels */
+			final_rel = build_empty_join_rel(root);
+
+			/* The only path for it is a trivial Result path */
+			result_path = (Path *) create_result_path(
+					list_make1(makeBoolConst(false, false)));
+			add_path(final_rel, result_path);
+
+			/* Select cheapest path (pretty easy in this case...) */
+			set_cheapest(final_rel);
+
+			return final_rel;
+
+		}
+	}
 
 	/*
 	 * Ready to do the primary planning.
