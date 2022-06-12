@@ -34,10 +34,10 @@
 #include "cdb/cdbpath.h"        /* cdbpath_rows() */
 #include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
-#include "nodes/makefuncs.h"
 #include "optimizer/cost.h"
 
 static Bitmapset *distcols_in_groupclause(List *gc, Bitmapset *bms);
+static void set_dummy_rel_pathlist(PlannerInfo *root, RelOptInfo *rel);
 
 /*
  * query_planner
@@ -72,6 +72,7 @@ query_planner(PlannerInfo *root, List *tlist,
 	RelOptInfo *final_rel;
 	Index		rti;
 	double		total_pages;
+	int		resultRelation = parse->resultRelation;
 
 	/*
 	 * If the query has an empty join tree, then it's something easy like
@@ -265,29 +266,27 @@ query_planner(PlannerInfo *root, List *tlist,
 	}
 	root->total_table_pages = total_pages;
 
-	if (root->hasInheritedTarget)
+	if (root->hasInheritedTarget
+		&& PointerIsValid(root->simple_rel_array[resultRelation]))
 	{
-		int	childRTindex = root->parse->resultRelation;
-		RangeTblEntry *childRTE;
-		RelOptInfo *childrel;
-		List	   *childquals;
-		Node	   *childqual;
+		RangeTblEntry *resultRTE;
+		RelOptInfo *resultrel;
+		List	   *resultquals;
+		Node	   *resultqual;
 
 		/* Check if child needs to be scanned as in set_append_rel_size. */
-		childRTE = root->simple_rte_array[childRTindex];
+		resultRTE = root->simple_rte_array[resultRelation];
 
 		/*
 		 * The child rel's RelOptInfo was already created during
 		 * add_base_rels_to_query.
 		 */
-		childrel = find_base_rel(root, childRTindex);
-		Assert(childrel->reloptkind == RELOPT_BASEREL);
+		resultrel = find_base_rel(root, resultRelation);
+		Assert(resultrel->reloptkind == RELOPT_BASEREL);
 
 		/*
-		 * We have to copy the parent's targetlist and quals to the child,
-		 * with appropriate substitution of variables.	However, only the
-		 * baserestrictinfo quals are needed before we can check for
-		 * constraint exclusion; so do that first and then check to see if we
+		 * Only the baserestrictinfo quals are needed before we can check for
+		 * constraint exclusion; so do that and then check to see if we
 		 * can disregard this child.
 		 *
 		 * As of 8.4, the child rel's targetlist might contain non-Var
@@ -297,56 +296,33 @@ query_planner(PlannerInfo *root, List *tlist,
 		 * nodes, do the substitution, do const-simplification, and then
 		 * reconstitute the RestrictInfo layer.
 		 */
-		childquals = get_all_actual_clauses(childrel->baserestrictinfo);
-		childqual = eval_const_expressions(root, (Node *)
-						   make_ands_explicit(childquals));
-		if (childqual && IsA(childqual, Const) &&
-			(((Const *) childqual)->constisnull ||
-			 !DatumGetBool(((Const *) childqual)->constvalue)))
+		resultquals = get_all_actual_clauses(resultrel->baserestrictinfo);
+		resultqual = eval_const_expressions(root, (Node *)
+						   make_ands_explicit(resultquals));
+		if (resultqual && IsA(resultqual, Const) &&
+			(((Const *) resultqual)->constisnull ||
+			 !DatumGetBool(((Const *) resultqual)->constvalue)))
 		{
 			/*
 			 * Restriction reduces to constant FALSE or constant NULL after
 			 * substitution, so this child need not be planned.
 			 */
-			Path	   *result_path;
+			set_dummy_rel_pathlist(root, resultrel);
 
-			/* We need a dummy joinrel to describe the empty set of baserels */
-			final_rel = build_empty_join_rel(root);
-
-			/* The only path for it is a trivial Result path */
-			result_path = (Path *) create_result_path(
-					list_make1(makeBoolConst(false, false)));
-			add_path(final_rel, result_path);
-
-			/* Select cheapest path (pretty easy in this case...) */
-			set_cheapest(final_rel);
-
-			return final_rel;
+			return resultrel;
 		}
-		childquals = make_ands_implicit((Expr *) childqual);
-		childquals = make_restrictinfos_from_actual_clauses(root, childquals);
-		childrel->baserestrictinfo = childquals;
+		resultquals = make_ands_implicit((Expr *) resultqual);
+		resultquals = make_restrictinfos_from_actual_clauses(root, resultquals);
+		resultrel->baserestrictinfo = resultquals;
 
-		if (relation_excluded_by_constraints(root, childrel, childRTE))
+		if (relation_excluded_by_constraints(root, resultrel, resultRTE))
 		{
 			/*
 			 * This child need not be planned, so we can omit it.
 			 */
-			Path	   *result_path;
+			set_dummy_rel_pathlist(root, resultrel);
 
-			/* We need a dummy joinrel to describe the empty set of baserels */
-			final_rel = build_empty_join_rel(root);
-
-			/* The only path for it is a trivial Result path */
-			result_path = (Path *) create_result_path(
-					list_make1(makeBoolConst(false, false)));
-			add_path(final_rel, result_path);
-
-			/* Select cheapest path (pretty easy in this case...) */
-			set_cheapest(final_rel);
-
-			return final_rel;
-
+			return resultrel;
 		}
 	}
 
@@ -424,6 +400,33 @@ num_distcols_in_grouplist(List *gc)
 	bms_free(bms);
 
 	return num_cols;
+}
+
+/*
+ * set_dummy_rel_pathlist
+ *	  Build a dummy path for a relation that's been excluded by constraints
+ *
+ * Rather than inventing a special "dummy" path type, we represent this as an
+ * AppendPath with no members (see also IS_DUMMY_PATH/IS_DUMMY_REL macros).
+ *
+ * TODO: make set_dummy_rel_pathlist from src/backend/optimizer/path/allpaths.c
+ * available for import
+ */
+static void
+set_dummy_rel_pathlist(PlannerInfo *root, RelOptInfo *rel)
+{
+	/* Set dummy size estimates --- we leave attr_widths[] as zeroes */
+	rel->rows = 0;
+	rel->width = 0;
+
+	/* Discard any pre-existing paths; no further need for them */
+	rel->pathlist = NIL;
+
+	add_path(rel, (Path *) create_append_path(root, rel, NIL,
+											  rel->lateral_relids));
+
+	/* Select cheapest path (pretty easy in this case...) */
+	set_cheapest(rel);
 }
 
 /**
