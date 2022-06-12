@@ -71,7 +71,7 @@ query_planner(PlannerInfo *root, List *tlist,
 	RelOptInfo *final_rel;
 	Index		rti;
 	double		total_pages;
-	int		resultRelation = parse->resultRelation;
+	int			resultRelation = parse->resultRelation;
 
 	/*
 	 * If the query has an empty join tree, then it's something easy like
@@ -285,22 +285,23 @@ query_planner(PlannerInfo *root, List *tlist,
 
 		/*
 		 * Opposite to constraint exclusion during scans, we don't have to
-		 * substitute vars and target list from parent to children.
-		 * So we can use baserestrictinfo as is.
+		 * substitute vars and target list from parent to children. So we can
+		 * use baserestrictinfo as is.
 		 */
 		if (relation_excluded_by_constraints(root, resultrel, resultRTE))
 		{
 			/*
 			 * This child need not be planned, so we can omit it.
 			 */
-			Path	  *result_path;
+			Path	   *result_path;
+			List	   *false_quals;
 
 			/* We need a dummy joinrel to describe the empty set of baserels */
 			final_rel = build_empty_join_rel(root);
 
 			/* The only path for it is a trivial Result path */
-			result_path = (Path *) create_result_path(
-				       list_make1(makeBoolConst(false, false)));
+			false_quals = list_make1(makeBoolConst(false, false));
+			result_path = (Path *) create_result_path(false_quals);
 			add_path(final_rel, result_path);
 
 			/* Select cheapest path (pretty easy in this case...) */
