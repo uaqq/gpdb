@@ -270,8 +270,6 @@ query_planner(PlannerInfo *root, List *tlist,
 	{
 		RangeTblEntry *resultRTE;
 		RelOptInfo *resultrel;
-		List	   *resultquals;
-		Node	   *resultqual;
 
 		/* Check if child needs to be scanned as in set_append_rel_size. */
 		resultRTE = root->simple_rte_array[resultRelation];
