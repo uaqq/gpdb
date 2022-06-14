@@ -136,6 +136,7 @@ RelOptInfo *
 make_one_rel(PlannerInfo *root, List *joinlist)
 {
 	RelOptInfo *rel;
+	RelOptInfo *resultRel;
 	Index		rti;
 
 	/*
@@ -166,6 +167,17 @@ make_one_rel(PlannerInfo *root, List *joinlist)
 	 * Generate access paths for the base rels.
 	 */
 	set_base_rel_sizes(root);
+
+	/*
+	 * If result relation is excluded by constraint exclusion we shouldn't
+	 * plan this sub-query
+	 */
+	resultRel = root->simple_rel_array[root->parse->resultRelation];
+	if (PointerIsValid(resultRel) && IS_DUMMY_REL(resultRel))
+	{
+		return resultRel;
+	}
+
 	set_base_rel_pathlists(root);
 
 	/*
@@ -235,6 +247,23 @@ static void
 set_base_rel_sizes(PlannerInfo *root)
 {
 	Index		rti;
+	int			resultRelIndex = root->parse->resultRelation;
+	RelOptInfo *resultRel;
+
+	/*
+	 * If result relation is excluded by constraint exclusion we shouldn't
+	 * plan this sub-query
+	 */
+	resultRel = root->simple_rel_array[resultRelIndex];
+	if (resultRel != NULL && resultRel->reloptkind == RELOPT_BASEREL)
+	{
+		set_rel_size(root,
+					 resultRel,
+					 resultRelIndex,
+					 root->simple_rte_array[resultRelIndex]);
+		if (IS_DUMMY_REL(resultRel))
+			return;
+	}
 
 	for (rti = 1; rti < root->simple_rel_array_size; rti++)
 	{
@@ -248,6 +277,10 @@ set_base_rel_sizes(PlannerInfo *root)
 
 		/* ignore RTEs that are "other rels" */
 		if (rel->reloptkind != RELOPT_BASEREL)
+			continue;
+
+		/* already analyzed before the loop */
+		if (rti == resultRelIndex)
 			continue;
 
 		set_rel_size(root, rel, rti, root->simple_rte_array[rti]);
