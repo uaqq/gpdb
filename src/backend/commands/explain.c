@@ -1207,9 +1207,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	char       *skip_outer_msg = NULL;
 	int			motion_recv;
 	int			motion_snd;
-	/* we will divide planner estimates by this factor to produce
-	   per-segment estimates */
-	float		scaleFactor =  (save_currentSlice && save_currentSlice->gangSize) ?
+	/* We will divide planner estimates by this factor to produce
+	 * per-segment estimates. In those cases when a command
+	 * is executed on a single segment, save_currentSlice->gangSize
+	 * will equal 0, so we use scaleFactor == 1 instead. 
+	*/
+	float		scaleFactor = (save_currentSlice && save_currentSlice->gangSize) ?
 								(float) save_currentSlice->gangSize :
 								1.0;
 
