@@ -1196,7 +1196,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 {
 	Plan	   *plan = planstate->plan;
 	PlanState  *parentplanstate;
-    Slice      *save_currentSlice = es->currentSlice;    /* save */
+    Slice      *save_currentSlice = es->currentSlice;	/* save */
 	const char *pname;			/* node type name for text output */
 	const char *sname;			/* node type name for non-text output */
 	const char *strategy = NULL;
@@ -1207,14 +1207,17 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	char       *skip_outer_msg = NULL;
 	int			motion_recv;
 	int			motion_snd;
-	/* We will divide planner estimates by this factor to produce
-	 * per-segment estimates. In those cases when a command
-	 * is executed on a single segment, save_currentSlice->gangSize
-	 * will equal 0, so we use scaleFactor == 1 instead. 
-	*/
+
+	/*
+	 * We will divide planner estimates by this factor to produce per-segment
+	 * estimates. In those cases when a command is executed on a single
+	 * segment, save_currentSlice->gangSize will equal 0, so we use
+	 * scaleFactor == 1 instead. save_currentSlice can be null if we use
+	 * utility mode.
+	 */
 	float		scaleFactor = (save_currentSlice && save_currentSlice->gangSize) ?
-								(float) save_currentSlice->gangSize :
-								1.0;
+	(float) save_currentSlice->gangSize :
+	1.0;
 
 	/* Remember who called us. */
 	parentplanstate = es->parentPlanState;
@@ -1227,9 +1230,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		if (plan->flow != NULL && CdbPathLocus_IsSegmentGeneral(*(plan->flow)))
 		{
 			/*
-			 * Replicated table has full data on every segment.
-			 * This condition is only applied for Postgres planner. Orca delivers number
-			 * of rows multipied by the number of segments, thus division by
+			 * Replicated table has full data on every segment. This condition
+			 * is only applied for Postgres planner. Orca delivers number of
+			 * rows multipied by the number of segments, thus division by
 			 * scaleFactor != 1 will return the "correct" value.
 			 */
 			scaleFactor = 1.0;
@@ -1282,7 +1285,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_NestLoop:
 			pname = sname = "Nested Loop";
-			if (((NestLoop *)plan)->shared_outer)
+			if (((NestLoop *) plan)->shared_outer)
 			{
 				skip_outer = true;
 				skip_outer_msg = "See first subplan of Hash Join";
@@ -1428,29 +1431,41 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				if (sliceTable)
 				{
 					es->currentSlice = (Slice *) list_nth(sliceTable->slices,
-														pMotion->motionID);
+														  pMotion->motionID);
 				}
 
 				Assert(plan->lefttree);
 				Assert(plan->lefttree->flow);
 
-				// Size of the child slice's gang
+				/* Size of the child slice's gang */
 				motion_snd = es->currentSlice->gangSize;
-				// Size of the current slice's gang (save_currentSlice->gangSize)
+
+				/*
+				 * Size of the current slice's gang
+				 * (save_currentSlice->gangSize)
+				 */
 				motion_recv = scaleFactor;
 
 				switch (pMotion->motionType)
 				{
 					case MOTIONTYPE_HASH:
 						sname = "Redistribute Motion";
-						/* scale the number of rows by the number of segments sending data */
+
+						/*
+						 * scale the number of rows by the number of segments
+						 * sending data
+						 */
 						scaleFactor = motion_snd;
 						break;
 					case MOTIONTYPE_FIXED:
 						if (pMotion->isBroadcast)
 						{
 							sname = "Broadcast Motion";
-							/* scale the number of rows by the number of segments sending data */
+
+							/*
+							 * scale the number of rows by the number of
+							 * segments sending data
+							 */
 							scaleFactor = motion_snd;
 						}
 						else if (plan->lefttree->flow->locustype == CdbLocusType_Replicated)
@@ -1466,7 +1481,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 						break;
 					case MOTIONTYPE_EXPLICIT:
 						sname = "Explicit Redistribute Motion";
-						/* scale the number of rows by the number of segments sending data */
+
+						/*
+						 * scale the number of rows by the number of segments
+						 * sending data
+						 */
 						scaleFactor = motion_snd;
 						break;
 					default:
