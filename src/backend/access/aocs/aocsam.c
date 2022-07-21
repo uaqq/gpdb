@@ -1861,7 +1861,6 @@ aocs_addcol_init(Relation rel,
 	}
 	if (opts)
 		pfree(opts);
-	}
 	return desc;
 }
 
