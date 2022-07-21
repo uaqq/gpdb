@@ -169,7 +169,11 @@ open_ds_write(Relation rel, DatumStreamWrite **ds, TupleDesc relationTupleDesc,
 										/* title */ titleBuf.data,
 										XLogIsNeeded() && RelationNeedsWAL(rel));
 
+		if (opts[i])
+			pfree(opts[i]);
 	}
+	if (opts)
+		pfree(opts);
 }
 
 /*
@@ -229,7 +233,11 @@ open_ds_read(Relation rel, DatumStreamRead **ds, TupleDesc relationTupleDesc,
 										   attr,
 										   RelationGetRelationName(rel),
 										    /* title */ titleBuf.data);
+		if (opts[attno])
+			pfree(opts[attno]);
 	}
+	if (opts)
+		pfree(opts);
 }
 
 static void
@@ -1758,6 +1766,10 @@ aocs_begin_headerscan(Relation rel, int colno)
 							   "ALTER TABLE ADD COLUMN scan",
 							   &ao_attr);
 	hdesc->colno = colno;
+	if (opts[colno])
+		pfree(opts[colno]);
+	if (opts)
+		pfree(opts);
 	return hdesc;
 }
 
@@ -1844,6 +1856,11 @@ aocs_addcol_init(Relation rel,
 											   attr, RelationGetRelationName(rel),
 											   titleBuf.data,
 											   XLogIsNeeded() && RelationNeedsWAL(rel));
+		if (opts[i])
+			pfree(opts[i]);
+	}
+	if (opts)
+		pfree(opts);
 	}
 	return desc;
 }
