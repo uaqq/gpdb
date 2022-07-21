@@ -1856,8 +1856,8 @@ aocs_addcol_init(Relation rel,
 											   attr, RelationGetRelationName(rel),
 											   titleBuf.data,
 											   XLogIsNeeded() && RelationNeedsWAL(rel));
-		if (opts[i])
-			pfree(opts[i]);
+		if (opts[iattr])
+			pfree(opts[iattr]);
 	}
 	if (opts)
 		pfree(opts);
