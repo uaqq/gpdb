@@ -1766,10 +1766,6 @@ aocs_begin_headerscan(Relation rel, int colno)
 							   "ALTER TABLE ADD COLUMN scan",
 							   &ao_attr);
 	hdesc->colno = colno;
-	if (opts[colno])
-		pfree(opts[colno]);
-	if (opts)
-		pfree(opts);
 	return hdesc;
 }
 
