@@ -968,6 +968,8 @@ parseRelOptions(Datum options, bool validate, relopt_kind kind,
 						 errmsg("unrecognized parameter \"%s\"", s)));
 			}
 		}
+		if (array != (ArrayType *) DatumGetPointer(options))
+			pfree(array);
 		pfree(optiondatums);
 	}
 
