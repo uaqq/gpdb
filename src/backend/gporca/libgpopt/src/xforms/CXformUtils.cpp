@@ -1344,17 +1344,23 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 
 	if (ptabdesc->IsPartitioned())
 	{
-		// generate a PartitionSelector node which generates OIDs, then add a project
-		// on top of that to add the action column
-		CExpression *pexprSelector = PexprLogicalPartitionSelector(
-			mp, ptabdesc, colref_array, pexprChild);
 		if (CUtils::FGeneratePartOid(ptabdesc->MDId()))
 		{
+			// generate a PartitionSelector node which generates OIDs, then add a project
+			// on top of that to add the action column
+			CExpression *pexprSelector = PexprLogicalPartitionSelector(
+				mp, ptabdesc, colref_array, pexprChild);
+
 			pcrOid = CLogicalPartitionSelector::PopConvert(pexprSelector->Pop())
 						 ->PcrOid();
+			pexprProject = CUtils::PexprAddProjection(
+				mp, pexprSelector, CUtils::PexprScalarConstInt4(mp, val));
 		}
-		pexprProject = CUtils::PexprAddProjection(
-			mp, pexprSelector, CUtils::PexprScalarConstInt4(mp, val));
+		else
+		{
+			pexprProject = CUtils::PexprAddProjection(
+				mp, pexprChild, CUtils::PexprScalarConstInt4(mp, val));
+		}
 		CExpression *pexprPrL = (*pexprProject)[1];
 		pcrAction = CUtils::PcrFromProjElem((*pexprPrL)[0]);
 	}
