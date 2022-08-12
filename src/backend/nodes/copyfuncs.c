@@ -2322,6 +2322,7 @@ _copyFlow(const Flow *from)
 	COPY_NODE_FIELD(hashExprs);
 	COPY_NODE_FIELD(hashOpfamilies);
 	COPY_NODE_FIELD(flow_before_req_move);
+	COPY_SCALAR_FIELD(focus_need);
 
 	return newnode;
 }

@@ -1231,6 +1231,65 @@ select c from rep_tab where c in (select distinct d from rand_tab);
  2
 (2 rows)
 
+--
+-- Check that nested sub-selects from distributed replicated tables are pulled up if they contain volatiles
+--
+drop table if exists t;
+NOTICE:  table "t" does not exist, skipping
+create table t (i int) distributed replicated;
+insert into t select 1;
+create or replace function f(i int) returns int language sql security definer as $$ select i; $$;
+explain (costs off, verbose) SELECT (select f(i) from t);
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Result
+   Output: $0
+   InitPlan 1 (returns $0)  (slice2)
+     ->  Gather Motion 1:1  (slice1; segments: 1)
+           Output: (f(i))
+           ->  Seq Scan on rpt.t
+                 Output: f(i)
+ Optimizer: Postgres query optimizer
+ Settings: enable_bitmapscan=off, enable_seqscan=off
+(9 rows)
+
+explain (costs off, verbose) SELECT (select f(i) from t group by f(i));
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Result
+   Output: $0
+   InitPlan 1 (returns $0)  (slice2)
+     ->  Gather Motion 1:1  (slice1; segments: 1)
+           Output: (f(i))
+           ->  HashAggregate
+                 Output: (f(i))
+                 Group Key: f(t.i)
+                 ->  Seq Scan on rpt.t
+                       Output: i, f(i)
+ Optimizer: Postgres query optimizer
+ Settings: enable_bitmapscan=off, enable_seqscan=off
+(12 rows)
+
+explain (costs off, verbose) SELECT (select i from t group by i having f(i) > 0);
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Result
+   Output: $0
+   InitPlan 1 (returns $0)  (slice2)
+     ->  Gather Motion 1:1  (slice1; segments: 1)
+           Output: i
+           ->  HashAggregate
+                 Output: i
+                 Group Key: t.i
+                 Filter: (f(t.i) > 0)
+                 ->  Seq Scan on rpt.t
+                       Output: i
+ Optimizer: Postgres query optimizer
+ Settings: enable_bitmapscan=off, enable_seqscan=off
+(13 rows)
+
+drop table if exists t;
+drop function if exists f(i int);
 -- start_ignore
 drop schema rpt cascade;
 NOTICE:  drop cascades to 13 other objects

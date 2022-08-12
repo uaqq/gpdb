@@ -995,6 +995,7 @@ makeFlow(FlowType flotype, int numsegments)
 	flow->req_move = MOVEMENT_NONE;
 	flow->locustype = CdbLocusType_Null;
 	flow->numsegments = numsegments;
+	flow->focus_need = false;
 
 	return flow;
 }
@@ -1103,9 +1104,9 @@ focusPlan(Plan *plan, bool stable, bool rescannable)
 
 	/*
 	 * Already focused and flow is CdbLocusType_SingleQE, CdbLocusType_Entry,
-	 * do nothing.
+	 * and don't focus need, do nothing.
 	 */
-	if (plan->flow->flotype == FLOW_SINGLETON &&
+	if (plan->flow->flotype == FLOW_SINGLETON && !plan->flow->focus_need &&
 		plan->flow->locustype != CdbLocusType_SegmentGeneral)
 		return true;
 

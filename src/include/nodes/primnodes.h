@@ -1506,6 +1506,7 @@ typedef struct Flow
     /* The original Flow ptr is saved here upon setting req_move. */
     struct Flow    *flow_before_req_move;
 
+	bool focus_need;
 } Flow;
 
 typedef enum GroupingType
