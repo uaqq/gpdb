@@ -280,13 +280,6 @@ struct ReceiveControlInfo
 
 	/* Cursor history table. */
 	CursorICHistoryTable cursorHistoryTable;
-
-	/*
-	 * Last distributed transaction id when SetupUDPInterconnect is called.
-	 * Coupled with cursorHistoryTable, it is used to handle multiple
-	 * concurrent cursor cases.
-	 */
-	DistributedTransactionId lastDXatId;
 };
 
 /*
@@ -1199,16 +1192,21 @@ setupUDPListeningSocket(int *listenerSocketFd, uint16 *listenerPort, int *txFami
 #endif
 
 	fun = "getaddrinfo";
-	/*
-	 * Restrict what IP address we will listen on to just the one that was
-	 * used to create this QE session.
-	 */
-	Assert(interconnect_address && strlen(interconnect_address) > 0);
-	hints.ai_flags |= AI_NUMERICHOST;
-	if (gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG)
-		ereport(DEBUG1,
-				(errmsg("getaddrinfo called with interconnect_address %s",
-								interconnect_address)));
+	if (Gp_interconnect_address_type == INTERCONNECT_ADDRESS_TYPE_UNICAST)
+	{
+		Assert(interconnect_address && strlen(interconnect_address) > 0);
+		hints.ai_flags |= AI_NUMERICHOST;
+		ereportif(gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG, DEBUG3,
+				  (errmsg("getaddrinfo called with unicast address: %s",
+						  interconnect_address)));
+	}
+	else
+	{
+		Assert(interconnect_address == NULL);
+		hints.ai_flags |= AI_PASSIVE;
+		ereportif(gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG, DEBUG3,
+				  (errmsg("getaddrinfo called with wildcard address")));
+	}
 
 	s = getaddrinfo(interconnect_address, service, &hints, &addrs);
 	if (s != 0)
@@ -1448,7 +1446,6 @@ InitMotionUDPIFC(int *listenerSocketFd, uint16 *listenerPort)
 
 	/* allocate a buffer for sending disorder messages */
 	rx_control_info.disorderBuffer = palloc0(MIN_PACKET_SIZE);
-	rx_control_info.lastDXatId = InvalidTransactionId;
 	rx_control_info.lastTornIcId = 0;
 	initCursorICHistoryTable(&rx_control_info.cursorHistoryTable);
 
@@ -3082,29 +3079,32 @@ SetupUDPIFCInterconnect_Internal(SliceTable *sliceTable)
 
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
-		DistributedTransactionId distTransId = 0;
-		TransactionId localTransId = 0;
-		TransactionId subtransId = 0;
-
-		GetAllTransactionXids(&(distTransId),
-							  &(localTransId),
-							  &(subtransId));
-
-		/*
-		 * Prune only when we are not in the save transaction and there is a
-		 * large number of entries in the table
+		/* 
+		 * Prune the history table if it is too large
+		 * 
+		 * We only keep history of constant length so that
+		 * - The history table takes only constant amount of memory.
+		 * - It is long enough so that it is almost impossible to receive 
+		 *   packets from an IC instance that is older than the first one 
+		 *   in the history.
 		 */
-		if (distTransId != rx_control_info.lastDXatId && rx_control_info.cursorHistoryTable.count > (2 * CURSOR_IC_TABLE_SIZE))
+		if (rx_control_info.cursorHistoryTable.count > (2 * CURSOR_IC_TABLE_SIZE))
 		{
-			if (gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG)
-				elog(DEBUG1, "prune cursor history table (count %d), icid %d", rx_control_info.cursorHistoryTable.count, sliceTable->ic_instance_id);
-			pruneCursorIcEntry(&rx_control_info.cursorHistoryTable, sliceTable->ic_instance_id);
+			uint32 prune_id = sliceTable->ic_instance_id - CURSOR_IC_TABLE_SIZE;
+
+			/* 
+			 * Only prune if we didn't underflow -- also we want the prune id
+			 * to be newer than the limit (hysteresis)
+			 */
+			if (prune_id < sliceTable->ic_instance_id)
+			{
+				if (gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG)
+					elog(DEBUG1, "prune cursor history table (count %d), icid %d", rx_control_info.cursorHistoryTable.count, sliceTable->ic_instance_id);
+				pruneCursorIcEntry(&rx_control_info.cursorHistoryTable, prune_id);
+			}
 		}
 
 		addCursorIcEntry(&rx_control_info.cursorHistoryTable, sliceTable->ic_instance_id, gp_command_count);
-
-		/* save the latest transaction id. */
-		rx_control_info.lastDXatId = distTransId;
 	}
 
 	/* now we'll do some setup for each of our Receiving Motion Nodes. */
@@ -5807,7 +5807,7 @@ checkQDConnectionAlive(void)
 		if (!dispatcherAYT())
 			ereport(ERROR,
 					(errcode(ERRCODE_GP_INTERCONNECTION_ERROR),
-					 errmsg("interconnect error segment lost contact with master (recv)")));
+					 errmsg("interconnect error segment lost contact with master (recv): %m")));
 	}
 }
 
