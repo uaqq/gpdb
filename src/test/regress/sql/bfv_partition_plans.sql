@@ -1,6 +1,7 @@
 create schema bfv_partition_plans;
 set search_path=bfv_partition_plans;
 
+SET client_min_messages = WARNING;
 create table t1 (a int, b int, c text, d int) with (appendoptimized=true, orientation=column) distributed randomly partition by range(a) ( start (1) end (100) every (1), default partition extra );
 create table t2 (a int, b int, c text, d int) with (appendoptimized=true, orientation=column) distributed randomly partition by range(a) ( start (1) end (100) every (1), default partition extra );
 insert into t1 select  i%100, i, 'asdasdasdasasasdsdad'||i::text, i from generate_series(1, 1000)i;
@@ -32,6 +33,7 @@ with q as (
 drop table t1;
 drop table t2;
 drop function get_executor_mem(query text);
+RESET client_min_messages;
 
 --
 -- Initial setup for all the partitioning test for this suite
