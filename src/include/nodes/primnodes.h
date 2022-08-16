@@ -1506,6 +1506,8 @@ typedef struct Flow
     /* The original Flow ptr is saved here upon setting req_move. */
     struct Flow    *flow_before_req_move;
 
+	/* make explicit motion gather for query with subplan containing
+	 * volatile functions on distributed replicated tables? */
 	bool focus_need;
 } Flow;
 
