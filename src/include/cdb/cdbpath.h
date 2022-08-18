@@ -45,6 +45,6 @@ bool
 cdbpath_contains_wts(Path *path);
 
 Path *
-turn_volatile_seggen_to_singleqe(PlannerInfo *root, Path *path, Node *node);
+turn_volatile_seggen_to_singleqe(PlannerInfo *root, Path *path, Node *node, Node *node2);
 
 #endif   /* CDBPATH_H */

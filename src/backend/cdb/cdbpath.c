@@ -2074,10 +2074,10 @@ has_redistributable_clause(RestrictInfo *restrictinfo)
  * check volatile functions.
  */
 Path *
-turn_volatile_seggen_to_singleqe(PlannerInfo *root, Path *path, Node *node)
+turn_volatile_seggen_to_singleqe(PlannerInfo *root, Path *path, Node *node, Node *node2)
 {
 	if ((CdbPathLocus_IsSegmentGeneral(path->locus) || CdbPathLocus_IsGeneral(path->locus)) &&
-		(contain_volatile_functions(node)))
+		(contain_volatile_functions(node) || contain_volatile_functions(node2)))
 	{
 		CdbPathLocus     singleQE;
 		Path            *mpath;
