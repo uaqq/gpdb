@@ -5469,7 +5469,7 @@ if ${pgac_cv_prog_cc_cflags__Werror_implicit_fallthrough_3+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   pgac_save_CFLAGS=$CFLAGS
-CFLAGS="$pgac_save_CFLAGS -Werror=implicit-fallthrough=3"
+CFLAGS="$pgac_save_CFLAGS"
 ac_save_c_werror_flag=$ac_c_werror_flag
 ac_c_werror_flag=yes
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -5495,7 +5495,7 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $pgac_cv_prog_cc_cflags__Werror_implicit_fallthrough_3" >&5
 $as_echo "$pgac_cv_prog_cc_cflags__Werror_implicit_fallthrough_3" >&6; }
 if test x"$pgac_cv_prog_cc_cflags__Werror_implicit_fallthrough_3" = x"yes"; then
-  CFLAGS="$CFLAGS -Werror=implicit-fallthrough=3"
+  CFLAGS="$CFLAGS"
 fi
 
 
