@@ -517,7 +517,6 @@ handle_gen_seggen_volatile_path(PlannerInfo *root, RelOptInfo *rel)
 
 		path = turn_volatile_seggen_to_singleqe(root,
 												origpath,
-												(Node *) (rel->baserestrictinfo),
 												(Node *) (root->parse));
 		add_path(rel, path);
 	}
