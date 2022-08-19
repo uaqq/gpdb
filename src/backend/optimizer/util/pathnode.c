@@ -3330,7 +3330,7 @@ create_nestloop_path(PlannerInfo *root,
 	 */
 	return turn_volatile_seggen_to_singleqe(root,
 											(Path *) pathnode,
-											(Node *) (pathnode->joinrestrictinfo));  
+											(Node *) (pathnode->joinrestrictinfo));	
 }
 
 /*
@@ -3488,7 +3488,7 @@ create_mergejoin_path(PlannerInfo *root,
 	 */
 	return turn_volatile_seggen_to_singleqe(root,
 											(Path *) pathnode,
-											(Node *) (pathnode->jpath.joinrestrictinfo)); 
+											(Node *) (pathnode->jpath.joinrestrictinfo));	
 }
 
 /*
@@ -3626,7 +3626,7 @@ create_hashjoin_path(PlannerInfo *root,
 	 */
 	return turn_volatile_seggen_to_singleqe(root,
 											(Path *) pathnode,
-											(Node *) (pathnode->jpath.joinrestrictinfo)); 
+											(Node *) (pathnode->jpath.joinrestrictinfo));	
 }
 
 /*
