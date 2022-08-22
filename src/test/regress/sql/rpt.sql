@@ -392,6 +392,15 @@ explain (costs off) insert into t_replicate_volatile select random(), a, a from 
 create sequence seq_for_insert_replicated_table;
 explain (costs off) insert into t_replicate_volatile select nextval('seq_for_insert_replicated_table');
 explain (costs off) select a from t_replicate_volatile union all select * from nextval('seq_for_insert_replicated_table');
+
+-- insert into table with serial column
+create table t_replicate_dst(id serial, i integer) distributed replicated;
+create table t_replicate_src(i integer) distributed replicated;
+insert into t_replicate_src select i from generate_series(1, 5) i;
+explain (costs off) insert into t_replicate_dst (i) select i from t_replicate_src;
+insert into t_replicate_dst (i) select i from t_replicate_src;
+select distinct id from gp_dist_random('t_replicate_dst') order by id;
+
 -- update & delete
 explain (costs off) update t_replicate_volatile set a = 1 where b > random();
 explain (costs off) update t_replicate_volatile set a = 1 from t_replicate_volatile x where x.a + random() = t_replicate_volatile.b;
@@ -499,6 +508,19 @@ select c from rep_tab where c in (select distinct a from dist_tab);
 -- join derives EdtHashed
 explain select c from rep_tab where c in (select distinct d from rand_tab);
 select c from rep_tab where c in (select distinct d from rand_tab);
+
+--
+-- Check that nested sub-selects from distributed replicated tables are pulled up if they contain volatiles
+--
+drop table if exists t;
+create table t (i int) distributed replicated;
+insert into t select 1;
+create or replace function f(i int) returns int language sql security definer as $$ select i; $$;
+explain (costs off, verbose) SELECT (select f(i) from t);
+explain (costs off, verbose) SELECT (select f(i) from t group by f(i));
+explain (costs off, verbose) SELECT (select i from t group by i having f(i) > 0);
+drop table if exists t;
+drop function if exists f(i int);
 
 -- start_ignore
 drop schema rpt cascade;

@@ -1127,7 +1127,8 @@ broadcastPlan(Plan *plan, bool stable, bool rescannable, int numsegments)
 	 */
 	if (plan->flow->flotype == FLOW_SINGLETON &&
 		plan->flow->locustype == CdbLocusType_SegmentGeneral &&
-		plan->flow->numsegments >= numsegments)
+		plan->flow->numsegments >= numsegments &&
+		!contain_volatile_functions((Node *)plan->targetlist))
 		return true;
 
 	return adjustPlanFlow(plan, stable, rescannable, MOVEMENT_BROADCAST, NIL, NIL,
