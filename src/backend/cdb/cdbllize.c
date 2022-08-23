@@ -1123,7 +1123,8 @@ broadcastPlan(Plan *plan, bool stable, bool rescannable, int numsegments)
 
 	/*
 	 * Already focused and flow is CdbLocusType_SegmentGeneral and data
-	 * is replicated on every segment of target, do nothing.
+	 * is replicated on every segment of target and no volatile functions in
+	 * target list, do nothing.
 	 */
 	if (plan->flow->flotype == FLOW_SINGLETON &&
 		plan->flow->locustype == CdbLocusType_SegmentGeneral &&
