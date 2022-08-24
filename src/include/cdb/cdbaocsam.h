@@ -298,6 +298,7 @@ extern AOCSScanDesc aocs_beginrangescan(Relation relation, Snapshot snapshot,
 										Snapshot appendOnlyMetaDataSnapshot,
 										int *segfile_no_arr, int segfile_count);
 
+extern void aocs_afterscan(AOCSScanDesc scan);
 extern void aocs_rescan(AOCSScanDesc scan);
 extern void aocs_endscan(AOCSScanDesc scan);
 

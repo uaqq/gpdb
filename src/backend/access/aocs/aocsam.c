@@ -562,12 +562,28 @@ aocs_beginscan_internal(Relation relation,
 	return scan;
 }
 
+/* ----------------
+ *		aocs_afterscan	- perform after scan actions
+ *
+ * Release some structures, which is safe to free after initial scan, but
+ * before rescan.
+ * ----------------
+ */
+void
+aocs_afterscan(AOCSScanDesc scan)
+{
+	if (scan->columnScanInfo.ds)
+	{
+		close_ds_read(scan->columnScanInfo.ds, scan->columnScanInfo.relationTupleDesc->natts);
+		scan->columnScanInfo.ds = NULL;
+	}
+}
+
 void
 aocs_rescan(AOCSScanDesc scan)
 {
 	close_cur_scan_seg(scan);
-	if (scan->columnScanInfo.ds)
-		close_ds_read(scan->columnScanInfo.ds, scan->columnScanInfo.relationTupleDesc->natts);
+	aocs_afterscan(scan);
 	initscan_with_colinfo(scan);
 }
 

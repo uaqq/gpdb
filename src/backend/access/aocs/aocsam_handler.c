@@ -577,6 +577,8 @@ aoco_getnextslot(TableScanDesc scan, ScanDirection direction, TupleTableSlot *sl
 
 		return true;
 	}
+	else
+		aocs_afterscan(aoscan);
 
 	return false;
 }
