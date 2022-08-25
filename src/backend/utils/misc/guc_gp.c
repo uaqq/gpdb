@@ -4088,7 +4088,7 @@ struct config_int ConfigureNamesInt_gp[] =
 
 	{
 		{"runaway_detector_activation_percent", PGC_POSTMASTER, RESOURCES_MEM,
-			gettext_noop("The runaway detector activates if the used vmem exceeds this percentage of the vmem quota. Set to 100 to disable runaway detection."),
+			gettext_noop("The runaway detector activates if the used vmem exceeds this percentage of the vmem quota. Set to 0 or 100 to disable runaway detection."),
 			NULL,
 		},
 		&runaway_detector_activation_percent,
@@ -4176,6 +4176,16 @@ struct config_int ConfigureNamesInt_gp[] =
 		},
 		&gp_resource_group_queuing_timeout,
 		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"gp_resource_group_move_timeout", PGC_USERSET, RESOURCES_MGM,
+			gettext_noop("Wait up to the specified time (in ms) while moving process to another resource group (after queuing on it) before give up."),
+			NULL,
+			GUC_UNIT_MS
+		},
+		&gp_resource_group_move_timeout,
+		30000, 10, INT_MAX,
 		NULL, NULL, NULL
 	},
 	{

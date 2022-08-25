@@ -609,7 +609,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 *
 	 * TODO: eliminate aliens even on master, if not EXPLAIN ANALYZE
 	 */
-	estate->eliminateAliens = execute_pruned_plan && queryDesc->plannedstmt->nMotionNodes > 0 && !IS_QUERY_DISPATCHER();
+	estate->eliminateAliens = execute_pruned_plan && queryDesc->plannedstmt->nMotionNodes > 0 && (Gp_role == GP_ROLE_EXECUTE);
 
 	/*
 	 * Assign a Motion Node to every Plan Node. This makes it
@@ -1916,6 +1916,12 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 			List          *all_relids = NIL;
 			Oid            relid = getrelid(linitial_int(resultRelations), rangeTable);
 			bool           containRoot = false;
+
+			if(Gp_role == GP_ROLE_UTILITY && operation == CMD_INSERT && rel_is_parent(relid))
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("INSERT in utility mode is not supported "
+								   "on roots of inheritance and partition hierarchies")));
 
 			if (rel_is_child_partition(relid))
 				relid = rel_partition_get_master(relid);
