@@ -91,6 +91,11 @@ private:
 	// if true, it means this descriptor has partial indexes
 	BOOL m_fHasPartialIndexes;
 
+	// identificator of query to which entry belongs, this field used for deduplication
+	// target entries of query. if value > 0 than table descriptor is a target relation
+	// (result) of query.
+	ULONG m_assigned_query_id;
+
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
 
@@ -103,7 +108,8 @@ public:
 					 BOOL convert_hash_to_random,
 					 IMDRelation::Ereldistrpolicy rel_distr_policy,
 					 IMDRelation::Erelstoragetype erelstoragetype,
-					 ULONG ulExecuteAsUser);
+					 ULONG ulExecuteAsUser, ULONG assigned_query_id
+					 );
 
 	// dtor
 	virtual ~CTableDescriptor();
@@ -237,6 +243,12 @@ public:
 	{
 		return m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyCols ||
 			   m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyRows;
+	}
+
+	ULONG
+	GetAssignedQueryId() const
+	{
+		return m_assigned_query_id;
 	}
 
 };	// class CTableDescriptor

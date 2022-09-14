@@ -22,6 +22,7 @@
 
 #define GPDXL_CTE_ID_START 1
 #define GPDXL_COL_ID_START 1
+#define GPDXL_QUERY_ID_START 1
 
 namespace gpdxl
 {
@@ -53,6 +54,9 @@ private:
 	// counter for generating unique CTE ids
 	CIdGenerator *m_cte_id_counter;
 
+	// counter for of querie's in a general query (for further deduplication of target entries)
+	CIdGenerator *m_query_counter;
+
 	// does the query have any distributed tables?
 	BOOL m_has_distributed_tables;
 
@@ -65,6 +69,8 @@ public:
 
 	// dtor
 	~CContextQueryToDXL();
+
+	ULONG GetNextQueryId();
 };
 }  // namespace gpdxl
 #endif	// GPDXL_CContextQueryToDXL_H

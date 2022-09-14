@@ -90,6 +90,11 @@ private:
 					 CleanupDelete<SCTEConsumerInfo> >
 		HMUlCTEConsumerInfo;
 
+	typedef CHashMap<ULONG, Index, gpos::HashValue<ULONG>,
+					gpos::Equals<ULONG>, CleanupDelete<ULONG>,
+					CleanupDelete<Index> >
+		HMUlIndex;
+
 	CMemoryPool *m_mp;
 
 	// counter for generating plan ids
@@ -127,6 +132,10 @@ private:
 
 	// CTAS distribution policy
 	GpPolicy *m_distribution_policy;
+
+	// hash map of processed table descriptor (range table entries) and it's indexes in the
+	// final rtable list - to prevent duplicates of resultRelation (and correct setup of scanrelid)
+	HMUlIndex *m_used_relations_indexes;
 
 public:
 	// ctor/dtor
@@ -215,6 +224,12 @@ public:
 	// based on decision made by DetermineDistributionHashOpclasses()
 	Oid GetDistributionHashOpclassForType(Oid typid);
 	Oid GetDistributionHashFuncForType(Oid typid);
+
+	HMUlIndex *
+	GetUsedRelationIndexesMap() const
+	{
+		return m_used_relations_indexes;
+	}
 };
 
 }  // namespace gpdxl

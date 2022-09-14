@@ -146,7 +146,8 @@ public:
 										 CMDAccessor *md_accessor,
 										 CIdGenerator *id_generator,
 										 const RangeTblEntry *rte,
-										 BOOL *is_distributed_table = NULL);
+										 BOOL *is_distributed_table = NULL,
+										 ULONG assigned_query_id = UNASSIGNED_QUERYID);
 
 	// translate a RangeTableEntry into a CDXLLogicalTVF
 	static CDXLLogicalTVF *ConvertToCDXLLogicalTVF(CMemoryPool *mp,

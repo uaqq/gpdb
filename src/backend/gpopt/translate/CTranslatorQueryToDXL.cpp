@@ -117,6 +117,8 @@ CTranslatorQueryToDXL::CTranslatorQueryToDXL(
 	GPOS_ASSERT(NULL != query);
 	CheckSupportedCmdType(query);
 
+	m_query_id = m_context->GetNextQueryId();
+
 	CheckRangeTable(query);
 
 	// GPDB_94_MERGE_FIXME: WITH CHECK OPTION views are not supported yet.
@@ -681,6 +683,33 @@ CTranslatorQueryToDXL::TranslateQueryToDXL()
 
 //---------------------------------------------------------------------------
 //	@function:
+//		CTranslatorQueryToDXL::GetTableDescr
+//
+//	@doc:
+//		Fills table descriptor of query. Assume, that subquery and further
+// 		paln would have only one table descriptor, which referes to target
+//		(result) relation, so it's worth to add  only query_id at table descr
+//		(without storing id of relation of pg query), for further
+//		deduplication target (result) relations.
+//
+//---------------------------------------------------------------------------
+CDXLTableDescr*
+CTranslatorQueryToDXL::GetTableDescr(const RangeTblEntry *rte, ULONG rt_index)
+{
+	ULONG target_assigned_to_query_id = UNASSIGNED_QUERYID;
+	if (m_query->resultRelation > 0 && m_query->resultRelation == rt_index) {
+		target_assigned_to_query_id = m_query_id;
+	}
+
+	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+		&m_context->m_has_distributed_tables,
+		target_assigned_to_query_id);
+	return table_descr;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
 //		CTranslatorQueryToDXL::TranslateInsertQueryToDXL
 //
 //	@doc:
@@ -703,9 +732,8 @@ CTranslatorQueryToDXL::TranslateInsertQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1166,9 +1194,8 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1233,9 +1260,8 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -3216,9 +3242,7 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 	}
 
 	// construct table descriptor for the scan node from the range table entry
-	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *dxl_table_descr = GetTableDescr(rte, rt_index);
 
 	CDXLLogicalGet *dxl_op = NULL;
 	const IMDRelation *md_rel =
