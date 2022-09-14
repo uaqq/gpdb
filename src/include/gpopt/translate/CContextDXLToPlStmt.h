@@ -87,6 +87,10 @@ private:
 				 gpos::Equals<ULONG>, CleanupDelete<ULONG>,
 				 CleanupDelete<SCTEConsumerInfo>>;
 
+	typedef CHashMap<ULONG, Index, gpos::HashValue<ULONG>, gpos::Equals<ULONG>,
+					 CleanupDelete<ULONG>, CleanupDelete<Index>>
+		HMUlIndex;
+
 	CMemoryPool *m_mp;
 
 	// counter for generating plan ids
@@ -137,6 +141,8 @@ private:
 
 	UlongToUlongMap *m_part_selector_to_param_map;
 
+	// hash map of the queryid (of DML query) and the target relation index
+	HMUlIndex *m_used_rte_indexes;
 
 public:
 	// ctor/dtor
@@ -261,6 +267,12 @@ public:
 
 	// used by internal GPDB functions to build the RelOptInfo when creating foreign scans
 	Query *m_orig_query;
+
+	HMUlIndex *
+	GetUsedRelationIndexesMap() const
+	{
+		return m_used_rte_indexes;
+	}
 };
 
 }  // namespace gpdxl

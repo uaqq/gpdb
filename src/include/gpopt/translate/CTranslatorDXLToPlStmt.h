@@ -167,6 +167,11 @@ private:
 	// Set the bitmapset of a plan to the list of param_ids defined by the plan
 	static void SetParamIds(Plan *);
 
+	Index ProcessTableDescr(
+		const gpdxl::CDXLTableDescr *dxl_table_descr, RangeTblEntry **rte,
+		gpdxl::CDXLTranslateContextBaseTable *base_table_context,
+		AclMode acl_mode = ACL_SELECT);
+
 	// translate DXL table scan node into a SeqScan node
 	Plan *TranslateDXLTblScan(
 		const CDXLNode *tbl_scan_dxlnode, CDXLTranslateContext *output_context,

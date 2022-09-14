@@ -473,6 +473,7 @@ enum Edxltoken
 	EdxltokenIsNull,
 	EdxltokenLintValue,
 	EdxltokenDoubleValue,
+	EdxltokenAssignedQueryId,
 
 	EdxltokenRelTemporary,
 

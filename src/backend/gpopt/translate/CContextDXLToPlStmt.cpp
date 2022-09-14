@@ -64,6 +64,7 @@ CContextDXLToPlStmt::CContextDXLToPlStmt(
 	m_cte_consumer_info = GPOS_NEW(m_mp) HMUlCTEConsumerInfo(m_mp);
 	m_num_partition_selectors_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
 	m_part_selector_to_param_map = GPOS_NEW(m_mp) UlongToUlongMap(m_mp);
+	m_used_rte_indexes = GPOS_NEW(m_mp) HMUlIndex(m_mp);
 }
 
 //---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ CContextDXLToPlStmt::~CContextDXLToPlStmt()
 	m_cte_consumer_info->Release();
 	m_num_partition_selectors_array->Release();
 	m_part_selector_to_param_map->Release();
+	m_used_rte_indexes->Release();
 }
 
 //---------------------------------------------------------------------------

@@ -142,6 +142,8 @@ CTranslatorQueryToDXL::CTranslatorQueryToDXL(
 	GPOS_ASSERT(nullptr != query);
 	CheckSupportedCmdType(query);
 
+	m_query_id = m_context->GetNextQueryId();
+
 	CheckRangeTable(query);
 
 	// GPDB_94_MERGE_FIXME: WITH CHECK OPTION views are not supported yet.
@@ -742,6 +744,33 @@ CTranslatorQueryToDXL::TranslateQueryToDXL()
 
 //---------------------------------------------------------------------------
 //	@function:
+//		CTranslatorQueryToDXL::GetTableDescr
+//
+//	@doc:
+//		Fills table descriptor of query. queryid field is used to tag
+//		relations assigned to target one. In case of possible nested DML
+//		subqueries this field points to target relation of corresponding
+//		Query structure of subquery.
+//
+//---------------------------------------------------------------------------
+CDXLTableDescr *
+CTranslatorQueryToDXL::GetTableDescr(const RangeTblEntry *rte, ULONG rt_index)
+{
+	ULONG assigned_queryid = UNASSIGNED_QUERYID;
+	if (m_query->resultRelation > 0 &&
+		ULONG(m_query->resultRelation) == rt_index)
+	{
+		assigned_queryid = m_query_id;
+	}
+
+	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+		&m_context->m_has_distributed_tables, assigned_queryid);
+	return table_descr;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
 //		CTranslatorQueryToDXL::TranslateInsertQueryToDXL
 //
 //	@doc:
@@ -768,9 +797,8 @@ CTranslatorQueryToDXL::TranslateInsertQueryToDXL()
 		GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature,
 				   GPOS_WSZ_LIT("Inserts with foreign tables"));
 	}
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 
 	BOOL rel_has_constraints = CTranslatorUtils::RelHasConstraints(md_rel);
@@ -1199,9 +1227,8 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 		GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature,
 				   GPOS_WSZ_LIT("Deletes with foreign tables"));
 	}
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 
 	// make note of the operator classes used in the distribution key
@@ -1264,9 +1291,8 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 		GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature,
 				   GPOS_WSZ_LIT("Updates with foreign tables"));
 	}
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 
 	if (!optimizer_enable_dml_constraints &&
@@ -3340,9 +3366,7 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 	}
 
 	// construct table descriptor for the scan node from the range table entry
-	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables);
+	CDXLTableDescr *dxl_table_descr = GetTableDescr(rte, rt_index);
 
 	CDXLLogicalGet *dxl_op = nullptr;
 	const IMDRelation *md_rel =

@@ -129,6 +129,10 @@ private:
 	// CTE producer IDs defined at the current query level
 	UlongBoolHashMap *m_cteid_at_current_query_level_map;
 
+	// id of current query (and for nested queries), it's used for correct assigning
+	// of relation links to target relation of DML query
+	ULONG m_query_id;
+
 	//ctor
 	// private constructor, called from the public factory function QueryToDXLInstance
 	CTranslatorQueryToDXL(
@@ -416,6 +420,8 @@ private:
 
 	// true iff this query or one of its ancestors is a DML query
 	BOOL IsDMLQuery();
+
+	CDXLTableDescr *GetTableDescr(const RangeTblEntry *rte, ULONG rt_index);
 
 public:
 	CTranslatorQueryToDXL(const CTranslatorQueryToDXL &) = delete;
