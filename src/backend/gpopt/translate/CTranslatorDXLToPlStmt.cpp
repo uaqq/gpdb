@@ -486,17 +486,22 @@ CTranslatorDXLToPlStmt::TranslateDXLTblScan(
 
 	// we will add the new range table entry as the last element of the range table
 	Index index =
-		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
+		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList());// + 1;
 
 	const CDXLTableDescr *dxl_table_descr =
 		phy_tbl_scan_dxlop->GetDXLTableDescr();
 	const IMDRelation *md_rel =
 		m_md_accessor->RetrieveRel(dxl_table_descr->MDId());
-	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
-		dxl_table_descr, index, &base_table_context);
-	GPOS_ASSERT(NULL != rte);
-	rte->requiredPerms |= ACL_SELECT;
-	m_dxl_to_plstmt_context->AddRTE(rte);
+	
+	if (!dxl_table_descr->IsTargetRelation())
+	{
+		index++;
+		RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
+			dxl_table_descr, index, &base_table_context);
+		GPOS_ASSERT(NULL != rte);
+		rte->requiredPerms |= ACL_SELECT;
+		m_dxl_to_plstmt_context->AddRTE(rte);
+	}
 
 	Plan *plan = NULL;
 	Plan *plan_return = NULL;
@@ -4176,8 +4181,9 @@ CTranslatorDXLToPlStmt::TranslateDXLDml(
 		table_descr, index, &base_table_context);
 	GPOS_ASSERT(NULL != rte);
 	rte->requiredPerms |= acl_mode;
-	m_dxl_to_plstmt_context->AddRTE(rte);
-
+	if (!table_descr->IsTargetRelation()) { // seems not needed - root needs to add this
+		m_dxl_to_plstmt_context->AddRTE(rte);
+	}
 	CDXLNode *project_list_dxlnode = (*dml_dxlnode)[0];
 	CDXLNode *child_dxlnode = (*dml_dxlnode)[1];
 

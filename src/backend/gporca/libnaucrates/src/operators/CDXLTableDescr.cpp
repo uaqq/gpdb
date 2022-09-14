@@ -30,12 +30,13 @@ using namespace gpdxl;
 //
 //---------------------------------------------------------------------------
 CDXLTableDescr::CDXLTableDescr(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
-							   ULONG ulExecuteAsUser)
+							   ULONG ulExecuteAsUser, BOOL is_target_relation)
 	: m_mp(mp),
 	  m_mdid(mdid),
 	  m_mdname(mdname),
 	  m_dxl_column_descr_array(NULL),
-	  m_execute_as_user_id(ulExecuteAsUser)
+	  m_execute_as_user_id(ulExecuteAsUser),
+	  m_is_target_relation(is_target_relation)
 {
 	GPOS_ASSERT(NULL != m_mdname);
 	m_dxl_column_descr_array = GPOS_NEW(mp) CDXLColDescrArray(mp);
@@ -225,6 +226,10 @@ CDXLTableDescr::SerializeToDXL(CXMLSerializer *xml_serializer) const
 	xml_serializer->CloseElement(
 		CDXLTokens::GetDXLTokenStr(EdxltokenNamespacePrefix),
 		CDXLTokens::GetDXLTokenStr(EdxltokenTableDescr));
+}
+
+BOOL CDXLTableDescr::IsTargetRelation() const {
+	return m_is_target_relation;
 }
 
 // EOF

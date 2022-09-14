@@ -91,6 +91,8 @@ private:
 	// if true, it means this descriptor has partial indexes
 	BOOL m_fHasPartialIndexes;
 
+	BOOL m_isTargetRelation;
+
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
 
@@ -103,7 +105,9 @@ public:
 					 BOOL convert_hash_to_random,
 					 IMDRelation::Ereldistrpolicy rel_distr_policy,
 					 IMDRelation::Erelstoragetype erelstoragetype,
-					 ULONG ulExecuteAsUser);
+					 ULONG ulExecuteAsUser,
+					 BOOL is_target_relation = false
+					 );
 
 	// dtor
 	virtual ~CTableDescriptor();
@@ -237,6 +241,11 @@ public:
 	{
 		return m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyCols ||
 			   m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyRows;
+	}
+
+	BOOL IsTargetRelation() const
+	{
+		return m_isTargetRelation;
 	}
 
 };	// class CTableDescriptor

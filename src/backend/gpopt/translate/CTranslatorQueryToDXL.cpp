@@ -3246,11 +3246,13 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 				   GPOS_WSZ_LIT("ONLY in the FROM clause"));
 	}
 
+	BOOL is_target_rel = IsDMLQuery() && rt_index == ULONG(m_query->resultRelation);
 	// construct table descriptor for the scan node from the range table entry
 	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
 		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables);
+		&m_context->m_has_replicated_tables,
+		is_target_rel);
 
 	CDXLLogicalGet *dxl_op = NULL;
 	const IMDRelation *md_rel =
