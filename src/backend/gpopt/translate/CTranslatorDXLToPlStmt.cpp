@@ -484,21 +484,26 @@ CTranslatorDXLToPlStmt::TranslateDXLTblScan(
 	// translation context for column mappings in the base relation
 	CDXLTranslateContextBaseTable base_table_context(m_mp);
 
-	// we will add the new range table entry as the last element of the range table
-	Index index =
-		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList());// + 1;
+	// further we may add the new range table entry, (only if it's subquery rte)
+	// as the last element of the range table
+	Index cuurentRTEIndex =
+		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList());
 
 	const CDXLTableDescr *dxl_table_descr =
 		phy_tbl_scan_dxlop->GetDXLTableDescr();
 	const IMDRelation *md_rel =
 		m_md_accessor->RetrieveRel(dxl_table_descr->MDId());
-	
+
+	Index index = !dxl_table_descr->IsTargetRelation() ?
+		cuurentRTEIndex + 1 : cuurentRTEIndex;
+
+	//We have to fill base_table_context and set valid index
+	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
+		dxl_table_descr, index, &base_table_context);
+	GPOS_ASSERT(NULL != rte);
+
 	if (!dxl_table_descr->IsTargetRelation())
 	{
-		index++;
-		RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
-			dxl_table_descr, index, &base_table_context);
-		GPOS_ASSERT(NULL != rte);
 		rte->requiredPerms |= ACL_SELECT;
 		m_dxl_to_plstmt_context->AddRTE(rte);
 	}
