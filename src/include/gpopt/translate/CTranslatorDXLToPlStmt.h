@@ -196,6 +196,10 @@ private:
 	// Set InitPlanVariable in PlannedStmt
 	void SetInitPlanVariables(PlannedStmt *);
 
+	Index FixupRelIndex(
+		const gpdxl::CDXLTableDescr *dxl_table_descr, RangeTblEntry **rte,
+		gpdxl::CDXLTranslateContextBaseTable *base_table_context);
+
 	// translate DXL table scan node into a SeqScan node
 	Plan *TranslateDXLTblScan(
 		const CDXLNode *tbl_scan_dxlnode, CDXLTranslateContext *output_context,
