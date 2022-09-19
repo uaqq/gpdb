@@ -495,7 +495,7 @@ CTranslatorDXLToPlStmt::TranslateDXLTblScan(
 		m_md_accessor->RetrieveRel(dxl_table_descr->MDId());
 
 	Index index = !dxl_table_descr->IsTargetRelation() ?
-		cuurentRTEIndex + 1 : cuurentRTEIndex;
+		cuurentRTEIndex + 1 : 1;
 
 	//We have to fill base_table_context and set valid index
 	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
