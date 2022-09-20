@@ -196,7 +196,7 @@ private:
 	// Set InitPlanVariable in PlannedStmt
 	void SetInitPlanVariables(PlannedStmt *);
 
-	Index FixupRelIndex(
+	Index ProcessTableDescr(
 		const gpdxl::CDXLTableDescr *dxl_table_descr, RangeTblEntry **rte,
 		gpdxl::CDXLTranslateContextBaseTable *base_table_context);
 
