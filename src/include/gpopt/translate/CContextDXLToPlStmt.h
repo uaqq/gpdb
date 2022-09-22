@@ -215,6 +215,13 @@ public:
 	// based on decision made by DetermineDistributionHashOpclasses()
 	Oid GetDistributionHashOpclassForType(Oid typid);
 	Oid GetDistributionHashFuncForType(Oid typid);
+
+	// CHashMap<
+	// 	ULLONG, ULONG, gpos::HashValue<ULLONG>,
+	// 	gpos::Equals<ULLONG>, CleanupDelete<ULLONG>, CleanupDelete<ULONG> > * GetUsedRelationsMap() const
+	// {
+	// 	return m_used_relations;
+	// }
 };
 
 }  // namespace gpdxl

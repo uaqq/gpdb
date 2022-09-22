@@ -52,6 +52,8 @@ private:
 
 	BOOL m_is_target_relation;
 
+	ULLONG m_unique_pointer_id;
+
 	// private copy ctor
 	CDXLTableDescr(const CDXLTableDescr &);
 
@@ -60,7 +62,8 @@ private:
 public:
 	// ctor/dtor
 	CDXLTableDescr(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
-				   ULONG ulExecuteAsUser, BOOL is_target_relation = false);
+				   ULONG ulExecuteAsUser, BOOL isTargetRelation = false,
+				   ULONG uniquePointerId = 0);
 
 	virtual ~CDXLTableDescr();
 
@@ -88,6 +91,8 @@ public:
 	void SerializeToDXL(CXMLSerializer *xml_serializer) const;
 
 	BOOL IsTargetRelation() const;
+
+	ULLONG GetUniquePointerId() const;
 };
 }  // namespace gpdxl
 

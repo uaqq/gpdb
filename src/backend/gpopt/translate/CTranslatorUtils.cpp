@@ -135,7 +135,7 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 	CMDName *table_mdname = GPOS_NEW(mp) CMDName(mp, tablename);
 
 	CDXLTableDescr *table_descr =
-		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser, is_target_relation);
+		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser, is_target_relation, ULLONG(rte));
 
 	const ULONG len = rel->ColumnCount();
 

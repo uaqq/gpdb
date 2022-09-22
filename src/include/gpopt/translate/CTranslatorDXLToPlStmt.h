@@ -121,6 +121,11 @@ private:
 		}
 	};	// SContextIndexVarAttno
 
+	typedef CHashMap<
+		ULLONG, ULONG, gpos::HashValue<ULLONG>,
+		gpos::Equals<ULLONG>, CleanupDelete<ULLONG>, CleanupDelete<ULONG> >
+		HTableIdInfo;
+
 	// memory pool
 	CMemoryPool *m_mp;
 
@@ -152,6 +157,8 @@ private:
 
 	// partition selector counter
 	ULONG m_partition_selector_counter;
+
+	HTableIdInfo *m_used_relations;
 
 	// private copy ctor
 	CTranslatorDXLToPlStmt(const CTranslatorDXLToPlStmt &);
@@ -198,7 +205,7 @@ private:
 
 	Index ProcessTableDescr(
 		const gpdxl::CDXLTableDescr *dxl_table_descr, RangeTblEntry **rte,
-		gpdxl::CDXLTranslateContextBaseTable *base_table_context);
+		gpdxl::CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode = ACL_SELECT);
 
 	// translate DXL table scan node into a SeqScan node
 	Plan *TranslateDXLTblScan(

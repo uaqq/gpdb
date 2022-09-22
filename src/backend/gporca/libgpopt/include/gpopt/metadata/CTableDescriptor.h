@@ -93,6 +93,8 @@ private:
 
 	BOOL m_isTargetRelation;
 
+	ULLONG m_uniqueId;
+
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
 
@@ -106,7 +108,8 @@ public:
 					 IMDRelation::Ereldistrpolicy rel_distr_policy,
 					 IMDRelation::Erelstoragetype erelstoragetype,
 					 ULONG ulExecuteAsUser,
-					 BOOL is_target_relation = false
+					 BOOL is_target_relation = false,
+					 ULLONG unique_pointer_id = 0
 					 );
 
 	// dtor
@@ -246,6 +249,10 @@ public:
 	BOOL IsTargetRelation() const
 	{
 		return m_isTargetRelation;
+	}
+
+	ULONG GetUniqueId() const {
+		return m_uniqueId;
 	}
 
 };	// class CTableDescriptor

@@ -7570,7 +7570,7 @@ CTranslatorExprToDXL::MakeDXLTableDescr(const CTableDescriptor *ptabdesc,
 
 	CDXLTableDescr *table_descr = GPOS_NEW(m_mp)
 		CDXLTableDescr(m_mp, mdid, pmdnameTbl, ptabdesc->GetExecuteAsUserId(),
-		ptabdesc->IsTargetRelation());
+		ptabdesc->IsTargetRelation(), ptabdesc->GetUniqueId());
 
 	const ULONG ulColumns = ptabdesc->ColumnCount();
 	// translate col descriptors

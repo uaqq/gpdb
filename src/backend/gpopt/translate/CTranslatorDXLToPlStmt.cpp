@@ -85,6 +85,7 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt(
 {
 	m_translator_dxl_to_scalar = GPOS_NEW(m_mp)
 		CTranslatorDXLToScalar(m_mp, m_md_accessor, m_num_of_segments);
+	m_used_relations = GPOS_NEW(m_mp) HTableIdInfo(m_mp);
 	InitTranslators();
 }
 
@@ -98,6 +99,7 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt(
 //---------------------------------------------------------------------------
 CTranslatorDXLToPlStmt::~CTranslatorDXLToPlStmt()
 {
+	m_used_relations->Release();
 	GPOS_DELETE(m_translator_dxl_to_scalar);
 }
 
@@ -480,26 +482,30 @@ CTranslatorDXLToPlStmt::SetParamIds(Plan *plan)
 Index
 CTranslatorDXLToPlStmt::ProcessTableDescr(
 	const CDXLTableDescr *dxl_table_descr, RangeTblEntry **rtePtr,
-	gpdxl::CDXLTranslateContextBaseTable *base_table_context)
+	gpdxl::CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode)
 {
-	Index index = !dxl_table_descr->IsTargetRelation() ?
-		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1 :
-		gpdb::ListNthInt(m_result_rel_list, 0);
+	Index *calcIndex = NULL;
+	ULLONG *key = GPOS_NEW(m_mp) ULLONG(dxl_table_descr->GetUniquePointerId());
+	Index index = gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
+	if ((calcIndex = m_used_relations->Find(key))) {
+		index = *calcIndex;
+	} else {
+		m_used_relations->Insert(key, GPOS_NEW(m_mp) ULONG(index));
+	}
 
 	//We have to fill base_table_context and set valid index
 	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
 		dxl_table_descr, index, base_table_context);
 	GPOS_ASSERT(NULL != rte);
 
-	if (!dxl_table_descr->IsTargetRelation())
-	{
-		rte->requiredPerms |= ACL_SELECT;
+	if (!calcIndex) {
+		rte->requiredPerms |= acl_mode;
 		m_dxl_to_plstmt_context->AddRTE(rte);
 	}
+
 	*rtePtr = rte;
 	return index;
 }
-
 
 //---------------------------------------------------------------------------
 //	@function:
@@ -4166,22 +4172,15 @@ CTranslatorDXLToPlStmt::TranslateDXLDml(
 	// translation context for column mappings in the base relation
 	CDXLTranslateContextBaseTable base_table_context(m_mp);
 
-	// add the new range table entry as the last element of the range table
-	Index index =
-		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
+	RangeTblEntry *rte = NULL;
+	CDXLTableDescr *table_descr = phy_dml_dxlop->GetDXLTableDescr();
+	Index index = ProcessTableDescr(table_descr, &rte, &base_table_context, acl_mode);
 	dml->scanrelid = index;
 
 	m_result_rel_list = gpdb::LAppendInt(m_result_rel_list, index);
 
 	const IMDRelation *md_rel =
 		m_md_accessor->RetrieveRel(phy_dml_dxlop->GetDXLTableDescr()->MDId());
-
-	CDXLTableDescr *table_descr = phy_dml_dxlop->GetDXLTableDescr();
-	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
-		table_descr, index, &base_table_context);
-	GPOS_ASSERT(NULL != rte);
-	rte->requiredPerms |= acl_mode;
-	m_dxl_to_plstmt_context->AddRTE(rte); // top query, it should be processed
 
 	CDXLNode *project_list_dxlnode = (*dml_dxlnode)[0];
 	CDXLNode *child_dxlnode = (*dml_dxlnode)[1];
