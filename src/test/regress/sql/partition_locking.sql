@@ -148,6 +148,14 @@ begin;
 delete from partlockt where i = 4;
 -- Known_opt_diff: MPP-20936
 select * from locktest_master where coalesce not like 'gp_%' and coalesce not like 'pg_%';
+-- Fixme: due to changes in this patch (deduplication of target rtable), for now acquiring lock
+-- on partlockt_1_prt_4_i_idx is changed - before lock mode was AccessShareLock, and now NoLock.
+-- Here is a code, which produce this behaviour: ExecInitIndexScanForPartition (nodeindexscan:562)
+--     relistarget = ExecRelationIsTargetRelation(estate, node->scan.scanrelid);
+--	   indexstate->iss_RelationDesc = index_open(indexid,
+--									     relistarget ? NoLock : AccessShareLock);
+-- But, seems, correct lock on index is RowExclusive, like it's done in postgres, am I right?
+-- Also, what is the policy of locks here?
 select * from locktest_segments where coalesce not like 'gp_%' and coalesce not like 'pg_%';
 commit;
 
