@@ -61,7 +61,7 @@ private:
 public:
 	// ctor/dtor
 	CDXLTableDescr(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
-				   ULONG ulExecuteAsUser, ULONG table_descr_id);
+				   ULONG ulExecuteAsUser, ULONG table_descr_id = -1);
 
 	virtual ~CDXLTableDescr();
 
