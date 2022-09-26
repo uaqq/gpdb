@@ -708,10 +708,12 @@ CTranslatorQueryToDXL::TranslateInsertQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
+	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
 		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables);
+		&m_context->m_has_replicated_tables,
+		table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1184,10 +1186,12 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
+	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
 		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables);
+		&m_context->m_has_replicated_tables,
+		table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1258,10 +1262,12 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
+	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
 		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables);
+		&m_context->m_has_replicated_tables,
+		table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -2156,7 +2162,7 @@ CTranslatorQueryToDXL::CreateSimpleGroupBy(
 		TargetEntry *te_equivalent =
 			CTranslatorUtils::GetGroupingColumnTargetEntry(
 				(Node *) target_entry->expr, group_clause, target_list);
-
+  
 		BOOL is_grouping_col =
 			grpby_cols_bitset->Get(target_entry->ressortgroupref) ||
 			(NULL != te_equivalent &&
@@ -3246,13 +3252,15 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 				   GPOS_WSZ_LIT("ONLY in the FROM clause"));
 	}
 
-	BOOL is_target_rel = IsDMLQuery() && rt_index == ULONG(m_query->resultRelation);
+	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
+
+	// BOOL is_target_rel = IsDMLQuery() && rt_index == ULONG(m_query->resultRelation);
 	// construct table descriptor for the scan node from the range table entry
 	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
 		&m_context->m_has_distributed_tables,
 		&m_context->m_has_replicated_tables,
-		is_target_rel);
+		table_descr_id);
 
 	CDXLLogicalGet *dxl_op = NULL;
 	const IMDRelation *md_rel =

@@ -85,7 +85,6 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt(
 {
 	m_translator_dxl_to_scalar = GPOS_NEW(m_mp)
 		CTranslatorDXLToScalar(m_mp, m_md_accessor, m_num_of_segments);
-	m_used_relations = GPOS_NEW(m_mp) HTableIdInfo(m_mp);
 	InitTranslators();
 }
 
@@ -99,7 +98,6 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt(
 //---------------------------------------------------------------------------
 CTranslatorDXLToPlStmt::~CTranslatorDXLToPlStmt()
 {
-	m_used_relations->Release();
 	GPOS_DELETE(m_translator_dxl_to_scalar);
 }
 
@@ -483,14 +481,15 @@ Index
 CTranslatorDXLToPlStmt::ProcessTableDescr(
 	const CDXLTableDescr *dxl_table_descr, RangeTblEntry **rtePtr,
 	gpdxl::CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode)
-{
-	Index *calcIndex = NULL;
-	ULLONG *key = GPOS_NEW(m_mp) ULLONG(dxl_table_descr->GetUniquePointerId());
+{	
+	ULONG *key = GPOS_NEW(m_mp) ULONG(dxl_table_descr->GetTableDescrId());
 	Index index = gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
-	if ((calcIndex = m_used_relations->Find(key))) {
-		index = *calcIndex;
+	Index *usedIndex = m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Find(key);
+	if (usedIndex) {
+		index = *usedIndex;
 	} else {
-		m_used_relations->Insert(key, GPOS_NEW(m_mp) ULONG(index));
+		m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Insert(
+			key, GPOS_NEW(m_mp) Index(index));
 	}
 
 	//We have to fill base_table_context and set valid index
@@ -498,7 +497,7 @@ CTranslatorDXLToPlStmt::ProcessTableDescr(
 		dxl_table_descr, index, base_table_context);
 	GPOS_ASSERT(NULL != rte);
 
-	if (!calcIndex) {
+	if (!usedIndex) {
 		rte->requiredPerms |= acl_mode;
 		m_dxl_to_plstmt_context->AddRTE(rte);
 	}

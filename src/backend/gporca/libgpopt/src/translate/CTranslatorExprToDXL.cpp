@@ -1365,7 +1365,8 @@ CTranslatorExprToDXL::PdxlnMultiExternalScan(
 			m_mp, extpart_mdid, extpart->Mdname().GetMDName(),
 			extpart->ConvertHashToRandom(), extpart->GetRelDistribution(),
 			extpart->RetrieveRelStorageType(),
-			multi_extscan->Ptabdesc()->GetExecuteAsUserId());
+			multi_extscan->Ptabdesc()->GetExecuteAsUserId(),
+			multi_extscan->Ptabdesc()->GetAssignedTableDescrId());
 
 		// Each scan shares the same col descriptors as the parent partitioned table
 		// FIXME: Dropped columns break the assumption above. Handle it correctly.
@@ -7570,7 +7571,7 @@ CTranslatorExprToDXL::MakeDXLTableDescr(const CTableDescriptor *ptabdesc,
 
 	CDXLTableDescr *table_descr = GPOS_NEW(m_mp)
 		CDXLTableDescr(m_mp, mdid, pmdnameTbl, ptabdesc->GetExecuteAsUserId(),
-		ptabdesc->IsTargetRelation(), ptabdesc->GetUniqueId());
+		ptabdesc->GetAssignedTableDescrId());
 
 	const ULONG ulColumns = ptabdesc->ColumnCount();
 	// translate col descriptors

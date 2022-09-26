@@ -91,9 +91,8 @@ private:
 	// if true, it means this descriptor has partial indexes
 	BOOL m_fHasPartialIndexes;
 
-	BOOL m_isTargetRelation;
-
-	ULLONG m_uniqueId;
+	// assigned id of table descriptior for further deduplicatio of rte at final plan
+	BOOL m_assigned_table_descr_id;
 
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
@@ -107,9 +106,7 @@ public:
 					 BOOL convert_hash_to_random,
 					 IMDRelation::Ereldistrpolicy rel_distr_policy,
 					 IMDRelation::Erelstoragetype erelstoragetype,
-					 ULONG ulExecuteAsUser,
-					 BOOL is_target_relation = false,
-					 ULLONG unique_pointer_id = 0
+					 ULONG ulExecuteAsUser, ULONG assigned_table_descr_id
 					 );
 
 	// dtor
@@ -246,13 +243,9 @@ public:
 			   m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyRows;
 	}
 
-	BOOL IsTargetRelation() const
+	ULONG GetAssignedTableDescrId() const
 	{
-		return m_isTargetRelation;
-	}
-
-	ULONG GetUniqueId() const {
-		return m_uniqueId;
+		return m_assigned_table_descr_id;
 	}
 
 };	// class CTableDescriptor

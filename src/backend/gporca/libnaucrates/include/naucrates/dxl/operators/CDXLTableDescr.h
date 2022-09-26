@@ -50,9 +50,8 @@ private:
 	// id of user the table needs to be accessed with
 	ULONG m_execute_as_user_id;
 
-	BOOL m_is_target_relation;
-
-	ULLONG m_unique_pointer_id;
+	// identificator of table descriptor, used for deduplication
+	ULONG m_table_descr_id;
 
 	// private copy ctor
 	CDXLTableDescr(const CDXLTableDescr &);
@@ -62,8 +61,7 @@ private:
 public:
 	// ctor/dtor
 	CDXLTableDescr(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
-				   ULONG ulExecuteAsUser, BOOL isTargetRelation = false,
-				   ULONG uniquePointerId = 0);
+				   ULONG ulExecuteAsUser, ULONG table_descr_id);
 
 	virtual ~CDXLTableDescr();
 
@@ -90,9 +88,7 @@ public:
 	// serialize to dxl format
 	void SerializeToDXL(CXMLSerializer *xml_serializer) const;
 
-	BOOL IsTargetRelation() const;
-
-	ULLONG GetUniquePointerId() const;
+	ULONG GetTableDescrId() const;
 };
 }  // namespace gpdxl
 

@@ -37,8 +37,8 @@ FORCE_GENERATE_DBGSTR(CTableDescriptor);
 CTableDescriptor::CTableDescriptor(
 	CMemoryPool *mp, IMDId *mdid, const CName &name,
 	BOOL convert_hash_to_random, IMDRelation::Ereldistrpolicy rel_distr_policy,
-	IMDRelation::Erelstoragetype erelstoragetype, ULONG ulExecuteAsUser, BOOL isTargetRelation,
-	ULLONG unique_pointer_id)
+	IMDRelation::Erelstoragetype erelstoragetype, ULONG ulExecuteAsUser, 
+	ULONG assigned_table_descr_id)
 	: m_mp(mp),
 	  m_mdid(mdid),
 	  m_name(mp, name),
@@ -53,8 +53,7 @@ CTableDescriptor::CTableDescriptor(
 	  m_num_of_partitions(0),
 	  m_execute_as_user_id(ulExecuteAsUser),
 	  m_fHasPartialIndexes(FDescriptorWithPartialIndexes()),
-	  m_isTargetRelation(isTargetRelation),
-	  m_uniqueId(unique_pointer_id)
+	  m_assigned_table_descr_id(assigned_table_descr_id)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(mdid->IsValid());

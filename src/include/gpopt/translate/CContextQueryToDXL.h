@@ -22,6 +22,7 @@
 
 #define GPDXL_CTE_ID_START 1
 #define GPDXL_COL_ID_START 1
+#define GPDXL_TABLE_DESCR_ID_START 1
 
 namespace gpdxl
 {
@@ -44,6 +45,11 @@ class CContextQueryToDXL
 	friend class CTranslatorScalarToDXL;
 
 private:
+	typedef CHashMap<
+		ULONG_PTR, ULONG, gpos::HashValue<ULONG_PTR>,
+		gpos::Equals<ULONG_PTR>, CleanupDelete<ULONG_PTR>, CleanupDelete<ULONG> > 
+		RTEPointerMap; //ULONG_PTR used for RangeTblEntry*
+
 	// memory pool
 	CMemoryPool *m_mp;
 
@@ -52,6 +58,12 @@ private:
 
 	// counter for generating unique CTE ids
 	CIdGenerator *m_cte_id_counter;
+
+	// counter for generating table descriptor id's (for further deduplication)
+	CIdGenerator *m_table_descr_id_counter;
+
+	// map of processed range table entries in a query (include subqueries)
+	RTEPointerMap *m_processed_rte_map;
 
 	// does the query have any distributed tables?
 	BOOL m_has_distributed_tables;
@@ -71,6 +83,8 @@ public:
 
 	// dtor
 	~CContextQueryToDXL();
+
+	ULONG GetTableDescrId(ULONG_PTR rte_ptr);
 };
 }  // namespace gpdxl
 #endif	// GPDXL_CContextQueryToDXL_H

@@ -148,7 +148,7 @@ public:
 										 const RangeTblEntry *rte,
 										 BOOL *is_distributed_table = NULL,
 										 BOOL *is_replicated_table = NULL,
-										 BOOL is_dml_table_descr = false);
+										 ULONG table_descr_id = -1);
 
 	// translate a RangeTableEntry into a CDXLLogicalTVF
 	static CDXLLogicalTVF *ConvertToCDXLLogicalTVF(CMemoryPool *mp,
