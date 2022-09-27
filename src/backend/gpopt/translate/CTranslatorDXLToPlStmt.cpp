@@ -469,10 +469,12 @@ CTranslatorDXLToPlStmt::SetParamIds(Plan *plan)
 //
 //	@doc:
 //		For given table descriptor this function detects: is current
-//		descriptor points to the target (result) relation on the current level,
-//		if so there is no need to call m_dxl_to_plstmt_context->AddRTE
-//		(append rte to m_dxl_to_plstmt_context->m_rtable_entries_list)
-// 		- deduplication. If current relation is not a target relation - append it.
+//		descriptor is a target (result) entry of query (or it's subqueries).
+//		If it's a not target (result) entry (GetAssociatedQueryId() == 0),
+// 		simply add the rte call m_dxl_to_plstmt_context->AddRTE
+//		(append rte to m_dxl_to_plstmt_context->m_rtable_entries_list).
+//		Else there was met a target entry (which may be duplicated), so
+//		add it, if was not alreay.
 // 		Also this function fills base_table_context and returns correct
 //		index for current rte.
 //
@@ -482,11 +484,11 @@ CTranslatorDXLToPlStmt::ProcessTableDescr(
 	const CDXLTableDescr *dxl_table_descr, RangeTblEntry **rtePtr,
 	gpdxl::CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode)
 {
-	ULONG target_descr_id = dxl_table_descr->GetAssociatedQueryId();
+	ULONG query_id_of_target_descr = dxl_table_descr->GetAssociatedQueryId();
 	Index index = gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
 	BOOL processed = false;
-	if (target_descr_id > 0) {
-		ULONG *key = GPOS_NEW(m_mp) ULONG(target_descr_id);
+	if (query_id_of_target_descr > 0) {
+		ULONG *key = GPOS_NEW(m_mp) ULONG(query_id_of_target_descr);
 		Index *usedIndex = m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Find(key);
 		if (usedIndex) {
 			index = *usedIndex;

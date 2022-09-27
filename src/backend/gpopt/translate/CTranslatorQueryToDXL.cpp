@@ -686,6 +686,18 @@ CTranslatorQueryToDXL::TranslateQueryToDXL()
 	}
 }
 
+//---------------------------------------------------------------------------
+//	@function:
+//		CTranslatorQueryToDXL::GetTableDescr
+//
+//	@doc:
+//		Fills table descriptor of query. Assume, that subquery and further
+// 		paln would have only one table descriptor, which referes to target
+//		(result) relation, so it's worth to add  only query_id at table descr
+//		(without storing id of relation of pg query), for further
+//		deduplication target (result) relations
+//
+//---------------------------------------------------------------------------
 CDXLTableDescr*
 CTranslatorQueryToDXL::GetTableDescr(const RangeTblEntry *rte, ULONG rt_index)
 {

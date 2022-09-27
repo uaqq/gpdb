@@ -138,8 +138,8 @@ private:
 	// CTE producer IDs defined at the current query level
 	UlongBoolHashMap *m_cteid_at_current_query_level_map;
 
-	// id of current query in general query, used for deduplication of target entries
-	// (unique index inside the one level query (not for subquery))
+	// id of current query (and for nested queries), used for 
+	// deduplication of target (result) entries (unique index)
 	ULONG m_query_id;
 
 	//ctor

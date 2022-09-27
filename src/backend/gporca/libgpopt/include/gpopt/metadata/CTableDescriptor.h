@@ -94,7 +94,7 @@ private:
 	// identificator of query to which entry belongs, this field used for deduplication
 	// target entries of query. if value > 0 than table descriptor is a target relation
 	// (result) of query.
-	BOOL m_associated_query_id;
+	ULONG m_associated_query_id;
 
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
