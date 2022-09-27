@@ -53,7 +53,7 @@ CTableDescriptor::CTableDescriptor(
 	  m_num_of_partitions(0),
 	  m_execute_as_user_id(ulExecuteAsUser),
 	  m_fHasPartialIndexes(FDescriptorWithPartialIndexes()),
-	  m_assigned_table_descr_id(assigned_table_descr_id)
+	  m_assigned_target_descr_id(assigned_table_descr_id)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(mdid->IsValid());

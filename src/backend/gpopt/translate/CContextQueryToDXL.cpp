@@ -28,28 +28,27 @@ CContextQueryToDXL::CContextQueryToDXL(CMemoryPool *mp)
 {
 	// map that stores gpdb att to optimizer col mapping
 	m_colid_counter = GPOS_NEW(mp) CIdGenerator(GPDXL_COL_ID_START);
-	m_processed_rte_map = GPOS_NEW(mp) RTEPointerMap(mp);
-	m_table_descr_id_counter =  GPOS_NEW(mp) CIdGenerator(GPDXL_TABLE_DESCR_ID_START);
+	m_target_relations_counter = GPOS_NEW(mp) CIdGenerator(GPDXL_TABLE_DESCR_ID_START);
 	m_cte_id_counter = GPOS_NEW(mp) CIdGenerator(GPDXL_CTE_ID_START);
 }
 
 CContextQueryToDXL::~CContextQueryToDXL()
 {
-	m_processed_rte_map->Release();
-	GPOS_DELETE(m_table_descr_id_counter);
+	GPOS_DELETE(m_target_relations_counter);
 	GPOS_DELETE(m_colid_counter);
 	GPOS_DELETE(m_cte_id_counter);
 }
 
-ULONG CContextQueryToDXL::GetTableDescrId(ULONG_PTR rte_ptr)
+ULONG CContextQueryToDXL::GetNextTargetRelId()
 {
-	ULONG *id = NULL;
-	ULONG_PTR *key = GPOS_NEW(m_mp) ULONG_PTR(rte_ptr);
-	if ((id = m_processed_rte_map->Find(key))) {
-		return *id;
-	}
+	return m_target_relations_counter->next_id();
+	// ULONG *id = NULL;
+	// ULONG_PTR *key = GPOS_NEW(m_mp) ULONG_PTR(rte_ptr);
+	// if ((id = m_processed_rte_map->Find(key))) {
+	// 	return *id;
+	// }
 
-	ULONG *new_id = GPOS_NEW(m_mp) ULONG(m_table_descr_id_counter->next_id());
-	m_processed_rte_map->Insert(key, new_id);
-	return *new_id;
+	// ULONG *new_id = GPOS_NEW(m_mp) ULONG(m_table_descr_id_counter->next_id());
+	// m_processed_rte_map->Insert(key, new_id);
+	// return *new_id;
 }

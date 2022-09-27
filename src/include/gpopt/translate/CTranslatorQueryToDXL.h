@@ -138,6 +138,9 @@ private:
 	// CTE producer IDs defined at the current query level
 	UlongBoolHashMap *m_cteid_at_current_query_level_map;
 
+	// target relation unique index inside the one level query (not for subquery)
+	ULONG m_target_relation_index;
+
 	//ctor
 	// private constructor, called from the public factory function QueryToDXLInstance
 	CTranslatorQueryToDXL(
@@ -427,6 +430,8 @@ private:
 
 	// true iff this query or one of its ancestors is a DML query
 	BOOL IsDMLQuery();
+
+	CDXLTableDescr* GetTableDescr(const RangeTblEntry *rte, ULONG rt_index);
 
 public:
 	// dtor

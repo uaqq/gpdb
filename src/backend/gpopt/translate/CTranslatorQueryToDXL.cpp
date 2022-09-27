@@ -116,6 +116,8 @@ CTranslatorQueryToDXL::CTranslatorQueryToDXL(
 	GPOS_ASSERT(NULL != query);
 	CheckSupportedCmdType(query);
 
+	m_target_relation_index = m_context->GetNextTargetRelId();
+
 	CheckRangeTable(query);
 
 	// GPDB_94_MERGE_FIXME: WITH CHECK OPTION views are not supported yet.
@@ -684,6 +686,22 @@ CTranslatorQueryToDXL::TranslateQueryToDXL()
 	}
 }
 
+CDXLTableDescr*
+CTranslatorQueryToDXL::GetTableDescr(const RangeTblEntry *rte, ULONG rt_index)
+{
+	ULONG target_relation_id = 0;
+	if (m_query->resultRelation > 0 && m_query->resultRelation == rt_index) {
+		target_relation_id = m_target_relation_index;
+	} 
+
+	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+		&m_context->m_has_distributed_tables,
+		&m_context->m_has_replicated_tables,
+		target_relation_id);
+	return table_descr;
+}
+
 //---------------------------------------------------------------------------
 //	@function:
 //		CTranslatorQueryToDXL::TranslateInsertQueryToDXL
@@ -708,12 +726,13 @@ CTranslatorQueryToDXL::TranslateInsertQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
-	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables,
-		table_descr_id);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+	
+	// CTranslatorUtils::GetTableDescr(
+	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+	// 	&m_context->m_has_distributed_tables,
+	// 	&m_context->m_has_replicated_tables,
+	// 	table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1186,12 +1205,13 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
-	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables,
-		table_descr_id);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+
+	// CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
+	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+	// 	&m_context->m_has_distributed_tables,
+	// 	&m_context->m_has_replicated_tables,
+	// 	table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1262,12 +1282,14 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 	const RangeTblEntry *rte = (RangeTblEntry *) gpdb::ListNth(
 		m_query->rtable, m_query->resultRelation - 1);
 
-	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
-	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables,
-		table_descr_id);
+	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
+	
+
+	// CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
+	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+	// 	&m_context->m_has_distributed_tables,
+	// 	&m_context->m_has_replicated_tables,
+	// 	table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -3252,16 +3274,15 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 				   GPOS_WSZ_LIT("ONLY in the FROM clause"));
 	}
 
-	ULONG table_descr_id = m_context->GetTableDescrId(ULONG_PTR(rte));
-
-	// BOOL is_target_rel = IsDMLQuery() && rt_index == ULONG(m_query->resultRelation);
 	// construct table descriptor for the scan node from the range table entry
-	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		&m_context->m_has_distributed_tables,
-		&m_context->m_has_replicated_tables,
-		table_descr_id);
+	// CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
+	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+	// 	&m_context->m_has_distributed_tables,
+	// 	&m_context->m_has_replicated_tables,
+	// 	table_descr_id);
 
+	CDXLTableDescr *dxl_table_descr = GetTableDescr(rte, rt_index);
+	
 	CDXLLogicalGet *dxl_op = NULL;
 	const IMDRelation *md_rel =
 		m_md_accessor->RetrieveRel(dxl_table_descr->MDId());

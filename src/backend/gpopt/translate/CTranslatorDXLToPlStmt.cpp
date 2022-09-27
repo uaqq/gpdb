@@ -482,22 +482,36 @@ CTranslatorDXLToPlStmt::ProcessTableDescr(
 	const CDXLTableDescr *dxl_table_descr, RangeTblEntry **rtePtr,
 	gpdxl::CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode)
 {	
-	ULONG *key = GPOS_NEW(m_mp) ULONG(dxl_table_descr->GetTableDescrId());
+	ULONG target_descr_id = dxl_table_descr->GetTargetRelationId();
 	Index index = gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
-	Index *usedIndex = m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Find(key);
-	if (usedIndex) {
-		index = *usedIndex;
-	} else {
-		m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Insert(
-			key, GPOS_NEW(m_mp) Index(index));
+	BOOL processed = false;
+	if (target_descr_id > 0) {
+		ULONG *key = GPOS_NEW(m_mp) ULONG(target_descr_id);
+		Index *usedIndex = m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Find(key);
+		if (usedIndex) {
+			index = *usedIndex;
+			processed = true;
+		} else {
+			m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Insert(
+				key, GPOS_NEW(m_mp) Index(index));
+		}
 	}
+	// if (dxl_table_descr->GetTableDescrId())
+	// ULONG *key = dxl_table_descr->GetTableDescrId());
+	// Index *usedIndex = m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Find(key);
+	// if (usedIndex) {
+	// 	index = *usedIndex;
+	// } else {
+	// 	m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Insert(
+	// 		key, GPOS_NEW(m_mp) Index(index));
+	// }
 
 	//We have to fill base_table_context and set valid index
 	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
 		dxl_table_descr, index, base_table_context);
 	GPOS_ASSERT(NULL != rte);
 
-	if (!usedIndex) {
+	if (!processed) {
 		rte->requiredPerms |= acl_mode;
 		m_dxl_to_plstmt_context->AddRTE(rte);
 	}

@@ -60,7 +60,7 @@ private:
 	CIdGenerator *m_cte_id_counter;
 
 	// counter for generating table descriptor id's (for further deduplication)
-	CIdGenerator *m_table_descr_id_counter;
+	CIdGenerator *m_target_relations_counter;
 
 	// map of processed range table entries in a query (include subqueries)
 	RTEPointerMap *m_processed_rte_map;
@@ -84,7 +84,7 @@ public:
 	// dtor
 	~CContextQueryToDXL();
 
-	ULONG GetTableDescrId(ULONG_PTR rte_ptr);
+	ULONG GetNextTargetRelId();
 };
 }  // namespace gpdxl
 #endif	// GPDXL_CContextQueryToDXL_H

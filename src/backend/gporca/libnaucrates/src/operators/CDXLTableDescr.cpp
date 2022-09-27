@@ -36,7 +36,7 @@ CDXLTableDescr::CDXLTableDescr(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
 	  m_mdname(mdname),
 	  m_dxl_column_descr_array(NULL),
 	  m_execute_as_user_id(ulExecuteAsUser),
-	  m_table_descr_id(table_descr_id)
+	  m_target_relation_id(table_descr_id)
 {
 	GPOS_ASSERT(NULL != m_mdname);
 	m_dxl_column_descr_array = GPOS_NEW(mp) CDXLColDescrArray(mp);
@@ -229,9 +229,9 @@ CDXLTableDescr::SerializeToDXL(CXMLSerializer *xml_serializer) const
 }
 
 ULONG
-CDXLTableDescr::GetTableDescrId() const
+CDXLTableDescr::GetTargetRelationId() const
 {
-	return m_table_descr_id;
+	return m_target_relation_id;
 }
 
 // EOF

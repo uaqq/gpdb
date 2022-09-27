@@ -92,7 +92,7 @@ private:
 	BOOL m_fHasPartialIndexes;
 
 	// assigned id of table descriptior for further deduplicatio of rte at final plan
-	BOOL m_assigned_table_descr_id;
+	BOOL m_assigned_target_descr_id;
 
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
@@ -106,7 +106,7 @@ public:
 					 BOOL convert_hash_to_random,
 					 IMDRelation::Ereldistrpolicy rel_distr_policy,
 					 IMDRelation::Erelstoragetype erelstoragetype,
-					 ULONG ulExecuteAsUser, ULONG assigned_table_descr_id
+					 ULONG ulExecuteAsUser, ULONG assigned_table_descr_id = 0
 					 );
 
 	// dtor
@@ -243,9 +243,9 @@ public:
 			   m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyRows;
 	}
 
-	ULONG GetAssignedTableDescrId() const
+	ULONG GetAssignedTargetDescrId() const
 	{
-		return m_assigned_table_descr_id;
+		return m_assigned_target_descr_id;
 	}
 
 };	// class CTableDescriptor
