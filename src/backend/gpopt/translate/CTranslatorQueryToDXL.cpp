@@ -727,12 +727,7 @@ CTranslatorQueryToDXL::TranslateInsertQueryToDXL()
 		m_query->rtable, m_query->resultRelation - 1);
 
 	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
-	
-	// CTranslatorUtils::GetTableDescr(
-	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-	// 	&m_context->m_has_distributed_tables,
-	// 	&m_context->m_has_replicated_tables,
-	// 	table_descr_id);
+
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1207,11 +1202,6 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 
 	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
 
-	// CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-	// 	&m_context->m_has_distributed_tables,
-	// 	&m_context->m_has_replicated_tables,
-	// 	table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -1283,13 +1273,7 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 		m_query->rtable, m_query->resultRelation - 1);
 
 	CDXLTableDescr *table_descr = GetTableDescr(rte, m_query->resultRelation);
-	
 
-	// CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-	// 	&m_context->m_has_distributed_tables,
-	// 	&m_context->m_has_replicated_tables,
-	// 	table_descr_id);
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	if (!optimizer_enable_dml_triggers &&
 		CTranslatorUtils::RelHasTriggers(m_mp, m_md_accessor, md_rel,
@@ -3275,12 +3259,6 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 	}
 
 	// construct table descriptor for the scan node from the range table entry
-	// CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
-	// 	m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-	// 	&m_context->m_has_distributed_tables,
-	// 	&m_context->m_has_replicated_tables,
-	// 	table_descr_id);
-
 	CDXLTableDescr *dxl_table_descr = GetTableDescr(rte, rt_index);
 	
 	CDXLLogicalGet *dxl_op = NULL;

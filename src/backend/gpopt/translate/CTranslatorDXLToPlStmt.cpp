@@ -469,10 +469,10 @@ CTranslatorDXLToPlStmt::SetParamIds(Plan *plan)
 //
 //	@doc:
 //		For given table descriptor this function detects: is current
-//		descriptor points to the target (result) relation of plan, if so
-//		there is no need to call m_dxl_to_plstmt_context->AddRTE (append rte
-// 		to m_dxl_to_plstmt_context->m_rtable_entries_list) - deduplication.
-//		If current relation is not a target relation - append it.
+//		descriptor points to the target (result) relation on the current level,
+//		if so there is no need to call m_dxl_to_plstmt_context->AddRTE
+//		(append rte to m_dxl_to_plstmt_context->m_rtable_entries_list)
+// 		- deduplication. If current relation is not a target relation - append it.
 // 		Also this function fills base_table_context and returns correct
 //		index for current rte.
 //
@@ -496,15 +496,6 @@ CTranslatorDXLToPlStmt::ProcessTableDescr(
 				key, GPOS_NEW(m_mp) Index(index));
 		}
 	}
-	// if (dxl_table_descr->GetTableDescrId())
-	// ULONG *key = dxl_table_descr->GetTableDescrId());
-	// Index *usedIndex = m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Find(key);
-	// if (usedIndex) {
-	// 	index = *usedIndex;
-	// } else {
-	// 	m_dxl_to_plstmt_context->GetUsedRelationIndexesMap()->Insert(
-	// 		key, GPOS_NEW(m_mp) Index(index));
-	// }
 
 	//We have to fill base_table_context and set valid index
 	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(

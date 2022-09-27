@@ -42,13 +42,4 @@ CContextQueryToDXL::~CContextQueryToDXL()
 ULONG CContextQueryToDXL::GetNextTargetRelId()
 {
 	return m_target_relations_counter->next_id();
-	// ULONG *id = NULL;
-	// ULONG_PTR *key = GPOS_NEW(m_mp) ULONG_PTR(rte_ptr);
-	// if ((id = m_processed_rte_map->Find(key))) {
-	// 	return *id;
-	// }
-
-	// ULONG *new_id = GPOS_NEW(m_mp) ULONG(m_table_descr_id_counter->next_id());
-	// m_processed_rte_map->Insert(key, new_id);
-	// return *new_id;
 }
