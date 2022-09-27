@@ -481,7 +481,7 @@ Index
 CTranslatorDXLToPlStmt::ProcessTableDescr(
 	const CDXLTableDescr *dxl_table_descr, RangeTblEntry **rtePtr,
 	gpdxl::CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode)
-{	
+{
 	ULONG target_descr_id = dxl_table_descr->GetTargetRelationId();
 	Index index = gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
 	BOOL processed = false;

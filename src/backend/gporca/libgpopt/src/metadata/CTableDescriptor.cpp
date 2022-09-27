@@ -37,7 +37,7 @@ FORCE_GENERATE_DBGSTR(CTableDescriptor);
 CTableDescriptor::CTableDescriptor(
 	CMemoryPool *mp, IMDId *mdid, const CName &name,
 	BOOL convert_hash_to_random, IMDRelation::Ereldistrpolicy rel_distr_policy,
-	IMDRelation::Erelstoragetype erelstoragetype, ULONG ulExecuteAsUser, 
+	IMDRelation::Erelstoragetype erelstoragetype, ULONG ulExecuteAsUser,
 	ULONG assigned_table_descr_id)
 	: m_mp(mp),
 	  m_mdid(mdid),

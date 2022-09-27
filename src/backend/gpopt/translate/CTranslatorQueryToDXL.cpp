@@ -692,7 +692,7 @@ CTranslatorQueryToDXL::GetTableDescr(const RangeTblEntry *rte, ULONG rt_index)
 	ULONG target_relation_id = 0;
 	if (m_query->resultRelation > 0 && m_query->resultRelation == rt_index) {
 		target_relation_id = m_target_relation_index;
-	} 
+	}
 
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
@@ -2168,7 +2168,7 @@ CTranslatorQueryToDXL::CreateSimpleGroupBy(
 		TargetEntry *te_equivalent =
 			CTranslatorUtils::GetGroupingColumnTargetEntry(
 				(Node *) target_entry->expr, group_clause, target_list);
-  
+
 		BOOL is_grouping_col =
 			grpby_cols_bitset->Get(target_entry->ressortgroupref) ||
 			(NULL != te_equivalent &&
@@ -3260,7 +3260,7 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 
 	// construct table descriptor for the scan node from the range table entry
 	CDXLTableDescr *dxl_table_descr = GetTableDescr(rte, rt_index);
-	
+
 	CDXLLogicalGet *dxl_op = NULL;
 	const IMDRelation *md_rel =
 		m_md_accessor->RetrieveRel(dxl_table_descr->MDId());
