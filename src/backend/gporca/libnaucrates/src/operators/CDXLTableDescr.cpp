@@ -30,13 +30,13 @@ using namespace gpdxl;
 //
 //---------------------------------------------------------------------------
 CDXLTableDescr::CDXLTableDescr(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
-							   ULONG ulExecuteAsUser, ULONG table_descr_id)
+							   ULONG ulExecuteAsUser, ULONG query_id)
 	: m_mp(mp),
 	  m_mdid(mdid),
 	  m_mdname(mdname),
 	  m_dxl_column_descr_array(NULL),
 	  m_execute_as_user_id(ulExecuteAsUser),
-	  m_target_relation_id(table_descr_id)
+	  m_associated_query_id(query_id)
 {
 	GPOS_ASSERT(NULL != m_mdname);
 	m_dxl_column_descr_array = GPOS_NEW(mp) CDXLColDescrArray(mp);
@@ -228,10 +228,20 @@ CDXLTableDescr::SerializeToDXL(CXMLSerializer *xml_serializer) const
 		CDXLTokens::GetDXLTokenStr(EdxltokenTableDescr));
 }
 
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CDXLTableDescr::GetAssociatedQueryId
+//
+//	@doc:
+//		Return id of query, to which TableDescr belongs to
+//		(it it's a target entry)
+//
+//---------------------------------------------------------------------------
 ULONG
-CDXLTableDescr::GetTargetRelationId() const
+CDXLTableDescr::GetAssociatedQueryId() const
 {
-	return m_target_relation_id;
+	return m_associated_query_id;
 }
 
 // EOF

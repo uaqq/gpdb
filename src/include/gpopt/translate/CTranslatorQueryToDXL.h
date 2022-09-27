@@ -138,8 +138,9 @@ private:
 	// CTE producer IDs defined at the current query level
 	UlongBoolHashMap *m_cteid_at_current_query_level_map;
 
-	// target relation unique index inside the one level query (not for subquery)
-	ULONG m_target_relation_index;
+	// id of current query in general query, used for deduplication of target entries
+	// (unique index inside the one level query (not for subquery))
+	ULONG m_query_id;
 
 	//ctor
 	// private constructor, called from the public factory function QueryToDXLInstance

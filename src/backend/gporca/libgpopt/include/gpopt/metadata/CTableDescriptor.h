@@ -91,8 +91,10 @@ private:
 	// if true, it means this descriptor has partial indexes
 	BOOL m_fHasPartialIndexes;
 
-	// assigned id of table descriptior for further deduplicatio of rte at final plan
-	BOOL m_assigned_target_descr_id;
+	// identificator of query to which entry belongs, this field used for deduplication
+	// target entries of query. if value > 0 than table descriptor is a target relation
+	// (result) of query.
+	BOOL m_associated_query_id;
 
 	// private copy ctor
 	CTableDescriptor(const CTableDescriptor &);
@@ -243,9 +245,9 @@ public:
 			   m_erelstoragetype == IMDRelation::ErelstorageAppendOnlyRows;
 	}
 
-	ULONG GetAssignedTargetDescrId() const
+	ULONG GetAssociatedQueryId() const
 	{
-		return m_assigned_target_descr_id;
+		return m_associated_query_id;
 	}
 
 };	// class CTableDescriptor

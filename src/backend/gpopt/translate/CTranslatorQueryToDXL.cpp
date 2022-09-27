@@ -116,7 +116,7 @@ CTranslatorQueryToDXL::CTranslatorQueryToDXL(
 	GPOS_ASSERT(NULL != query);
 	CheckSupportedCmdType(query);
 
-	m_target_relation_index = m_context->GetNextTargetRelId();
+	m_query_id = m_context->GetNextQueryId();
 
 	CheckRangeTable(query);
 
@@ -689,16 +689,16 @@ CTranslatorQueryToDXL::TranslateQueryToDXL()
 CDXLTableDescr*
 CTranslatorQueryToDXL::GetTableDescr(const RangeTblEntry *rte, ULONG rt_index)
 {
-	ULONG target_relation_id = 0;
+	ULONG target_assigned_to_query_id = 0;
 	if (m_query->resultRelation > 0 && m_query->resultRelation == rt_index) {
-		target_relation_id = m_target_relation_index;
+		target_assigned_to_query_id = m_query_id;
 	}
 
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
 		&m_context->m_has_distributed_tables,
 		&m_context->m_has_replicated_tables,
-		target_relation_id);
+		target_assigned_to_query_id);
 	return table_descr;
 }
 
