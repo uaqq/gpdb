@@ -65,9 +65,9 @@ JOBS_THAT_SHOULD_NOT_BLOCK_RELEASE = ['prepare_binary_swap_gpdb_centos6', 'clien
 def suggested_git_remote():
     default_remote = "<https://github.com/<github-user>/gpdb>"
 
-    remote = subprocess.check_output("git ls-remote --get-url", shell=True).rstrip()
+    remote = subprocess.check_output(["git", "ls-remote", "--get-url"]).decode('utf-8').rstrip()
 
-    if "greenplum-db/gpdb"  in remote:
+    if "greenplum-db/gpdb" in remote:
         return default_remote
 
     if "git@" in remote:
@@ -78,14 +78,17 @@ def suggested_git_remote():
     return remote
 
 def suggested_git_branch():
-    default_branch = "<branch-name>"
+    """Try to guess the current git branch"""
+    branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode('utf-8').rstrip()
+    if branch == "master" or is_a_base_branch(branch):
+        return "<branch-name>"
+    return branch
 
-    branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True).rstrip()
 
-    if branch == "master" or branch == "5X_STABLE":
-        return default_branch
-    else:
-        return branch
+def is_a_base_branch(branch):
+    # best effort in matching a base branch (5X_STABLE, 6X_STABLE, etc.)
+    matched = re.match("\d+X_STABLE", branch)
+    return matched is not None
 
 
 def render_template(template_filename, context):
@@ -130,6 +133,11 @@ def create_pipeline(git_remote, git_branch):
     stagger_sections = False
     if ARGS.pipeline_type == "prod" or len(ARGS.test_sections) > 2:
         stagger_sections = True
+        
+    if ARGS.pipeline_type == 'prod':
+        variables_type = "prod"
+    else:
+        variables_type = "dev"
 
     context = {
         'template_filename': ARGS.template_filename,
@@ -142,7 +150,8 @@ def create_pipeline(git_remote, git_branch):
         'test_trigger': test_trigger,
         'build_test_rc_rpm': ARGS.build_test_rc_rpm,
         'git_username': git_remote.split('/')[-2],
-        'git_branch': git_branch
+        'git_branch': git_branch,
+        'variables_type': variables_type
     }
 
     pipeline_yml = render_template(ARGS.template_filename, context)
@@ -177,8 +186,7 @@ def how_to_use_generated_pipeline_message(git_remote, git_branch):
         msg += '    set-pipeline \\\n'
         msg += '    -p %s \\\n' % pipeline_name
         msg += '    -c %s \\\n' % ARGS.output_filepath
-        msg += '    -l ~/workspace/gp-continuous-integration/secrets/gpdb_common-ci-secrets.yml \\\n'
-        msg += '    -l ~/workspace/gp-continuous-integration/secrets/gpdb_5X_STABLE-ci-secrets.yml\\\n'
+        msg += '    -l %s \\\n' % os.path.join(PIPELINES_DIR, "../vars/common_prod.yml")
         msg += '    -v pipeline-name=%s\n' % pipeline_name
     else:
         pipeline_name  = os.path.basename(ARGS.output_filepath).rsplit('.', 1)[0]
@@ -187,9 +195,8 @@ def how_to_use_generated_pipeline_message(git_remote, git_branch):
         msg += '    set-pipeline \\\n'
         msg += '    -p %s \\\n' % pipeline_name
         msg += '    -c %s \\\n' % ARGS.output_filepath
-        msg += '    -l ~/workspace/gp-continuous-integration/secrets/gpdb_common-ci-secrets.yml \\\n'
-        msg += '    -l ~/workspace/gp-continuous-integration/secrets/gpdb_5X_STABLE-ci-secrets.dev.yml \\\n'
-        msg += '    -l ~/workspace/gp-continuous-integration/secrets/ccp_ci_secrets_dev.yml \\\n'
+        msg += '    -l %s \\\n' % os.path.join(PIPELINES_DIR, "../vars/common_prod.yml")
+        msg += '    -l %s \\\n' % os.path.join(PIPELINES_DIR, "../vars/dev.yml")
         msg += '    -v bucket-name=gpdb5-concourse-builds-dev \\\n'
         msg += '    -v gpdb-git-remote=%s \\\n' % git_remote
         msg += '    -v gpdb-git-branch=%s \\\n' % git_branch
