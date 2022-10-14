@@ -304,7 +304,7 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
     <dxl:Plan Id="0" SpaceSize="6">
       <dxl:DMLInsert Columns="8" ActionCol="16" OidCol="0" CtidCol="0" SegmentIdCol="0" InputSorted="false">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="862.031910" Rows="3.000000" Width="4"/>
+          <dxl:Cost StartupCost="0" TotalCost="862.031650" Rows="3.000000" Width="4"/>
         </dxl:Properties>
         <dxl:DirectDispatchInfo/>
         <dxl:ProjList>
@@ -326,7 +326,7 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
         </dxl:TableDescriptor>
         <dxl:Result>
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="862.000660" Rows="3.000000" Width="8"/>
+            <dxl:Cost StartupCost="0" TotalCost="862.000400" Rows="3.000000" Width="8"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="8" Alias="a">
@@ -338,9 +338,9 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
           </dxl:ProjList>
           <dxl:Filter/>
           <dxl:OneTimeFilter/>
-          <dxl:BroadcastMotion InputSegments="0" OutputSegments="0,1,2">
+          <dxl:BroadcastMotion InputSegments="0,1,2" OutputSegments="0,1,2">
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="862.000652" Rows="3.000000" Width="4"/>
+              <dxl:Cost StartupCost="0" TotalCost="862.000392" Rows="3.000000" Width="4"/>
             </dxl:Properties>
             <dxl:ProjList>
               <dxl:ProjElem ColId="8" Alias="a">
@@ -351,7 +351,7 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
             <dxl:SortingColumnList/>
             <dxl:HashJoin JoinType="Inner">
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="862.000437" Rows="3.000000" Width="4"/>
+                <dxl:Cost StartupCost="0" TotalCost="862.000321" Rows="1.000000" Width="4"/>
               </dxl:Properties>
               <dxl:ProjList>
                 <dxl:ProjElem ColId="8" Alias="a">
@@ -366,45 +366,57 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
                   <dxl:Ident ColId="8" ColName="a" TypeMdid="0.23.1.0"/>
                 </dxl:Comparison>
               </dxl:HashCondList>
-              <dxl:Limit>
+              <dxl:RandomMotion InputSegments="0" OutputSegments="0,1,2">
                 <dxl:Properties>
-                  <dxl:Cost StartupCost="0" TotalCost="431.000030" Rows="3.000000" Width="4"/>
+                  <dxl:Cost StartupCost="0" TotalCost="431.000041" Rows="1.000000" Width="4"/>
                 </dxl:Properties>
                 <dxl:ProjList>
                   <dxl:ProjElem ColId="0" Alias="c">
                     <dxl:Ident ColId="0" ColName="c" TypeMdid="0.23.1.0"/>
                   </dxl:ProjElem>
                 </dxl:ProjList>
-                <dxl:TableScan>
+                <dxl:Filter/>
+                <dxl:SortingColumnList/>
+                <dxl:Limit>
                   <dxl:Properties>
-                    <dxl:Cost StartupCost="0" TotalCost="431.000019" Rows="3.000000" Width="4"/>
+                    <dxl:Cost StartupCost="0" TotalCost="431.000030" Rows="3.000000" Width="4"/>
                   </dxl:Properties>
                   <dxl:ProjList>
                     <dxl:ProjElem ColId="0" Alias="c">
                       <dxl:Ident ColId="0" ColName="c" TypeMdid="0.23.1.0"/>
                     </dxl:ProjElem>
                   </dxl:ProjList>
-                  <dxl:Filter/>
-                  <dxl:TableDescriptor Mdid="0.16431.1.0" TableName="hottoast">
-                    <dxl:Columns>
-                      <dxl:Column ColId="0" Attno="1" ColName="c" TypeMdid="0.23.1.0" ColWidth="4"/>
-                      <dxl:Column ColId="1" Attno="-1" ColName="ctid" TypeMdid="0.27.1.0" ColWidth="6"/>
-                      <dxl:Column ColId="2" Attno="-3" ColName="xmin" TypeMdid="0.28.1.0" ColWidth="4"/>
-                      <dxl:Column ColId="3" Attno="-4" ColName="cmin" TypeMdid="0.29.1.0" ColWidth="4"/>
-                      <dxl:Column ColId="4" Attno="-5" ColName="xmax" TypeMdid="0.28.1.0" ColWidth="4"/>
-                      <dxl:Column ColId="5" Attno="-6" ColName="cmax" TypeMdid="0.29.1.0" ColWidth="4"/>
-                      <dxl:Column ColId="6" Attno="-7" ColName="tableoid" TypeMdid="0.26.1.0" ColWidth="4"/>
-                      <dxl:Column ColId="7" Attno="-8" ColName="gp_segment_id" TypeMdid="0.23.1.0" ColWidth="4"/>
-                    </dxl:Columns>
-                  </dxl:TableDescriptor>
-                </dxl:TableScan>
-                <dxl:LimitCount>
-                  <dxl:ConstValue TypeMdid="0.20.1.0" Value="3"/>
-                </dxl:LimitCount>
-                <dxl:LimitOffset>
-                  <dxl:ConstValue TypeMdid="0.20.1.0" Value="0"/>
-                </dxl:LimitOffset>
-              </dxl:Limit>
+                  <dxl:TableScan>
+                    <dxl:Properties>
+                      <dxl:Cost StartupCost="0" TotalCost="431.000019" Rows="3.000000" Width="4"/>
+                    </dxl:Properties>
+                    <dxl:ProjList>
+                      <dxl:ProjElem ColId="0" Alias="c">
+                        <dxl:Ident ColId="0" ColName="c" TypeMdid="0.23.1.0"/>
+                      </dxl:ProjElem>
+                    </dxl:ProjList>
+                    <dxl:Filter/>
+                    <dxl:TableDescriptor Mdid="0.16431.1.0" TableName="hottoast">
+                      <dxl:Columns>
+                        <dxl:Column ColId="0" Attno="1" ColName="c" TypeMdid="0.23.1.0" ColWidth="4"/>
+                        <dxl:Column ColId="1" Attno="-1" ColName="ctid" TypeMdid="0.27.1.0" ColWidth="6"/>
+                        <dxl:Column ColId="2" Attno="-3" ColName="xmin" TypeMdid="0.28.1.0" ColWidth="4"/>
+                        <dxl:Column ColId="3" Attno="-4" ColName="cmin" TypeMdid="0.29.1.0" ColWidth="4"/>
+                        <dxl:Column ColId="4" Attno="-5" ColName="xmax" TypeMdid="0.28.1.0" ColWidth="4"/>
+                        <dxl:Column ColId="5" Attno="-6" ColName="cmax" TypeMdid="0.29.1.0" ColWidth="4"/>
+                        <dxl:Column ColId="6" Attno="-7" ColName="tableoid" TypeMdid="0.26.1.0" ColWidth="4"/>
+                        <dxl:Column ColId="7" Attno="-8" ColName="gp_segment_id" TypeMdid="0.23.1.0" ColWidth="4"/>
+                      </dxl:Columns>
+                    </dxl:TableDescriptor>
+                  </dxl:TableScan>
+                  <dxl:LimitCount>
+                    <dxl:ConstValue TypeMdid="0.20.1.0" Value="3"/>
+                  </dxl:LimitCount>
+                  <dxl:LimitOffset>
+                    <dxl:ConstValue TypeMdid="0.20.1.0" Value="0"/>
+                  </dxl:LimitOffset>
+                </dxl:Limit>
+              </dxl:RandomMotion>
               <dxl:TableScan>
                 <dxl:Properties>
                   <dxl:Cost StartupCost="0" TotalCost="431.000019" Rows="3.000000" Width="4"/>
