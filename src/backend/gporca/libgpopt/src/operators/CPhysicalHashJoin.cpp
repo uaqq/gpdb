@@ -518,7 +518,7 @@ CPhysicalHashJoin::PdsRequiredReplicate(
 	GPOS_ASSERT(CDistributionSpec::EdtStrictReplicated == pdsInner->Edt() ||
 				CDistributionSpec::EdtTaintedReplicated == pdsInner->Edt());
 	return GPOS_NEW(mp) CDistributionSpecNonSingleton(
-		true /* fAllowReplicated */, false /* fAllowEnforced */);
+		false /* fAllowReplicated */, true /* fAllowEnforced */);
 }
 
 
