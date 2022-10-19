@@ -42,8 +42,13 @@
  * in the backend, or printf-to-stderr-and-exit() in frontend builds.
  * One should therefore think twice about using this in libpq.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+char *
+_psprintf(const char * func, const char * file, int LINE, const char *fmt, ...)
+#else
 char *
 psprintf(const char *fmt,...)
+#endif
 {
 	size_t		len = 128;		/* initial assumption about buffer size */
 
@@ -57,7 +62,11 @@ psprintf(const char *fmt,...)
 		 * Allocate result buffer.  Note that in frontend this maps to malloc
 		 * with exit-on-error.
 		 */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		result = (char *) _palloc(len, func, file, LINE);
+#else
 		result = (char *) palloc(len);
+#endif
 
 		/* Try to format the data. */
 		va_start(args, fmt);

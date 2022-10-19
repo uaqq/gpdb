@@ -109,6 +109,14 @@ palloc0(Size size)
 	return pg_malloc0(size);
 }
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_palloc0(Size size)
+{
+	return pg_malloc0(size);
+}
+#endif
+
 void
 pfree(void *pointer)
 {
@@ -126,3 +134,11 @@ repalloc(void *pointer, Size size)
 {
 	return pg_realloc(pointer, size);
 }
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_repalloc(void *pointer, Size size)
+{
+	return pg_realloc(pointer, size);
+}
+#endif

@@ -56,6 +56,20 @@
 */
 
 /*
+ * Configure with #define EXTRA_DYNAMIC_MEMORY_DEBUG to enable collecting
+ * additional data for each allocation at MemoryContexts (function, file and
+ * line where was executed allocation function).
+ * Execute MemoryContextStats(TopMemoryContext) to print top of allocations
+ * for each MemoryContexts after summary counters of context.
+ * Change MAX_TOP_ALLOC_CHUNK_STATS for set how much items must be at top.
+ * Also should to add EXTRA_DYNAMIC_MEMORY_DEBUG to include/common/fe_memutils.h
+ */
+
+/*
+#define EXTRA_DYNAMIC_MEMORY_DEBUG
+*/
+
+/*
  * GPDB_93_MERGE_FIXME: This mechanism got broken. If this is resurrected and
  * and made working the --enable-testutils invocations should be readded to
  * gpAux/Makefile. For reference to where, the commit adding this comment has
@@ -105,6 +119,25 @@ extern volatile OOMTimeType* segmentOOMTime;
 extern volatile OOMTimeType oomTrackerStartTime;
 extern volatile OOMTimeType alreadyReportedOOMTime;
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+#define MAX_TOP_ALLOC_CHUNK_STATS 10
+
+extern void *_MemoryContextAlloc(MemoryContext context, Size size, const char * func, const char * file, int LINE);
+extern void *_MemoryContextAllocZero(MemoryContext context, Size size, const char * func, const char * file, int LINE);
+extern void *_MemoryContextAllocZeroAligned(MemoryContext context, Size size, const char * func, const char * file, int LINE);
+#define MemoryContextAlloc(__context__, __size__) _MemoryContextAlloc(__context__, __size__, __func__, __FILE__, __LINE__)
+#define MemoryContextAllocZero(__context__, __size__) _MemoryContextAllocZero(__context__, __size__, __func__, __FILE__, __LINE__)
+#define MemoryContextAllocZeroAligned(__context__, __size__) _MemoryContextAllocZeroAligned(__context__, __size__, __func__, __FILE__, __LINE__)
+
+extern void *_palloc(Size size, const char * func, const char * file, int LINE);
+extern void *_palloc0(Size size, const char * func, const char * file, int LINE);
+extern void *_repalloc(void *pointer, Size size, const char * func, const char * file, int LINE);
+#define palloc(__size__) _palloc(__size__, __func__, __FILE__, __LINE__)
+#define palloc0(__size__) _palloc0(__size__, __func__, __FILE__, __LINE__)
+#define repalloc(__pointer__, __size__) _repalloc(__pointer__, __size__, __func__, __FILE__, __LINE__)
+
+#else //EXTRA_DYNAMIC_MEMORY_DEBUG
+
 /*
  * Fundamental memory-allocation operations (more are in utils/memutils.h)
  */
@@ -115,6 +148,8 @@ extern void *MemoryContextAllocZeroAligned(MemoryContext context, Size size);
 extern void *palloc(Size size);
 extern void *palloc0(Size size);
 extern void *repalloc(void *pointer, Size size);
+#endif //EXTRA_DYNAMIC_MEMORY_DEBUG
+
 extern void pfree(void *pointer);
 
 /*
@@ -131,8 +166,15 @@ extern void pfree(void *pointer);
 		MemoryContextAllocZero(CurrentMemoryContext, sz) )
 
 /* Higher-limit allocators. */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+extern void *_MemoryContextAllocHuge(MemoryContext context, Size size, const char * func, const char * file, int LINE);
+extern void *_repalloc_huge(void *pointer, Size size, const char * func, const char * file, int LINE);
+#define MemoryContextAllocHuge(__context__,__size__) _MemoryContextAllocHuge(__context__,__size__, __func__, __FILE__, __LINE__)
+#define repalloc_huge(__pointer__, __size__) _repalloc_huge(__pointer__, __size__, __func__, __FILE__, __LINE__)
+#else // EXTRA_DYNAMIC_MEMORY_DEBUG
 extern void *MemoryContextAllocHuge(MemoryContext context, Size size);
 extern void *repalloc_huge(void *pointer, Size size);
+#endif // EXTRA_DYNAMIC_MEMORY_DEBUG
 
 /*
  * MemoryContextSwitchTo can't be a macro in standard C compilers.
@@ -165,12 +207,29 @@ MemoryContextSwitchTo(MemoryContext context)
  * These are like standard strdup() except the copied string is
  * allocated in a context, not with malloc().
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+extern char *_MemoryContextStrdup(MemoryContext context, const char *string, const char * func, const char * file, int LINE);
+extern char *_pstrdup(const char *in, const char * func, const char * file, int LINE);
+extern char *_pnstrdup(const char *in, Size len, const char * func, const char * file, int LINE);
+#define MemoryContextStrdup(__context__, __pointer__) _MemoryContextStrdup(__context__, __pointer__, __func__, __FILE__, __LINE__)
+#define pstrdup(__pointer__) _pstrdup(__pointer__, __func__, __FILE__, __LINE__)
+#define pnstrdup(__pointer__, __size__) _pnstrdup(__pointer__,__size__, __func__, __FILE__, __LINE__)
+
+#else
+
 extern char *MemoryContextStrdup(MemoryContext context, const char *string);
 extern char *pstrdup(const char *in);
 extern char *pnstrdup(const char *in, Size len);
+#endif
 
 /* sprintf into a palloc'd buffer --- these are in psprintf.c */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+extern char *_psprintf(const char * func, const char * file, int LINE, const char *fmt, ...) __attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
+#define psprintf(...) _psprintf(__func__, __FILE__, __LINE__, __VA_ARGS__)
+#else
 extern char *psprintf(const char *fmt,...) __attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
+#endif
+
 extern size_t pvsnprintf(char *buf, size_t len, const char *fmt, va_list args)  __attribute__((format(PG_PRINTF_ATTRIBUTE, 3, 0)));
 
 #if defined(WIN32) || defined(__CYGWIN__)

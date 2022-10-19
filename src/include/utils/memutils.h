@@ -96,6 +96,13 @@ typedef struct StandardChunkHeader
 	void *prev_chunk;
 	void *next_chunk;
 #endif
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextChunkStatKey key;
+	const char *exec_func;
+	const char *file;
+	int32_t init;
+	#define DYNAMIC_MEMORY_DEBUG_INIT_MAGIC 0x12345678
+#endif
 } StandardChunkHeader;
 
 #define STANDARDCHUNKHEADERSIZE  MAXALIGN(sizeof(StandardChunkHeader))

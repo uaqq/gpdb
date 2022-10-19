@@ -16,6 +16,26 @@ extern void *pg_malloc0(size_t size);
 extern void *pg_realloc(void *pointer, size_t size);
 extern void pg_free(void *pointer);
 
+/*
+ * Configure with #define EXTRA_DYNAMIC_MEMORY_DEBUG to enable collecting
+ * additional data for each allocation at MemoryContexts (function, file and
+ * line where was executed allocation function).
+ * Execute MemoryContextStats(TopMemoryContext) to print top of allocations
+ * for each MemoryContexts after summary counters of context.
+ * Also should to add EXTRA_DYNAMIC_MEMORY_DEBUG to include/utils/palloc.h
+ */
+
+/*
+#define EXTRA_DYNAMIC_MEMORY_DEBUG
+*/
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+#undef pstrdup
+#undef palloc
+#undef palloc0
+#undef repalloc
+#endif
+
 /* Equivalent functions, deliberately named the same as backend functions */
 extern char *pstrdup(const char *in);
 extern void *palloc(Size size);
@@ -24,9 +44,16 @@ extern void *repalloc(void *pointer, Size size);
 extern void pfree(void *pointer);
 
 /* sprintf into a palloc'd buffer --- these are in psprintf.c */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+extern char *
+_psprintf(const char * func, const char * file, int LINE, const char *fmt,...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
+#define psprintf(...) _psprintf(__func__, __FILE__, __LINE__, __VA_ARGS__)
+#else
 extern char *
 psprintf(const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
+#endif
 extern size_t
 pvsnprintf(char *buf, size_t len, const char *fmt, va_list args)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 3, 0)));

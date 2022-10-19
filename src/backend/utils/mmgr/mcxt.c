@@ -705,6 +705,47 @@ MemoryContext_LogContextStats(uint64 siblingCount, uint64 allAllocated,
 	allAllocated, allFreed, contextName);
 }
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+static int
+MemoryContextChunkStats_comparator(const void *l, const void *r)
+{
+	const MemoryContextChunkStat *l_chunk = *(MemoryContextChunkStat **)l;
+	const MemoryContextChunkStat *r_chunk = *(MemoryContextChunkStat **)r;
+
+	return r_chunk->bytes - l_chunk->bytes;
+}
+
+static void
+MemoryContext_printTopListOfChunks(MemoryContextChunkStat ***chunks,
+								   Size *ChunksCount)
+{
+	if (!*ChunksCount)
+		return;
+
+	int show_count = *ChunksCount < MAX_TOP_ALLOC_CHUNK_STATS ?
+						*ChunksCount : MAX_TOP_ALLOC_CHUNK_STATS;
+
+	qsort(*chunks, *ChunksCount, sizeof(MemoryContextChunkStat *),
+		  MemoryContextChunkStats_comparator);
+	write_stderr("\tList of top %d (all %ld) the biggest allocations\n",
+				 show_count, *ChunksCount);
+	write_stderr("\tfunction, file:line, bytes, count, function_of_allocation\n");
+
+	for (int idx = 0; idx < show_count; idx++)
+	{
+		StandardChunkHeader *header = (StandardChunkHeader *)(*chunks)[idx]->chunk;
+		write_stderr("\t%s, %s:%d, " UINT64_FORMAT " bytes, " UINT64_FORMAT ", %s\n",
+			header->key.parent_func, header->file, header->key.line,
+			(*chunks)[idx]->bytes, (*chunks)[idx]->count, header->exec_func);
+	}
+
+	for (int idx = 0; idx < *ChunksCount; idx++)
+		pfree((*chunks)[idx]);
+	pfree(*chunks);
+	*chunks = NULL;
+	*ChunksCount = 0;
+}
+#endif
 
 /*
  * MemoryContextStats_recur
@@ -737,7 +778,11 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
                          char *topContextName, char *nameBuffer, int nameBufferSize,
                          uint64 nBlocksTop, uint64 nChunksTop,
                          uint64 currentAvailableTop, uint64 allAllocatedTop,
-                         uint64 allFreedTop, uint64 maxHeldTop)
+                         uint64 allFreedTop, uint64 maxHeldTop
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+                         , MemoryContextChunkStat ***chunks, Size *chunks_count
+#endif
+                         )
 {
 	MemoryContext   child;
     char*           name;
@@ -756,6 +801,9 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 	 * collapse-able with other siblings. So, the siblingCount is set to 1.
 	 */
 	MemoryContext_LogContextStats(1 /* siblingCount */, allAllocatedTop, allFreedTop, currentAvailableTop, topContextName);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContext_printTopListOfChunks(chunks, chunks_count);
+#endif
 
     uint64 cumBlocks = 0;
     uint64 cumChunks = 0;
@@ -773,7 +821,12 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		/* Get name and ancestry of this MemoryContext */
 		name = MemoryContextName(child, rootContext, nameBuffer, nameBufferSize);
 
-		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
+		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable,
+								&allAllocated, &allFreed, &maxHeld
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+								, chunks, chunks_count
+#endif
+			);
 
 		if (child->firstchild == NULL)
 		{
@@ -801,6 +854,9 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 					 */
 
 					MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+					MemoryContext_printTopListOfChunks(chunks, chunks_count);
+#endif
 				}
 
 				cumBlocks = nBlocks;
@@ -829,10 +885,17 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 				 */
 
 				MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+				MemoryContext_printTopListOfChunks(chunks, chunks_count);
+#endif
 			}
 
 			MemoryContextStats_recur(child, rootContext, name, nameBuffer, nameBufferSize, nBlocks,
-					nChunks, currentAvailable, allAllocated, allFreed, maxHeld);
+					nChunks, currentAvailable, allAllocated, allFreed, maxHeld
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+					, chunks, chunks_count
+#endif
+					);
 
 			/*
 			 * We just traversed a child node, so we need to make sure we don't carry over
@@ -876,6 +939,19 @@ MemoryContextStats(MemoryContext context)
 {
     char*     name;
     char      namebuf[MAX_CONTEXT_NAME_SIZE];
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContext oldcontext;
+	MemoryContext ChunksStatContext;
+	ChunksStatContext = AllocSetContextCreate(NULL,
+											  "ChunksStat_tempContext",
+											  ALLOCSET_DEFAULT_MINSIZE,
+											  ALLOCSET_DEFAULT_INITSIZE,
+											  ALLOCSET_DEFAULT_MAXSIZE);
+	MemoryContextChunkStat **chunks = NULL;
+	Size chunks_count = 0;
+
+	oldcontext = MemoryContextSwitchTo(ChunksStatContext);
+#endif
 
 	AssertArg(MemoryContextIsValid(context));
 
@@ -892,11 +968,25 @@ MemoryContextStats(MemoryContext context)
 	int namebufsize = sizeof(namebuf);
 
 	/* Get the root context's stat and pass it to the MemoryContextStats_recur for printing */
-	(*context->methods.stats)(context, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
+	(*context->methods.stats)(context, &nBlocks, &nChunks, &currentAvailable,
+							  &allAllocated, &allFreed, &maxHeld
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+							  , &chunks, &chunks_count
+#endif
+							  );
 	name = MemoryContextName(context, context, namebuf, namebufsize);
 
     MemoryContextStats_recur(context, context, name, namebuf, namebufsize, nBlocks, nChunks,
-    		currentAvailable, allAllocated, allFreed, maxHeld);
+    		currentAvailable, allAllocated, allFreed, maxHeld
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+    		, &chunks, &chunks_count
+#endif
+    		);
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextSwitchTo(oldcontext);
+	MemoryContextDelete(ChunksStatContext);
+#endif
 }
 
 /*
@@ -1106,6 +1196,26 @@ MemoryContextCreate(NodeTag tag, Size size,
 	return node;
 }
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+static void MemoryContextWriteFuncAndLineToAllocedMemory(
+		void * ptr, const char * parent_func, const char * exec_func, const char * file, int line)
+{
+	Assert(parent_func);
+	Assert(exec_func);
+	Assert(file);
+	Assert(line);
+
+	StandardChunkHeader *header = (StandardChunkHeader *)
+		((char *) ptr - STANDARDCHUNKHEADERSIZE);
+
+	header->key.parent_func = parent_func;
+	header->key.line = line;
+	header->exec_func = exec_func;
+	header->file = file;
+	header->init = DYNAMIC_MEMORY_DEBUG_INIT_MAGIC;
+}
+#endif
+
 /*
  * MemoryContextAlloc
  *		Allocate space within the specified context.
@@ -1113,8 +1223,13 @@ MemoryContextCreate(NodeTag tag, Size size,
  * This could be turned into a macro, but we'd have to import
  * nodes/memnodes.h into postgres.h which seems a bad idea.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_MemoryContextAlloc(MemoryContext context, Size size, const char * func, const char * file, int LINE)
+#else
 void *
 MemoryContextAlloc(MemoryContext context, Size size)
+#endif
 {
 	void	   *ret;
 #ifdef PGTRACE_ENABLED
@@ -1145,6 +1260,10 @@ MemoryContextAlloc(MemoryContext context, Size size)
 	PG_TRACE5(memctxt__alloc, size, header->size, 0, 0, (long) context->name);
 #endif
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
@@ -1155,8 +1274,13 @@ MemoryContextAlloc(MemoryContext context, Size size)
  *	We could just call MemoryContextAlloc then clear the memory, but this
  *	is a very common combination, so we provide the combined operation.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_MemoryContextAllocZero(MemoryContext context, Size size, const char * func, const char * file, int LINE)
+#else
 void *
 MemoryContextAllocZero(MemoryContext context, Size size)
+#endif
 {
 	void	   *ret;
 
@@ -1189,6 +1313,10 @@ MemoryContextAllocZero(MemoryContext context, Size size)
 	PG_TRACE5(memctxt__alloc, size, header->size, 0, 0, (long) context->name);
 #endif
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
@@ -1199,8 +1327,13 @@ MemoryContextAllocZero(MemoryContext context, Size size)
  *	This might seem overly specialized, but it's not because newNode()
  *	is so often called with compile-time-constant sizes.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_MemoryContextAllocZeroAligned(MemoryContext context, Size size, const char * func, const char * file, int LINE)
+#else
 void *
 MemoryContextAllocZeroAligned(MemoryContext context, Size size)
+#endif
 {
 	void	   *ret;
 
@@ -1234,11 +1367,20 @@ MemoryContextAllocZeroAligned(MemoryContext context, Size size)
 	PG_TRACE5(memctxt__alloc, size, header->size, 0, 0, (long) context->name);
 #endif
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_palloc(Size size, const char * func, const char * file, int LINE)
+#else
 void *
 palloc(Size size)
+#endif
 {
 	/* duplicates MemoryContextAlloc to avoid increased overhead */
 	void	   *ret;
@@ -1253,11 +1395,20 @@ palloc(Size size)
 	ret = (*CurrentMemoryContext->methods.alloc) (CurrentMemoryContext, size);
 	VALGRIND_MEMPOOL_ALLOC(CurrentMemoryContext, ret, size);
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_palloc0(Size size, const char * func, const char * file, int LINE)
+#else
 void *
 palloc0(Size size)
+#endif
 {
 	/* duplicates MemoryContextAllocZero to avoid increased overhead */
 	void	   *ret;
@@ -1273,6 +1424,9 @@ palloc0(Size size)
 	VALGRIND_MEMPOOL_ALLOC(CurrentMemoryContext, ret, size);
 
 	MemSetAligned(ret, 0, size);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
 
 	return ret;
 }
@@ -1329,8 +1483,13 @@ pfree(void *pointer)
  * repalloc
  *		Adjust the size of a previously allocated chunk.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_repalloc(void *pointer, Size size, const char * func, const char * file, int LINE)
+#else
 void *
 repalloc(void *pointer, Size size)
+#endif
 {
 	StandardChunkHeader *header;
 	MemoryContext context;
@@ -1386,6 +1545,10 @@ repalloc(void *pointer, Size size)
 	PG_TRACE5(memctxt__realloc, size, header->size, old_reqsize, old_size, (long) context->name);
 #endif
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
@@ -1395,8 +1558,13 @@ repalloc(void *pointer, Size size)
  *
  * See considerations in comment at MaxAllocHugeSize.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_MemoryContextAllocHuge(MemoryContext context, Size size, const char * func, const char * file, int LINE)
+#else
 void *
 MemoryContextAllocHuge(MemoryContext context, Size size)
+#endif
 {
 	void	   *ret;
 
@@ -1410,6 +1578,10 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 	ret = (*context->methods.alloc) (context, size);
 	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
@@ -1418,8 +1590,13 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
  *		Adjust the size of a previously allocated chunk, permitting a large
  *		value.  The previous allocation need not have been "huge".
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+void *
+_repalloc_huge(void *pointer, Size size, const char * func, const char * file, int LINE)
+#else
 void *
 repalloc_huge(void *pointer, Size size)
+#endif
 {
 	StandardChunkHeader *header;
 	MemoryContext context;
@@ -1451,6 +1628,10 @@ repalloc_huge(void *pointer, Size size)
 	ret = (*context->methods.realloc) (context, pointer, size);
 	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ret, func, __func__, file, LINE);
+#endif
+
 	return ret;
 }
 
@@ -1458,8 +1639,13 @@ repalloc_huge(void *pointer, Size size)
  * MemoryContextStrdup
  *		Like strdup(), but allocate from the specified context
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+char *
+_MemoryContextStrdup(MemoryContext context, const char *string, const char * func, const char * file, int LINE)
+#else
 char *
 MemoryContextStrdup(MemoryContext context, const char *string)
+#endif
 {
 	char	   *nstr;
 	Size		len = strlen(string) + 1;
@@ -1467,14 +1653,27 @@ MemoryContextStrdup(MemoryContext context, const char *string)
 	nstr = (char *) MemoryContextAlloc(context, len);
 
 	memcpy(nstr, string, len);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(nstr, func, __func__, file, LINE);
+#endif
 
 	return nstr;
 }
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+char *
+_pstrdup(const char *in, const char * func, const char * file, int LINE)
+#else
 char *
 pstrdup(const char *in)
+#endif
 {
-	return MemoryContextStrdup(CurrentMemoryContext, in);
+	char * ptr = MemoryContextStrdup(CurrentMemoryContext, in);
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(ptr, func, __func__, file, LINE);
+#endif
+	return ptr;
 }
 
 /*
@@ -1482,13 +1681,22 @@ pstrdup(const char *in)
  *		Like pstrdup(), but append null byte to a
  *		not-necessarily-null-terminated input string.
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+char *
+_pnstrdup(const char *in, Size len, const char * func, const char * file, int LINE)
+#else
 char *
 pnstrdup(const char *in, Size len)
+#endif
 {
 	char	   *out = palloc(len + 1);
 
 	memcpy(out, in, len);
 	out[len] = '\0';
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContextWriteFuncAndLineToAllocedMemory(out, func, __func__, file, LINE);
+#endif
+
 	return out;
 }
 

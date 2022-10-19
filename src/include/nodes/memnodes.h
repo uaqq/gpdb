@@ -18,6 +18,21 @@
 
 #include "nodes/nodes.h"
 
+#define CHUNKS_TABLE_SIZE 1024
+
+typedef struct
+{
+	void *chunk;
+	uint64_t count;
+	uint64_t bytes;
+} MemoryContextChunkStat;
+
+typedef struct
+{
+	const char *parent_func;
+	int line;
+} MemoryContextChunkStatKey;
+
 /*
  * MemoryContext
  *		A logical context in which memory allocations occur.
@@ -46,7 +61,11 @@ typedef struct MemoryContextMethods
 	void		(*delete_context) (MemoryContext context);
 	Size		(*get_chunk_space) (MemoryContext context, void *pointer);
 	bool		(*is_empty) (MemoryContext context);
-	void		(*stats) (MemoryContext context, uint64 *nBlocks, uint64 *nChunks, uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
+	void		(*stats) (MemoryContext context, uint64 *nBlocks, uint64 *nChunks, uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+							, MemoryContextChunkStat ***chunks, Size *chunks_count
+#endif
+		);
 	void		(*release_accounting)(MemoryContext context);
 #ifdef MEMORY_CONTEXT_CHECKING
 	void		(*check) (MemoryContext context);
