@@ -87,9 +87,9 @@ private:
 				 gpos::Equals<ULONG>, CleanupDelete<ULONG>,
 				 CleanupDelete<SCTEConsumerInfo>>;
 
-	typedef CHashMap<ULONG, Index, gpos::HashValue<ULONG>, gpos::Equals<ULONG>,
-					 CleanupDelete<ULONG>, CleanupDelete<Index>>
-		HMUlIndex;
+	using HMUlIndex =
+		CHashMap<ULONG, Index, gpos::HashValue<ULONG>, gpos::Equals<ULONG>,
+				 CleanupDelete<ULONG>, CleanupDelete<Index>>;
 
 	CMemoryPool *m_mp;
 
