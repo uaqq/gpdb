@@ -3069,7 +3069,7 @@ set_function_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 	Assert(rte->rtekind == RTE_FUNCTION);
 
 	/* Estimate number of rows the function itself will return */
-	rel->tuples = clamp_row_est(expression_returns_set_rows(rte->funcexpr));
+	rel->tuples = expression_returns_set_rows(rte->funcexpr);
 
 	/* Now estimate number of output rows, etc */
 	set_baserel_size_estimates(root, rel);

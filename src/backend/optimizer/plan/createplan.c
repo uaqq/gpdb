@@ -29,6 +29,7 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
+#include "optimizer/planner.h"
 #include "optimizer/planpartition.h"
 #include "optimizer/predtest.h"
 #include "optimizer/restrictinfo.h"
@@ -5298,8 +5299,8 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 	 * anything for Aggref nodes; this is okay since they are really
 	 * comparable to Vars.
 	 *
-	 * See notes in grouping_planner about why this routine and make_group are
-	 * the only ones in this file that worry about tlist eval cost.
+	 * See notes in add_tlist_costs_to_plan about why only make_agg,
+     * make_windowagg and make_group worry about tlist eval cost.
 	 */
 	if (qual)
 	{
@@ -5308,10 +5309,7 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 		plan->total_cost += qual_cost.startup;
 		plan->total_cost += qual_cost.per_tuple * plan->plan_rows;
 	}
-	cost_qual_eval(&qual_cost, tlist, root);
-	plan->startup_cost += qual_cost.startup;
-	plan->total_cost += qual_cost.startup;
-	plan->total_cost += qual_cost.per_tuple * plan->plan_rows;
+	add_tlist_costs_to_plan(root, plan, tlist);
 
 	return plan;
 }
@@ -5351,10 +5349,7 @@ make_window(PlannerInfo *root, List *tlist,
 	plan->startup_cost = window_path.startup_cost;
 	plan->total_cost = window_path.total_cost;
 
-	cost_qual_eval(&qual_cost, tlist, root);
-	plan->startup_cost += qual_cost.startup;
-	plan->total_cost += qual_cost.startup;
-	plan->total_cost += qual_cost.per_tuple * plan->plan_rows;
+	add_tlist_costs_to_plan(root, plan, tlist);
 
 	plan->qual = NIL;
 	plan->targetlist = tlist;
