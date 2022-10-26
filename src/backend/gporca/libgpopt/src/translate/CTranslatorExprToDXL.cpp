@@ -8203,23 +8203,22 @@ hasPhysicalCTEProducerAndPhysicalMotionHashDistribute(CExpression *pexpr,
 	BOOL hasPhysicalCTEProducer = false,
 	BOOL hasPhysicalMotionHashDistribute = false)
 {
-	BOOL has = false;
+	COperator *pop = pexpr->Pop();
+	if (COperator::EopPhysicalCTEProducer == pop->Eopid())
+	{
+		hasPhysicalCTEProducer = true;
+		hasPhysicalMotionHashDistribute = false;
+	}
+	else if (COperator::EopPhysicalMotionHashDistribute == pop->Eopid())
+	{
+		hasPhysicalMotionHashDistribute = hasPhysicalCTEProducer;
+		hasPhysicalCTEProducer = false;
+	}
+	BOOL has = hasPhysicalMotionHashDistribute;
 	for (ULONG ul = 0; !has && ul < pexpr->Arity(); ul++)
 	{
 		CExpression *pexprChild = (*pexpr)[ul];
-		COperator *pop = pexprChild->Pop();
-		if (COperator::EopPhysicalCTEProducer == pop->Eopid())
-		{
-			hasPhysicalCTEProducer = true;
-			hasPhysicalMotionHashDistribute = false;
-		}
-		else if (COperator::EopPhysicalMotionHashDistribute == pop->Eopid())
-		{
-			hasPhysicalMotionHashDistribute = hasPhysicalCTEProducer;
-			hasPhysicalCTEProducer = false;
-		}
-		has = hasPhysicalMotionHashDistribute;
-		if (!has && !pop->FScalar())
+		if (!pexprChild->Pop()->FScalar())
 		{
 			has = hasPhysicalCTEProducerAndPhysicalMotionHashDistribute(pexprChild,
 				hasPhysicalCTEProducer, hasPhysicalMotionHashDistribute);
