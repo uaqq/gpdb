@@ -8198,6 +8198,36 @@ CTranslatorExprToDXL::GetOutputSegIdsArray(CExpression *pexprMotion)
 	return pdrgpi;
 }
 
+BOOL
+hasPhysicalCTEProducerAndPhysicalMotionHashDistribute(CExpression *pexpr,
+	BOOL hasPhysicalCTEProducer = false,
+	BOOL hasPhysicalMotionHashDistribute = false)
+{
+	BOOL has = false;
+	for (ULONG ul = 0; !has && ul < pexpr->Arity(); ul++)
+	{
+		CExpression *pexprChild = (*pexpr)[ul];
+		COperator *pop = pexprChild->Pop();
+		if (COperator::EopPhysicalCTEProducer == pop->Eopid())
+		{
+			hasPhysicalCTEProducer = true;
+			hasPhysicalMotionHashDistribute = false;
+		}
+		else if (COperator::EopPhysicalMotionHashDistribute == pop->Eopid())
+		{
+			hasPhysicalMotionHashDistribute = hasPhysicalCTEProducer;
+			hasPhysicalCTEProducer = false;
+		}
+		has = hasPhysicalMotionHashDistribute;
+		if (!has && !pop->FScalar())
+		{
+			has = hasPhysicalCTEProducerAndPhysicalMotionHashDistribute(pexprChild,
+				hasPhysicalCTEProducer, hasPhysicalMotionHashDistribute);
+		}
+	}
+	return has;
+}
+
 //---------------------------------------------------------------------------
 //	@function:
 //		CTranslatorExprToDXL::GetInputSegIdsArray
@@ -8257,10 +8287,13 @@ CTranslatorExprToDXL::GetInputSegIdsArray(CExpression *pexprMotion)
 					"CTE Consumer without the appropriate CTE Producer under a duplicate-hazard motion or a tainted replicated node"));
 		}
 
-		IntPtrArray *pdrgpi = GPOS_NEW(m_mp) IntPtrArray(m_mp);
-		INT iSegmentId = *((*m_pdrgpiSegments)[0]);
-		pdrgpi->Append(GPOS_NEW(m_mp) INT(iSegmentId));
-		return pdrgpi;
+		if (!hasPhysicalCTEProducerAndPhysicalMotionHashDistribute(pexprMotion))
+		{
+			IntPtrArray *pdrgpi = GPOS_NEW(m_mp) IntPtrArray(m_mp);
+			INT iSegmentId = *((*m_pdrgpiSegments)[0]);
+			pdrgpi->Append(GPOS_NEW(m_mp) INT(iSegmentId));
+			return pdrgpi;
+		}
 	}
 
 	m_pdrgpiSegments->AddRef();
