@@ -3432,6 +3432,9 @@ static RelOptInfo* largest_child_relation(PlannerInfo *root, RelOptInfo *rel)
 	RelOptInfo *largest_child_in_subpath = NULL;
 	double max_rows = -1.0;
 
+	while (IsA(path, ProjectionPath))
+		path = ((ProjectionPath *) path)->subpath;
+
 	Assert(IsA(rel->cheapest_total_path, AppendPath));
 
 	append_path = (AppendPath *) rel->cheapest_total_path;

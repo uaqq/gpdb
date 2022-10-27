@@ -2640,7 +2640,26 @@ create_nestloop_path(PlannerInfo *root,
 
 	cost_nestloop(pathnode, root);
 
-	return pathnode;
+	/*
+	 * Greenplum specific behavior:
+	 * If we find the join locus is general or segmentgeneral,
+	 * we should check the joinqual, if it contains volatile functions
+	 * we have to turn the join path to singleQE.
+	 *
+	 * NB: we do not add this logic in the above create_unique_rowid_path
+	 * code block, the reason is:
+	 *   create_unique_rowid_path is a technique to implement semi join
+	 *   using normal join, it can only happens for sublink query:
+	 *   1. if the sublink query contains volatile target list or havingQual
+	 *      it cannot be pulled up in pull_up_subquery, so it will be a
+	 *      subselect and be handled in the function set_subquery_pathlist
+	 *   2. if the sublink query contains volatile functions in joinqual
+	 *      or where clause, it will be handled in set_rel_pathlist and
+	 *      here.
+	 */
+	return turn_volatile_seggen_to_singleqe(root,
+		(Path *) pathnode,
+		(Node *) (pathnode->joinrestrictinfo));
 }
 
 /*
@@ -2812,7 +2831,12 @@ create_mergejoin_path(PlannerInfo *root,
 
 	cost_mergejoin(pathnode, root);
 
-	return pathnode;
+	/*
+	 * See the comments at the end of create_nestloop_path.
+	 */
+	return turn_volatile_seggen_to_singleqe(root,
+		(Path *) pathnode,
+		(Node *) (pathnode->jpath.joinrestrictinfo));
 }
 
 /*
@@ -2887,6 +2911,83 @@ create_hashjoin_path(PlannerInfo *root,
 	pathnode->jpath.path.sameslice_relids = bms_union(inner_path->sameslice_relids, outer_path->sameslice_relids);
 
 	cost_hashjoin(pathnode, root);
+
+	return pathnode;
+}
+
+/*
+ * create_projection_path_with_quals
+ *	  Creates a pathnode that represents performing a projection and filter.
+ *
+ * 'rel' is the parent relation associated with the result
+ * 'subpath' is the path representing the source of data
+ */
+ProjectionPath *
+create_projection_path_with_quals(PlannerInfo *root,
+								  RelOptInfo *rel,
+								  Path *subpath,
+								  List *restrict_clauses)
+{
+	ProjectionPath *pathnode = makeNode(ProjectionPath);
+
+	pathnode->path.pathtype = T_Result;
+	pathnode->path.parent = rel;
+	/* For now, assume we are above any joins, so no parameterization */
+	pathnode->path.param_info = NULL;
+	/* Projection does not change the sort order */
+	pathnode->path.pathkeys = subpath->pathkeys;
+
+	pathnode->subpath = subpath;
+
+	/*
+	 * We might not need a separate Result node.  If the input plan node type
+	 * can project, we can just tell it to project something else.  Or, if it
+	 * can't project but the desired target has the same expression list as
+	 * what the input will produce anyway, we can still give it the desired
+	 * tlist (possibly changing its ressortgroupref labels, but nothing else).
+	 * Note: in the latter case, create_projection_plan has to recheck our
+	 * conclusion; see comments therein.
+	 *
+	 * GPDB: The 'restrict_clauses' is a GPDB addition. If the subpath supports
+	 * Filters, we could push them down too. But currently this is only used on
+	 * top of Material paths, which don't support it, so it doesn't matter.
+	 *
+	 * GPDB_96_MERGE_FIXME: Until 9.6, this isn't used in any situation where
+	 * we wouldn't need a Result. And we don't have is_projection_capable_path()
+	 * yet.
+	 */
+#if 0
+	if (!restrict_clauses &&
+		(is_projection_capable_path(subpath) ||
+		 equal(oldtarget->exprs, target->exprs)))
+	{
+		/* No separate Result node needed */
+		pathnode->dummypp = true;
+
+		/*
+		 * Set cost of plan as subpath's cost, adjusted for tlist replacement.
+		 */
+		pathnode->path.rows = subpath->rows;
+		pathnode->path.startup_cost = subpath->startup_cost +
+			(target->cost.startup - oldtarget->cost.startup);
+		pathnode->path.total_cost = subpath->total_cost +
+			(target->cost.startup - oldtarget->cost.startup) +
+			(target->cost.per_tuple - oldtarget->cost.per_tuple) * subpath->rows;
+	}
+	else
+#endif
+	{
+		/* We really do need the Result node */
+		pathnode->dummypp = false;
+
+		pathnode->path.rows = subpath->rows;
+		pathnode->path.startup_cost = subpath->startup_cost;
+		pathnode->path.total_cost = subpath->total_cost;
+
+		pathnode->cdb_restrict_clauses = restrict_clauses;
+	}
+
+	pathnode->path.locus = subpath->locus;
 
 	return pathnode;
 }

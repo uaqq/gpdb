@@ -1972,6 +1972,19 @@ _outHashPath(StringInfo str, HashPath *node)
 	WRITE_NODE_FIELD(path_hashclauses);
 }
 
+#ifndef COMPILING_BINARY_FUNCS
+static void
+_outProjectionPath(StringInfo str, const ProjectionPath *node)
+{
+	WRITE_NODE_TYPE("PROJECTIONPATH");
+
+	_outPathInfo(str, (const Path *) node);
+
+	WRITE_NODE_FIELD(subpath);
+	WRITE_BOOL_FIELD(dummypp);
+}
+#endif /* COMPILING_BINARY_FUNCS */
+
 static void
 _outCdbMotionPath(StringInfo str, CdbMotionPath *node)
 {
@@ -4715,6 +4728,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_HashPath:
 				_outHashPath(str, obj);
+				break;
+			case T_ProjectionPath:
+				_outProjectionPath(str, obj);
 				break;
             case T_CdbMotionPath:
                 _outCdbMotionPath(str, obj);
