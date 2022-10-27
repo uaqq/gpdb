@@ -297,6 +297,18 @@ write_database_file(Relation drel, bool startup)
 		if (gp_before_filespace_setup && !IsBuiltinTablespace(dattablespace))
 			continue;
 
+		/*
+		 * When there's one or more segments down and a relcache of any database
+		 * that is not located in a default tablespace is rebuilt(VACUUM, for example),
+		 * gpdb can fail fetching data from such a database. The reason for this error
+		 * is that gpdb doesn't properly update relcache in external filespaces, so
+		 * when the whole cluster is reindexed, the recovered segments has an outdated
+		 * cache.
+		 * 
+		 * To fix this error, we just need to rebuild relcache on each segment startup.
+		 * There's a function called RelationCacheInitFileRemove which does he same thing,
+		 * but it works for PG_DATA/base only.
+		 */
 		if (startup) {
 			char	   *dbpath = GetDatabasePath(datoid, dattablespace);
 
