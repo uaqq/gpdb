@@ -575,6 +575,19 @@ drop table if exists t1;
 drop table if exists t2;
 drop function if exists f(i int);
 
+CREATE TABLE a (a bigint, b bigint) DISTRIBUTED BY (a);
+CREATE TABLE b (a bigint, b bigint, c bigint, d bigint) DISTRIBUTED BY (a) PARTITION BY LIST(b) (PARTITION a VALUES(0));
+CREATE TABLE c (a bigint, b bigserial, c varchar(255)) DISTRIBUTED REPLICATED;
+EXPLAIN (ANALYZE off, COSTS off, VERBOSE off)
+WITH d AS (
+    SELECT b FROM a GROUP BY b
+), e AS (
+    SELECT b.d FROM b JOIN d f ON f.b = b.c JOIN d g ON g.b = b.c
+) SELECT * FROM e JOIN c ON c.a = e.d;
+DROP TABLE IF EXISTS a;
+DROP TABLE IF EXISTS b;
+DROP TABLE IF EXISTS c;
+
 -- start_ignore
 drop schema rpt cascade;
 -- end_ignore
