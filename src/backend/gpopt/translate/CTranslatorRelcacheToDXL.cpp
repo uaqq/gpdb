@@ -3206,7 +3206,7 @@ CTranslatorRelcacheToDXL::RetrieveRelKeysets(CMemoryPool *mp, OID oid,
 	if (should_add_default_keys)
 	{
 		ULongPtrArray *key_set = GPOS_NEW(mp) ULongPtrArray(mp);
-		// if (is_partitioned)
+		if (is_partitioned)
 		{
 			// TableOid is part of default key for partitioned tables
 			ULONG table_oid_pos =
@@ -3217,7 +3217,6 @@ CTranslatorRelcacheToDXL::RetrieveRelKeysets(CMemoryPool *mp, OID oid,
 			GetAttributePosition(GpSegmentIdAttributeNumber, attno_mapping);
 		ULONG ctid_pos =
 			GetAttributePosition(SelfItemPointerAttributeNumber, attno_mapping);
-
 		key_set->Append(GPOS_NEW(mp) ULONG(seg_id_pos));
 		key_set->Append(GPOS_NEW(mp) ULONG(ctid_pos));
 
