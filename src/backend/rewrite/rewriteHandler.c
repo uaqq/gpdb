@@ -1377,6 +1377,7 @@ rewriteTargetListUD(Query *parsetree, RangeTblEntry *target_rte,
 	const char *attrname;
 	TargetEntry *tle;
 	Var 		*varSegid = NULL;
+	Var 		*varTableoid = NULL;
 
 	if (target_relation->rd_rel->relkind == RELKIND_RELATION ||
 		target_relation->rd_rel->relkind == RELKIND_MATVIEW)
@@ -1410,6 +1411,15 @@ rewriteTargetListUD(Query *parsetree, RangeTblEntry *target_rte,
 						   type_mod,
 						   type_coll,
 						   0);
+
+		get_atttypetypmodcoll(reloid, TableOidAttributeNumber, &vartypeid, &type_mod, &type_coll);
+		varTableoid = makeVar(parsetree->resultRelation,
+						   TableOidAttributeNumber,
+						   vartypeid,
+						   type_mod,
+						   type_coll,
+						   0);
+		
 	}
 	else if (target_relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 	{
@@ -1474,6 +1484,16 @@ rewriteTargetListUD(Query *parsetree, RangeTblEntry *target_rte,
 		tle = makeTargetEntry((Expr *) varSegid,
 							  list_length(parsetree->targetList) + 1,	/* resno */
 							  pstrdup("gp_segment_id"),	/* resname */
+							  true);					/* resjunk */
+
+		parsetree->targetList = lappend(parsetree->targetList, tle);
+	}
+
+	if (varTableoid)
+	{
+		tle = makeTargetEntry((Expr *) varTableoid,
+							  list_length(parsetree->targetList) + 1,	/* resno */
+							  pstrdup("tableoid"),		/* resname */
 							  true);					/* resjunk */
 
 		parsetree->targetList = lappend(parsetree->targetList, tle);
