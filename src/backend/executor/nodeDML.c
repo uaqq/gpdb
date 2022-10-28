@@ -130,6 +130,14 @@ ExecDML(DMLState *node)
 
 		Assert(!isnull);
 
+		Oid tableoid = InvalidOid;
+		if (plannode->tableoidColIdx > 0)
+		{
+			Datum dtableoid = slot_getattr(slot, plannode->tableoidColIdx, &isnull);
+			// does check for is null needed???, seems not - returned zero Datum - InvalidOid
+			tableoid = DatumGetObjectId(dtableoid);
+		}
+
 		ItemPointer  tupleid = (ItemPointer) DatumGetPointer(ctid);
 		ItemPointerData tuple_ctid = *tupleid;
 		tupleid = &tuple_ctid;
@@ -149,7 +157,8 @@ ExecDML(DMLState *node)
 				   node->ps.state,
 				   !isUpdate, /* GPDB_91_MERGE_FIXME: where to get canSetTag? */
 				   PLANGEN_OPTIMIZER /* Plan origin */,
-				   isUpdate);
+				   isUpdate,
+				   tableoid);
 	}
 
 	return slot;
