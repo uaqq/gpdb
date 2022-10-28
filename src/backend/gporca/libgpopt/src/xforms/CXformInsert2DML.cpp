@@ -87,8 +87,9 @@ CXformInsert2DML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 	// create logical DML
 	CExpression *pexprAlt = CXformUtils::PexprLogicalDMLOverProject(
 		mp, pexprChild, CLogicalDML::EdmlInsert, ptabdesc, pdrgpcrSource,
-		NULL,  //pcrCtid
-		NULL   //pcrSegmentId
+		NULL,	//pcrCtid
+		NULL,	//pcrSegmentId
+		NULL	//pcrTable
 	);
 
 	// add alternative to transformation result

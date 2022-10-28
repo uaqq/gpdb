@@ -392,7 +392,7 @@ private:
 
 	// obtain the ids of the ctid and segmentid columns for the target
 	// table of a DML query
-	void GetCtidAndSegmentId(ULONG *ctid, ULONG *segment_id);
+	void GetCtidAndSegmentId(ULONG *ctid, ULONG *segment_id, ULONG *tableoid_colid);
 
 	// obtain the column id for the tuple oid column of the target table
 	// of a DML statement

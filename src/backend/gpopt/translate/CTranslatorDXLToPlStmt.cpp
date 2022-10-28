@@ -4216,6 +4216,9 @@ CTranslatorDXLToPlStmt::TranslateDXLDml(
 	dml->ctidColIdx = AddTargetEntryForColId(&dml_target_list, &child_context,
 											 phy_dml_dxlop->GetCtIdColId(),
 											 true /*is_resjunk*/);
+	dml->tableoidColIdx = AddTargetEntryForColId(&dml_target_list, &child_context,
+											 phy_dml_dxlop->OidColId(),
+											 true /*is_resjunk*/);
 	if (phy_dml_dxlop->IsOidsPreserved())
 	{
 		dml->tupleoidColIdx = AddTargetEntryForColId(

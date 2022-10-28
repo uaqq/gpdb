@@ -1326,7 +1326,8 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 										CLogicalDML::EDMLOperator edmlop,
 										CTableDescriptor *ptabdesc,
 										CColRefArray *colref_array,
-										CColRef *pcrCtid, CColRef *pcrSegmentId)
+										CColRef *pcrCtid, CColRef *pcrSegmentId,
+										CColRef *otherOid)
 {
 	GPOS_ASSERT(CLogicalDML::EdmlInsert == edmlop ||
 				CLogicalDML::EdmlDelete == edmlop);
@@ -1340,7 +1341,7 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 	IMDId *rel_mdid = ptabdesc->MDId();
 	CExpression *pexprProject = NULL;
 	CColRef *pcrAction = NULL;
-	CColRef *pcrOid = NULL;
+	CColRef *pcrOid = otherOid;
 
 	if (ptabdesc->IsPartitioned())
 	{
@@ -1365,8 +1366,8 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 		// generate one project node with two new columns: action, oid (based on the traceflag)
 		pdrgpexprProjected->Append(CUtils::PexprScalarConstInt4(mp, val));
 
-		BOOL fGeneratePartOid = CUtils::FGeneratePartOid(ptabdesc->MDId());
-		if (fGeneratePartOid)
+		// BOOL fGeneratePartOid = CUtils::FGeneratePartOid(ptabdesc->MDId());
+		if (true) // fGeneratePartOid)
 		{
 			OID oidTable = CMDIdGPDB::CastMdid(rel_mdid)->Oid();
 			pdrgpexprProjected->Append(
@@ -1379,7 +1380,7 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 
 		CExpression *pexprPrL = (*pexprProject)[1];
 		pcrAction = CUtils::PcrFromProjElem((*pexprPrL)[0]);
-		if (fGeneratePartOid)
+		if (true)
 		{
 			pcrOid = CUtils::PcrFromProjElem((*pexprPrL)[1]);
 		}

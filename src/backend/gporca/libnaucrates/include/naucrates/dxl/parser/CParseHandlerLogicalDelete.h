@@ -40,6 +40,8 @@ private:
 	// segmentId column id
 	ULONG m_segid_colid;
 
+	ULONG m_tableoid_colid;
+
 	// delete col ids
 	ULongPtrArray *m_deletion_colid_array;
 

@@ -1122,7 +1122,7 @@ CTranslatorQueryToDXL::ExtractStorageOptionStr(DefElem *def_elem)
 //
 //---------------------------------------------------------------------------
 void
-CTranslatorQueryToDXL::GetCtidAndSegmentId(ULONG *ctid, ULONG *segment_id)
+CTranslatorQueryToDXL::GetCtidAndSegmentId(ULONG *ctid, ULONG *segment_id, ULONG *table_oid)
 {
 	// ctid column id
 	IMDId *mdid = CTranslatorUtils::GetSystemColType(
@@ -1136,6 +1136,12 @@ CTranslatorQueryToDXL::GetCtidAndSegmentId(ULONG *ctid, ULONG *segment_id)
 	mdid = CTranslatorUtils::GetSystemColType(m_mp, GpSegmentIdAttributeNumber);
 	*segment_id = CTranslatorUtils::GetColId(
 		m_query_level, m_query->resultRelation, GpSegmentIdAttributeNumber,
+		mdid, m_var_to_colid_map);
+	mdid->Release();
+	
+	mdid = CTranslatorUtils::GetSystemColType(m_mp, TableOidAttributeNumber);	
+	*table_oid = CTranslatorUtils::GetColId(
+		m_query_level, m_query->resultRelation, TableOidAttributeNumber,
 		mdid, m_var_to_colid_map);
 	mdid->Release();
 }
@@ -1209,7 +1215,8 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 
 	ULONG ctid_colid = 0;
 	ULONG segid_colid = 0;
-	GetCtidAndSegmentId(&ctid_colid, &segid_colid);
+	ULONG tableoid_colid = 0;
+	GetCtidAndSegmentId(&ctid_colid, &segid_colid, &tableoid_colid);
 
 	ULongPtrArray *delete_colid_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
 
@@ -1229,7 +1236,7 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 	}
 
 	CDXLLogicalDelete *delete_dxlop = GPOS_NEW(m_mp) CDXLLogicalDelete(
-		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array);
+		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array, tableoid_colid);
 
 	return GPOS_NEW(m_mp) CDXLNode(m_mp, delete_dxlop, query_dxlnode);
 }
@@ -1289,7 +1296,8 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 
 	ULONG ctid_colid = 0;
 	ULONG segmentid_colid = 0;
-	GetCtidAndSegmentId(&ctid_colid, &segmentid_colid);
+	ULONG tableoid_colid = 0; // todo cleanup
+	GetCtidAndSegmentId(&ctid_colid, &segmentid_colid, &tableoid_colid);
 
 	ULONG tuple_oid_colid = 0;
 
