@@ -5103,6 +5103,14 @@ FillSliceTable_walker(Node *node, void *context)
 				FillSliceGangInfo(sendSlice, getgpsegmentCount());
 		}
 
+		if (stmt->planGen == PLANGEN_OPTIMIZER &&
+			recvSlice->gangType == GANGTYPE_SINGLETON_READER &&
+			motion->motionType == MOTIONTYPE_HASH)
+		{
+			recvSlice->gangType = GANGTYPE_PRIMARY_READER;
+			FillSliceGangInfo(recvSlice, getgpsegmentCount());
+		}
+
 		MemoryContextSwitchTo(oldcxt);
 
 		/* recurse into children */
