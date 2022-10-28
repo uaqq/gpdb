@@ -1565,6 +1565,50 @@ drop table if exists t;
 drop table if exists t1;
 drop table if exists t2;
 drop function if exists f(i int);
+CREATE TABLE a (a bigint, b bigint) DISTRIBUTED BY (a);
+CREATE TABLE b (a bigint, b bigint, c bigint, d bigint) DISTRIBUTED BY (a) PARTITION BY LIST(b) (PARTITION a VALUES(0));
+CREATE TABLE c (a bigint, b bigserial, c varchar(255)) DISTRIBUTED REPLICATED;
+EXPLAIN (ANALYZE off, COSTS off, VERBOSE off)
+WITH d AS (
+    SELECT b FROM a GROUP BY b
+), e AS (
+    SELECT b.d FROM b JOIN d f ON f.b = b.c JOIN d g ON g.b = b.c
+) SELECT * FROM e JOIN c ON c.a = e.d;
+QUERY PLAN
+___________
+ Gather Motion 3:1  (slice4; segments: 3)
+   ->  Hash Join
+         Hash Cond: (b_1_prt_a.d = c.a)
+         ->  Hash Join
+               Hash Cond: (b_1_prt_a.c = a.b)
+               ->  Append
+                     ->  Seq Scan on b_1_prt_a
+               ->  Hash
+                     ->  Broadcast Motion 3:3  (slice3; segments: 3)
+                           ->  Hash Join
+                                 Hash Cond: (a.b = a_1.b)
+                                 ->  HashAggregate
+                                       Group Key: a.b
+                                       ->  Redistribute Motion 3:3  (slice1; segments: 3)
+                                             Hash Key: a.b
+                                             ->  HashAggregate
+                                                   Group Key: a.b
+                                                   ->  Seq Scan on a
+                                 ->  Hash
+                                       ->  HashAggregate
+                                             Group Key: a_1.b
+                                             ->  Redistribute Motion 3:3  (slice2; segments: 3)
+                                                   Hash Key: a_1.b
+                                                   ->  HashAggregate
+                                                         Group Key: a_1.b
+                                                         ->  Seq Scan on a a_1
+         ->  Hash
+               ->  Seq Scan on c
+GP_IGNORE:(29 rows)
+
+DROP TABLE IF EXISTS a;
+DROP TABLE IF EXISTS b;
+DROP TABLE IF EXISTS c;
 -- start_ignore
 drop schema rpt cascade;
 NOTICE:  drop cascades to 13 other objects
