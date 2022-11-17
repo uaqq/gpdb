@@ -2730,6 +2730,8 @@ ExecAlterExtensionStmt(AlterExtensionStmt *stmt)
 			case UPDATE_EXTENSION_END:		/* Mark creating_extension flag = false */
 				creating_extension = false;
 				CurrentExtensionObject = InvalidOid;
+				AtEOXact_GUC(true, segment_nestlevel);
+				segment_nestlevel = 0;
 				return get_extension_oid(stmt->extname, true);
 
 			default:
@@ -3005,6 +3007,12 @@ ApplyExtensionUpdates(Oid extensionOid,
 
 		InvokeObjectPostAlterHook(ExtensionRelationId, extensionOid, 0);
 
+		// seems it's not correct for the case of executor
+		// the guc variables would be grows and doesn't cleanup
+		// at master there is no problem - guc increased here and decreased at 
+		// execute_extension_script, but assertion given before swows that updateVersions 
+		// must be length 1
+		int save_nestlevel = NewGUCNestLevel();
 		set_serach_path_for_extension(requiredSchemas, schemaName);
 
 		if (Gp_role != GP_ROLE_EXECUTE)
@@ -3029,7 +3037,7 @@ ApplyExtensionUpdates(Oid extensionOid,
 			 */
 			execute_extension_script(stmt, extensionOid, control,
 									 oldVersionName, versionName,
-									 schemaName, schemaOid, 0); // todo
+									 schemaName, schemaOid, save_nestlevel);
 		}
 		else
 		{
@@ -3037,6 +3045,7 @@ ApplyExtensionUpdates(Oid extensionOid,
 			/* Set these global states for the execute_extension_script() that is called next in QD. */
 			creating_extension = true;
 			CurrentExtensionObject = extensionOid;
+			segment_nestlevel = save_nestlevel;
 			/* break */
 		}
 
