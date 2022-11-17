@@ -69,6 +69,9 @@
 bool		creating_extension = false;
 Oid			CurrentExtensionObject = InvalidOid;
 
+/* File visible "segment" variable for GUCs state */
+static int 	segment_nestlevel = 0;
+
 /*
  * Internal data structure to hold the results of parsing a control file
  */
@@ -834,10 +837,10 @@ execute_extension_script(Node *stmt,
 						 Oid extensionOid, ExtensionControlFile *control,
 						 const char *from_version,
 						 const char *version,
-						 const char *schemaName, Oid schemaOid)
+						 const char *schemaName, Oid schemaOid,
+						 int save_nestlevel)
 {
 	char	   *filename;
-	int			save_nestlevel;
 
 	AssertState(Gp_role != GP_ROLE_EXECUTE);
 	AssertImply(Gp_role == GP_ROLE_DISPATCH, stmt != NULL &&
@@ -876,7 +879,6 @@ execute_extension_script(Node *stmt,
 	 * persist for exactly the duration of the script execution.  guc.c also
 	 * takes care of undoing the setting on error.
 	 */
-	save_nestlevel = NewGUCNestLevel();
 
 	if (client_min_messages < WARNING)
 		(void) set_config_option("client_min_messages", "warning",
@@ -886,6 +888,8 @@ execute_extension_script(Node *stmt,
 		(void) set_config_option("log_min_messages", "warning",
 								 PGC_SUSET, PGC_S_SESSION,
 								 GUC_ACTION_SAVE, true, 0);
+
+	// maybe here GUC should be processed with the search_paths
 
 	/*
 	 * Set creating_extension and related variables so that
@@ -1289,7 +1293,9 @@ CreateExtension(CreateExtensionStmt *stmt)
 				break;
 			case CREATE_EXTENSION_END:		/* Mark creating_extension flag = false */
 				creating_extension = false;
-				CurrentExtensionObject = InvalidOid;
+				CurrentExtensionObject = InvalidOid; 
+				AtEOXact_GUC(true, segment_nestlevel);
+				segment_nestlevel = 0; 
 				return get_extension_oid(stmt->extname, true);
 
 			default:
@@ -1563,13 +1569,14 @@ CreateExtension(CreateExtensionStmt *stmt)
 		CurrentExtensionObject = extensionOid;
 	}
 
+	int save_nestlevel = NewGUCNestLevel();
 	set_serach_path_for_extension(requiredSchemas, schemaName);
 
 	if (Gp_role != GP_ROLE_EXECUTE)
 	{
 		execute_extension_script((Node*)stmt, extensionOid, control,
 							 oldVersionName, versionName,
-							 schemaName, schemaOid);
+							 schemaName, schemaOid, save_nestlevel);
 
 		/*
 		 * If additional update scripts have to be executed, apply the updates as
@@ -1577,6 +1584,10 @@ CreateExtension(CreateExtensionStmt *stmt)
 		 */
 		ApplyExtensionUpdates(extensionOid, pcontrol,
 							  versionName, updateVersions);
+	}
+	else
+	{
+		segment_nestlevel = save_nestlevel;
 	}
 
 	return extensionOid;
@@ -3018,7 +3029,7 @@ ApplyExtensionUpdates(Oid extensionOid,
 			 */
 			execute_extension_script(stmt, extensionOid, control,
 									 oldVersionName, versionName,
-									 schemaName, schemaOid);
+									 schemaName, schemaOid, 0); // todo
 		}
 		else
 		{
