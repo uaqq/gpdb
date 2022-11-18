@@ -3010,32 +3010,32 @@ ApplyExtensionUpdates(Oid extensionOid,
 
 		InvokeObjectPostAlterHook(ExtensionRelationId, extensionOid, 0);
 
-		if (Gp_role != GP_ROLE_EXECUTE)
+		Node *stmt = NULL;
+		if (Gp_role == GP_ROLE_DISPATCH)
 		{
-			Node *stmt = NULL;
-
-			if (Gp_role == GP_ROLE_DISPATCH)
-			{
-				AlterExtensionStmt *update_stmt = makeNode(AlterExtensionStmt);
-				update_stmt->extname = pcontrol->name;
-				update_stmt->options = lappend(NIL, makeDefElem("new_version", (Node*)makeString(versionName)));
-				update_stmt->update_ext_state = UPDATE_EXTENSION_BEGIN;
-				stmt = (Node*)update_stmt;
-				CdbDispatchUtilityStatement(stmt,
-											DF_WITH_SNAPSHOT | DF_CANCEL_ON_ERROR | DF_NEED_TWO_PHASE,
-											NIL  /* We don't create any object in UPDATE EXTENSION, so NIL here. */,
-											NULL);
-			}
-
-			/*
-			 * Finally, execute the update script file
-			 */
-			execute_extension_script(stmt, extensionOid, control,
-									 oldVersionName, versionName,
-									 requiredSchemas,
-									 schemaName, schemaOid);
+			AlterExtensionStmt *update_stmt = makeNode(AlterExtensionStmt);
+			update_stmt->extname = pcontrol->name;
+			update_stmt->options = lappend(NIL, makeDefElem("new_version", (Node*)makeString(versionName)));
+			update_stmt->update_ext_state = UPDATE_EXTENSION_BEGIN;
+			stmt = (Node*)update_stmt;
+			CdbDispatchUtilityStatement(stmt,
+										DF_WITH_SNAPSHOT | DF_CANCEL_ON_ERROR | DF_NEED_TWO_PHASE,
+										NIL  /* We don't create any object in UPDATE EXTENSION, so NIL here. */,
+										NULL);
 		}
-		else
+
+		/*
+		 * Finally, execute the update script file
+		 */
+		execute_extension_script(stmt, extensionOid, control,
+								 oldVersionName, versionName,
+								 requiredSchemas,
+								 schemaName, schemaOid);
+		
+		// is this really needed here ??? or it could be moved to Exec ...
+		// no it's not needed, because execute extenison script is called without condition
+		// it's sets all needed variables for QD/QE + utility and after exits for QE
+		if (Gp_role == GP_ROLE_EXECUTE)
 		{
 			/* GP_ROLE_EXECUTE */
 			/* Set these global states for the execute_extension_script() that is called next in QD. */
