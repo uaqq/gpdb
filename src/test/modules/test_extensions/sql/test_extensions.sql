@@ -70,3 +70,62 @@ CREATE EXTENSION test_ext_cine;
 \dx+ test_ext_cine
 ALTER EXTENSION test_ext_cine UPDATE TO '1.1';
 \dx+ test_ext_cine
+
+--
+-- test case for `create extension ... with schema version from unpackaged`
+-- (related to problem: https://github.com/greenplum-db/gpdb/issues/6716)
+--
+
+-- create schema for extension (and it's functions) and reset search_path to new schema 
+show search_path;
+create schema foo;
+set search_path=foo;
+
+-- Create extension functions. Code copied from from test_ext_unpackaged--1.0.sql
+-- to run 
+create function test_func1(a int, b int) returns int
+as $$
+begin
+	return a + b;
+end;
+$$
+LANGUAGE plpgsql;
+
+create function test_func2(a int, b int) returns int
+as $$
+begin
+	return a - b;
+end;
+$$
+LANGUAGE plpgsql;
+
+-- restore search path
+reset search_path;
+
+begin;
+-- change search_path
+set search_path=pg_catalog;
+show search_path;
+
+-- create extension in schema foo
+create extension test_ext_unpackaged with schema foo version '1.1' from unpackaged;
+
+-- check that search path doesn't changed after create extension
+show search_path;
+
+-- show functions at schema foo (check that create extension works correctly)
+set search_path=foo;
+\df
+
+SELECT e.extname, ne.nspname AS extschema, p.proname, np.nspname AS proschema
+FROM pg_catalog.pg_extension AS e
+    INNER JOIN pg_catalog.pg_depend AS d ON (d.refobjid = e.oid)
+    INNER JOIN pg_catalog.pg_proc AS p ON (p.oid = d.objid)
+    INNER JOIN pg_catalog.pg_namespace AS ne ON (ne.oid = e.extnamespace)
+    INNER JOIN pg_catalog.pg_namespace AS np ON (np.oid = p.pronamespace)
+WHERE d.deptype = 'e' and e.extname = 'test_ext_unpackaged'
+ORDER BY 1, 3;
+
+rollback;
+
+drop schema foo cascade;

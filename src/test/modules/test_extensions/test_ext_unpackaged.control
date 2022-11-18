@@ -1,0 +1,4 @@
+# test_ext_unpackaged
+comment = 'extension for test create extension from unpackaged'
+default_version = '1.1'
+relocatable = true
