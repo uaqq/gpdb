@@ -2727,10 +2727,13 @@ ExecAlterExtensionStmt(AlterExtensionStmt *stmt)
 				break;
 
 			case UPDATE_EXTENSION_BEGIN:
+				segment_nestlevel = NewGUCNestLevel();
 				break;
 			case UPDATE_EXTENSION_END:		/* Mark creating_extension flag = false */
 				creating_extension = false;
 				CurrentExtensionObject = InvalidOid;
+				AtEOXact_GUC(true, segment_nestlevel);
+				segment_nestlevel = 0;
 				return get_extension_oid(stmt->extname, true);
 
 			default:
