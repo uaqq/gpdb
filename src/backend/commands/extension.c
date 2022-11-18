@@ -899,6 +899,7 @@ execute_extension_script(Node *stmt,
 	 */
 	if (Gp_role == GP_ROLE_EXECUTE)
 	{
+		segment_nestlevel = save_nestlevel;
 		return;
 	}
 
@@ -1294,13 +1295,16 @@ CreateExtension(CreateExtensionStmt *stmt)
 
 			case CREATE_EXTENSION_BEGIN:	/* Mark creating_extension flag and add pg_extension catalog tuple */
 				creating_extension = true;
-				segment_nestlevel = NewGUCNestLevel();
 				break;
 			case CREATE_EXTENSION_END:		/* Mark creating_extension flag = false */
 				creating_extension = false;
 				CurrentExtensionObject = InvalidOid;
-				AtEOXact_GUC(true, segment_nestlevel);
-				segment_nestlevel = 0;
+				// todo as a function + comment
+				if (segment_nestlevel > 0)
+				{
+					AtEOXact_GUC(true, segment_nestlevel);
+					segment_nestlevel = 0;
+				}
 				return get_extension_oid(stmt->extname, true);
 
 			default:
@@ -1579,13 +1583,16 @@ CreateExtension(CreateExtensionStmt *stmt)
 							 requiredSchemas,
 							 schemaName, schemaOid);
 
-	/*
-	* If additional update scripts have to be executed, apply the updates as
-	* though a series of ALTER EXTENSION UPDATE commands were given
-	*/
-	ApplyExtensionUpdates(extensionOid, pcontrol,
-						  versionName, updateVersions);
-
+	// On the both coordinator and the segment updateVersions exists the same
+	if (Gp_role == GP_ROLE_DISPATCH)
+	{
+		/*
+		* If additional update scripts have to be executed, apply the updates as
+		* though a series of ALTER EXTENSION UPDATE commands were given
+		*/
+		ApplyExtensionUpdates(extensionOid, pcontrol,
+							  versionName, updateVersions);
+	}
 	return extensionOid;
 }
 
@@ -2722,13 +2729,16 @@ ExecAlterExtensionStmt(AlterExtensionStmt *stmt)
 				break;
 
 			case UPDATE_EXTENSION_BEGIN:
-				segment_nestlevel = NewGUCNestLevel();
 				break;
 			case UPDATE_EXTENSION_END:		/* Mark creating_extension flag = false */
 				creating_extension = false;
 				CurrentExtensionObject = InvalidOid;
-				AtEOXact_GUC(true, segment_nestlevel);
-				segment_nestlevel = 0;
+				// the same - cleanup func with two stmts upper
+				if (segment_nestlevel > 0)
+				{
+					AtEOXact_GUC(true, segment_nestlevel);
+					segment_nestlevel = 0;
+				}
 				return get_extension_oid(stmt->extname, true);
 
 			default:

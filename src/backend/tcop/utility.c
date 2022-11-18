@@ -1759,6 +1759,8 @@ ProcessUtilitySlow(Node *parsetree,
 	{
 		if (needCleanup)
 			EventTriggerEndCompleteQuery();
+		// for the segment + for two nodes we have to 
+		// if (nodeTag()) here
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
