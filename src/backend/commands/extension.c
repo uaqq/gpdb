@@ -814,7 +814,6 @@ execute_extension_script(Node *stmt,
 	StringInfoData pathbuf;
 	ListCell   *lc;
 
-	// maybe should be fixed check validation at CreateExtension/Exec ...
 	AssertImply(Gp_role == GP_ROLE_DISPATCH, stmt != NULL &&
 			(nodeTag(stmt) == T_CreateExtensionStmt || nodeTag(stmt) == T_AlterExtensionStmt) &&
 			is_begin_state(stmt));
@@ -1295,10 +1294,6 @@ CreateExtension(CreateExtensionStmt *stmt)
 
 			case CREATE_EXTENSION_BEGIN:	/* Mark creating_extension flag and add pg_extension catalog tuple */
 				creating_extension = true;
-				// is it safe to call it here, because read_extension_control_file
-				// may raise PG_Exception, seems yes - master will call create stmt with cleanup
-				// yes it's safe, leader will catch exception at execute_extension_script and set_end_state
-				// and call CdbDispatch
 				segment_nestlevel = NewGUCNestLevel();
 				break;
 			case CREATE_EXTENSION_END:		/* Mark creating_extension flag = false */
@@ -3031,18 +3026,6 @@ ApplyExtensionUpdates(Oid extensionOid,
 								 oldVersionName, versionName,
 								 requiredSchemas,
 								 schemaName, schemaOid);
-		
-		// is this really needed here ??? or it could be moved to Exec ...
-		// no it's not needed, because execute extenison script is called without condition
-		// it's sets all needed variables for QD/QE + utility and after exits for QE
-		if (Gp_role == GP_ROLE_EXECUTE)
-		{
-			/* GP_ROLE_EXECUTE */
-			/* Set these global states for the execute_extension_script() that is called next in QD. */
-			creating_extension = true;
-			CurrentExtensionObject = extensionOid;
-			/* break */
-		}
 
 		/*
 		 * Update prior-version name and loop around.  Since
