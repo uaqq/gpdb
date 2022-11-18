@@ -72,8 +72,11 @@ ALTER EXTENSION test_ext_cine UPDATE TO '1.1';
 \dx+ test_ext_cine
 
 --
--- test case for `create extension ... with schema version from unpackaged`
--- (related to problem: https://github.com/greenplum-db/gpdb/issues/6716)
+-- Test cases for problem  https://github.com/greenplum-db/gpdb/issues/6716.
+-- Segments of gpdb builed with `--enable-cassert` stops with error like
+-- FailedAssertion(""!(stack->state == GUC_SAVE)" at next cases. At gpdb builed
+-- without `--enable-cassert` segments won't stop with errors, but there may be
+-- incorrect search_path.
 --
 
 -- create schema for extension (and it's functions) and reset search_path to new schema 
@@ -81,8 +84,7 @@ show search_path;
 create schema foo;
 set search_path=foo;
 
--- Create extension functions. Code copied from from test_ext_unpackaged--1.0.sql
--- to run 
+-- Create extension functions. Code copied from from test_ext_cau--1.0.sql
 create function test_func1(a int, b int) returns int
 as $$
 begin
@@ -108,12 +110,12 @@ set search_path=pg_catalog;
 show search_path;
 
 -- create extension in schema foo
-create extension test_ext_unpackaged with schema foo version '1.1' from unpackaged;
+create extension test_ext_cau with schema foo version '1.1' from unpackaged;
 
 -- check that search path doesn't changed after create extension
 show search_path;
 
--- show functions at schema foo (check that create extension works correctly)
+-- show that functions belong to schema foo (check that create extension works correctly)
 set search_path=foo;
 \df
 
@@ -123,9 +125,19 @@ FROM pg_catalog.pg_extension AS e
     INNER JOIN pg_catalog.pg_proc AS p ON (p.oid = d.objid)
     INNER JOIN pg_catalog.pg_namespace AS ne ON (ne.oid = e.extnamespace)
     INNER JOIN pg_catalog.pg_namespace AS np ON (np.oid = p.pronamespace)
-WHERE d.deptype = 'e' and e.extname = 'test_ext_unpackaged'
+WHERE d.deptype = 'e' and e.extname = 'test_ext_cau'
 ORDER BY 1, 3;
 
 rollback;
+drop function foo.test_func1(int,int); 
+drop function foo.test_func2(int,int);
+
+-- check that alter extension (with search_path is set) won't fail
+-- (on gpdb builded with --enable-cassert)
+create extension test_ext_cau with version '1.0' schema foo;
+begin;
+set search_path=foo;
+alter extension test_ext_cau update to '1.1';
+end;
 
 drop schema foo cascade;

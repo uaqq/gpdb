@@ -56,4 +56,28 @@ create extension gp_inject_fault with schema issue6716;
 select issue6716.gp_inject_fault('issue6716', 'skip', 1);
 select issue6716.gp_inject_fault('issue6716', 'reset', 1);
 drop extension gp_inject_fault;
+
+--
+-- Check that non default search_path is restored after
+-- `create extension` call at transactions context
+--
+
+-- create extension in the same schema
+begin;
+set search_path=pg_catalog;
+create extension btree_gin;
+show search_path;
+rollback;
+
+-- create extension in the different schema
+begin;
+set search_path=issue6716;
+show search_path;
+create extension btree_gin with schema pg_catalog;
+show search_path;
+end;
+
+reset search_path;
+drop extension btree_gin;
 drop schema issue6716;
+
