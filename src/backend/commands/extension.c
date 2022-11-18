@@ -69,6 +69,9 @@
 bool		creating_extension = false;
 Oid			CurrentExtensionObject = InvalidOid;
 
+/* File visible "segment" variable for GUCs state */
+static int 	segment_nestlevel = 0;
+
 /*
  * Internal data structure to hold the results of parsing a control file
  */
@@ -811,7 +814,7 @@ execute_extension_script(Node *stmt,
 	StringInfoData pathbuf;
 	ListCell   *lc;
 
-	AssertState(Gp_role != GP_ROLE_EXECUTE);
+	// maybe should be fixed check validation at CreateExtension/Exec ...
 	AssertImply(Gp_role == GP_ROLE_DISPATCH, stmt != NULL &&
 			(nodeTag(stmt) == T_CreateExtensionStmt || nodeTag(stmt) == T_AlterExtensionStmt) &&
 			is_begin_state(stmt));
@@ -891,6 +894,15 @@ execute_extension_script(Node *stmt,
 	 */
 	creating_extension = true;
 	CurrentExtensionObject = extensionOid;
+
+	/*
+	 * All necessary variables at segment is set up.
+	 */
+	if (Gp_role == GP_ROLE_EXECUTE)
+	{
+		return;
+	}
+
 	PG_TRY();
 	{
 		char	   *c_sql = read_extension_script_file(control, filename);
@@ -1283,10 +1295,17 @@ CreateExtension(CreateExtensionStmt *stmt)
 
 			case CREATE_EXTENSION_BEGIN:	/* Mark creating_extension flag and add pg_extension catalog tuple */
 				creating_extension = true;
+				// is it safe to call it here, because read_extension_control_file
+				// may raise PG_Exception, seems yes - master will call create stmt with cleanup
+				// yes it's safe, leader will catch exception at execute_extension_script and set_end_state
+				// and call CdbDispatch
+				segment_nestlevel = NewGUCNestLevel();
 				break;
 			case CREATE_EXTENSION_END:		/* Mark creating_extension flag = false */
 				creating_extension = false;
 				CurrentExtensionObject = InvalidOid;
+				AtEOXact_GUC(true, segment_nestlevel);
+				segment_nestlevel = 0;
 				return get_extension_oid(stmt->extname, true);
 
 			default:
@@ -1560,20 +1579,17 @@ CreateExtension(CreateExtensionStmt *stmt)
 		CurrentExtensionObject = extensionOid;
 	}
 
-	if (Gp_role != GP_ROLE_EXECUTE)
-	{
-		execute_extension_script((Node*)stmt, extensionOid, control,
+	execute_extension_script((Node*)stmt, extensionOid, control,
 							 oldVersionName, versionName,
 							 requiredSchemas,
 							 schemaName, schemaOid);
 
-		/*
-		 * If additional update scripts have to be executed, apply the updates as
-		 * though a series of ALTER EXTENSION UPDATE commands were given
-		 */
-		ApplyExtensionUpdates(extensionOid, pcontrol,
-							  versionName, updateVersions);
-	}
+	/*
+	* If additional update scripts have to be executed, apply the updates as
+	* though a series of ALTER EXTENSION UPDATE commands were given
+	*/
+	ApplyExtensionUpdates(extensionOid, pcontrol,
+						  versionName, updateVersions);
 
 	return extensionOid;
 }
@@ -2861,9 +2877,10 @@ ApplyExtensionUpdates(Oid extensionOid,
 
 	/*
 	 * The update of extension in QE is driven by QD, so we only handle 1 version upgrade
-	 * per dispatch on the QE
+	 * per dispatch on the QE.
+	 * QE may call this function with an empty updateVersions (like at postgres) - noop
 	 */
-	AssertImply(Gp_role == GP_ROLE_EXECUTE, list_length(updateVersions) == 1);
+	AssertImply(Gp_role == GP_ROLE_EXECUTE, list_length(updateVersions) <= 1);
 
 	foreach(lcv, updateVersions)
 	{
