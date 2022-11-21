@@ -38,7 +38,8 @@ private:
 
 public:
 	// ctor
-	explicit CPhysicalMotionBroadcast(CMemoryPool *mp);
+	explicit CPhysicalMotionBroadcast(CMemoryPool *mp,
+									  CDistributionSpecReplicated *pdsReplicated);
 
 	// dtor
 	virtual ~CPhysicalMotionBroadcast();

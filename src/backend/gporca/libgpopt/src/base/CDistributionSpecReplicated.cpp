@@ -5,6 +5,7 @@
 
 #include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecSingleton.h"
+#include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/operators/CPhysicalMotionBroadcast.h"
 
 using namespace gpopt;
@@ -89,6 +90,11 @@ CDistributionSpecReplicated::FSatisfies(const CDistributionSpec *pdss) const
 		// replicated distribution satisfies a general replicated distribution spec
 		if (EdtReplicated == pdss->Edt())
 		{
+			if (IsDuplicateSensitive())
+			{
+				return false;
+			}
+
 			return true;
 		}
 
@@ -110,7 +116,7 @@ CDistributionSpecReplicated::FSatisfies(const CDistributionSpec *pdss) const
 
 void
 CDistributionSpecReplicated::AppendEnforcers(CMemoryPool *mp,
-											 CExpressionHandle &,  // exprhdl
+											 CExpressionHandle &exprhdl,
 											 CReqdPropPlan *
 #ifdef GPOS_DEBUG
 												 prpp
@@ -135,9 +141,21 @@ CDistributionSpecReplicated::AppendEnforcers(CMemoryPool *mp,
 		return;
 	}
 
+	CDistributionSpecReplicated *pdsReplicated = GPOS_NEW(mp)
+		CDistributionSpecReplicated(CDistributionSpec::EdtStrictReplicated);
+
+	CGroupExpression *pgexpr = exprhdl.Pgexpr();
+	do {
+		if (COperator::EopLogicalCTEConsumer == pgexpr->Pop()->Eopid())
+		{
+			pdsReplicated->MarkDuplicateSensitive();
+			break;
+		}
+	} while ((pgexpr = pgexpr->PgexprOrigin()));
+
 	pexpr->AddRef();
-	CExpression *pexprMotion = GPOS_NEW(mp)
-		CExpression(mp, GPOS_NEW(mp) CPhysicalMotionBroadcast(mp), pexpr);
+	CExpression *pexprMotion = GPOS_NEW(mp)	CExpression(
+		mp, GPOS_NEW(mp) CPhysicalMotionBroadcast(mp, pdsReplicated), pexpr);
 	pdrgpexpr->Append(pexprMotion);
 }
 // EOF

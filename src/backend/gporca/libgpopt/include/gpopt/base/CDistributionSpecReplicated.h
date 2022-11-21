@@ -22,6 +22,9 @@ using namespace gpos;
 
 class CDistributionSpecReplicated : public CDistributionSpec
 {
+protected:
+	BOOL m_is_duplicate_sensitive;
+
 private:
 	CDistributionSpecReplicated(const CDistributionSpecReplicated &);
 
@@ -32,7 +35,7 @@ public:
 	// ctor
 	CDistributionSpecReplicated(
 		CDistributionSpec::EDistributionType replicated_type)
-		: m_replicated(replicated_type)
+		: m_is_duplicate_sensitive(false), m_replicated(replicated_type)
 	{
 		GPOS_ASSERT(replicated_type == CDistributionSpec::EdtReplicated ||
 					replicated_type ==
@@ -45,6 +48,20 @@ public:
 	Edt() const
 	{
 		return m_replicated;
+	}
+
+	BOOL
+	IsDuplicateSensitive() const
+	{
+		return m_is_duplicate_sensitive;
+	}
+
+	void
+	MarkDuplicateSensitive()
+	{
+		GPOS_ASSERT(!m_is_duplicate_sensitive);
+
+		m_is_duplicate_sensitive = true;
 	}
 
 	// does this distribution satisfy the given one
@@ -97,6 +114,17 @@ public:
 		return dynamic_cast<CDistributionSpecReplicated *>(pds);
 	}
 
+	// conversion function: const argument
+	static const CDistributionSpecReplicated *
+	PdsConvert(const CDistributionSpec *pds)
+	{
+		GPOS_ASSERT(NULL != pds);
+		GPOS_ASSERT(EdtStrictReplicated == pds->Edt() ||
+					EdtReplicated == pds->Edt() ||
+					EdtTaintedReplicated == pds->Edt());
+
+		return dynamic_cast<const CDistributionSpecReplicated *>(pds);
+	}
 };	// class CDistributionSpecReplicated
 
 }  // namespace gpopt
