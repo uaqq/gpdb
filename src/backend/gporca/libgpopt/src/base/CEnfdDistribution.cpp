@@ -149,6 +149,14 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			return EpetProhibited;
 		}
 
+		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
+			!CUtils::FPhysicalMotion(popPhysical) &&
+			CDistributionSpec::EdtStrictReplicated == pds->Edt() &&
+			EdmSatisfy == m_edm)
+		{
+			return EpetProhibited;
+		}
+
 		// if operator is a propagator/consumer of any partition index id, prohibit
 		// enforcing any distribution not compatible with what operator delivers
 		// if the derived partition consumers are a subset of the ones in the given
