@@ -154,7 +154,7 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			CDistributionSpec::EdtStrictReplicated == pds->Edt() &&
 			EdmSatisfy == m_edm)
 		{
-			return EpetProhibited;
+			return EpetRequired;
 		}
 
 		// if operator is a propagator/consumer of any partition index id, prohibit
