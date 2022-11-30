@@ -150,7 +150,6 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 		}
 
 		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
-			!CUtils::FPhysicalMotion(popPhysical) &&
 			CDistributionSpec::EdtStrictReplicated == pds->Edt())
 		{
 			return EpetRequired;
