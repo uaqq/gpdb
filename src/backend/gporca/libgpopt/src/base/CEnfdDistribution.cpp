@@ -152,7 +152,7 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
 			CDistributionSpec::EdtStrictReplicated == pds->Edt())
 		{
-			return EpetRequired;
+			return EpetSentinel;
 		}
 
 		// if operator is a propagator/consumer of any partition index id, prohibit

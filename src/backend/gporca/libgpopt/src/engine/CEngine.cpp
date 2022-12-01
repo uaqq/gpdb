@@ -2137,6 +2137,21 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	CEnfdProp::EPropEnforcingType epetPartitionPropagation =
 		prpp->Pepp()->Epet(exprhdl, popPhysical, fPartPropagationReqd);
 
+	if (CEnfdProp::EpetSentinel == epetDistribution)
+	{
+		epetDistribution = CEnfdProp::EpetUnnecessary;
+		const ULONG ulGExprs = m_pmemo->UlGrpExprs();
+		for (ULONG ul = 0; ul < ulGExprs; ul++)
+		{
+			CGroup *pGroup = m_pmemo->Pgroup(ul);
+			if (NULL != pGroup && pGroup->FHasAnyCTEConsumer())
+			{
+				epetDistribution = CEnfdProp::EpetRequired;
+				break;
+			}
+		}
+	}
+
 	// Skip adding enforcers entirely if any property determines it to be
 	// 'prohibited'. In this way, a property may veto out the creation of an
 	// enforcer for the current group expression and optimization context.
