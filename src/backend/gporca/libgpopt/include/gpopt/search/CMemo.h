@@ -107,6 +107,12 @@ public:
 	// dtor
 	~CMemo();
 
+	const CSyncList<CGroup> *
+	PlistGroups() const
+	{
+		return &m_listGroups;
+	}
+
 	// return root group
 	CGroup *
 	PgroupRoot() const

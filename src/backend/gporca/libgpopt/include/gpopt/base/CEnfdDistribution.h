@@ -105,7 +105,7 @@ public:
 	// get distribution enforcing type for the given operator
 	EPropEnforcingType Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 							CPartitionPropagationSpec *pppsReqd,
-							BOOL fDistribReqd) const;
+							BOOL fDistribReqd, const CSyncList<CGroup> *listGroups) const;
 
 	// print function
 	virtual IOstream &OsPrint(IOstream &os) const;

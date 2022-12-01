@@ -128,7 +128,7 @@ CEnfdDistribution::HashValue() const
 CEnfdProp::EPropEnforcingType
 CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 						CPartitionPropagationSpec *pppsReqd,
-						BOOL fDistribReqd) const
+						BOOL fDistribReqd, const CSyncList<CGroup> *listGroups) const
 {
 	if (fDistribReqd)
 	{
@@ -152,7 +152,16 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
 			CDistributionSpec::EdtStrictReplicated == pds->Edt())
 		{
-			return EpetSentinel;
+			CGroup *pgroup = listGroups->PtFirst();
+
+			while (NULL != pgroup)
+			{
+				if (pgroup->FHasAnyCTEConsumer())
+				{
+					return EpetRequired;
+				}
+				pgroup = listGroups->Next(pgroup);
+			}
 		}
 
 		// if operator is a propagator/consumer of any partition index id, prohibit
