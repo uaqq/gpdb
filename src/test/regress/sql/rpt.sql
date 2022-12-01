@@ -575,6 +575,17 @@ drop table if exists t1;
 drop table if exists t2;
 drop function if exists f(i int);
 
+CREATE TABLE d (a int, b int) DISTRIBUTED BY (a);
+CREATE TABLE r (a int, b varchar(255)) DISTRIBUTED REPLICATED;
+EXPLAIN (ANALYZE off, COSTS off, VERBOSE off)
+WITH e AS (
+    SELECT DISTINCT b FROM d
+), h AS (
+    SELECT a FROM d JOIN e f USING (b) JOIN e USING (b)
+) SELECT b FROM h JOIN r USING (a);
+DROP TABLE IF EXISTS d;
+DROP TABLE IF EXISTS r;
+
 -- start_ignore
 drop schema rpt cascade;
 -- end_ignore
