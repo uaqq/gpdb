@@ -128,7 +128,8 @@ CEnfdDistribution::HashValue() const
 CEnfdProp::EPropEnforcingType
 CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 						CPartitionPropagationSpec *pppsReqd,
-						BOOL fDistribReqd, const CSyncList<CGroup> *listGroups) const
+						BOOL fDistribReqd,
+						const CSyncList<CGroup> *listGroups) const
 {
 	if (fDistribReqd)
 	{
