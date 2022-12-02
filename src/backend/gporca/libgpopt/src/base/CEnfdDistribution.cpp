@@ -150,22 +150,6 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			return EpetProhibited;
 		}
 
-		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
-			!CUtils::FPhysicalMotion(popPhysical) &&
-			CDistributionSpec::EdtStrictReplicated == pds->Edt())
-		{
-			CGroup *pgroup = listGroups->PtFirst();
-
-			while (NULL != pgroup)
-			{
-				if (pgroup->FHasAnyCTEConsumer())
-				{
-					return EpetRequired;
-				}
-				pgroup = listGroups->Next(pgroup);
-			}
-		}
-
 		// if operator is a propagator/consumer of any partition index id, prohibit
 		// enforcing any distribution not compatible with what operator delivers
 		// if the derived partition consumers are a subset of the ones in the given
@@ -195,10 +179,24 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			// disallow plans with outer references below motion operator
 			return EpetProhibited;
 		}
-		else
+
+		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
+			!CUtils::FPhysicalMotion(popPhysical) &&
+			CDistributionSpec::EdtStrictReplicated == pds->Edt())
 		{
-			return epet;
+			CGroup *pgroup = listGroups->PtFirst();
+
+			while (NULL != pgroup)
+			{
+				if (pgroup->FHasAnyCTEConsumer())
+				{
+					return EpetRequired;
+				}
+				pgroup = listGroups->Next(pgroup);
+			}
 		}
+
+		return epet;
 	}
 
 	return EpetUnnecessary;
