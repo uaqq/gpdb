@@ -188,7 +188,7 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 
 			while (NULL != pgroup)
 			{
-				if (pgroup->FHasAnyCTEConsumer())
+				if (pgroup->FHasCTEProducer())
 				{
 					return EpetRequired;
 				}
