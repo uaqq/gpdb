@@ -190,7 +190,7 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			{
 				if (pgroup->FHasCTEProducer())
 				{
-					return EpetRequired;
+					return EpetProhibited;
 				}
 				pgroup = listGroups->Next(pgroup);
 			}
