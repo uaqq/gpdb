@@ -1235,6 +1235,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		}
 	}
 
+	if (nodeTag(plan) == T_ModifyTable && CdbPathLocus_IsReplicated(*(plan->flow)))
+	{
+		Assert(es->pstmt->planGen == PLANGEN_PLANNER); /* T_ModifyTable can be produce by planner only */
+		scaleFactor = 1.0;
+	}
+
 	switch (nodeTag(plan))
 	{
 		case T_Result:
@@ -1462,7 +1468,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 							 * scale the number of rows by the number of
 							 * segments sending data
 							 */
-							scaleFactor = motion_snd;
+							scaleFactor = getgpsegmentCount();
 						}
 						else if (plan->lefttree->flow->locustype == CdbLocusType_Replicated)
 						{

@@ -98,6 +98,9 @@ private:
 	// get expression's derived property given its type
 	CDrvdProp *Pdp(const CDrvdProp::EPropType ept) const;
 
+	// parent motion's input segments
+	IntPtrArray *m_motion_input_segments;
+
 #ifdef GPOS_DEBUG
 
 	// assert valid property derivation
@@ -214,6 +217,18 @@ public:
 	Cost() const
 	{
 		return m_cost;
+	}
+
+	void
+	SetMotionInputs(IntPtrArray *motionInputSegments)
+	{
+		m_motion_input_segments = motionInputSegments;
+	}
+
+	IntPtrArray *
+	GetMotionInputs() const
+	{
+		return m_motion_input_segments;
 	}
 
 	// get the suitable derived property type based on operator

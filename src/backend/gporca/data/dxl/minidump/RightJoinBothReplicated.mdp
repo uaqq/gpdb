@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <dxl:DXLMessage xmlns:dxl="http://greenplum.com/dxl/2010/12/">
- <dxl:Comment><![CDATA[
+  <dxl:Comment><![CDATA[
 	 Objective: Ensure we execute the right join on a single node so that we don't get duplicate results. 
 	 Since both tables are replicated, we don't need any motion, and can execute on any segment. 
 	 However, we cannot redistribute/broadcast any tuples.
@@ -23,7 +23,7 @@
  Optimizer: Pivotal Optimizer (GPORCA)
 (7 rows)
   ]]>
- </dxl:Comment>
+  </dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>
@@ -735,7 +735,7 @@
         <dxl:SortingColumnList/>
         <dxl:HashJoin JoinType="Right">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="862.218684" Rows="56.666640" Width="16"/>
+            <dxl:Cost StartupCost="0" TotalCost="862.218684" Rows="18.888880" Width="16"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="9" Alias="a">
@@ -761,7 +761,7 @@
           </dxl:HashCondList>
           <dxl:TableScan>
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="431.020900" Rows="3000.000000" Width="8"/>
+              <dxl:Cost StartupCost="0" TotalCost="431.020900" Rows="1000.000000" Width="8"/>
             </dxl:Properties>
             <dxl:ProjList>
               <dxl:ProjElem ColId="9" Alias="a">
@@ -788,7 +788,7 @@
           </dxl:TableScan>
           <dxl:TableScan>
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="431.000209" Rows="30.000000" Width="8"/>
+              <dxl:Cost StartupCost="0" TotalCost="431.000209" Rows="10.000000" Width="8"/>
             </dxl:Properties>
             <dxl:ProjList>
               <dxl:ProjElem ColId="0" Alias="a">
