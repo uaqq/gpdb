@@ -1213,7 +1213,7 @@
                 </dxl:HashExprList>
                 <dxl:Aggregate AggregationStrategy="Sorted" StreamSafe="false">
                   <dxl:Properties>
-                    <dxl:Cost StartupCost="0" TotalCost="431.006161" Rows="27.272700" Width="4"/>
+                    <dxl:Cost StartupCost="0" TotalCost="431.006161" Rows="9.090900" Width="4"/>
                   </dxl:Properties>
                   <dxl:GroupingColumns>
                     <dxl:GroupingColumn ColId="9"/>
@@ -1226,7 +1226,7 @@
                   <dxl:Filter/>
                   <dxl:Sort SortDiscardDuplicates="false">
                     <dxl:Properties>
-                      <dxl:Cost StartupCost="0" TotalCost="431.006104" Rows="27.272700" Width="4"/>
+                      <dxl:Cost StartupCost="0" TotalCost="431.006104" Rows="9.090900" Width="4"/>
                     </dxl:Properties>
                     <dxl:ProjList>
                       <dxl:ProjElem ColId="9" Alias="a">
@@ -1241,7 +1241,7 @@
                     <dxl:LimitOffset/>
                     <dxl:TableScan>
                       <dxl:Properties>
-                        <dxl:Cost StartupCost="0" TotalCost="431.005448" Rows="27.272700" Width="4"/>
+                        <dxl:Cost StartupCost="0" TotalCost="431.005448" Rows="9.090900" Width="4"/>
                       </dxl:Properties>
                       <dxl:ProjList>
                         <dxl:ProjElem ColId="9" Alias="a">

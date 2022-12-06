@@ -16,7 +16,7 @@
          ->  Broadcast Motion 1:3  (slice1; segments: 1)  (cost=0.00..431.00 rows=3 width=4)
                ->  Aggregate  (cost=0.00..431.00 rows=1 width=8)
                      ->  Seq Scan on hottoast  (cost=0.00..431.00 rows=3 width=4)
-  ]]></dxl:Comment>
+  ]]>  </dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>
@@ -240,9 +240,9 @@
           <dxl:GroupingColumns/>
           <dxl:ProjList>
             <dxl:ProjElem ColId="9" Alias="sum">
-              <dxl:AggFunc AggMdid="0.2110.1.0" AggDistinct="false" AggStage="Normal" AggKind="n" >
+              <dxl:AggFunc AggMdid="0.2110.1.0" AggDistinct="false" AggStage="Normal" AggKind="n">
                 <dxl:ValuesList ParamType="aggargs">
-                <dxl:Ident ColId="1" ColName="c" TypeMdid="0.700.1.0"/>
+                  <dxl:Ident ColId="1" ColName="c" TypeMdid="0.700.1.0"/>
                 </dxl:ValuesList>
                 <dxl:ValuesList ParamType="aggdirectargs"/>
                 <dxl:ValuesList ParamType="aggorder"/>
@@ -317,14 +317,14 @@
             <dxl:SortingColumnList/>
             <dxl:Aggregate AggregationStrategy="Plain" StreamSafe="false">
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="431.000027" Rows="3.000000" Width="4"/>
+                <dxl:Cost StartupCost="0" TotalCost="431.000027" Rows="1.000000" Width="4"/>
               </dxl:Properties>
               <dxl:GroupingColumns/>
               <dxl:ProjList>
                 <dxl:ProjElem ColId="8" Alias="sum">
-                  <dxl:AggFunc AggMdid="0.2110.1.0" AggDistinct="false" AggStage="Normal" AggKind="n" >
+                  <dxl:AggFunc AggMdid="0.2110.1.0" AggDistinct="false" AggStage="Normal" AggKind="n">
                     <dxl:ValuesList ParamType="aggargs">
-                    <dxl:Ident ColId="0" ColName="c" TypeMdid="0.700.1.0"/>
+                      <dxl:Ident ColId="0" ColName="c" TypeMdid="0.700.1.0"/>
                     </dxl:ValuesList>
                     <dxl:ValuesList ParamType="aggdirectargs"/>
                     <dxl:ValuesList ParamType="aggorder"/>
@@ -335,7 +335,7 @@
               <dxl:Filter/>
               <dxl:TableScan>
                 <dxl:Properties>
-                  <dxl:Cost StartupCost="0" TotalCost="431.000019" Rows="3.000000" Width="4"/>
+                  <dxl:Cost StartupCost="0" TotalCost="431.000019" Rows="1.000000" Width="4"/>
                 </dxl:Properties>
                 <dxl:ProjList>
                   <dxl:ProjElem ColId="0" Alias="c">

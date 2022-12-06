@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <dxl:DXLMessage xmlns:dxl="http://greenplum.com/dxl/2010/12/">
- <dxl:Comment><![CDATA[
+  <dxl:Comment><![CDATA[
 	 Objective: Ensure we execute the right join on a single node so that we don't get duplicate results
 	 select disable_xform('CXformLeftOuterJoin2HashJoin');
 	 CREATE TABLE foo (a int, b int);
@@ -21,7 +21,7 @@
  Optimizer: Pivotal Optimizer (GPORCA)
 (8 rows)
   ]]>
- </dxl:Comment>
+  </dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>
@@ -1158,7 +1158,7 @@
           <dxl:SortingColumnList/>
           <dxl:TableScan>
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="431.002090" Rows="300.000000" Width="8"/>
+              <dxl:Cost StartupCost="0" TotalCost="431.002090" Rows="100.000000" Width="8"/>
             </dxl:Properties>
             <dxl:ProjList>
               <dxl:ProjElem ColId="0" Alias="a">
