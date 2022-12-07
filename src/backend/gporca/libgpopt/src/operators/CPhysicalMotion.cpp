@@ -69,7 +69,7 @@ CPhysicalMotion::FValidContext(CMemoryPool *, COptimizationContext *poc,
 //---------------------------------------------------------------------------
 CDistributionSpec *
 CPhysicalMotion::PdsRequired(CMemoryPool *mp,
-							 CExpressionHandle &,  // exprhdl
+							 CExpressionHandle &exprhdl,
 							 CDistributionSpec *pdsRequired,
 							 ULONG
 #ifdef GPOS_DEBUG
@@ -138,7 +138,8 @@ CPhysicalMotion::PdsRequired(CMemoryPool *mp,
 	}
 
 	if (CDistributionSpec::EdtReplicated == pdsRequired->Edt() &&
-		CDistributionSpec::EdtStrictReplicated == Pds()->Edt())
+		CDistributionSpec::EdtStrictReplicated == Pds()->Edt() &&
+		exprhdl.Pgexpr()->Pgroup()->FHasAnyCTEConsumer())
 	{
 		return GPOS_NEW(mp) CDistributionSpecSingleton(
 			CDistributionSpecSingleton::EstSegment);
