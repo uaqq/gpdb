@@ -137,6 +137,12 @@ CPhysicalMotion::PdsRequired(CMemoryPool *mp,
 		return GPOS_NEW(mp) CDistributionSpecRandom();
 	}
 
+	if (CDistributionSpec::EdtStrictReplicated == Pds()->Edt())
+	{
+		return GPOS_NEW(mp) CDistributionSpecSingleton(
+			CDistributionSpecSingleton::EstSegment);
+	}
+
 	// any motion operator is distribution-establishing and does not require
 	// child to deliver any specific distribution
 	return GPOS_NEW(mp) CDistributionSpecAny(this->Eopid());
