@@ -137,7 +137,8 @@ CPhysicalMotion::PdsRequired(CMemoryPool *mp,
 		return GPOS_NEW(mp) CDistributionSpecRandom();
 	}
 
-	if (CDistributionSpec::EdtStrictReplicated == Pds()->Edt())
+	if (CDistributionSpec::EdtReplicated == pdsRequired->Edt() &&
+		CDistributionSpec::EdtStrictReplicated == Pds()->Edt())
 	{
 		return GPOS_NEW(mp) CDistributionSpecSingleton(
 			CDistributionSpecSingleton::EstSegment);
