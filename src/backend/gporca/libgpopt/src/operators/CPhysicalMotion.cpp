@@ -77,10 +77,11 @@ CPhysicalMotion::PdsRequired(CMemoryPool *mp,
 #endif	// GPOS_DEBUG
 							 ,
 							 CDrvdPropArray *,	// pdrgpdpCtxt
-							 ULONG				// ulOptReq
+							 ULONG				ulOptReq
 ) const
 {
 	GPOS_ASSERT(0 == child_index);
+	GPOS_ASSERT(ulOptReq < UlDistrRequests());
 
 	// if the required distribution is EdtStrictRandom, it indicates
 	// that this motion operator was enforced into the same
@@ -135,6 +136,12 @@ CPhysicalMotion::PdsRequired(CMemoryPool *mp,
 		GPOS_ASSERT(COperator::EopPhysicalMotionRandom == Eopid());
 		GPOS_ASSERT(CDistributionSpec::EdtStrictRandom == Pds()->Edt());
 		return GPOS_NEW(mp) CDistributionSpecRandom();
+	}
+
+	if (0 == ulOptReq)
+	{
+		return GPOS_NEW(mp) CDistributionSpecSingleton(
+			CDistributionSpecSingleton::EstSegment);
 	}
 
 	// any motion operator is distribution-establishing and does not require
@@ -306,6 +313,13 @@ CPhysicalMotion::EpetDistribution(CExpressionHandle &,	// exprhdl
 								  const CEnfdDistribution *ped) const
 {
 	GPOS_ASSERT(NULL != ped);
+
+	if ((CDistributionSpec::EdtStrictReplicated == Pds()->Edt() ||
+		CDistributionSpec::EdtTaintedReplicated == Pds()->Edt()) &&
+		CEnfdDistribution::EdmSatisfy == ped->Edm())
+	{
+		return CEnfdProp::EpetProhibited;
+	}
 
 	if (ped->FCompatible(Pds()))
 	{
