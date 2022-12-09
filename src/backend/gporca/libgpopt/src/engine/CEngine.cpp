@@ -21,6 +21,7 @@
 #include "gpos/task/CAutoTraceFlag.h"
 
 #include "gpopt/base/CCostContext.h"
+#include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDrvdPropCtxtPlan.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/base/COptimizationContext.h"
@@ -2105,10 +2106,14 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	// force checking EpetDistribution on the physical operation
 	BOOL fDistributionReqdException =
 		popPhysical->Eopid() == COperator::EopPhysicalLeftOuterIndexNLJoin;
+	BOOL fGatherMotionException =
+		prpp->Ped()->PdsRequired()->Edt() == CDistributionSpec::EdtAny &&
+		CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->GetRequestedOperatorId() ==
+		COperator::EopPhysicalMotionGather;
 	BOOL fDistributionReqd =
 		!GPOS_FTRACE(EopttraceDisableMotions) &&
 		((CDistributionSpec::EdtAny != prpp->Ped()->PdsRequired()->Edt()) ||
-		 fDistributionReqdException);
+		 fDistributionReqdException || fGatherMotionException);
 
 	BOOL fRewindabilityReqd = !GPOS_FTRACE(EopttraceDisableSpool) &&
 							  (prpp->Per()->PrsRequired()->IsCheckRequired());

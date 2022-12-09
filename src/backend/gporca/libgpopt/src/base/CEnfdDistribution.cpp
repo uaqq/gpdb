@@ -14,6 +14,7 @@
 #include "gpos/base.h"
 
 #include "gpopt/base/CDistributionSpec.h"
+#include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDistributionSpecHashed.h"
 #include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecSingleton.h"
@@ -157,6 +158,15 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 		GPOS_ASSERT(NULL != ppimDrvd);
 		if (ppimDrvd->FContainsUnresolved() && !this->FCompatible(pds) &&
 			!ppimDrvd->FSubset(pppsReqd->Ppim()))
+		{
+			return CEnfdProp::EpetProhibited;
+		}
+
+		if ((CDistributionSpec::EdtStrictReplicated == pds->Edt() ||
+			CDistributionSpec::EdtTaintedReplicated == pds->Edt()) &&
+			CDistributionSpec::EdtAny == PdsRequired()->Edt() &&
+			CDistributionSpecAny::PdsConvert(PdsRequired())->GetRequestedOperatorId() == COperator::EopPhysicalMotionGather &&
+			EdmSatisfy == Edm())
 		{
 			return CEnfdProp::EpetProhibited;
 		}
