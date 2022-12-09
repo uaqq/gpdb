@@ -314,13 +314,6 @@ CPhysicalMotion::EpetDistribution(CExpressionHandle &,	// exprhdl
 {
 	GPOS_ASSERT(NULL != ped);
 
-	if ((CDistributionSpec::EdtStrictReplicated == Pds()->Edt() ||
-		CDistributionSpec::EdtTaintedReplicated == Pds()->Edt()) &&
-		CEnfdDistribution::EdmSatisfy == ped->Edm())
-	{
-		return CEnfdProp::EpetProhibited;
-	}
-
 	if (ped->FCompatible(Pds()))
 	{
 		return CEnfdProp::EpetUnnecessary;

@@ -21,6 +21,7 @@
 #include "gpos/task/CAutoTraceFlag.h"
 
 #include "gpopt/base/CCostContext.h"
+#include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDrvdPropCtxtPlan.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/base/COptimizationContext.h"
@@ -2128,6 +2129,32 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	// get distribution enforcing type
 	CEnfdProp::EPropEnforcingType epetDistribution = prpp->Ped()->Epet(
 		exprhdl, popPhysical, prpp->Pepp()->PppsRequired(), fDistributionReqd);
+
+	if (CEnfdProp::EpetProhibited != epetDistribution &&
+		CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt())
+	{
+		CDistributionSpecAny *pds = CDistributionSpecAny::PdsConvert(
+			prpp->Ped()->PdsRequired());
+		switch (pds->GetRequestedOperatorId())
+		{
+			case COperator::EopPhysicalMotionGather:
+			case COperator::EopPhysicalMotionBroadcast:
+			case COperator::EopPhysicalMotionHashDistribute:
+			case COperator::EopPhysicalMotionRoutedDistribute:
+			case COperator::EopPhysicalMotionRandom:
+			{
+				CDistributionSpec *pds = CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds();
+				if (CDistributionSpec::EdtStrictReplicated == pds->Edt() ||
+					CDistributionSpec::EdtTaintedReplicated == pds->Edt())
+				{
+					epetDistribution = CEnfdProp::EpetProhibited;
+				}
+				break;
+			}
+			default:
+				break;
+		}
+	}
 
 	// get rewindability enforcing type
 	CEnfdProp::EPropEnforcingType epetRewindability =
