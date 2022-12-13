@@ -24,6 +24,7 @@
 #include "gpopt/operators/CPhysicalMotionBroadcast.h"
 #include "gpopt/operators/CPhysicalMotionGather.h"
 #include "gpopt/operators/CPhysicalMotionHashDistribute.h"
+#include "gpopt/search/CGroupProxy.h"
 
 
 using namespace gpopt;
@@ -184,7 +185,21 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			!CUtils::FPhysicalAgg(popPhysical) &&
 			CDistributionSpec::EdtStrictReplicated == pds->Edt())
 		{
-			return EpetProhibited;
+			CGroupProxy gp(exprhdl.Pgexpr()->Pgroup());
+			CGroupExpression *pgexprCurrent = gp.PgexprFirst();
+			CGroupExpression *pgexprLast = NULL;
+			while (NULL != pgexprCurrent)
+			{
+				pgexprLast = pgexprCurrent;
+				pgexprCurrent = gp.PgexprNext(pgexprCurrent);
+				GPOS_CHECK_ABORT;
+			}
+			if (NULL != pgexprLast &&
+				COperator::EopPhysicalMotionGather == pgexprLast->Pop()->Eopid() &&
+				CPhysicalMotionGather::PopConvert(pgexprLast->Pop())->FOnMaster())
+			{
+				return EpetProhibited;
+			}
 		}
 		else
 		{
