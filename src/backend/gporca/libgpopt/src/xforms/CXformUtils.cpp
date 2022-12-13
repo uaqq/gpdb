@@ -1331,17 +1331,12 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 		val = CScalarDMLAction::EdmlactionDelete;
 	}
 
-	// new expressions to project
-	IMDId *rel_mdid = ptabdesc->MDId();
-	CExpression *pexprProject = NULL;
-	CColRef *pcrAction = NULL;
-
 	// generate one project node with new column: action
-	pexprProject = CUtils::PexprAddProjection(mp, pexprChild,
+	IMDId *rel_mdid = ptabdesc->MDId();
+	CExpression *pexprProject = CUtils::PexprAddProjection(mp, pexprChild,
 			CUtils::PexprScalarConstInt4(mp, val));
-
 	CExpression *pexprPrL = (*pexprProject)[1];
-	pcrAction = CUtils::PcrFromProjElem((*pexprPrL)[0]);
+	CColRef *pcrAction = CUtils::PcrFromProjElem((*pexprPrL)[0]);
 
 	GPOS_ASSERT(NULL != pcrAction);
 
