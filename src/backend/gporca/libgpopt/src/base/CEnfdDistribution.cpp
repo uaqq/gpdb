@@ -179,9 +179,10 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			// disallow plans with outer references below motion operator
 			return EpetProhibited;
 		}
-
-		if (CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
+		else if (CEnfdProp::EpetUnnecessary == epet &&
+			CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
 			!CUtils::FPhysicalMotion(popPhysical) &&
+			!CUtils::FPhysicalAgg(popPhysical) &&
 			CDistributionSpec::EdtStrictReplicated == pds->Edt())
 		{
 			CGroup *pgroup = listGroups->PtFirst();
@@ -195,8 +196,10 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 				pgroup = listGroups->Next(pgroup);
 			}
 		}
-
-		return epet;
+		else
+		{
+			return epet;
+		}
 	}
 
 	return EpetUnnecessary;
