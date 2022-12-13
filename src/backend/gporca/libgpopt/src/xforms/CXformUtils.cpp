@@ -1333,8 +1333,8 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 
 	// generate one project node with new column: action
 	IMDId *rel_mdid = ptabdesc->MDId();
-	CExpression *pexprProject = CUtils::PexprAddProjection(mp, pexprChild,
-			CUtils::PexprScalarConstInt4(mp, val));
+	CExpression *pexprProject = CUtils::PexprAddProjection(
+		mp, pexprChild, CUtils::PexprScalarConstInt4(mp, val));
 	CExpression *pexprPrL = (*pexprProject)[1];
 	CColRef *pcrAction = CUtils::PcrFromProjElem((*pexprPrL)[0]);
 
