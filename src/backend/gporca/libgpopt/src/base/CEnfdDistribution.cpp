@@ -178,6 +178,14 @@ CEnfdDistribution::Epet(CExpressionHandle &exprhdl, CPhysical *popPhysical,
 			// disallow plans with outer references below motion operator
 			return EpetProhibited;
 		}
+		else if (CEnfdProp::EpetUnnecessary == epet &&
+			CDistributionSpec::EdtNonSingleton == m_pds->Edt() &&
+			!CUtils::FPhysicalMotion(popPhysical) &&
+			!CUtils::FPhysicalAgg(popPhysical) &&
+			CDistributionSpec::EdtStrictReplicated == pds->Edt())
+		{
+			return EpetProhibited;
+		}
 		else
 		{
 			return epet;
