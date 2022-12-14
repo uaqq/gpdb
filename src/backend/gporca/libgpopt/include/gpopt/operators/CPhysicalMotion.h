@@ -37,6 +37,7 @@ protected:
 	// ctor
 	explicit CPhysicalMotion(CMemoryPool *mp) : CPhysical(mp)
 	{
+		SetDistrRequests(2);
 	}
 
 	// sensitivity to order of inputs
