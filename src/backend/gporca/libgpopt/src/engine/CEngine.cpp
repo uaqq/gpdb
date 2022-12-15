@@ -2106,14 +2106,16 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	// force checking EpetDistribution on the physical operation
 	BOOL fDistributionReqdException =
 		popPhysical->Eopid() == COperator::EopPhysicalLeftOuterIndexNLJoin;
-	BOOL fGatherMotionException =
+	BOOL fMotionException =
 		prpp->Ped()->PdsRequired()->Edt() == CDistributionSpec::EdtAny &&
+		(CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->GetRequestedOperatorId() ==
+		COperator::EopPhysicalMotionGather ||
 		CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->GetRequestedOperatorId() ==
-		COperator::EopPhysicalMotionGather;
+		COperator::EopPhysicalMotionBroadcast);
 	BOOL fDistributionReqd =
 		!GPOS_FTRACE(EopttraceDisableMotions) &&
 		((CDistributionSpec::EdtAny != prpp->Ped()->PdsRequired()->Edt()) ||
-		 fDistributionReqdException || fGatherMotionException);
+		 fDistributionReqdException || fMotionException);
 
 	BOOL fRewindabilityReqd = !GPOS_FTRACE(EopttraceDisableSpool) &&
 							  (prpp->Per()->PrsRequired()->IsCheckRequired());

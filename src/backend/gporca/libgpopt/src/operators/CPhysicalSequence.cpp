@@ -228,15 +228,6 @@ CPhysicalSequence::PdsRequired(CMemoryPool *mp,
 
 	if (0 == child_index)
 	{
-		if (CDistributionSpec::EdtSingleton == pdsRequired->Edt() ||
-			CDistributionSpec::EdtStrictSingleton == pdsRequired->Edt())
-		{
-			// incoming request is a singleton, request singleton on first childr
-			CDistributionSpecSingleton *pdss =
-				CDistributionSpecSingleton::PdssConvert(pdsRequired);
-			return GPOS_NEW(mp) CDistributionSpecSingleton(pdss->Est());
-		}
-
 		// no distribution requirement on first child
 		return GPOS_NEW(mp) CDistributionSpecAny(this->Eopid());
 	}
@@ -448,6 +439,37 @@ CPhysicalSequence::EpetOrder(CExpressionHandle &exprhdl,
 
 	// required distribution will be enforced on sequence's output
 	return CEnfdProp::EpetRequired;
+}
+
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CPhysicalSequence::EpetDistribution
+//
+//	@doc:
+//		Return the enforcing type for the distribution property based on this operator
+//
+//---------------------------------------------------------------------------
+CEnfdProp::EPropEnforcingType
+CPhysicalSequence::EpetDistribution(CExpressionHandle &exprhdl,
+									const CEnfdDistribution *ped) const
+{
+	GPOS_ASSERT(NULL != ped);
+
+	if (ped->PdsRequired()->Edt() == CDistributionSpec::EdtSingleton)
+	{
+		CDistributionSpecSingleton *pds = CDistributionSpecSingleton::PdssConvert(ped->PdsRequired());
+
+		if (pds->Est() == CDistributionSpecSingleton::EstSegment &&
+			exprhdl.Pdpplan(1)->Pds()->Edt() == CDistributionSpec::EdtStrictReplicated &&
+			(exprhdl.Pdpplan(0)->Pds()->Edt() == CDistributionSpec::EdtStrictReplicated ||
+			 !exprhdl.Pdpplan(0)->Pds()->FSatisfies(ped->PdsRequired())))
+		{
+			return CEnfdProp::EpetProhibited;
+		}
+	}
+
+	return CPhysical::EpetDistribution(exprhdl, ped);
 }
 
 

@@ -161,6 +161,10 @@ public:
 	virtual CEnfdProp::EPropEnforcingType EpetOrder(
 		CExpressionHandle &exprhdl, const CEnfdOrder *peo) const;
 
+	// return distribution property enforcing type for this operator
+	virtual CEnfdProp::EPropEnforcingType EpetDistribution(
+		CExpressionHandle &exprhdl, const CEnfdDistribution *ped) const;
+
 	// return rewindability property enforcing type for this operator
 	virtual CEnfdProp::EPropEnforcingType EpetRewindability(
 		CExpressionHandle &exprhdl, const CEnfdRewindability *per) const;
