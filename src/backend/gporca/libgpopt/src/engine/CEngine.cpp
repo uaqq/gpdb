@@ -2130,6 +2130,14 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	CEnfdProp::EPropEnforcingType epetDistribution = prpp->Ped()->Epet(
 		exprhdl, popPhysical, prpp->Pepp()->PppsRequired(), fDistributionReqd);
 
+	// get rewindability enforcing type
+	CEnfdProp::EPropEnforcingType epetRewindability =
+		prpp->Per()->Epet(exprhdl, popPhysical, fRewindabilityReqd);
+
+	// get partition propagation enforcing type
+	CEnfdProp::EPropEnforcingType epetPartitionPropagation =
+		prpp->Pepp()->Epet(exprhdl, popPhysical, fPartPropagationReqd);
+
 	if (CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt())
 	{
 		CDistributionSpecAny *pds = CDistributionSpecAny::PdsConvert(
@@ -2155,14 +2163,6 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 				break;
 		}
 	}
-
-	// get rewindability enforcing type
-	CEnfdProp::EPropEnforcingType epetRewindability =
-		prpp->Per()->Epet(exprhdl, popPhysical, fRewindabilityReqd);
-
-	// get partition propagation enforcing type
-	CEnfdProp::EPropEnforcingType epetPartitionPropagation =
-		prpp->Pepp()->Epet(exprhdl, popPhysical, fPartPropagationReqd);
 
 	// Skip adding enforcers entirely if any property determines it to be
 	// 'prohibited'. In this way, a property may veto out the creation of an
