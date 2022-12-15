@@ -2130,8 +2130,7 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	CEnfdProp::EPropEnforcingType epetDistribution = prpp->Ped()->Epet(
 		exprhdl, popPhysical, prpp->Pepp()->PppsRequired(), fDistributionReqd);
 
-	if (CEnfdProp::EpetProhibited != epetDistribution &&
-		CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt())
+	if (CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt())
 	{
 		CDistributionSpecAny *pds = CDistributionSpecAny::PdsConvert(
 			prpp->Ped()->PdsRequired());
@@ -2143,7 +2142,8 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 			case COperator::EopPhysicalMotionRoutedDistribute:
 			case COperator::EopPhysicalMotionRandom:
 			{
-				CDistributionSpec *pds = CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds();
+				CDistributionSpec *pds = CDrvdPropPlan::Pdpplan(
+					exprhdl.Pdp())->Pds();
 				if (CDistributionSpec::EdtStrictReplicated == pds->Edt() ||
 					CDistributionSpec::EdtTaintedReplicated == pds->Edt())
 				{
