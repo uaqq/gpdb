@@ -113,13 +113,12 @@ CTranslatorUtils::GetIndexDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 CDXLTableDescr *
 CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 								CIdGenerator *id_generator,
-								const RangeTblEntry *rte,
+								const RangeTblEntry *rte, BOOL is_result_rel,
 								BOOL *is_distributed_table,	 // output
-								ULONG assigned_query_id)
+								ULONG query_id)
 {
 	// generate an MDId for the table desc.
 	OID rel_oid = rte->relid;
-
 #if 0
 	if (gpdb::HasExternalPartition(rel_oid))
 	{
@@ -137,6 +136,10 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 	const CWStringConst *tablename = rel->Mdname().GetMDName();
 	CMDName *table_mdname = GPOS_NEW(mp) CMDName(mp, tablename);
 
+	// assigned_query_id field is used to tag relations assigned to target one.
+	// In case of possible nested DML subqueries this field points to target
+	// relation of corresponding Query structure of subquery.
+	ULONG assigned_query_id = is_result_rel ? query_id : UNASSIGNED_QUERYID;
 	CDXLTableDescr *table_descr =
 		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser,
 									rte->rellockmode, assigned_query_id);

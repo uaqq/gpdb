@@ -158,7 +158,8 @@ public:
 	// translate a RangeTableEntry into a CDXLTableDescr
 	static CDXLTableDescr *GetTableDescr(
 		CMemoryPool *mp, CMDAccessor *md_accessor, CIdGenerator *id_generator,
-		const RangeTblEntry *rte, BOOL *is_distributed_table = nullptr,
+		const RangeTblEntry *rte, BOOL is_result_rel,
+		BOOL *is_distributed_table = nullptr,
 		ULONG assigned_query_id = UNASSIGNED_QUERYID);
 
 	// translate a RangeTableEntry into a CDXLLogicalTVF

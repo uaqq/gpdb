@@ -421,8 +421,6 @@ private:
 	// true iff this query or one of its ancestors is a DML query
 	BOOL IsDMLQuery();
 
-	CDXLTableDescr *GetTableDescr(const RangeTblEntry *rte, ULONG rt_index);
-
 public:
 	CTranslatorQueryToDXL(const CTranslatorQueryToDXL &) = delete;
 
