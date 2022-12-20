@@ -28,11 +28,14 @@ private:
 	// replicated support
 	CDistributionSpec::EDistributionType m_replicated;
 
+	COperator::EOperatorId m_eopidRequested;
+
 public:
 	// ctor
 	CDistributionSpecReplicated(
-		CDistributionSpec::EDistributionType replicated_type)
-		: m_replicated(replicated_type)
+		CDistributionSpec::EDistributionType replicated_type,
+		COperator::EOperatorId eopidRequested)
+		: m_replicated(replicated_type), m_eopidRequested(eopidRequested)
 	{
 		GPOS_ASSERT(replicated_type == CDistributionSpec::EdtReplicated ||
 					replicated_type ==
@@ -97,6 +100,11 @@ public:
 		return dynamic_cast<CDistributionSpecReplicated *>(pds);
 	}
 
+	COperator::EOperatorId
+	GetRequestedOperatorId() const
+	{
+		return m_eopidRequested;
+	}
 };	// class CDistributionSpecReplicated
 
 }  // namespace gpopt

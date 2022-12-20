@@ -383,7 +383,7 @@ CPhysicalLimit::PdsDerive(CMemoryPool *mp, CExpressionHandle &exprhdl) const
 		// In this case, if the child was replicated, we can no longer
 		// guarantee that property and must now derive tainted replicated.
 		return GPOS_NEW(mp) CDistributionSpecReplicated(
-			CDistributionSpec::EdtTaintedReplicated);
+			CDistributionSpec::EdtTaintedReplicated, Eopid());
 	}
 	else
 	{

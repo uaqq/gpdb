@@ -338,7 +338,7 @@ CPhysicalSequenceProject::PdsRequired(CMemoryPool *mp,
 		}
 
 		return GPOS_NEW(mp)
-			CDistributionSpecReplicated(CDistributionSpec::EdtStrictReplicated);
+			CDistributionSpecReplicated(CDistributionSpec::EdtStrictReplicated, Eopid());
 	}
 
 	// if the window operator has a partition by clause, then always
@@ -516,7 +516,7 @@ CPhysicalSequenceProject::PdsDerive(CMemoryPool *mp,
 		// If the child was replicated, we can no longer guarantee that
 		// property. Therefore we must now dervive tainted replicated.
 		return GPOS_NEW(mp) CDistributionSpecReplicated(
-			CDistributionSpec::EdtTaintedReplicated);
+			CDistributionSpec::EdtTaintedReplicated, Eopid());
 	}
 	else
 	{

@@ -119,7 +119,7 @@ CPhysicalInnerNLJoin::Ped(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		}
 		return GPOS_NEW(mp) CEnfdDistribution(
 			GPOS_NEW(mp)
-				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 			CEnfdDistribution::EdmSatisfy);
 	}
 
@@ -143,7 +143,7 @@ CPhysicalInnerNLJoin::Ped(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	{
 		return GPOS_NEW(mp) CEnfdDistribution(
 			GPOS_NEW(mp)
-				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 			dmatch);
 	}
 

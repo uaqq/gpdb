@@ -78,7 +78,7 @@ CPhysicalLeftAntiSemiHashJoinNotIn::Ped(
 		//	  detect nulls coming from the inner child
 		return GPOS_NEW(mp) CEnfdDistribution(
 			GPOS_NEW(mp)
-				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 			CEnfdDistribution::EdmSatisfy);
 	}
 

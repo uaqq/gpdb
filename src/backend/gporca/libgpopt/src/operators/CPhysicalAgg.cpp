@@ -511,7 +511,7 @@ CPhysicalAgg::PdsDerive(CMemoryPool *mp, CExpressionHandle &exprhdl) const
 		if (exprhdl.DeriveContainsOnlyReplicationSafeAggFuncs(1))
 		{
 			return GPOS_NEW(mp) CDistributionSpecReplicated(
-				CDistributionSpec::EdtStrictReplicated);
+				CDistributionSpec::EdtStrictReplicated, Eopid());
 		}
 
 		// Aggregate functions which are not trivial and which are sensitive to
@@ -519,7 +519,7 @@ CPhysicalAgg::PdsDerive(CMemoryPool *mp, CExpressionHandle &exprhdl) const
 		// was replicated, we can no longer guarantee that property. Therefore
 		// we must now dervive tainted replicated.
 		return GPOS_NEW(mp) CDistributionSpecReplicated(
-			CDistributionSpec::EdtTaintedReplicated);
+			CDistributionSpec::EdtTaintedReplicated, Eopid());
 	}
 
 	pds->AddRef();

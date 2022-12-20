@@ -328,7 +328,7 @@ CPhysical::PdsCompute(CMemoryPool *mp, const CTableDescriptor *ptabdesc,
 
 		case IMDRelation::EreldistrReplicated:
 			return GPOS_NEW(mp) CDistributionSpecReplicated(
-				CDistributionSpec::EdtStrictReplicated);
+				CDistributionSpec::EdtStrictReplicated, EopSentinel);
 			break;
 
 		default:
@@ -411,7 +411,7 @@ CPhysical::PdsRequireSingletonOrReplicated(CMemoryPool *mp,
 		if (0 == ulOptReq)
 		{
 			return GPOS_NEW(mp)
-				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated);
+				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, exprhdl.Pop()->Eopid());
 		}
 
 		return GPOS_NEW(mp) CDistributionSpecSingleton();

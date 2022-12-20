@@ -175,7 +175,7 @@ CPhysicalLeftOuterIndexNLJoin::Ped(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	// this will end up generating an invalid plan, but we reject it in EpetDistribution
 	return GPOS_NEW(mp) CEnfdDistribution(
 		GPOS_NEW(mp)
-			CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+			CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 		CEnfdDistribution::EdmSatisfy);
 }
 

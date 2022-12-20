@@ -312,7 +312,7 @@ CPhysicalFilter::PdsDerive(CMemoryPool *mp, CExpressionHandle &exprhdl) const
 	{
 		pdsChild->Release();
 		return GPOS_NEW(mp) CDistributionSpecReplicated(
-			CDistributionSpec::EdtTaintedReplicated);
+			CDistributionSpec::EdtTaintedReplicated, Eopid());
 	}
 
 	if (CDistributionSpec::EdtHashed == pdsChild->Edt() &&

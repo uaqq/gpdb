@@ -32,7 +32,7 @@ CPhysicalMotionBroadcast::CPhysicalMotionBroadcast(CMemoryPool *mp)
 	: CPhysicalMotion(mp), m_pdsReplicated(NULL)
 {
 	m_pdsReplicated = GPOS_NEW(mp)
-		CDistributionSpecReplicated(CDistributionSpec::EdtStrictReplicated);
+		CDistributionSpecReplicated(CDistributionSpec::EdtStrictReplicated, Eopid());
 }
 
 

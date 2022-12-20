@@ -173,7 +173,7 @@ CPhysicalInnerIndexNLJoin::Ped(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	// the required distribution spec and hence will not be optimized.
 	return GPOS_NEW(mp) CEnfdDistribution(
 		GPOS_NEW(mp)
-			CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+			CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 		CEnfdDistribution::EdmSatisfy);
 }
 

@@ -14,7 +14,9 @@
 #include "gpos/base.h"
 
 #include "gpopt/base/CDistributionSpecAny.h"
+#include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecRandom.h"
+#include "gpopt/base/CDistributionSpecReplicated.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/operators/CExpressionHandle.h"
 #include "gpopt/search/CMemo.h"
@@ -69,7 +71,7 @@ CPhysicalMotion::FValidContext(CMemoryPool *, COptimizationContext *poc,
 //---------------------------------------------------------------------------
 CDistributionSpec *
 CPhysicalMotion::PdsRequired(CMemoryPool *mp,
-							 CExpressionHandle &,  // exprhdl
+							 CExpressionHandle &exprhdl,
 							 CDistributionSpec *pdsRequired,
 							 ULONG
 #ifdef GPOS_DEBUG
@@ -135,6 +137,15 @@ CPhysicalMotion::PdsRequired(CMemoryPool *mp,
 		GPOS_ASSERT(COperator::EopPhysicalMotionRandom == Eopid());
 		GPOS_ASSERT(CDistributionSpec::EdtStrictRandom == Pds()->Edt());
 		return GPOS_NEW(mp) CDistributionSpecRandom();
+	}
+
+	if (CDistributionSpec::EdtReplicated == pdsRequired->Edt() &&
+		CDistributionSpec::EdtStrictReplicated == Pds()->Edt() &&
+		COperator::EopPhysicalInnerHashJoin == CDistributionSpecReplicated::PdsConvert(pdsRequired)->GetRequestedOperatorId() &&
+		exprhdl.Pgexpr()->Pgroup()->FHasAnyCTEConsumer())
+	{
+		return GPOS_NEW(mp) CDistributionSpecNonSingleton(
+			true /* fAllowReplicated */, false /* fAllowEnforced */);
 	}
 
 	// any motion operator is distribution-establishing and does not require

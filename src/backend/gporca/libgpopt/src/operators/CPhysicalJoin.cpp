@@ -296,7 +296,7 @@ CPhysicalJoin::Ped(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		}
 		return GPOS_NEW(mp) CEnfdDistribution(
 			GPOS_NEW(mp)
-				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 			dmatch);
 	}
 
@@ -337,7 +337,7 @@ CPhysicalJoin::Ped(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		// otherwise, require inner child to be replicated
 		return GPOS_NEW(mp) CEnfdDistribution(
 			GPOS_NEW(mp)
-				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated),
+				CDistributionSpecReplicated(CDistributionSpec::EdtReplicated, Eopid()),
 			CEnfdDistribution::EdmSatisfy);
 	}
 
