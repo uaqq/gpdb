@@ -314,6 +314,12 @@ CPhysicalMotion::EpetDistribution(CExpressionHandle &,	// exprhdl
 {
 	GPOS_ASSERT(NULL != ped);
 
+	if (this->Eopid() == COperator::EopPhysicalMotionBroadcast &&
+		ped->PdsRequired()->Edt() == CDistributionSpec::EdtSingleton)
+	{
+		return CEnfdProp::EpetProhibited;
+	}
+
 	if (ped->FCompatible(Pds()))
 	{
 		return CEnfdProp::EpetUnnecessary;
