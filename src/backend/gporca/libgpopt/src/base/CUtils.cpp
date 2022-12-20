@@ -4429,11 +4429,8 @@ CUtils::ValidateCTEProducerConsumerLocality(
 	}
 	// In case of a Gather motion, the execution locality is set to segments
 	// since the child of Gather motion executes on segments
-	else if (COperator::EopPhysicalMotionGather == pop->Eopid())
-	{
-		eelt = EeltSegments;
-	}
-	else if (COperator::EopPhysicalMotionHashDistribute == pop->Eopid() ||
+	else if (COperator::EopPhysicalMotionGather == pop->Eopid() ||
+			 COperator::EopPhysicalMotionHashDistribute == pop->Eopid() ||
 			 COperator::EopPhysicalMotionRandom == pop->Eopid() ||
 			 COperator::EopPhysicalMotionBroadcast == pop->Eopid())
 	{
@@ -4476,6 +4473,11 @@ CUtils::ExecLocalityType(CDistributionSpec *pds)
 		{
 			eelt = EeltSingleton;
 		}
+	}
+	else if (CDistributionSpec::EdtStrictReplicated == pds->Edt() ||
+			 CDistributionSpec::EdtTaintedReplicated == pds->Edt())
+	{
+		eelt = EeltSingleton;
 	}
 	else
 	{
