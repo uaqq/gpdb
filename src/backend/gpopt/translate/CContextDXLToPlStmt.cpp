@@ -569,4 +569,50 @@ CContextDXLToPlStmt::FindRTE(Oid reloid)
 	}
 	return -1;
 }
+
+RangeTblEntry *
+CContextDXLToPlStmt::GetRTEByIndex(Index index)
+{
+	return (RangeTblEntry *) gpdb::ListNth(m_rtable_entries_list,
+										   int(index - 1));
+}
+
+//---------------------------------------------------------------------------
+//	@function: of associated
+//		CContextDXLToPlStmt::GetRTEIndexByTableDescr
+//
+//	@doc:
+//
+//		For given table descriptor this function returns index of rte in
+//		m_rtable_entries_list for furhter processing and set a flag that
+//		rte was processed.
+//		In case of DML operations there is more than one table descr pointing
+//		to the result relation and to detect position of already processed rte
+//		assigned_queiry_id of table descriptor is used.
+//---------------------------------------------------------------------------
+Index
+CContextDXLToPlStmt::GetRTEIndexByTableDescr(const CDXLTableDescr *table_descr,
+											 BOOL *is_rte_exists)
+{
+	*is_rte_exists = false;
+	ULONG assigned_query_id = table_descr->GetAssignedQueryId();
+	if (assigned_query_id == UNASSIGNED_QUERYID)
+	{
+		return gpdb::ListLength(m_rtable_entries_list) + 1;
+	}
+
+	Index *usedIndex = m_used_rte_indexes->Find(&assigned_query_id);
+	if (usedIndex)
+	{
+		*is_rte_exists = true;
+		return *usedIndex;
+	}
+
+	Index new_index = gpdb::ListLength(m_rtable_entries_list) + 1;
+	m_used_rte_indexes->Insert(GPOS_NEW(m_mp) ULONG(assigned_query_id),
+							   GPOS_NEW(m_mp) Index(new_index));
+
+	return new_index;
+}
+
 // EOF

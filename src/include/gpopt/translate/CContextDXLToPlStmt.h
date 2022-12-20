@@ -268,11 +268,11 @@ public:
 	// used by internal GPDB functions to build the RelOptInfo when creating foreign scans
 	Query *m_orig_query;
 
-	HMUlIndex *
-	GetUsedRelationIndexesMap() const
-	{
-		return m_used_rte_indexes;
-	}
+	// get rte from m_rtable_entries_list by given index
+	RangeTblEntry *GetRTEByIndex(Index index);
+
+	Index GetRTEIndexByTableDescr(const CDXLTableDescr *table_descr,
+								  BOOL *is_rte_exists);
 };
 
 }  // namespace gpdxl
