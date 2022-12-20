@@ -425,7 +425,7 @@ COptimizer::PexprOptimize(CMemoryPool *mp, CQueryContext *pqc,
 	CExpression *pexprPlan = eng.PexprExtractPlan();
 	(void) pexprPlan->PrppCompute(mp, pqc->Prpp());
 
-	CheckCTEConsistency(mp, pexprPlan);
+	//CheckCTEConsistency(mp, pexprPlan);
 
 	PrintQueryOrPlan(mp, pexprPlan);
 

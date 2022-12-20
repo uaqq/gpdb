@@ -2138,37 +2138,22 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	CEnfdProp::EPropEnforcingType epetPartitionPropagation =
 		prpp->Pepp()->Epet(exprhdl, popPhysical, fPartPropagationReqd);
 
-	if (CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt())
-	{
-		CDistributionSpecAny *pds = CDistributionSpecAny::PdsConvert(
-			prpp->Ped()->PdsRequired());
-		switch (pds->GetRequestedOperatorId())
-		{
-			case COperator::EopPhysicalMotionGather:
-			case COperator::EopPhysicalMotionBroadcast:
-			case COperator::EopPhysicalMotionHashDistribute:
-			case COperator::EopPhysicalMotionRoutedDistribute:
-			case COperator::EopPhysicalMotionRandom:
-			{
-				CDistributionSpec *pds = CDrvdPropPlan::Pdpplan(
-					exprhdl.Pdp())->Pds();
-				if (CDistributionSpec::EdtStrictReplicated == pds->Edt() ||
-					CDistributionSpec::EdtTaintedReplicated == pds->Edt())
-				{
-					epetDistribution = CEnfdProp::EpetProhibited;
-				}
-				break;
-			}
-			default:
-				break;
-		}
-	}
-
 	if (COperator::EopPhysicalSequence == popPhysical->Eopid() &&
 		CDistributionSpec::EdtSingleton == prpp->Ped()->PdsRequired()->Edt() &&
+		CDistributionSpecSingleton::PdssConvert(prpp->Ped()->PdsRequired())->Est() == CDistributionSpecSingleton::EstSegment &&
 		CDistributionSpec::EdtStrictReplicated == exprhdl.Pdpplan(1)->Pds()->Edt() &&
 		(CDistributionSpec::EdtStrictReplicated == exprhdl.Pdpplan(0)->Pds()->Edt() ||
 		!exprhdl.Pdpplan(0)->Pds()->FSatisfies(prpp->Ped()->PdsRequired())))
+	{
+		epetDistribution = CEnfdProp::EpetProhibited;
+	}
+
+	if ((CDistributionSpec::EdtStrictReplicated == CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt() ||
+		CDistributionSpec::EdtTaintedReplicated == CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt()) &&
+		CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt() &&
+		(CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->GetRequestedOperatorId() == COperator::EopPhysicalMotionGather ||
+		CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->GetRequestedOperatorId() == COperator::EopPhysicalMotionBroadcast) &&
+		CEnfdDistribution::EdmSatisfy == prpp->Ped()->Edm())
 	{
 		epetDistribution = CEnfdProp::EpetProhibited;
 	}
