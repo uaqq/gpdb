@@ -536,6 +536,37 @@ CPhysicalJoin::PrsDerive(CMemoryPool *mp, CExpressionHandle &exprhdl) const
 
 
 //---------------------------------------------------------------------------
+//     @function:
+//             CPhysicalSequence::EpetDistribution
+//
+//     @doc:
+//             Return the enforcing type for the distribution property based on this operator
+//
+//---------------------------------------------------------------------------
+CEnfdProp::EPropEnforcingType
+CPhysicalJoin::EpetDistribution(CExpressionHandle &exprhdl,
+                                    const CEnfdDistribution *ped) const
+{
+       GPOS_ASSERT(NULL != ped);
+
+       if (ped->PdsRequired()->Edt() == CDistributionSpec::EdtSingleton)
+       {
+			CDistributionSpecSingleton *pds = CDistributionSpecSingleton::PdssConvert(ped->PdsRequired());
+			CDistributionSpec *derived_pds = CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds();
+
+			if (pds->Est() == CDistributionSpecSingleton::EstSegment &&
+				(derived_pds->Edt() == CDistributionSpec::EdtStrictReplicated ||
+				 derived_pds->Edt() == CDistributionSpec::EdtTaintedReplicated))
+			{
+				return CEnfdProp::EpetProhibited;
+			}
+       }
+
+       return CPhysical::EpetDistribution(exprhdl, ped);
+}
+
+
+//---------------------------------------------------------------------------
 //	@function:
 //		CPhysicalJoin::EpetRewindability
 //
