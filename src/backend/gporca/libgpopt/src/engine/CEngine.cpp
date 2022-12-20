@@ -2164,6 +2164,15 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 		}
 	}
 
+	if (COperator::EopPhysicalSequence == popPhysical->Eopid() &&
+		CDistributionSpec::EdtSingleton == prpp->Ped()->PdsRequired()->Edt() &&
+		CDistributionSpec::EdtStrictReplicated == exprhdl.Pdpplan(1)->Pds()->Edt() &&
+		(CDistributionSpec::EdtStrictReplicated == exprhdl.Pdpplan(0)->Pds()->Edt() ||
+		!exprhdl.Pdpplan(0)->Pds()->FSatisfies(prpp->Ped()->PdsRequired())))
+	{
+		epetDistribution = CEnfdProp::EpetProhibited;
+	}
+
 	// Skip adding enforcers entirely if any property determines it to be
 	// 'prohibited'. In this way, a property may veto out the creation of an
 	// enforcer for the current group expression and optimization context.
