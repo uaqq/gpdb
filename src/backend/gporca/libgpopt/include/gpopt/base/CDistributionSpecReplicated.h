@@ -33,6 +33,17 @@ private:
 public:
 	// ctor
 	CDistributionSpecReplicated(
+		CDistributionSpec::EDistributionType replicated_type)
+		: m_replicated(replicated_type), m_eopidRequested(COperator::EopSentinel)
+	{
+		GPOS_ASSERT(replicated_type == CDistributionSpec::EdtReplicated ||
+					replicated_type ==
+						CDistributionSpec::EdtTaintedReplicated ||
+					replicated_type == CDistributionSpec::EdtStrictReplicated);
+	}
+
+	// ctor
+	CDistributionSpecReplicated(
 		CDistributionSpec::EDistributionType replicated_type,
 		COperator::EOperatorId eopidRequested)
 		: m_replicated(replicated_type), m_eopidRequested(eopidRequested)
