@@ -128,8 +128,7 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 
 	CDistributionSpec *pds = CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
 
-	if (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-		CDistributionSpec::EdtAny == pds->Edt() &&
+	if (CDistributionSpec::EdtAny == pds->Edt() &&
 		pdsRequired->FProhibitReplicated())
 	{
 		pds->MarkProhibitReplicated();
