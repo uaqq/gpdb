@@ -879,13 +879,13 @@ where into_table.a=from_table.a and into_table.b=from_table.b and into_table.c=f
  Update on into_table
    ->  Result
          ->  Redistribute Motion 3:3  (slice1; segments: 3)
-               Hash Key: into_table_1.a, into_table_1.b, into_table_1.c
+               Hash Key: into_table.a, into_table.b, into_table.c
                ->  Split
                      ->  Hash Join
-                           Hash Cond: ((into_table_1.a = from_table.a) AND (into_table_1.b = from_table.b) AND (into_table_1.c = from_table.c))
+                           Hash Cond: ((into_table.a = from_table.a) AND (into_table.b = from_table.b) AND (into_table.c = from_table.c))
                            ->  Redistribute Motion 3:3  (slice2; segments: 3)
-                                 Hash Key: into_table_1.a
-                                 ->  Dynamic Seq Scan on into_table into_table_1
+                                 Hash Key: into_table.a
+                                 ->  Dynamic Seq Scan on into_table
                                        Number of partitions to scan: 4 (out of 4)
                            ->  Hash
                                  ->  Seq Scan on from_table
