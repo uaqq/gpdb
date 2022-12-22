@@ -2137,6 +2137,13 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	CEnfdProp::EPropEnforcingType epetPartitionPropagation =
 		prpp->Pepp()->Epet(exprhdl, popPhysical, fPartPropagationReqd);
 
+	if (CEnfdProp::EpetUnnecessary == epetDistribution &&
+		prpp->Ped()->PdsRequired()->FProhibitReplicated() &&
+		CDistributionSpec::EdtStrictReplicated == CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt())
+	{
+		epetDistribution = CEnfdProp::EpetProhibited;
+	}
+
 	// Skip adding enforcers entirely if any property determines it to be
 	// 'prohibited'. In this way, a property may veto out the creation of an
 	// enforcer for the current group expression and optimization context.
