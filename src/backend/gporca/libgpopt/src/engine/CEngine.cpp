@@ -21,6 +21,7 @@
 #include "gpos/task/CAutoTraceFlag.h"
 
 #include "gpopt/base/CCostContext.h"
+#include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDrvdPropCtxtPlan.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/base/COptimizationContext.h"
@@ -2140,6 +2141,7 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	if (CEnfdProp::EpetUnnecessary == epetDistribution &&
 		COperator::EopPhysicalInnerHashJoin == popPhysical->Eopid() &&
 		CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt() &&
+		COperator::EopPhysicalFilter == CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->GetRequestedOperatorId() &&
 		CDistributionSpec::EdtStrictReplicated == CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt())
 	{
 		epetDistribution = CEnfdProp::EpetProhibited;
