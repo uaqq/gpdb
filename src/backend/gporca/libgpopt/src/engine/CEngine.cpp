@@ -21,6 +21,7 @@
 #include "gpos/task/CAutoTraceFlag.h"
 
 #include "gpopt/base/CCostContext.h"
+#include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDrvdPropCtxtPlan.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/base/COptimizationContext.h"
@@ -2136,6 +2137,14 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	// get partition propagation enforcing type
 	CEnfdProp::EPropEnforcingType epetPartitionPropagation =
 		prpp->Pepp()->Epet(exprhdl, popPhysical, fPartPropagationReqd);
+
+	if (CEnfdProp::EpetUnnecessary == epetDistribution &&
+		CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt() &&
+		!CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->FAllowReplicated() &&
+		CDistributionSpec::EdtStrictReplicated == CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt())
+	{
+		epetDistribution = CEnfdProp::EpetProhibited;
+	}
 
 	// Skip adding enforcers entirely if any property determines it to be
 	// 'prohibited'. In this way, a property may veto out the creation of an

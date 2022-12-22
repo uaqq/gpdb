@@ -39,6 +39,8 @@ private:
 	// should allow this non-singleton spec to be enforced?
 	BOOL m_fAllowEnforced;
 
+	COperator::EOperatorId m_eopidRequested;
+
 	// private copy ctor
 	CDistributionSpecNonSingleton(const CDistributionSpecNonSingleton &);
 
@@ -49,6 +51,11 @@ public:
 	//ctor
 	explicit CDistributionSpecNonSingleton(BOOL fAllowReplicated,
 										   BOOL fAllowEnforced);
+
+	//ctor
+	explicit CDistributionSpecNonSingleton(BOOL fAllowReplicated,
+										   BOOL fAllowEnforced,
+										   COperator::EOperatorId eopidRequested);
 
 	// should Replicated distribution satisfy current distribution
 	BOOL
@@ -69,6 +76,12 @@ public:
 	Edt() const
 	{
 		return CDistributionSpec::EdtNonSingleton;
+	}
+
+	COperator::EOperatorId
+	GetRequestedOperatorId() const
+	{
+		return m_eopidRequested;
 	}
 
 	// does current distribution satisfy the given one

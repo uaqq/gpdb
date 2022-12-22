@@ -14,6 +14,7 @@
 #include "gpos/base.h"
 
 #include "gpopt/base/CDistributionSpecAny.h"
+#include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecReplicated.h"
 #include "gpopt/base/CPartInfo.h"
 #include "gpopt/operators/CExpressionHandle.h"
@@ -126,7 +127,26 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pdsRequired;
 	}
 
-	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
+	GPOS_ASSERT(0 == child_index);
+	GPOS_ASSERT(2 > ulOptReq);
+
+	// check if singleton/replicated distribution needs to be requested
+	CDistributionSpec *pds = PdsRequireSingletonOrReplicated(
+		mp, exprhdl, pdsRequired, child_index, ulOptReq);
+	if (NULL != pds)
+	{
+		return pds;
+	}
+
+	// operator does not have distribution requirements, required distribution
+	// will be enforced on its output
+	if (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+		COperator::EopPhysicalSequence == CDistributionSpecNonSingleton::PdsConvert(pdsRequired)->GetRequestedOperatorId())
+	{
+		return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid(), false, false);
+	}
+
+	return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid());
 }
 
 

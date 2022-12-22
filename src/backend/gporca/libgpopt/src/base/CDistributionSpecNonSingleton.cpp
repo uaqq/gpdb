@@ -30,7 +30,8 @@ using namespace gpopt;
 //
 //---------------------------------------------------------------------------
 CDistributionSpecNonSingleton::CDistributionSpecNonSingleton()
-	: m_fAllowReplicated(true), m_fAllowEnforced(true)
+	: m_fAllowReplicated(true), m_fAllowEnforced(true),
+	m_eopidRequested(COperator::EopSentinel)
 {
 }
 
@@ -45,11 +46,19 @@ CDistributionSpecNonSingleton::CDistributionSpecNonSingleton()
 //---------------------------------------------------------------------------
 CDistributionSpecNonSingleton::CDistributionSpecNonSingleton(
 	BOOL fAllowReplicated, BOOL fAllowEnforced)
-	: m_fAllowReplicated(fAllowReplicated), m_fAllowEnforced(fAllowEnforced)
+	: m_fAllowReplicated(fAllowReplicated),	m_fAllowEnforced(fAllowEnforced),
+	m_eopidRequested(COperator::EopSentinel)
 {
 }
 
 
+CDistributionSpecNonSingleton::CDistributionSpecNonSingleton(
+	BOOL fAllowReplicated, BOOL fAllowEnforced,
+	COperator::EOperatorId eopidRequested)
+	: m_fAllowReplicated(fAllowReplicated),	m_fAllowEnforced(fAllowEnforced),
+	m_eopidRequested(eopidRequested)
+{
+}
 //---------------------------------------------------------------------------
 //	@function:
 //		CDistributionSpecNonSingleton::FSatisfies
