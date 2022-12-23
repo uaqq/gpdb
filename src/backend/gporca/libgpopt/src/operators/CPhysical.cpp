@@ -448,7 +448,7 @@ CPhysical::PdsUnary(CMemoryPool *mp, CExpressionHandle &exprhdl,
 
 	// operator does not have distribution requirements, required distribution
 	// will be enforced on its output
-	return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid());
+	return PdsPassThru(mp, exprhdl, pdsRequired, child_index);
 }
 
 
