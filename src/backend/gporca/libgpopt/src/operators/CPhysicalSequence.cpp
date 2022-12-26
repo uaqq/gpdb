@@ -281,7 +281,8 @@ CPhysicalSequence::PdsRequired(CMemoryPool *mp,
 			true /* fAllowReplicated */, false /* fAllowEnforced */);
 	}
 
-	if (CDistributionSpec::EdtSingleton == pdsRequired->Edt())
+	if (CDistributionSpec::EdtSingleton == pdsRequired->Edt() ||
+		CDistributionSpec::EdtNonSingleton == pdsRequired->Edt())
 	{
 		return GPOS_NEW(mp) CDistributionSpecNonSingleton(
 			false /* fAllowReplicated */, true /* fAllowEnforced */);
