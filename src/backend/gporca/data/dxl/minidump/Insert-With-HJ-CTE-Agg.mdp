@@ -508,10 +508,10 @@
         </dxl:LogicalProject>
       </dxl:LogicalInsert>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="1180">
+    <dxl:Plan Id="0" SpaceSize="2832">
       <dxl:DMLInsert Columns="38,39,42,43,44" ActionCol="48" OidCol="0" CtidCol="0" SegmentIdCol="0" InputSorted="false">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="867.122533" Rows="96.000000" Width="36"/>
+          <dxl:Cost StartupCost="0" TotalCost="867.122004" Rows="96.000000" Width="36"/>
         </dxl:Properties>
         <dxl:DirectDispatchInfo/>
         <dxl:ProjList>
@@ -549,7 +549,7 @@
         </dxl:TableDescriptor>
         <dxl:Result>
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="862.122533" Rows="96.000000" Width="40"/>
+            <dxl:Cost StartupCost="0" TotalCost="862.122004" Rows="96.000000" Width="40"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="38" Alias="?column?">
@@ -559,9 +559,7 @@
               <dxl:Ident ColId="39" ColName="?column?" TypeMdid="0.25.1.0"/>
             </dxl:ProjElem>
             <dxl:ProjElem ColId="42" Alias="lang_count">
-              <dxl:FuncExpr FuncId="0.480.1.0" FuncRetSet="false" TypeMdid="0.23.1.0">
-                <dxl:Ident ColId="19" ColName="lang_count" TypeMdid="0.20.1.0"/>
-              </dxl:FuncExpr>
+              <dxl:Ident ColId="42" ColName="lang_count" TypeMdid="0.23.1.0"/>
             </dxl:ProjElem>
             <dxl:ProjElem ColId="43" Alias="area">
               <dxl:Cast TypeMdid="0.701.1.0" FuncId="0.316.1.0">
@@ -581,12 +579,9 @@
           <dxl:OneTimeFilter/>
           <dxl:RedistributeMotion InputSegments="0,1,2" OutputSegments="0,1,2">
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="862.118053" Rows="96.000000" Width="32"/>
+              <dxl:Cost StartupCost="0" TotalCost="862.120724" Rows="96.000000" Width="28"/>
             </dxl:Properties>
             <dxl:ProjList>
-              <dxl:ProjElem ColId="19" Alias="lang_count">
-                <dxl:Ident ColId="19" ColName="lang_count" TypeMdid="0.20.1.0"/>
-              </dxl:ProjElem>
               <dxl:ProjElem ColId="38" Alias="?column?">
                 <dxl:Ident ColId="38" ColName="?column?" TypeMdid="0.25.1.0"/>
               </dxl:ProjElem>
@@ -599,6 +594,9 @@
               <dxl:ProjElem ColId="41" Alias="?column?">
                 <dxl:Ident ColId="41" ColName="?column?" TypeMdid="0.23.1.0"/>
               </dxl:ProjElem>
+              <dxl:ProjElem ColId="42" Alias="lang_count">
+                <dxl:Ident ColId="42" ColName="lang_count" TypeMdid="0.23.1.0"/>
+              </dxl:ProjElem>
             </dxl:ProjList>
             <dxl:Filter/>
             <dxl:SortingColumnList/>
@@ -609,12 +607,9 @@
             </dxl:HashExprList>
             <dxl:Result>
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="862.114848" Rows="96.000000" Width="32"/>
+                <dxl:Cost StartupCost="0" TotalCost="862.117920" Rows="96.000000" Width="28"/>
               </dxl:Properties>
               <dxl:ProjList>
-                <dxl:ProjElem ColId="19" Alias="lang_count">
-                  <dxl:Ident ColId="19" ColName="lang_count" TypeMdid="0.20.1.0"/>
-                </dxl:ProjElem>
                 <dxl:ProjElem ColId="38" Alias="?column?">
                   <dxl:Ident ColId="38" ColName="?column?" TypeMdid="0.25.1.0"/>
                 </dxl:ProjElem>
@@ -627,14 +622,22 @@
                 <dxl:ProjElem ColId="41" Alias="?column?">
                   <dxl:Ident ColId="41" ColName="?column?" TypeMdid="0.23.1.0"/>
                 </dxl:ProjElem>
+                <dxl:ProjElem ColId="42" Alias="lang_count">
+                  <dxl:Ident ColId="42" ColName="lang_count" TypeMdid="0.23.1.0"/>
+                </dxl:ProjElem>
               </dxl:ProjList>
               <dxl:Filter/>
               <dxl:OneTimeFilter/>
               <dxl:Result>
                 <dxl:Properties>
-                  <dxl:Cost StartupCost="0" TotalCost="862.114848" Rows="96.000000" Width="32"/>
+                  <dxl:Cost StartupCost="0" TotalCost="862.117920" Rows="96.000000" Width="28"/>
                 </dxl:Properties>
                 <dxl:ProjList>
+                  <dxl:ProjElem ColId="42" Alias="lang_count">
+                    <dxl:FuncExpr FuncId="0.480.1.0" FuncRetSet="false" TypeMdid="0.23.1.0">
+                      <dxl:Ident ColId="19" ColName="lang_count" TypeMdid="0.20.1.0"/>
+                    </dxl:FuncExpr>
+                  </dxl:ProjElem>
                   <dxl:ProjElem ColId="38" Alias="?column?">
                     <dxl:ConstValue TypeMdid="0.25.1.0" Value="AAAABmFh" LintValue="546841388"/>
                   </dxl:ProjElem>
@@ -646,9 +649,6 @@
                   </dxl:ProjElem>
                   <dxl:ProjElem ColId="41" Alias="?column?">
                     <dxl:ConstValue TypeMdid="0.23.1.0" Value="12"/>
-                  </dxl:ProjElem>
-                  <dxl:ProjElem ColId="19" Alias="lang_count">
-                    <dxl:Ident ColId="19" ColName="lang_count" TypeMdid="0.20.1.0"/>
                   </dxl:ProjElem>
                 </dxl:ProjList>
                 <dxl:Filter/>
@@ -663,7 +663,7 @@
                   </dxl:GroupingColumns>
                   <dxl:ProjList>
                     <dxl:ProjElem ColId="19" Alias="lang_count">
-                      <dxl:AggFunc AggMdid="0.2803.1.0" AggDistinct="false" AggStage="Normal" AggKind="n" >
+                      <dxl:AggFunc AggMdid="0.2803.1.0" AggDistinct="false" AggStage="Normal" AggKind="n">
                         <dxl:ValuesList ParamType="aggargs"/>
                         <dxl:ValuesList ParamType="aggdirectargs"/>
                         <dxl:ValuesList ParamType="aggorder"/>
