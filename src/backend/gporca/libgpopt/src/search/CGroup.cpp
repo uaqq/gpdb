@@ -959,7 +959,6 @@ CGroup::MergeGroup()
 	{
 		return;
 	}
-	GPOS_ASSERT(FExplored());
 	GPOS_ASSERT(!FImplemented());
 
 	// resolve target group

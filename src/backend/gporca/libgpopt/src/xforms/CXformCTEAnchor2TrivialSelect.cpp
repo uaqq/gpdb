@@ -16,6 +16,7 @@
 #include "gpopt/operators/CLogicalCTEAnchor.h"
 #include "gpopt/operators/CLogicalSelect.h"
 #include "gpopt/operators/CPatternLeaf.h"
+#include "gpopt/search/CGroupProxy.h"
 #include "gpopt/xforms/CXformUtils.h"
 
 using namespace gpopt;
@@ -105,6 +106,38 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 					CUtils::PexprScalarConstBool(mp, true /*fValue*/));
 
 	pxfres->Add(pexprSelect);
+
+	for (CGroup *pgroup = pexpr->Pgexpr()->Pgroup(); pgroup; pgroup = (CGroup *)pgroup->m_link.m_prev)
+	{
+		CGroupProxy gp(pgroup);
+		for (CGroupExpression *pgexpr = gp.PgexprFirst(); pgexpr; pgexpr = gp.PgexprNext(pgexpr))
+		{
+			ULONG arity = pgexpr->Arity();
+			for (ULONG i = 0; i < arity; i++)
+			{
+				if ((*pgexpr)[i]->Id() == pexpr->Pgexpr()->Pgroup()->Id())
+				{
+					pgexpr->Replace(i, pexprChild->Pgexpr()->Pgroup());
+				}
+			}
+		}
+	}
+
+	for (CGroup *pgroup = pexpr->Pgexpr()->Pgroup(); pgroup; pgroup = (CGroup *)pgroup->m_link.m_next)
+	{
+		CGroupProxy gp(pgroup);
+		for (CGroupExpression *pgexpr = gp.PgexprFirst(); pgexpr; pgexpr = gp.PgexprNext(pgexpr))
+		{
+			ULONG arity = pgexpr->Arity();
+			for (ULONG i = 0; i < arity; i++)
+			{
+				if ((*pgexpr)[i]->Id() == pexpr->Pgexpr()->Pgroup()->Id())
+				{
+					pgexpr->Replace(i, pexprChild->Pgexpr()->Pgroup());
+				}
+			}
+		}
+	}
 }
 
 // EOF

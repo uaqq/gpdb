@@ -246,6 +246,13 @@ public:
 		m_id = id;
 	}
 
+	void
+	Replace(ULONG ulPos, CGroup *pgroup)
+	{
+		GPOS_ASSERT(NULL != m_pdrgpgroup);
+		m_pdrgpgroup->Replace(ulPos, pgroup);
+	}
+
 	// optimization level accessor
 	EOptimizationLevel
 	Eol() const
