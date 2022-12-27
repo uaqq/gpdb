@@ -107,7 +107,12 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 
 	pxfres->Add(pexprSelect);
 
-	for (CGroup *pgroup = pexpr->Pgexpr()->Pgroup(); pgroup; pgroup = (CGroup *)pgroup->m_link.m_prev)
+	if (NULL == pgexprOrigin)
+	{
+		return;
+	}
+
+	for (CGroup *pgroup = pgexprOrigin->Pgroup(); pgroup; pgroup = (CGroup *)pgroup->m_link.m_prev)
 	{
 		CGroupProxy gp(pgroup);
 		for (CGroupExpression *pgexpr = gp.PgexprFirst(); pgexpr; pgexpr = gp.PgexprNext(pgexpr))
@@ -115,7 +120,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 			ULONG arity = pgexpr->Arity();
 			for (ULONG i = 0; i < arity; i++)
 			{
-				if ((*pgexpr)[i]->Id() == pexpr->Pgexpr()->Pgroup()->Id())
+				if ((*pgexpr)[i]->Id() == pgexprOrigin->Pgroup()->Id())
 				{
 					pgexpr->Replace(i, pexprChild->Pgexpr()->Pgroup());
 				}
@@ -123,7 +128,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 		}
 	}
 
-	for (CGroup *pgroup = pexpr->Pgexpr()->Pgroup(); pgroup; pgroup = (CGroup *)pgroup->m_link.m_next)
+	for (CGroup *pgroup = pgexprOrigin->Pgroup(); pgroup; pgroup = (CGroup *)pgroup->m_link.m_next)
 	{
 		CGroupProxy gp(pgroup);
 		for (CGroupExpression *pgexpr = gp.PgexprFirst(); pgexpr; pgexpr = gp.PgexprNext(pgexpr))
@@ -131,7 +136,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 			ULONG arity = pgexpr->Arity();
 			for (ULONG i = 0; i < arity; i++)
 			{
-				if ((*pgexpr)[i]->Id() == pexpr->Pgexpr()->Pgroup()->Id())
+				if ((*pgexpr)[i]->Id() == pgexprOrigin->Pgroup()->Id())
 				{
 					pgexpr->Replace(i, pexprChild->Pgexpr()->Pgroup());
 				}
