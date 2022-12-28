@@ -78,6 +78,8 @@ extern StringInfo makeStringInfo(void);
  */
 extern void initStringInfo(StringInfo str);
 
+extern void freeStringInfoData(StringInfo str);
+
 extern void initStringInfoOfSize(StringInfo str, int bufsize);
 
 /*------------------------

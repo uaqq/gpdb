@@ -112,11 +112,6 @@ cdbexplain_recvExecStats(struct PlanState              *planstate,
  *    Called by qDisp process to create a CdbExplain_ShowStatCtx structure
  *    in which to accumulate overall statistics for a query.
  *
- * 'explaincxt' is a MemoryContext from which to allocate the ShowStatCtx as
- *      well as any needed buffers and the like.  The explaincxt ptr is saved
- *      in the ShowStatCtx.  The caller is expected to reset or destroy the
- *      explaincxt not too long after calling cdbexplain_showExecStatsEnd(); so
- *      we don't bother to pfree() memory that we allocate from this context.
  * 'querystarttime' is the timestamp of the start of the query, in a
  *      platform-dependent format.
  */
@@ -124,6 +119,8 @@ struct CdbExplain_ShowStatCtx *
 cdbexplain_showExecStatsBegin(struct QueryDesc *queryDesc,
                               instr_time        querystarttime);
 
+void
+cdbexplain_showStatCtxFree(struct CdbExplain_ShowStatCtx *ctx);
 
 
 #endif   /* CDBEXPLAIN_H */

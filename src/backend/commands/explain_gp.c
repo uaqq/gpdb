@@ -1492,6 +1492,17 @@ cdbexplain_showExecStatsBegin(struct QueryDesc *queryDesc,
 	return ctx;
 }								/* cdbexplain_showExecStatsBegin */
 
+
+void
+cdbexplain_showStatCtxFree(struct CdbExplain_ShowStatCtx *ctx)
+{
+	Assert(ctx != NULL);
+	freeStringInfoData(&ctx->extratextbuf);
+	pfree(ctx->slices);
+	pfree(ctx);
+}
+
+
 /*
  * nodeSupportWorkfileCaching
  *	 Return true if a given node supports workfile caching.

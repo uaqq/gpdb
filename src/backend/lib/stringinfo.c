@@ -52,6 +52,15 @@ initStringInfo(StringInfo str)
 	resetStringInfo(str);
 }
 
+void
+freeStringInfoData(StringInfo str)
+{
+	Assert(str != NULL);
+	pfree(str->data);
+	str->data = NULL;
+	str->maxlen = 0;
+}
+
 /*
  * initStringInfoOfSize
  *

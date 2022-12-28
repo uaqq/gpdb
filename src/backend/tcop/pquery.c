@@ -28,6 +28,7 @@
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
+#include "cdb/cdbexplain.h"
 #include "cdb/ml_ipc.h"
 #include "commands/createas.h"
 #include "commands/queue.h"
@@ -88,7 +89,7 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 				ParamListInfo params,
 				int instrument_options)
 {
-	QueryDesc  *qd = (QueryDesc *) palloc(sizeof(QueryDesc));
+	QueryDesc  *qd = (QueryDesc *) palloc0(sizeof(QueryDesc));
 
 	qd->operation = plannedstmt->commandType;	/* operation */
 	qd->plannedstmt = plannedstmt;		/* plan */
@@ -103,16 +104,16 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 														 * wanted? */
 
 	/* null these fields until set by ExecutorStart */
-	qd->tupDesc = NULL;
-	qd->estate = NULL;
-	qd->planstate = NULL;
-	qd->totaltime = NULL;
-
-	qd->extended_query = false; /* default value */
-	qd->portal_name = NULL;
-
-	qd->ddesc = NULL;
-	qd->gpmon_pkt = NULL;
+//	qd->tupDesc = NULL;
+//	qd->estate = NULL;
+//	qd->planstate = NULL;
+//	qd->totaltime = NULL;
+//
+//	qd->extended_query = false; /* default value */
+//	qd->portal_name = NULL;
+//
+//	qd->ddesc = NULL;
+//	qd->gpmon_pkt = NULL;
 	qd->memoryAccountId = MEMORY_OWNER_TYPE_Undefined;
 	
 	if (Gp_role != GP_ROLE_EXECUTE)
@@ -137,26 +138,26 @@ CreateUtilityQueryDesc(Node *utilitystmt,
 					   DestReceiver *dest,
 					   ParamListInfo params)
 {
-	QueryDesc  *qd = (QueryDesc *) palloc(sizeof(QueryDesc));
+	QueryDesc  *qd = (QueryDesc *) palloc0(sizeof(QueryDesc));
 
 	qd->operation = CMD_UTILITY;	/* operation */
-	qd->plannedstmt = NULL;
+//	qd->plannedstmt = NULL;
 	qd->utilitystmt = utilitystmt;		/* utility command */
 	qd->sourceText = sourceText;	/* query text */
 	qd->snapshot = RegisterSnapshot(snapshot);	/* snapshot */
 	qd->crosscheck_snapshot = InvalidSnapshot;	/* RI check snapshot */
 	qd->dest = dest;			/* output dest */
 	qd->params = params;		/* parameter values passed into query */
-	qd->instrument_options = false;		/* uninteresting for utilities */
+//	qd->instrument_options = false;		/* uninteresting for utilities */
 
 	/* null these fields until set by ExecutorStart */
-	qd->tupDesc = NULL;
-	qd->estate = NULL;
-	qd->planstate = NULL;
-	qd->totaltime = NULL;
-
-	qd->extended_query = false; /* default value */
-	qd->portal_name = NULL;
+//	qd->tupDesc = NULL;
+//	qd->estate = NULL;
+//	qd->planstate = NULL;
+//	qd->totaltime = NULL;
+//
+//	qd->extended_query = false; /* default value */
+//	qd->portal_name = NULL;
 
 	return qd;
 }
@@ -173,6 +174,9 @@ FreeQueryDesc(QueryDesc *qdesc)
 	/* forget our snapshots */
 	UnregisterSnapshot(qdesc->snapshot);
 	UnregisterSnapshot(qdesc->crosscheck_snapshot);
+
+	if (qdesc->showstatctx)
+		cdbexplain_showStatCtxFree(qdesc->showstatctx);
 
 	/* Only the QueryDesc itself need be freed */
 	pfree(qdesc);
