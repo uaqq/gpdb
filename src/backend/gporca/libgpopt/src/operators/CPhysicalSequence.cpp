@@ -281,10 +281,10 @@ CPhysicalSequence::PdsRequired(CMemoryPool *mp,
 			true /* fAllowReplicated */, false /* fAllowEnforced */);
 	}
 
-	if (CDistributionSpec::EdtHashed == pds->Edt() &&
-		(CDistributionSpec::EdtSingleton == pdsRequired->Edt() ||
+	if ((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
+		CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
 		(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-		!CDistributionSpecNonSingleton::PdsConvert(pdsRequired)->FAllowReplicated())))
+		!CDistributionSpecNonSingleton::PdsConvert(pdsRequired)->FAllowReplicated()))
 	{
 		return GPOS_NEW(mp) CDistributionSpecNonSingleton(
 			false /* fAllowReplicated */, true /* fAllowEnforced */);
