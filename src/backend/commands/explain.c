@@ -1192,7 +1192,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 {
 	Plan	   *plan = planstate->plan;
 	PlanState  *parentplanstate;
-    Slice      *save_currentSlice = es->currentSlice;	/* save */
+    Slice      *save_currentSlice = es->currentSlice;    /* save */
 	const char *pname;			/* node type name for text output */
 	const char *sname;			/* node type name for non-text output */
 	const char *strategy = NULL;
@@ -1218,22 +1218,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	/* Remember who called us. */
 	parentplanstate = es->parentPlanState;
 	es->parentPlanState = planstate;
-
-	/* Motion nodes are handled separately */
-	if (Gp_role == GP_ROLE_DISPATCH && !IsA(plan, Motion))
-	{
-		/* Special cases */
-		if (plan->flow != NULL && CdbPathLocus_IsSegmentGeneral(*(plan->flow)))
-		{
-			/*
-			 * Replicated table has full data on every segment. This condition
-			 * is only applied for Postgres planner. Orca delivers number of
-			 * rows multipied by the number of segments, thus division by
-			 * scaleFactor != 1 will return the "correct" value.
-			 */
-			scaleFactor = 1.0;
-		}
-	}
 
 	if (nodeTag(plan) == T_ModifyTable && CdbPathLocus_IsReplicated(*(plan->flow)))
 	{
@@ -1287,7 +1271,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_NestLoop:
 			pname = sname = "Nested Loop";
-			if (((NestLoop *) plan)->shared_outer)
+			if (((NestLoop *)plan)->shared_outer)
 			{
 				skip_outer = true;
 				skip_outer_msg = "See first subplan of Hash Join";
@@ -1468,7 +1452,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 							 * scale the number of rows by the number of
 							 * segments sending data
 							 */
-							scaleFactor = getgpsegmentCount();
+							scaleFactor = motion_recv;
 						}
 						else if (plan->lefttree->flow->locustype == CdbLocusType_Replicated)
 						{
