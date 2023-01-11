@@ -277,12 +277,14 @@ static void AllocSetReset(MemoryContext context);
 static void AllocSetDelete(MemoryContext context);
 static Size AllocSetGetChunkSpace(MemoryContext context, void *pointer);
 static bool AllocSetIsEmpty(MemoryContext context);
-static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
-		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-		, MemoryContextChunkStat ***chunks, Size *chunks_count
+static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
+		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld,
+		MemoryContextChunkStat ***chunks, Size *chunks_count);
+#else
+static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
+		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
 #endif
-		);
 static void AllocSetReleaseAccountingForAllAllocatedChunks(MemoryContext context);
 
 static void dump_allocset_block(FILE *file, AllocBlock block);
@@ -2061,13 +2063,16 @@ AllocSetIsEmpty(MemoryContext context)
  *		allFreed: total bytes that was freed during lifetime
  *		maxHeld: maximum bytes held during lifetime
  */
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 static void
 AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
-		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-		, MemoryContextChunkStat ***chunks, Size *chunks_count
+		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld,
+		MemoryContextChunkStat ***chunks, Size *chunks_count)
+#else
+static void
+AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
+		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld)
 #endif
-		)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
