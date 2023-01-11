@@ -124,6 +124,14 @@ struct CdbExplain_ShowStatCtx *
 cdbexplain_showExecStatsBegin(struct QueryDesc *queryDesc,
                               instr_time        querystarttime);
 
+/*
+ * cdbexplain_showStatCtxFree
+ *    Release memory allocated for CdbExplain_ShowStatCtx structure and its
+ *    internals.
+ */
+void
+cdbexplain_showStatCtxFree(struct CdbExplain_ShowStatCtx *ctx);
+
 
 
 #endif   /* CDBEXPLAIN_H */

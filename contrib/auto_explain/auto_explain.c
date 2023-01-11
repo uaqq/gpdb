@@ -212,8 +212,6 @@ _PG_fini(void)
 static void
 explain_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	instr_time		starttime;
-
 	if (auto_explain_enabled())
 	{
 		/* Enable per-node instrumentation iff log_analyze is required. */
@@ -228,9 +226,13 @@ explain_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
 			queryDesc->instrument_options |= INSTRUMENT_CDB;
 
-			INSTR_TIME_SET_CURRENT(starttime);
-			queryDesc->showstatctx = cdbexplain_showExecStatsBegin(queryDesc,
-																   starttime);
+			if (queryDesc->showstatctx == NULL)
+			{
+				instr_time		starttime;
+				INSTR_TIME_SET_CURRENT(starttime);
+				queryDesc->showstatctx = cdbexplain_showExecStatsBegin(
+											queryDesc, starttime);
+			}
 		}
 	}
 
@@ -365,6 +367,8 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
 					 errhidestmt(true)));
 
 			pfree(es.str->data);
+			pfree(es.str);
+			pfree(es.extra);
 		}
 	}
 

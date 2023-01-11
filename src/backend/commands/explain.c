@@ -568,8 +568,6 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
         queryDesc->showstatctx = cdbexplain_showExecStatsBegin(queryDesc,
 															   starttime);
     }
-	else
-		queryDesc->showstatctx = NULL;
 
 	/* Select execution options */
 	if (es->analyze)
@@ -735,11 +733,13 @@ ExplainPrintPlan(ExplainState *es, QueryDesc *queryDesc)
                                      es->showstatctx);
 	}
 
+	MemoryContext oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
 	ExplainPreScanNode(queryDesc->planstate, &rels_used);
 	es->rtable_names = select_rtable_names_for_explain(es->rtable, rels_used);
 	es->deparse_cxt = deparse_context_for_plan_rtable(es->rtable,
 													  es->rtable_names);
 	ExplainNode(queryDesc->planstate, NIL, NULL, NULL, es);
+	MemoryContextSwitchTo(oldcxt);
 }
 
 /*

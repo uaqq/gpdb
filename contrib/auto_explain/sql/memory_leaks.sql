@@ -1,0 +1,57 @@
+CREATE SCHEMA auto_explain_mem_leak_test;
+SET search_path=auto_explain_mem_leak_test;
+
+LOAD 'auto_explain';
+-- Enable auto_explain. Log all plans
+SET auto_explain.log_min_duration = 0;
+-- Log statements executed inside a function
+SET auto_explain.log_nested_statements=true;
+-- Collect data for EXPLAIN ANALYZE output. The data will be collected for every
+-- query executed inside a function
+SET auto_explain.log_analyze = true;
+
+
+CREATE OR REPLACE FUNCTION not_inlinable_sql_func(i int) returns int8
+immutable
+security definer
+language sql as $$
+-- The query contains table and its alias to perform more memory allocations
+-- at explaining than in the case of the simplest query
+    SELECT count(c.*) FROM pg_class c WHERE c.oid > i;
+$$;
+
+
+CREATE OR REPLACE FUNCTION get_executor_mem(calls_num int) returns int 
+language plpgsql
+as $$
+declare
+    line text;
+    mem int[];
+    total int = 0;
+begin
+    for line in execute(
+       'EXPLAIN ANALYZE
+        SELECT not_inlinable_sql_func(i)
+        FROM generate_series(1, $1) i')
+    using calls_num
+    loop
+        mem = regexp_matches(line, 'Executor memory: (\d+)K');
+        continue when mem is null;
+        total = total + mem[1];
+    end loop;
+
+    return total;
+end
+$$;
+
+
+-- Memory usage should not depend much on how many times a function written in
+-- sql language, that optimizers cannot inline, is called during query execution.
+-- The amount of memory used for 50,000 calls and 1000 calls should not differ
+-- by more than 10 MB.
+SELECT abs(get_executor_mem(50000) - get_executor_mem(1000)) < 10000;
+
+-- clean
+DROP FUNCTION get_executor_mem(calls_num int);
+DROP FUNCTION not_inlinable_sql_func(i int);
+DROP SCHEMA auto_explain_mem_leak_test;

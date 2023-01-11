@@ -1130,8 +1130,9 @@ cdbexplain_depositStatsToNode(PlanState *planstate, CdbExplain_RecvStatCtx *ctx)
 
 	/* Allocate NodeSummary block. */
 	nInst = ctx->segindexMax + 1 - ctx->segindexMin;
-	ns = (CdbExplain_NodeSummary *) palloc0(sizeof(*ns) - sizeof(ns->insts) +
-											nInst * sizeof(ns->insts[0]));
+	ns = (CdbExplain_NodeSummary *) MemoryContextAllocZero(
+			planstate->state->es_query_cxt,
+			sizeof(*ns) - sizeof(ns->insts) + nInst * sizeof(ns->insts[0]));
 	ns->segindex0 = ctx->segindexMin;
 	ns->ninst = nInst;
 
@@ -1491,6 +1492,38 @@ cdbexplain_showExecStatsBegin(struct QueryDesc *queryDesc,
 
 	return ctx;
 }								/* cdbexplain_showExecStatsBegin */
+
+/*
+ * cdbexplain_showStatCtxFree
+ *	  Release memory allocated for CdbExplain_ShowStatCtx structure and its
+ *	  internals.
+ */
+void
+cdbexplain_showStatCtxFree(struct CdbExplain_ShowStatCtx *ctx)
+{
+	Assert(ctx != NULL);
+
+	for (int iS = 0; iS < ctx->nslice; iS++)
+	{
+		CdbExplain_SliceSummary *ss = &ctx->slices[iS];
+		if (ss->memoryAccounts != NULL)
+		{
+			for (int iW = 0; iW < ss->nworker; iW++)
+				pfree(ss->memoryAccounts[iW]);
+
+			pfree(ss->memoryAccounts);
+		}
+
+		if (ss->memoryAccountCount != NULL)
+			pfree(ss->memoryAccountCount);
+		if (ss->workers != NULL)
+			pfree(ss->workers);
+	}
+
+	pfree(ctx->slices);
+	pfree(ctx->extratextbuf.data);
+	pfree(ctx);
+}
 
 /*
  * nodeSupportWorkfileCaching
