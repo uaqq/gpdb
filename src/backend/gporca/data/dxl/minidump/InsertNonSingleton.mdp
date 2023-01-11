@@ -22,7 +22,7 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
                      ->  Hash  (cost=431.00..431.00 rows=3 width=4)
                            ->  Seq Scan on snackbox snackbox_1  (cost=0.00..431.00 rows=3 width=4)
  Optimizer: Pivotal Optimizer (GPORCA)
-  ]]>  </dxl:Comment>
+  ]]></dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>

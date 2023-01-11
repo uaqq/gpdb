@@ -17,7 +17,7 @@
                ->  WindowAgg  (cost=0.00..431.00 rows=1 width=8)
                      ->  Seq Scan on hottoast  (cost=0.00..431.00 rows=3 width=4)
  Optimizer: Pivotal Optimizer (GPORCA)
-  ]]>  </dxl:Comment>
+  ]]></dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>

@@ -17,7 +17,7 @@ EXPLAIN SELECT a FROM snackbox JOIN (SELECT c FROM hottoast LIMIT 3) hottoast ON
          ->  Hash  (cost=431.00..431.00 rows=1 width=4)
                ->  Seq Scan on snackbox  (cost=0.00..431.00 rows=1 width=4)
  Optimizer: Pivotal Optimizer (GPORCA)
-  ]]>  </dxl:Comment>
+  ]]></dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>

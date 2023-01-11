@@ -1221,7 +1221,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 	if (nodeTag(plan) == T_ModifyTable && CdbPathLocus_IsReplicated(*(plan->flow)))
 	{
-		Assert(es->pstmt->planGen == PLANGEN_PLANNER); /* T_ModifyTable can be produce by planner only */
+		Assert(es->pstmt->planGen == PLANGEN_PLANNER);	/* T_ModifyTable can be
+														 * produce by planner
+														 * only */
 		scaleFactor = 1.0;
 	}
 
@@ -1450,7 +1452,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 							/*
 							 * scale the number of rows by the number of
-							 * segments sending data
+							 * segments receiving data
 							 */
 							scaleFactor = motion_recv;
 						}
@@ -1781,7 +1783,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		{
 			appendStringInfo(es->str, "  (cost=%.2f..%.2f rows=%.0f width=%d)",
 							 plan->startup_cost, plan->total_cost,
-							 ceil(plan->plan_rows / scaleFactor), plan->plan_width);
+					  ceil(plan->plan_rows / scaleFactor), plan->plan_width);
 		}
 		else
 		{

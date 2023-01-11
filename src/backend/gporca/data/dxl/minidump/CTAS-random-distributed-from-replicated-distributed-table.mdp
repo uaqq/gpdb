@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <dxl:DXLMessage xmlns:dxl="http://greenplum.com/dxl/2010/12/">
-  <dxl:Comment><![CDATA[
+ <dxl:Comment><![CDATA[
   Objective: In order to prevent single segment insertion skew when inserting a
   replicated table into random table we must ensure that the plan will spray
   the data randomly across all segments. We achieve this by filtering everthing
@@ -23,7 +23,7 @@
                  ->  Seq Scan on test_replicated  (cost=0.00..431.00 rows=1 width=12)
    Optimizer: Pivotal Optimizer (GPORCA)
   ]]>
-  </dxl:Comment>
+ </dxl:Comment>
   <dxl:Thread Id="0">
     <dxl:OptimizerConfig>
       <dxl:EnumeratorConfig Id="0" PlanSamples="0" CostThreshold="0"/>
