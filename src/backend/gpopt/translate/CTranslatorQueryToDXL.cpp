@@ -771,9 +771,8 @@ CTranslatorQueryToDXL::TranslateInsertQueryToDXL()
 				   GPOS_WSZ_LIT("Inserts with foreign tables"));
 	}
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		true,  // is_result_rel
-		&m_context->m_has_distributed_tables, m_query_id);
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte, m_query_id,
+		&m_context->m_has_distributed_tables);
 
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 
@@ -1204,9 +1203,8 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 				   GPOS_WSZ_LIT("Deletes with foreign tables"));
 	}
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		true,  // is_result_rel
-		&m_context->m_has_distributed_tables, m_query_id);
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte, m_query_id,
+		&m_context->m_has_distributed_tables);
 
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 
@@ -1271,9 +1269,8 @@ CTranslatorQueryToDXL::TranslateUpdateQueryToDXL()
 				   GPOS_WSZ_LIT("Updates with foreign tables"));
 	}
 	CDXLTableDescr *table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		true,  // is_result_rel
-		&m_context->m_has_distributed_tables, m_query_id);
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte, m_query_id,
+		&m_context->m_has_distributed_tables);
 
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 
@@ -3347,13 +3344,20 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 				   GPOS_WSZ_LIT("ONLY in the FROM clause"));
 	}
 
-	BOOL is_result_rel = m_query->resultRelation > 0 &&
-						 ULONG(m_query->resultRelation) == rt_index;
+	// table_desc_query_id is used to tag table descriptors assigned to target
+	// (result) relations one. In case of possible nested DML subqueries it's
+	// field points to target relation of corresponding Query structure of subquery.
+	BOOL table_desc_query_id = UNASSIGNED_QUERYID;
+	if (m_query->resultRelation > 0 &&
+		ULONG(m_query->resultRelation) == rt_index)
+	{
+		table_desc_query_id = m_query_id;
+	}
 
 	// construct table descriptor for the scan node from the range table entry
 	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
-		m_mp, m_md_accessor, m_context->m_colid_counter, rte, is_result_rel,
-		&m_context->m_has_distributed_tables, m_query_id);
+		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
+		table_desc_query_id, &m_context->m_has_distributed_tables);
 
 	CDXLLogicalGet *dxl_op = nullptr;
 	const IMDRelation *md_rel =

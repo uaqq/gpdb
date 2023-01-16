@@ -156,11 +156,12 @@ public:
 										 CMDAccessor *md_accessor, IMDId *mdid);
 
 	// translate a RangeTableEntry into a CDXLTableDescr
-	static CDXLTableDescr *GetTableDescr(
-		CMemoryPool *mp, CMDAccessor *md_accessor, CIdGenerator *id_generator,
-		const RangeTblEntry *rte, BOOL is_result_rel,
-		BOOL *is_distributed_table = nullptr,
-		ULONG assigned_query_id = UNASSIGNED_QUERYID);
+	static CDXLTableDescr *GetTableDescr(CMemoryPool *mp,
+										 CMDAccessor *md_accessor,
+										 CIdGenerator *id_generator,
+										 const RangeTblEntry *rte,
+										 ULONG assigned_query_id,
+										 BOOL *is_distributed_table = nullptr);
 
 	// translate a RangeTableEntry into a CDXLLogicalTVF
 	static CDXLLogicalTVF *ConvertToCDXLLogicalTVF(CMemoryPool *mp,
