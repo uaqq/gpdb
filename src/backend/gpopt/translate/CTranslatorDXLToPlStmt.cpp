@@ -4689,9 +4689,10 @@ CTranslatorDXLToPlStmt::TranslateDXLAssert(
 //		Translates a DXL table descriptor into a range table entry
 //		(in case of DML operations there is more than one table descriptors
 //		which point to the result relation, so if rte was alredy translated,
-//		it will be returned  from m_dxl_to_plstmt_context). If an index
-//		descriptor is provided, we use the mapping from colids to index attnos
-//		instead of table attnos
+//		it will be returned from m_dxl_to_plstmt_context, if the rte wasn't
+//		translated, the newly created rte will be appended to
+//		m_dxl_to_plstmt_context). If an index descriptor is provided, we use
+//		the mapping from colids to index attnos instead of table attnos
 //
 //---------------------------------------------------------------------------
 RangeTblEntry *
@@ -4714,44 +4715,17 @@ CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
 	base_table_context->SetOID(oid);
 	base_table_context->SetRelIndex(index);
 
-	// get column names
+	// save mapping col id -> index in translate context
 	const ULONG arity = table_descr->Arity();
-
-	INT last_attno = 0;
-	List *colnames = NIL;
-
 	for (ULONG ul = 0; ul < arity; ++ul)
 	{
 		const CDXLColDescr *dxl_col_descr = table_descr->GetColumnDescrAt(ul);
 		GPOS_ASSERT(nullptr != dxl_col_descr);
 
 		INT attno = dxl_col_descr->AttrNum();
-
 		GPOS_ASSERT(0 != attno);
 
-		// save mapping col id -> index in translate context
 		(void) base_table_context->InsertMapping(dxl_col_descr->Id(), attno);
-
-		if (0 < attno && !rte_was_translated)
-		{
-			// if attno > last_attno + 1, there were dropped attributes
-			// add those to the RTE as they are required by GPDB
-			for (INT dropped_col_attno = last_attno + 1;
-				 dropped_col_attno < attno; dropped_col_attno++)
-			{
-				Value *val_dropped_colname = gpdb::MakeStringValue(PStrDup(""));
-				colnames = gpdb::LAppend(colnames, val_dropped_colname);
-			}
-
-			// non-system attribute
-			CHAR *col_name_char_array =
-				CTranslatorUtils::CreateMultiByteCharStringFromWCString(
-					dxl_col_descr->MdName()->GetMDName()->GetBuffer());
-			Value *val_colname = gpdb::MakeStringValue(col_name_char_array);
-
-			colnames = gpdb::LAppend(colnames, val_colname);
-			last_attno = attno;
-		}
 	}
 
 	// descriptor was already processed, and translated RTE is stored at
@@ -4772,16 +4746,49 @@ CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
 	rte->requiredPerms |= acl_mode;
 	rte->rellockmode = table_descr->LockMode();
 
-	// fill alias of RTE
 	Alias *alias = MakeNode(Alias);
+	alias->colnames = NIL;
+
+	// get table alias
 	alias->aliasname = CTranslatorUtils::CreateMultiByteCharStringFromWCString(
 		table_descr->MdName()->GetMDName()->GetBuffer());
+
+	// get column names
+	INT last_attno = 0;
+	for (ULONG ul = 0; ul < arity; ++ul)
+	{
+		const CDXLColDescr *dxl_col_descr = table_descr->GetColumnDescrAt(ul);
+		INT attno = dxl_col_descr->AttrNum();
+
+		if (0 < attno)
+		{
+			// if attno > last_attno + 1, there were dropped attributes
+			// add those to the RTE as they are required by GPDB
+			for (INT dropped_col_attno = last_attno + 1;
+				 dropped_col_attno < attno; dropped_col_attno++)
+			{
+				Value *val_dropped_colname = gpdb::MakeStringValue(PStrDup(""));
+				alias->colnames =
+					gpdb::LAppend(alias->colnames, val_dropped_colname);
+			}
+
+			// non-system attribute
+			CHAR *col_name_char_array =
+				CTranslatorUtils::CreateMultiByteCharStringFromWCString(
+					dxl_col_descr->MdName()->GetMDName()->GetBuffer());
+			Value *val_colname = gpdb::MakeStringValue(col_name_char_array);
+
+			alias->colnames = gpdb::LAppend(alias->colnames, val_colname);
+			last_attno = attno;
+		}
+	}
+
+	// if there are any dropped columns at the end, add those too to the RangeTblEntry
 	for (ULONG ul = last_attno + 1; ul <= num_of_non_sys_cols; ul++)
 	{
 		Value *val_dropped_colname = gpdb::MakeStringValue(PStrDup(""));
-		colnames = gpdb::LAppend(colnames, val_dropped_colname);
+		alias->colnames = gpdb::LAppend(alias->colnames, val_dropped_colname);
 	}
-	alias->colnames = colnames;
 
 	rte->eref = alias;
 
