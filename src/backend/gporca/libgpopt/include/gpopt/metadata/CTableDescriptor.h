@@ -90,8 +90,9 @@ private:
 
 	// identifier of query to which current table belongs.
 	// This field is used for assigning current table entry with
-	// target one within DML operation
-	ULONG m_assigned_query_id;
+	// target one within DML operation. If descriptor doesn't point
+	// to the target (result) relation it has value UNASSIGNED_QUERYID
+	ULONG m_assigned_query_id_for_target_rel;
 
 public:
 	CTableDescriptor(const CTableDescriptor &) = delete;
@@ -102,7 +103,7 @@ public:
 					 IMDRelation::Ereldistrpolicy rel_distr_policy,
 					 IMDRelation::Erelstoragetype erelstoragetype,
 					 ULONG ulExecuteAsUser, INT lockmode,
-					 ULONG assigned_query_id);
+					 ULONG assigned_query_id_for_target_rel);
 
 	// dtor
 	~CTableDescriptor() override;
@@ -238,9 +239,9 @@ public:
 	}
 
 	ULONG
-	GetAssignedQueryId() const
+	GetAssignedQueryIdForTargetRel() const
 	{
-		return m_assigned_query_id;
+		return m_assigned_query_id_for_target_rel;
 	}
 
 };	// class CTableDescriptor

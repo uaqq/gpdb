@@ -588,28 +588,58 @@ CContextDXLToPlStmt::GetRTEByIndex(Index index)
 //		rte was processed.
 //		In case of DML operations there is more than one table descr pointing
 //		to the result relation and to detect position of already processed rte
-//		assigned_queiry_id of table descriptor is used.
+//		`assigned_query_id_for_target_rel` of table descriptor is used.
 //---------------------------------------------------------------------------
 Index
 CContextDXLToPlStmt::GetRTEIndexByTableDescr(const CDXLTableDescr *table_descr,
 											 BOOL *is_rte_exists)
 {
 	*is_rte_exists = false;
-	ULONG assigned_query_id = table_descr->GetAssignedQueryId();
-	if (assigned_query_id == UNASSIGNED_QUERYID)
+
+	//	`assigned_query_id_for_target_rel` is a "tag" of table descriptors, it
+	//	shows id of query structure which contains result relation. If table
+	//	descriptors have the same `assigned_query_id_for_target_rel` - these
+	//	table descriptors point to the same result relation in `ModifyTable`
+	//	operation. It's not zero (0) value (which equal to `UNASSIGNED_QUERYID`
+	//	define) if: user query is a INSERT/UPDATE/DELETE (`ModifyTable`
+	//	operation) and this table descriptor points to the result relation of
+	//	operation, for ex.:
+	//	```sql
+	//	create table b (i int, j int);
+	//	create table c (i int);
+	//	insert into b(i,j) values (1,2), (2,3), (3,4);
+	//	insert into c(i) values (1), (2);
+	//	delete from b where i in (select i from c);
+	//	```
+	//	where `b` is a result relation (table descriptors pointing to it
+	//	will have the same `assigned_query_id_for_target_rel` > 0), and
+	//	`c` is not (all table descriptors which points to `c` will have
+	//	`assigned_query_id_for_target_rel`=0 (equal to `UNASSIGNED_QUERYID`)
+	ULONG assigned_query_id_for_target_rel =
+		table_descr->GetAssignedQueryIdForTargetRel();
+	if (assigned_query_id_for_target_rel == UNASSIGNED_QUERYID)
 	{
 		return gpdb::ListLength(m_rtable_entries_list) + 1;
 	}
 
-	Index *usedIndex = m_used_rte_indexes->Find(&assigned_query_id);
+	Index *usedIndex =
+		m_used_rte_indexes->Find(&assigned_query_id_for_target_rel);
+
+	//	`usedIndex` is a non zero value in next case: table descriptor with
+	//	the same `assigned_query_id_for_target_rel` was processed previously
+	//	(so no need to create a new index for result relation like the relation
+	//	itself)
 	if (usedIndex)
 	{
 		*is_rte_exists = true;
 		return *usedIndex;
 	}
 
+	//	`assigned_query_id_for_target_rel` of table descriptor which points to
+	//	result relation wasn't previously processed - create a new index.
 	Index new_index = gpdb::ListLength(m_rtable_entries_list) + 1;
-	m_used_rte_indexes->Insert(GPOS_NEW(m_mp) ULONG(assigned_query_id),
+	m_used_rte_indexes->Insert(GPOS_NEW(m_mp)
+								   ULONG(assigned_query_id_for_target_rel),
 							   GPOS_NEW(m_mp) Index(new_index));
 
 	return new_index;

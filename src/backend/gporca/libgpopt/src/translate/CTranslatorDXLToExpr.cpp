@@ -2120,7 +2120,7 @@ CTranslatorDXLToExpr::Ptabdesc(CDXLTableDescr *table_descr)
 	CTableDescriptor *ptabdesc = GPOS_NEW(m_mp) CTableDescriptor(
 		m_mp, mdid, CName(m_mp, &strName), pmdrel->ConvertHashToRandom(),
 		rel_distr_policy, rel_storage_type, table_descr->GetExecuteAsUserId(),
-		table_descr->LockMode(), table_descr->GetAssignedQueryId());
+		table_descr->LockMode(), table_descr->GetAssignedQueryIdForTargetRel());
 
 	const ULONG ulColumns = table_descr->Arity();
 	for (ULONG ul = 0; ul < ulColumns; ul++)

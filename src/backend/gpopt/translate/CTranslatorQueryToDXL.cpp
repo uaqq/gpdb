@@ -3344,20 +3344,20 @@ CTranslatorQueryToDXL::TranslateRTEToDXLLogicalGet(const RangeTblEntry *rte,
 				   GPOS_WSZ_LIT("ONLY in the FROM clause"));
 	}
 
-	// table_desc_query_id is used to tag table descriptors assigned to target
+	// query_id_for_target_rel is used to tag table descriptors assigned to target
 	// (result) relations one. In case of possible nested DML subqueries it's
 	// field points to target relation of corresponding Query structure of subquery.
-	BOOL table_desc_query_id = UNASSIGNED_QUERYID;
+	ULONG query_id_for_target_rel = UNASSIGNED_QUERYID;
 	if (m_query->resultRelation > 0 &&
 		ULONG(m_query->resultRelation) == rt_index)
 	{
-		table_desc_query_id = m_query_id;
+		query_id_for_target_rel = m_query_id;
 	}
 
 	// construct table descriptor for the scan node from the range table entry
 	CDXLTableDescr *dxl_table_descr = CTranslatorUtils::GetTableDescr(
 		m_mp, m_md_accessor, m_context->m_colid_counter, rte,
-		table_desc_query_id, &m_context->m_has_distributed_tables);
+		query_id_for_target_rel, &m_context->m_has_distributed_tables);
 
 	CDXLLogicalGet *dxl_op = nullptr;
 	const IMDRelation *md_rel =
