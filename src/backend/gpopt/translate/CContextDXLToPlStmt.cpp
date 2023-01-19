@@ -625,7 +625,7 @@ CContextDXLToPlStmt::GetRTEIndexByTableDescr(const CDXLTableDescr *table_descr,
 	Index *usedIndex =
 		m_used_rte_indexes->Find(&assigned_query_id_for_target_rel);
 
-	//	`usedIndex` is a non zero value in next case: table descriptor with
+	//	`usedIndex` is a non NULL value in next case: table descriptor with
 	//	the same `assigned_query_id_for_target_rel` was processed previously
 	//	(so no need to create a new index for result relation like the relation
 	//	itself)
