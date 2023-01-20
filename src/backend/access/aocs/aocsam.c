@@ -235,7 +235,7 @@ open_ds_read(Relation rel, DatumStreamRead **ds, TupleDesc relationTupleDesc,
 	}
 
 	for (i = 0; i < RelationGetNumberOfAttributes(rel); i++)
-		pfree(opts[i]);
+			pfree(opts[i]);
 	pfree(opts);
 }
 
