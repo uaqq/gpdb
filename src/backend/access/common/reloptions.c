@@ -1380,7 +1380,6 @@ attribute_reloptions(Datum reloptions, bool validate)
 				   validate, tab, lengthof(tab));
 
 	free_options_deep(options, numoptions);
-
 	return (bytea *) aopts;
 }
 
