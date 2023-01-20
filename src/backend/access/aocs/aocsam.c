@@ -1875,7 +1875,7 @@ aocs_addcol_init(Relation rel,
 	}
 
 	for (i = 0; i < RelationGetNumberOfAttributes(rel); i++)
-		pfree(opts[i]);
+			pfree(opts[i]);
 	pfree(opts);
 	return desc;
 }
