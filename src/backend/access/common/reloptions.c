@@ -969,6 +969,7 @@ parseRelOptions(Datum options, bool validate, relopt_kind kind,
 			}
 		}
 
+		/* It's worth avoiding memory leaks in this function */
 		pfree(optiondatums);
 		if (((void *) array) != DatumGetPointer(options))
 			pfree(array);
