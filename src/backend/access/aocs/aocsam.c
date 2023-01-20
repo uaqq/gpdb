@@ -171,7 +171,7 @@ open_ds_write(Relation rel, DatumStreamWrite **ds, TupleDesc relationTupleDesc,
 	}
 
 	for (int i = 0; i < RelationGetNumberOfAttributes(rel); i++)
-		pfree(opts[i]);
+			pfree(opts[i]);
 	pfree(opts);
 }
 
