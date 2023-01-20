@@ -970,7 +970,7 @@ parseRelOptions(Datum options, bool validate, relopt_kind kind,
 		}
 
 		pfree(optiondatums);
-		if ((void *) array != DatumGetPointer(options))
+		if (((void *) array) != DatumGetPointer(options))
 			pfree(array);
 	}
 
