@@ -22,7 +22,6 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
-#include "catalog/oid_dispatch.h"
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_operator.h"
@@ -2667,9 +2666,7 @@ transform_array_Const_to_ArrayExpr(Const *c)
 Node *
 eval_const_expressions(PlannerInfo *root, Node *node)
 {
-	eval_const_expressions_context	 context;
-	Node							*result;
-	List							*saved_oid_assignments;
+	eval_const_expressions_context context;
 
 	if (root)
 		context.boundParams = root->glob->boundParams;	/* bound Params */
@@ -2684,11 +2681,7 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	context.max_size = 0;
 	context.eval_stable_functions = should_eval_stable_functions(root);
 
-	saved_oid_assignments = SaveOidAssignments();
-	result = eval_const_expressions_mutator(node, &context);
-	RestoreOidAssignments(saved_oid_assignments);
-
-	return result;
+	return eval_const_expressions_mutator(node, &context);
 }
 
 /*--------------------
