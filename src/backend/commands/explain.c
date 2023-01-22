@@ -1226,6 +1226,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 														 * only */
 		scaleFactor = 1.0;
 	}
+	if (plan->flow != NULL && CdbPathLocus_IsSegmentGeneral(*(plan->flow)))
+	{
+		/* Replicated table has full data on every segment */
+		scaleFactor = 1.0;
+	}
 
 	switch (nodeTag(plan))
 	{
@@ -1451,8 +1456,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 							sname = "Broadcast Motion";
 
 							/*
-							 * scale the number of rows by the number of
-							 * segments receiving data
+							 * Scale the number of rows by the number of
+							 * segments receiving data. We don't use
+							 * segments count because the number of receivers
+							 * can be less if we are expanding a cluster.
 							 */
 							scaleFactor = motion_recv;
 						}
@@ -1783,7 +1790,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		{
 			appendStringInfo(es->str, "  (cost=%.2f..%.2f rows=%.0f width=%d)",
 							 plan->startup_cost, plan->total_cost,
-					  ceil(plan->plan_rows / scaleFactor), plan->plan_width);
+							 ceil(plan->plan_rows / scaleFactor), plan->plan_width);
 		}
 		else
 		{
