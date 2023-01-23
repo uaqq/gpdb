@@ -278,6 +278,7 @@ extern bytea *extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 				  Oid amoptions);
 extern relopt_value *parseRelOptions(Datum options, bool validate,
 				relopt_kind kind, int *numrelopts);
+extern void free_options_deep(relopt_value *options, int numoptions);
 extern void *allocateReloptStruct(Size base, relopt_value *options,
 					 int numoptions);
 extern void fillRelOptions(void *rdopts, Size basesize,

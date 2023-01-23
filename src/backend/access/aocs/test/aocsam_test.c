@@ -62,18 +62,18 @@ test__aocs_addcol_init(void **state)
 	FormData_pg_appendonly pgappendonly;
 	int			nattr = 5;
 	StdRdOptions **opts =
-	(StdRdOptions **) malloc(sizeof(StdRdOptions *) * nattr);
+	(StdRdOptions **) palloc(sizeof(StdRdOptions *) * nattr);
 	wal_level = WAL_LEVEL_ARCHIVE;
 
 	/* 3 existing columns */
 	opts[0] = opts[1] = opts[2] = (StdRdOptions *) NULL;
 
 	/* 2 newly added columns */
-	opts[3] = (StdRdOptions *) malloc(sizeof(StdRdOptions));
+	opts[3] = (StdRdOptions *) palloc(sizeof(StdRdOptions));
 	strcpy(opts[3]->compresstype, "rle_type");
 	opts[3]->compresslevel = 2;
 	opts[3]->blocksize = 8192;
-	opts[4] = (StdRdOptions *) malloc(sizeof(StdRdOptions));
+	opts[4] = (StdRdOptions *) palloc(sizeof(StdRdOptions));
 	strcpy(opts[4]->compresstype, "none");
 	opts[4]->compresslevel = 0;
 	opts[4]->blocksize = 8192 * 2;
@@ -103,9 +103,9 @@ test__aocs_addcol_init(void **state)
 	rel.relpersistence = RELPERSISTENCE_PERMANENT;
 	reldata.rd_rel = &rel;
 	reldata.rd_appendonly = &pgappendonly;
-	reldata.rd_att = (TupleDesc) malloc(sizeof(struct tupleDesc));
+	reldata.rd_att = (TupleDesc) palloc(sizeof(struct tupleDesc));
 	reldata.rd_att->attrs =
-		(Form_pg_attribute *) malloc(sizeof(Form_pg_attribute *) * nattr);
+		(Form_pg_attribute *) palloc(sizeof(Form_pg_attribute *) * nattr);
 	memset(reldata.rd_att->attrs, 0, sizeof(Form_pg_attribute *) * nattr);
 	reldata.rd_att->natts = 5;
 	/* 3 existing columns, 2 new columns */
