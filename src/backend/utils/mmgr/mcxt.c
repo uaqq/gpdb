@@ -1600,7 +1600,6 @@ pnstrdup(const char *in, Size len)
 
 	memcpy(out, in, len);
 	out[len] = '\0';
-
 	return out;
 }
 
@@ -1636,6 +1635,7 @@ pgport_pfree(void *pointer)
 {
 	pfree(pointer);
 }
+
 #endif
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG

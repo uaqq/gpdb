@@ -1,8 +1,8 @@
 #include "utils/palloc_override_undef.h"
 
 static void
-MemoryContextWriteFuncAndLineToAllocedMemory(void * ptr, const char * parent_func,
-		const char * exec_func, const char * file, int line)
+MemoryContextWriteFuncAndLineToAllocedMemory(void *ptr, const char *parent_func,
+		const char *exec_func, const char *file, int line)
 {
 	Assert(parent_func);
 	Assert(exec_func);
