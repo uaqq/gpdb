@@ -98,11 +98,6 @@
 
 #include "utils/memaccounting_private.h"
 
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "utils/hsearch.h"
-#include "access/hash.h"
-#endif
-
 /* Define this to detail debug alloc information */
 /* #define HAVE_ALLOCINFO */
 
@@ -239,11 +234,7 @@ typedef struct AllocChunkData
 	void *next_chunk;
 #endif
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	MemoryContextChunkStatKey key;
-	const char *exec_func;
-	const char *file;
-	int32_t init;
-	#define DYNAMIC_MEMORY_DEBUG_INIT_MAGIC 0x12345678
+	MemoryContextChunkInfo info;
 #endif
 }	AllocChunkData;
 
@@ -280,7 +271,7 @@ static bool AllocSetIsEmpty(MemoryContext context);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld,
-		MemoryContextChunkStat ***chunks, Size *chunks_count);
+		HTAB **chunks_htable);
 #else
 static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
@@ -1017,58 +1008,29 @@ static void AllocSetReleaseAccountingForAllAllocatedChunks(MemoryContext context
 }
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-struct AllocChunkStat_htabEntry
+static void
+update_AllocChunkStats(HTAB *chunks_htable, AllocChunk chunk)
 {
-	MemoryContextChunkStatKey key;
-	MemoryContextChunkStat *stat;
-};
-
-static void update_AllocChunkStats(HTAB *chunks_htable, AllocChunk chunk,
-								   Size *ChunksCount,
-								   MemoryContextChunkStat ***ChunkStats,
-								   Size *tablesize)
-{
-	struct AllocChunkStat_htabEntry *r = NULL;
+	MemoryContextChunkStat_htabEntry *r = NULL;
 	bool found = false;
 
-	r = hash_search(chunks_htable, &chunk->key, HASH_ENTER, &found);
+	r = hash_search(chunks_htable, &chunk->info.key, HASH_ENTER, &found);
 	Assert(r);
 
 	if (found)
 	{
-		r->stat->count++;
-		r->stat->bytes += chunk->size;
+		r->stat.count++;
+		r->stat.bytes += chunk->size;
 		return;
 	}
 
-	if (*ChunksCount == *tablesize)
-	{
-		MemoryContextChunkStat **new_ChunkStats = repalloc(*ChunkStats,
-														   (*tablesize +
-														   CHUNKS_TABLE_SIZE) *
-														   sizeof(MemoryContextChunkStat *));
-		if (!new_ChunkStats)
-			return;
-
-		*ChunkStats = new_ChunkStats;
-		(*tablesize) += CHUNKS_TABLE_SIZE;
-	}
-
-	(*ChunkStats)[*ChunksCount] = palloc(sizeof(MemoryContextChunkStat));
-	if ((*ChunkStats)[*ChunksCount])
-	{
-		r->stat = (*ChunkStats)[*ChunksCount];
-		memcpy(&r->key, &chunk->key, sizeof(r->key));
-
-		(*ChunkStats)[*ChunksCount]->chunk = chunk;
-		(*ChunkStats)[*ChunksCount]->count = 1;
-		(*ChunkStats)[*ChunksCount]->bytes = chunk->size;
-		(*ChunksCount)++;
-	}
+	r->chunk_info = chunk->info;
+	r->stat.bytes = chunk->size;
+	r->stat.count = 1;
 }
 
 static uint32
-MemoryContextChunkStatKeyDelete(const void *key, Size keysize)
+MemoryContextChunkStatKeyHash(const void *key, Size keysize)
 {
 	Assert(keysize == sizeof(MemoryContextChunkStatKey));
 	return DatumGetUInt32(hash_any((const unsigned char *) key,
@@ -1080,13 +1042,12 @@ MemoryContextChunkStatKeyCompare(const void *key1, const void *key2,
 								 Size keysize)
 {
 	Assert(keysize == sizeof(MemoryContextChunkStatKey));
-	MemoryContextChunkStatKey *k1 = (MemoryContextChunkStatKey *) key1;
-	MemoryContextChunkStatKey *k2 = (MemoryContextChunkStatKey *) key2;
+	MemoryContextChunkStatKey *k1 = (MemoryContextChunkStatKey *)key1;
+	MemoryContextChunkStatKey *k2 = (MemoryContextChunkStatKey *)key2;
 
 	if (0 == strcmp(k1->parent_func, k2->parent_func) && (k1->line == k2->line))
-	{
 		return 0;
-	}
+
 	return 1;
 }
 
@@ -1107,30 +1068,27 @@ AllocSet_AllocChunk_is_free(AllocChunk chunk, AllocSet set)
 		free_chunk = (AllocChunk) free_chunk->sharedHeader;
 	}
 
-
 	return false;
 }
 
-static Size AllocSetGetChunkStats(AllocSet set,
-								  MemoryContextChunkStat ***ChunkStats)
+static void
+AllocSetGetAllocatedChunkStats(AllocSet set,
+							   HTAB **chunks_htable)
 {
-	Size ChunksCount = 0;
 	HASHCTL		hash_ctl;
-	Size table_size = CHUNKS_TABLE_SIZE;
 
 	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
 	hash_ctl.keysize = sizeof(MemoryContextChunkStatKey);
-	hash_ctl.entrysize = sizeof(struct AllocChunkStat_htabEntry);
-	hash_ctl.hash = MemoryContextChunkStatKeyDelete;
+	hash_ctl.entrysize = sizeof(MemoryContextChunkStat_htabEntry);
+	hash_ctl.hash = MemoryContextChunkStatKeyHash;
 	hash_ctl.match = MemoryContextChunkStatKeyCompare;
 
-	HTAB *chunks_htable = hash_create("HTAB chunks_stats",
-									CHUNKS_TABLE_SIZE, &hash_ctl, HASH_FUNCTION |
-									HASH_ELEM | HASH_COMPARE | HASH_CONTEXT);
+	if (*chunks_htable)
+		hash_destroy(*chunks_htable);
 
-	*ChunkStats = palloc(table_size * sizeof(MemoryContextChunkStat *));
-	if (!*ChunkStats)
-		return;
+	*chunks_htable = hash_create("HTAB chunks_stats",
+								 CHUNKS_TABLE_SIZE, &hash_ctl, HASH_FUNCTION |
+								 HASH_ELEM | HASH_COMPARE | HASH_CONTEXT);
 
 	for (AllocBlock block = set->blocks; block != NULL; block = block->next)
 	{
@@ -1141,16 +1099,12 @@ static Size AllocSetGetChunkStats(AllocSet set,
 		{
 			if (AllocSet_AllocChunk_is_free(chunk, set))
 				continue;
-			if (chunk->init != DYNAMIC_MEMORY_DEBUG_INIT_MAGIC)
+			if (chunk->info.init != DYNAMIC_MEMORY_DEBUG_INIT_MAGIC)
 				continue;
 
-			update_AllocChunkStats(chunks_htable, chunk, &ChunksCount,
-								   ChunkStats, &table_size);
+			update_AllocChunkStats(*chunks_htable, chunk);
 		}
 	}
-
-	hash_destroy(chunks_htable);
-	return ChunksCount;
 }
 #endif
 
@@ -2067,7 +2021,7 @@ AllocSetIsEmpty(MemoryContext context)
 static void
 AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld,
-		MemoryContextChunkStat ***chunks, Size *chunks_count)
+		HTAB **chunks_htable)
 #else
 static void
 AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
@@ -2113,8 +2067,8 @@ AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 	}
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	if (chunks)
-		*chunks_count = AllocSetGetChunkStats(set, chunks);
+	if (chunks_htable)
+		AllocSetGetAllocatedChunkStats(set, chunks_htable);
 #endif
 }
 

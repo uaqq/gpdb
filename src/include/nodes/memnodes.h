@@ -17,12 +17,13 @@
 #define MEMNODES_H
 
 #include "nodes/nodes.h"
+#include "utils/hsearch.h"
+#include "access/hash.h"
 
 #define CHUNKS_TABLE_SIZE 1024
 
 typedef struct
 {
-	void *chunk;
 	uint64_t count;
 	uint64_t bytes;
 } MemoryContextChunkStat;
@@ -32,6 +33,21 @@ typedef struct
 	const char *parent_func;
 	int line;
 } MemoryContextChunkStatKey;
+
+typedef struct
+{
+	MemoryContextChunkStatKey key;
+	const char *file;
+	const char *exec_func;
+	int32_t init;
+	#define DYNAMIC_MEMORY_DEBUG_INIT_MAGIC 0x12345678
+} MemoryContextChunkInfo;
+
+typedef struct
+{
+	MemoryContextChunkInfo chunk_info;
+	MemoryContextChunkStat stat;
+} MemoryContextChunkStat_htabEntry;
 
 /*
  * MemoryContext
@@ -63,7 +79,7 @@ typedef struct MemoryContextMethods
 	bool		(*is_empty) (MemoryContext context);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 	void		(*stats) (MemoryContext context, uint64 *nBlocks, uint64 *nChunks, uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld
-							, MemoryContextChunkStat ***chunks, Size *chunks_count);
+							, HTAB **chunks_htable);
 #else
 	void		(*stats) (MemoryContext context, uint64 *nBlocks, uint64 *nChunks, uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
 #endif
