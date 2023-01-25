@@ -850,8 +850,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		/* Get name and ancestry of this MemoryContext */
 		name = MemoryContextName(child, rootContext, nameBuffer, nameBufferSize);
 
-		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable,
-								&allAllocated, &allFreed, &maxHeld);
+		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
 
 		if (child->firstchild == NULL)
 		{
@@ -976,8 +975,7 @@ MemoryContextStats(MemoryContext context)
 	int namebufsize = sizeof(namebuf);
 
 	/* Get the root context's stat and pass it to the MemoryContextStats_recur for printing */
-	(*context->methods.stats)(context, &nBlocks, &nChunks, &currentAvailable,
-							  &allAllocated, &allFreed, &maxHeld);
+	(*context->methods.stats)(context, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
 	name = MemoryContextName(context, context, namebuf, namebufsize);
 
     MemoryContextStats_recur(context, context, name, namebuf, namebufsize, nBlocks, nChunks,
