@@ -249,11 +249,7 @@ void
 GetMdCxtStat(uint64 *nBlocks, uint64 *nChunks, uint64 *currentAvailable, 
 		uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld)
 {
-	(MdCxt->methods.stats)(MdCxt, nBlocks, nChunks, currentAvailable, allAllocated, allFreed, maxHeld
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-		, NULL
-#endif
-		);
+	(MdCxt->methods.stats)(MdCxt, nBlocks, nChunks, currentAvailable, allAllocated, allFreed, maxHeld);
 }
 
 /*

@@ -268,14 +268,8 @@ static void AllocSetReset(MemoryContext context);
 static void AllocSetDelete(MemoryContext context);
 static Size AllocSetGetChunkSpace(MemoryContext context, void *pointer);
 static bool AllocSetIsEmpty(MemoryContext context);
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
-		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld,
-		HTAB **chunks_htable);
-#else
 static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
-#endif
 static void AllocSetReleaseAccountingForAllAllocatedChunks(MemoryContext context);
 
 static void dump_allocset_block(FILE *file, AllocBlock block);
@@ -286,6 +280,10 @@ void dump_mc(const char *fname, MemoryContext mc);
 
 #ifdef MEMORY_CONTEXT_CHECKING
 static void AllocSetCheck(MemoryContext context);
+#endif
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+extern HTAB *chunks_htable;
 #endif
 
 /*
@@ -1009,7 +1007,7 @@ static void AllocSetReleaseAccountingForAllAllocatedChunks(MemoryContext context
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 static void
-update_AllocChunkStats(HTAB *chunks_htable, AllocChunk chunk)
+update_AllocChunkStats(AllocChunk chunk)
 {
 	MemoryContextChunkStat_htabEntry *r = NULL;
 	bool found = false;
@@ -1072,8 +1070,7 @@ AllocSet_AllocChunk_is_free(AllocChunk chunk, AllocSet set)
 }
 
 static void
-AllocSetGetAllocatedChunkStats(AllocSet set,
-							   HTAB **chunks_htable)
+AllocSetGetAllocatedChunkStats(AllocSet set)
 {
 	HASHCTL		hash_ctl;
 
@@ -1083,10 +1080,10 @@ AllocSetGetAllocatedChunkStats(AllocSet set,
 	hash_ctl.hash = MemoryContextChunkStatKeyHash;
 	hash_ctl.match = MemoryContextChunkStatKeyCompare;
 
-	if (*chunks_htable)
-		hash_destroy(*chunks_htable);
+	if (chunks_htable)
+		hash_destroy(chunks_htable);
 
-	*chunks_htable = hash_create("HTAB chunks_stats",
+	chunks_htable = hash_create("HTAB chunks_stats",
 								 CHUNKS_TABLE_SIZE, &hash_ctl, HASH_FUNCTION |
 								 HASH_ELEM | HASH_COMPARE | HASH_CONTEXT);
 
@@ -1102,7 +1099,7 @@ AllocSetGetAllocatedChunkStats(AllocSet set,
 			if (chunk->info.init != DYNAMIC_MEMORY_DEBUG_INIT_MAGIC)
 				continue;
 
-			update_AllocChunkStats(*chunks_htable, chunk);
+			update_AllocChunkStats(chunk);
 		}
 	}
 }
@@ -2017,16 +2014,9 @@ AllocSetIsEmpty(MemoryContext context)
  *		allFreed: total bytes that was freed during lifetime
  *		maxHeld: maximum bytes held during lifetime
  */
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-static void
-AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
-		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld,
-		HTAB **chunks_htable)
-#else
 static void
 AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld)
-#endif
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
@@ -2067,8 +2057,7 @@ AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 	}
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	if (chunks_htable)
-		AllocSetGetAllocatedChunkStats(set, chunks_htable);
+	AllocSetGetAllocatedChunkStats(set);
 #endif
 }
 

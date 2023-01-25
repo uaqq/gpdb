@@ -56,6 +56,8 @@
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 #include "utils/palloc_override_undef.h"
+
+HTAB *chunks_htable = NULL;
 #endif
 
 /*****************************************************************************
@@ -722,16 +724,16 @@ MemoryContextChunkStats_comparator(const void *l, const void *r)
 }
 
 static void
-MemoryContext_printTopListOfChunks(HTAB **chunks_htable)
+MemoryContext_printTopListOfChunks()
 {
-	if (!*chunks_htable)
+	if (!chunks_htable)
 		return;
 
-	long ChunksCount = hash_get_num_entries(*chunks_htable);
+	long ChunksCount = hash_get_num_entries(chunks_htable);
 	if (!ChunksCount)
 	{
-		hash_destroy(*chunks_htable);
-		*chunks_htable = NULL;
+		hash_destroy(chunks_htable);
+		chunks_htable = NULL;
 		return;
 	}
 
@@ -753,7 +755,7 @@ MemoryContext_printTopListOfChunks(HTAB **chunks_htable)
 	int show_count = ChunksCount < MAX_TOP_ALLOC_CHUNK_STATS ?
 						ChunksCount : MAX_TOP_ALLOC_CHUNK_STATS;
 
-	hash_seq_init(&hash_seq, *chunks_htable);
+	hash_seq_init(&hash_seq, chunks_htable);
 	while ((entry = hash_seq_search(&hash_seq)) != NULL)
 		chunks[idx++] = entry;
 
@@ -773,8 +775,8 @@ MemoryContext_printTopListOfChunks(HTAB **chunks_htable)
 
 	MemoryContextSwitchTo(oldcontext);
 	MemoryContextDelete(ChunksStatContext);
-	hash_destroy(*chunks_htable);
-	*chunks_htable = NULL;
+	hash_destroy(chunks_htable);
+	chunks_htable = NULL;
 }
 #endif
 
@@ -809,11 +811,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
                          char *topContextName, char *nameBuffer, int nameBufferSize,
                          uint64 nBlocksTop, uint64 nChunksTop,
                          uint64 currentAvailableTop, uint64 allAllocatedTop,
-                         uint64 allFreedTop, uint64 maxHeldTop
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-                         , HTAB **chunks_htable
-#endif
-                         )
+                         uint64 allFreedTop, uint64 maxHeldTop)
 {
 	MemoryContext   child;
     char*           name;
@@ -833,7 +831,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 	 */
 	MemoryContext_LogContextStats(1 /* siblingCount */, allAllocatedTop, allFreedTop, currentAvailableTop, topContextName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	MemoryContext_printTopListOfChunks(chunks_htable);
+	MemoryContext_printTopListOfChunks();
 #endif
 
     uint64 cumBlocks = 0;
@@ -853,11 +851,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		name = MemoryContextName(child, rootContext, nameBuffer, nameBufferSize);
 
 		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable,
-								&allAllocated, &allFreed, &maxHeld
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-								, chunks_htable
-#endif
-			);
+								&allAllocated, &allFreed, &maxHeld);
 
 		if (child->firstchild == NULL)
 		{
@@ -886,7 +880,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 					MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-					MemoryContext_printTopListOfChunks(chunks_htable);
+					MemoryContext_printTopListOfChunks();
 #endif
 				}
 
@@ -917,16 +911,12 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 				MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-				MemoryContext_printTopListOfChunks(chunks_htable);
+				MemoryContext_printTopListOfChunks();
 #endif
 			}
 
 			MemoryContextStats_recur(child, rootContext, name, nameBuffer, nameBufferSize, nBlocks,
-					nChunks, currentAvailable, allAllocated, allFreed, maxHeld
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-					, chunks_htable
-#endif
-					);
+					nChunks, currentAvailable, allAllocated, allFreed, maxHeld);
 
 			/*
 			 * We just traversed a child node, so we need to make sure we don't carry over
@@ -970,9 +960,6 @@ MemoryContextStats(MemoryContext context)
 {
     char*     name;
     char      namebuf[MAX_CONTEXT_NAME_SIZE];
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	HTAB *chunks_htable = NULL;
-#endif
 
 	AssertArg(MemoryContextIsValid(context));
 
@@ -990,23 +977,18 @@ MemoryContextStats(MemoryContext context)
 
 	/* Get the root context's stat and pass it to the MemoryContextStats_recur for printing */
 	(*context->methods.stats)(context, &nBlocks, &nChunks, &currentAvailable,
-							  &allAllocated, &allFreed, &maxHeld
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-							  , &chunks_htable
-#endif
-							  );
+							  &allAllocated, &allFreed, &maxHeld);
 	name = MemoryContextName(context, context, namebuf, namebufsize);
 
     MemoryContextStats_recur(context, context, name, namebuf, namebufsize, nBlocks, nChunks,
-    		currentAvailable, allAllocated, allFreed, maxHeld
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-    		, &chunks_htable
-#endif
-    		);
+    		currentAvailable, allAllocated, allFreed, maxHeld);
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 	if (chunks_htable)
+	{
 		hash_destroy(chunks_htable);
+		chunks_htable = NULL;
+	}
 #endif
 }
 
