@@ -43,7 +43,7 @@ AlterTableCreateAoBlkdirTable(Oid relOid, bool is_part_child, bool is_part_paren
 	if (is_part_child)
 		rel = heap_open(relOid, NoLock);
 	else
-		rel = heap_open(relOid, AccessExclusiveLock);
+		rel = heap_open(relOid, ShareRowExclusiveLock);
 
 	if (!RelationIsAppendOptimized(rel))
 	{
