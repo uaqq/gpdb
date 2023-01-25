@@ -596,11 +596,8 @@ CTranslatorDXLToPlStmt::TranslateDXLTblScan(
 	GPOS_RTL_ASSERT(dxl_table_descr->LockMode() != -1);
 	gpdb::GPDBLockRelationOid(mdid->Oid(), dxl_table_descr->LockMode());
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		dxl_table_descr, &is_rte_exist);
-	RangeTblEntry *rte = TranslateDXLTblDescrToRangeTblEntry(
-		dxl_table_descr, index, &base_table_context, is_rte_exist, ACL_SELECT);
+	Index index =
+		ProcessDXLTblDescr(dxl_table_descr, &base_table_context, ACL_SELECT);
 
 	// a table scan node must have 2 children: projection list and filter
 	GPOS_ASSERT(2 == tbl_scan_dxlnode->Arity());
@@ -624,6 +621,7 @@ CTranslatorDXLToPlStmt::TranslateDXLTblScan(
 	if (IMDRelation::ErelstorageForeign == md_rel->RetrieveRelStorageType())
 	{
 		OID oidRel = CMDIdGPDB::CastMdid(md_rel->MDId())->Oid();
+		RangeTblEntry *rte = m_dxl_to_plstmt_context->GetRTEByIndex(index);
 
 		ForeignScan *foreign_scan =
 			gpdb::CreateForeignScan(oidRel, index, qual, targetlist,
@@ -758,11 +756,8 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexScan(
 	GPOS_RTL_ASSERT(dxl_table_descr->LockMode() != -1);
 	gpdb::GPDBLockRelationOid(mdid->Oid(), dxl_table_descr->LockMode());
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		dxl_table_descr, &is_rte_exist);
-	(void) TranslateDXLTblDescrToRangeTblEntry(
-		dxl_table_descr, index, &base_table_context, is_rte_exist, ACL_SELECT);
+	Index index =
+		ProcessDXLTblDescr(dxl_table_descr, &base_table_context, ACL_SELECT);
 
 	IndexScan *index_scan = nullptr;
 	index_scan = MakeNode(IndexScan);
@@ -894,11 +889,8 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexOnlyScan(
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(
 		physical_idx_scan_dxlop->GetDXLTableDescr()->MDId());
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		table_desc, &is_rte_exist);
-	(void) TranslateDXLTblDescrToRangeTblEntry(
-		table_desc, index, &base_table_context, is_rte_exist, ACL_SELECT);
+	Index index =
+		ProcessDXLTblDescr(table_desc, &base_table_context, ACL_SELECT);
 
 	IndexOnlyScan *index_scan = MakeNode(IndexOnlyScan);
 	index_scan->scan.scanrelid = index;
@@ -3619,12 +3611,8 @@ CTranslatorDXLToPlStmt::TranslateDXLAppend(
 		// translation context for column mappings in the base relation
 		CDXLTranslateContextBaseTable base_table_context(m_mp);
 
-		BOOL is_rte_exist = false;
-		Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-			phy_append_dxlop->GetDXLTableDesc(), &is_rte_exist);
-		(void) TranslateDXLTblDescrToRangeTblEntry(
-			phy_append_dxlop->GetDXLTableDesc(), index, &base_table_context,
-			is_rte_exist, ACL_SELECT);
+		(void) ProcessDXLTblDescr(phy_append_dxlop->GetDXLTableDesc(),
+								  &base_table_context, ACL_SELECT);
 
 		append->join_prune_paramids = NIL;
 		const ULongPtrArray *selector_ids = phy_append_dxlop->GetSelectorIds();
@@ -3989,12 +3977,8 @@ CTranslatorDXLToPlStmt::TranslateDXLDynTblScan(
 	// translation context for column mappings in the base relation
 	CDXLTranslateContextBaseTable base_table_context(m_mp);
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		dyn_tbl_scan_dxlop->GetDXLTableDescr(), &is_rte_exist);
-	(void) TranslateDXLTblDescrToRangeTblEntry(
-		dyn_tbl_scan_dxlop->GetDXLTableDescr(), index, &base_table_context,
-		is_rte_exist, ACL_SELECT);
+	Index index = ProcessDXLTblDescr(dyn_tbl_scan_dxlop->GetDXLTableDescr(),
+									 &base_table_context, ACL_SELECT);
 
 	// create dynamic scan node
 	DynamicSeqScan *dyn_seq_scan = MakeNode(DynamicSeqScan);
@@ -4078,11 +4062,8 @@ CTranslatorDXLToPlStmt::TranslateDXLDynIdxScan(
 	const CDXLTableDescr *table_desc = dyn_index_scan_dxlop->GetDXLTableDescr();
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_desc->MDId());
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		table_desc, &is_rte_exist);
-	(void) TranslateDXLTblDescrToRangeTblEntry(
-		table_desc, index, &base_table_context, is_rte_exist, ACL_SELECT);
+	Index index =
+		ProcessDXLTblDescr(table_desc, &base_table_context, ACL_SELECT);
 
 	DynamicIndexScan *dyn_idx_scan = MakeNode(DynamicIndexScan);
 
@@ -4257,11 +4238,8 @@ CTranslatorDXLToPlStmt::TranslateDXLDml(
 
 	CDXLTableDescr *table_descr = phy_dml_dxlop->GetDXLTableDescr();
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		table_descr, &is_rte_exist);
-	(void) TranslateDXLTblDescrToRangeTblEntry(
-		table_descr, index, &base_table_context, is_rte_exist, acl_mode);
+	Index index =
+		ProcessDXLTblDescr(table_descr, &base_table_context, acl_mode);
 
 	m_result_rel_list = gpdb::LAppendInt(m_result_rel_list, index);
 
@@ -4683,25 +4661,31 @@ CTranslatorDXLToPlStmt::TranslateDXLAssert(
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry
+//		CTranslatorDXLToPlStmt::ProcessDXLTblDescr
 //
 //	@doc:
-//		Translates a DXL table descriptor into a range table entry
-//		(in case of DML operations there is more than one table descriptors
-//		which point to the result relation, so if rte was alredy translated,
-//		it will be returned from m_dxl_to_plstmt_context, if the rte wasn't
-//		translated, the newly created rte will be appended to
-//		m_dxl_to_plstmt_context). If an index descriptor is provided, we use
-//		the mapping from colids to index attnos instead of table attnos
+//		Translates a DXL table descriptor into a range table entry and stores
+//		it in m_dxl_to_plstmt_context if it's needed (in case of DML operations
+//		there is more than one table descriptors which point to the result
+//		relation, so if rte was alredy translated, this rte will be updated and
+//		index of this rte at m_dxl_to_plstmt_context->m_rtable_entries_list
+//		(shortened as "rte_list"), will be returned, if the rte wasn't
+//		translated, the newly created rte will be appended to rte_list and it's
+//		index returned). Also this function fills base_table_context for the
+//		mapping from colids to index attnos instead of table attnos.
+//		Returns index of translated range table entry at the rte_list.
 //
 //---------------------------------------------------------------------------
-RangeTblEntry *
-CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
-	const CDXLTableDescr *table_descr, Index index,
-	CDXLTranslateContextBaseTable *base_table_context, BOOL rte_was_translated,
-	AclMode acl_mode)
+Index
+CTranslatorDXLToPlStmt::ProcessDXLTblDescr(
+	const CDXLTableDescr *table_descr,
+	CDXLTranslateContextBaseTable *base_table_context, AclMode acl_mode)
 {
 	GPOS_ASSERT(nullptr != table_descr);
+
+	BOOL rte_was_translated = false;
+	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
+		table_descr, &rte_was_translated);
 
 	const IMDRelation *md_rel = m_md_accessor->RetrieveRel(table_descr->MDId());
 	const ULONG num_of_non_sys_cols =
@@ -4735,7 +4719,7 @@ CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
 		RangeTblEntry *rte = m_dxl_to_plstmt_context->GetRTEByIndex(index);
 		GPOS_ASSERT(nullptr != rte);
 		rte->requiredPerms |= acl_mode;
-		return rte;
+		return index;
 	}
 
 	// create a new RTE (and it's alias) and store it at context rtable list
@@ -4794,7 +4778,7 @@ CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
 
 	m_dxl_to_plstmt_context->AddRTE(rte);
 
-	return rte;
+	return index;
 }
 
 //---------------------------------------------------------------------------
@@ -5743,11 +5727,8 @@ CTranslatorDXLToPlStmt::TranslateDXLBitmapTblScan(
 	GPOS_RTL_ASSERT(table_descr->LockMode() != -1);
 	gpdb::GPDBLockRelationOid(mdid->Oid(), table_descr->LockMode());
 
-	BOOL is_rte_exist = false;
-	Index index = m_dxl_to_plstmt_context->GetRTEIndexByTableDescr(
-		table_descr, &is_rte_exist);
-	(void) TranslateDXLTblDescrToRangeTblEntry(
-		table_descr, index, &base_table_context, is_rte_exist, ACL_SELECT);
+	Index index =
+		ProcessDXLTblDescr(table_descr, &base_table_context, ACL_SELECT);
 
 	DynamicBitmapHeapScan *dscan;
 	BitmapHeapScan *bitmap_tbl_scan;
