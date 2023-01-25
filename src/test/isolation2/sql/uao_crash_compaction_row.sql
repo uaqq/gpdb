@@ -26,7 +26,45 @@
 3:INSERT INTO crash_before_segmentfile_drop SELECT i AS a, 1 AS b, 'hello world' AS c FROM generate_series(1, 10) AS i;
 3:DELETE FROM crash_before_segmentfile_drop WHERE a < 4;
 -- for crash_vacuum_in_appendonly_insert
+-- start_ignore
+3: set enable_indexscan = off;
+3: set enable_seqscan = on;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: set enable_indexscan = on;
+3: set enable_seqscan = off;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: reset enable_indexscan;
+3: reset enable_seqscan;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+-- end_ignore
 3:DROP TABLE IF EXISTS crash_vacuum_in_appendonly_insert CASCADE;
+-- start_ignore
+3: set enable_indexscan = off;
+3: set enable_seqscan = on;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: set enable_indexscan = on;
+3: set enable_seqscan = off;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: reset enable_indexscan;
+3: reset enable_seqscan;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+-- end_ignore
 3:CREATE TABLE crash_vacuum_in_appendonly_insert (a INT, b INT, c CHAR(20));
 3:CREATE INDEX crash_vacuum_in_appendonly_insert_index ON crash_vacuum_in_appendonly_insert(b);
 3:INSERT INTO crash_vacuum_in_appendonly_insert SELECT i AS a, 1 AS b, 'hello world' AS c FROM generate_series(1, 10) AS i;
