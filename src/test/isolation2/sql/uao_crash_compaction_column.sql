@@ -52,6 +52,26 @@ include: helpers/server_helpers.sql;
 3:SELECT gp_wait_until_triggered_fault('compaction_before_cleanup_phase', 1, 2);
 3:END;
 
+-- start_ignore
+3: set enable_indexscan = off;
+3: set enable_seqscan = on;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: set enable_indexscan = on;
+3: set enable_seqscan = off;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: reset enable_indexscan;
+3: reset enable_seqscan;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+-- end_ignore
+
 -- we already waited for suspend faults to trigger and hence we can proceed to
 -- run next command which would trigger panic fault and help test
 -- crash_recovery
@@ -62,6 +82,26 @@ include: helpers/server_helpers.sql;
 -- wait for segment to complete recovering
 0U: SELECT 1;
 0Uq:
+
+-- start_ignore
+3: set enable_indexscan = off;
+3: set enable_seqscan = on;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: set enable_indexscan = on;
+3: set enable_seqscan = off;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: reset enable_indexscan;
+3: reset enable_seqscan;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+-- end_ignore
 
 -- reset faults as protection incase tests failed and panic didn't happen
 1:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'reset', 2);
