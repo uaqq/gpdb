@@ -71,7 +71,6 @@ include: helpers/server_helpers.sql;
 3: reset enable_seqscan;
 3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
 -- end_ignore
-
 -- we already waited for suspend faults to trigger and hence we can proceed to
 -- run next command which would trigger panic fault and help test
 -- crash_recovery
@@ -82,7 +81,6 @@ include: helpers/server_helpers.sql;
 -- wait for segment to complete recovering
 0U: SELECT 1;
 0Uq:
-
 -- start_ignore
 3: set enable_indexscan = off;
 3: set enable_seqscan = on;
