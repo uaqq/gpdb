@@ -193,16 +193,15 @@ ABORT
 -- test splitupdate. 6X code, both orca and planner generate splitupdate with redistribute motion
 -- so they will both error out.
 explain (costs off) update tab1 set b = b + 1;
- QUERY PLAN                                           
-------------------------------------------------------
+ QUERY PLAN                                                 
+------------------------------------------------------------
  Update                                               
    ->  Redistribute Motion 3:3  (slice1; segments: 3) 
-         Hash Key: tab1.b                             
+         Hash Key: b                                  
          ->  Split                                    
                ->  Result                             
                      ->  Seq Scan on tab1             
- Optimizer: Pivotal Optimizer (GPORCA)                
-(7 rows)
+GP_IGNORE:(7 rows)
 begin;
 BEGIN
 update tab1 set b = b + 1;

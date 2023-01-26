@@ -109,6 +109,7 @@ CDXLTableDescr *
 CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 								CIdGenerator *id_generator,
 								const RangeTblEntry *rte,
+								ULONG assigned_query_id_for_target_rel,
 								BOOL *is_distributed_table	// output
 )
 {
@@ -133,7 +134,8 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 	CMDName *table_mdname = GPOS_NEW(mp) CMDName(mp, tablename);
 
 	CDXLTableDescr *table_descr =
-		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser);
+		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser,
+									assigned_query_id_for_target_rel);
 
 	const ULONG len = rel->ColumnCount();
 
