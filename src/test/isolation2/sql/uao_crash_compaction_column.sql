@@ -70,6 +70,7 @@ include: helpers/server_helpers.sql;
 3: reset enable_indexscan;
 3: reset enable_seqscan;
 3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+! psql -Atc "select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/ADBDEV3365;
 -- end_ignore
 -- we already waited for suspend faults to trigger and hence we can proceed to
 -- run next command which would trigger panic fault and help test
@@ -99,6 +100,8 @@ include: helpers/server_helpers.sql;
 3: reset enable_indexscan;
 3: reset enable_seqscan;
 3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+--! pg_xlogdump -s `cat /tmp/ADBDEV3365` -p `psql -Atc "select datadir from gp_segment_configuration where dbid=2;" -d postgres`;
+! pg_xlogdump -s `cat /tmp/ADBDEV3365` -p `psql -Atc "select datadir from gp_segment_configuration where content = 0 and role = 'p';" -d postgres`;
 -- end_ignore
 
 -- reset faults as protection incase tests failed and panic didn't happen
