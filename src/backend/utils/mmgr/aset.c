@@ -1080,10 +1080,8 @@ AllocSetGetAllocatedChunkStats(AllocSet set)
 	hash_ctl.hash = MemoryContextChunkStatKeyHash;
 	hash_ctl.match = MemoryContextChunkStatKeyCompare;
 
-	if (chunks_htable)
-		hash_destroy(chunks_htable);
-
-	chunks_htable = hash_create("HTAB chunks_stats",
+	if (!chunks_htable)
+		chunks_htable = hash_create("HTAB chunks_stats",
 								 CHUNKS_TABLE_SIZE, &hash_ctl, HASH_FUNCTION |
 								 HASH_ELEM | HASH_COMPARE | HASH_CONTEXT);
 

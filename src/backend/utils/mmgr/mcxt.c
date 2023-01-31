@@ -724,16 +724,15 @@ MemoryContextChunkStats_comparator(const void *l, const void *r)
 }
 
 static void
-MemoryContext_printTopListOfChunks()
+MemoryContext_printTopListOfChunks(HTAB *htable)
 {
-	if (!chunks_htable)
+	if (!htable)
 		return;
 
-	long ChunksCount = hash_get_num_entries(chunks_htable);
+	long ChunksCount = hash_get_num_entries(htable);
 	if (!ChunksCount)
 	{
-		hash_destroy(chunks_htable);
-		chunks_htable = NULL;
+		hash_destroy(htable);
 		return;
 	}
 
@@ -755,14 +754,19 @@ MemoryContext_printTopListOfChunks()
 	int show_count = ChunksCount < MAX_TOP_ALLOC_CHUNK_STATS ?
 						ChunksCount : MAX_TOP_ALLOC_CHUNK_STATS;
 
-	hash_seq_init(&hash_seq, chunks_htable);
+	uint64 sumBytes = 0;
+
+	hash_seq_init(&hash_seq, htable);
 	while ((entry = hash_seq_search(&hash_seq)) != NULL)
+	{
 		chunks[idx++] = entry;
+		sumBytes += entry->stat.bytes;
+	}
 
 	qsort(chunks, ChunksCount, sizeof(MemoryContextChunkStat_htabEntry *),
 		  MemoryContextChunkStats_comparator);
-	write_stderr("\tList of top %d (all %ld) the biggest allocations\n",
-				 show_count, ChunksCount);
+	write_stderr("\tList of top %d (all %ld) the biggest allocations (summary %lu bytes)\n",
+				 show_count, ChunksCount, sumBytes);
 	write_stderr("\tfunction, file:line, bytes, count, function_of_allocation\n");
 
 	for (int idx = 0; idx < show_count; idx++)
@@ -775,8 +779,7 @@ MemoryContext_printTopListOfChunks()
 
 	MemoryContextSwitchTo(oldcontext);
 	MemoryContextDelete(ChunksStatContext);
-	hash_destroy(chunks_htable);
-	chunks_htable = NULL;
+	hash_destroy(htable);
 }
 #endif
 
@@ -831,7 +834,8 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 	 */
 	MemoryContext_LogContextStats(1 /* siblingCount */, allAllocatedTop, allFreedTop, currentAvailableTop, topContextName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	MemoryContext_printTopListOfChunks();
+	MemoryContext_printTopListOfChunks(chunks_htable);
+	chunks_htable = NULL;
 #endif
 
     uint64 cumBlocks = 0;
@@ -847,8 +851,20 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 	for (child = topContext->firstchild; child != NULL; child = child->nextchild)
 	{
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		HTAB *prev_chunk_htable = NULL;
+#endif
+
 		/* Get name and ancestry of this MemoryContext */
 		name = MemoryContextName(child, rootContext, nameBuffer, nameBufferSize);
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		if (child->firstchild == NULL && strcmp(name, prevChildName) != 0)
+		{
+			prev_chunk_htable = chunks_htable;
+			chunks_htable = NULL;
+		}
+#endif
 
 		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
 
@@ -879,7 +895,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 					MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-					MemoryContext_printTopListOfChunks();
+					MemoryContext_printTopListOfChunks(prev_chunk_htable);
 #endif
 				}
 
@@ -910,7 +926,8 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 				MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-				MemoryContext_printTopListOfChunks();
+				MemoryContext_printTopListOfChunks(chunks_htable);
+				chunks_htable = NULL;
 #endif
 			}
 
@@ -944,6 +961,11 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		/* Output any unprinted cumulative stats */
 
 		MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		write_stderr("<%s> siblingCount != 0\n", __func__);
+		MemoryContext_printTopListOfChunks(chunks_htable);
+		chunks_htable = NULL;
+#endif
 	}
 }
 
