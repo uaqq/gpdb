@@ -70,7 +70,17 @@ include: helpers/server_helpers.sql;
 3: reset enable_indexscan;
 3: reset enable_seqscan;
 3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
-! psql -Atc "select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/ADBDEV3365;
+--3: select pg_xlogfile_name(pg_current_xlog_insert_location()) from gp_dist_random('gp_id') where gp_segment_id = 0;
+3: select gp_segment_id, pg_current_xlog_insert_location(), pg_xlogfile_name(pg_current_xlog_insert_location()) from gp_dist_random('gp_id');
+3: @post_run 'echo "${RAW_STR}" | grep / | tr -d " " >/tmp/ADBDEV3365': select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;
+--3: @pre_run 'sub @TOKEN1 { cat /tmp/ADBDEV3365; }': select pg_xlogfile_name('@TOKEN1') from gp_dist_random('gp_id') where gp_segment_id = 0;
+3: @post_run ' TOKEN=`echo "${RAW_STR}" | awk \'NR==3\' | awk \'{print $1}\'` && echo "${RAW_STR}"': select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;
+3: @pre_run 'echo "${RAW_STR}" | sed "s#@TOKEN#${TOKEN}#"': select pg_xlogfile_name('@TOKEN') from gp_dist_random('gp_id') where gp_segment_id = 0;
+
+--3R: @pre_run ' echo "${RAW_STR}" ': select pg_xlogfile_name('@RAW_STR') from gp_dist_random('gp_id') where gp_segment_id = 0;
+--3: select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;
+--3: select gp_segment_id, pg_current_xlog_insert_location() from gp_dist_random('gp_id');
+--! psql -Atc "select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/ADBDEV3365;
 -- end_ignore
 -- we already waited for suspend faults to trigger and hence we can proceed to
 -- run next command which would trigger panic fault and help test
