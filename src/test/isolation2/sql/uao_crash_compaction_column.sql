@@ -52,6 +52,40 @@ include: helpers/server_helpers.sql;
 3:SELECT gp_wait_until_triggered_fault('compaction_before_cleanup_phase', 1, 2);
 3:END;
 
+-- start_ignore
+3: set enable_indexscan = off;
+3: set enable_seqscan = on;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: set enable_indexscan = on;
+3: set enable_seqscan = off;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: reset enable_indexscan;
+3: reset enable_seqscan;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+--3: select pg_xlogfile_name(pg_current_xlog_insert_location()) from gp_dist_random('gp_id') where gp_segment_id = 0;
+3: select gp_segment_id, pg_current_xlog_insert_location(), pg_xlogfile_name(pg_current_xlog_insert_location()) from gp_dist_random('gp_id');
+3: SELECT gp_segment_id, pg_current_xlog_insert_location(), pg_xlogfile_name_offset(pg_current_xlog_insert_location()), pg_xlogfile_name(pg_current_xlog_insert_location()) from gp_dist_random('gp_id');
+3: @post_run 'echo "${RAW_STR}" | grep / | tr -d " " >/tmp/ADBDEV3365': select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;
+--3: @pre_run 'sub @TOKEN1 { cat /tmp/ADBDEV3365; }': select pg_xlogfile_name('@TOKEN1') from gp_dist_random('gp_id') where gp_segment_id = 0;
+3: @post_run ' TOKEN=`echo "${RAW_STR}" | awk \'NR==3\' | awk \'{print $1}\'` && echo "${RAW_STR}"': select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;
+3: @pre_run 'echo "${RAW_STR}" | sed "s#@TOKEN#${TOKEN}#"': select pg_xlogfile_name('@TOKEN') from gp_dist_random('gp_id') where gp_segment_id = 0;
+
+--3R: @pre_run ' echo "${RAW_STR}" ': select pg_xlogfile_name('@RAW_STR') from gp_dist_random('gp_id') where gp_segment_id = 0;
+--3: select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;
+--3: select gp_segment_id, pg_current_xlog_insert_location() from gp_dist_random('gp_id');
+--! psql -Atc "select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/ADBDEV3365;
+! psql -Atc "select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/3365start;
+! psql -Atc "SELECT ('x'||SUBSTR(pg_xlogfile_name(pg_current_xlog_insert_location()), 1, 8))::bit(32)::int AS timeline from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/3365timeline;
+! psql -Atc "select datadir from gp_segment_configuration where content = 0 and role = 'p';" -d postgres -o /tmp/3365path;
+-- end_ignore
 -- we already waited for suspend faults to trigger and hence we can proceed to
 -- run next command which would trigger panic fault and help test
 -- crash_recovery
@@ -62,6 +96,28 @@ include: helpers/server_helpers.sql;
 -- wait for segment to complete recovering
 0U: SELECT 1;
 0Uq:
+-- start_ignore
+3: set enable_indexscan = off;
+3: set enable_seqscan = on;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: set enable_indexscan = on;
+3: set enable_seqscan = off;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: select gp_segment_id, * from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert');
+3: select gp_segment_id, * from gp_dist_random('gp_fastsequence') where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert')) order by 3, 4, 1;
+3: select distinct a.gp_segment_id, * from gp_dist_random('gp_fastsequence') f left join gp_dist_random('pg_appendonly') a on segrelid = objid and a.gp_segment_id = f.gp_segment_id where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert') order by 3, 4, 1;
+3: select oid, gp_segment_id, * from gp_dist_random('pg_class') where relname in ('crash_vacuum_in_appendonly_insert', (select 'pg_aoseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'), (select 'pg_aocsseg_' || oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+3: reset enable_indexscan;
+3: reset enable_seqscan;
+3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
+--! pg_xlogdump -s `cat /tmp/ADBDEV3365` -p `psql -Atc "select datadir from gp_segment_configuration where dbid=2;" -d postgres`;
+--! pg_xlogdump -s `cat /tmp/ADBDEV3365` -p `psql -Atc "select datadir from gp_segment_configuration where content = 0 and role = 'p';" -d postgres`;
+! pg_xlogdump -s `cat /tmp/3365start` -t `cat /tmp/3365timeline` -p `cat /tmp/3365path`;
+-- end_ignore
 
 -- reset faults as protection incase tests failed and panic didn't happen
 1:SELECT gp_inject_fault('compaction_before_cleanup_phase', 'reset', 2);
