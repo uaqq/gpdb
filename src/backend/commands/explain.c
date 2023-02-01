@@ -1457,9 +1457,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 							/*
 							 * Scale the number of rows by the number of
-							 * segments receiving data. We don't use
-							 * segments count because the number of receivers
-							 * can be less if we are expanding a cluster.
+							 * segments receiving data, because they were
+							 * multiplied by this number at the
+							 * planning stage. We don't use segments count
+							 * because the number of receivers can be
+							 * less if we are expanding a cluster.
 							 */
 							scaleFactor = motion_recv;
 						}
