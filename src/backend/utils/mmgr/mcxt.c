@@ -962,7 +962,6 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 		MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-		write_stderr("<%s> siblingCount != 0\n", __func__);
 		MemoryContext_printTopListOfChunks(chunks_htable);
 		chunks_htable = NULL;
 #endif
