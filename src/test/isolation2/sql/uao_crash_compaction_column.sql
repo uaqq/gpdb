@@ -85,6 +85,7 @@ include: helpers/server_helpers.sql;
 ! psql -Atc "select pg_current_xlog_insert_location() from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/3365start;
 ! psql -Atc "SELECT ('x'||SUBSTR(pg_xlogfile_name(pg_current_xlog_insert_location()), 1, 8))::bit(32)::int AS timeline from gp_dist_random('gp_id') where gp_segment_id = 0;" -d postgres -o /tmp/3365timeline;
 ! psql -Atc "select datadir from gp_segment_configuration where content = 0 and role = 'p';" -d postgres -o /tmp/3365path;
+--! pg_xlogdump -s `cat /tmp/3365start` -t `cat /tmp/3365timeline` -p `cat /tmp/3365path` | grep "desc: checkpoint: redo " | grep -oP "prev \w+/\w+" | cut -f2 -d " " >/tmp/3365prev;
 -- end_ignore
 -- we already waited for suspend faults to trigger and hence we can proceed to
 -- run next command which would trigger panic fault and help test
@@ -116,7 +117,8 @@ include: helpers/server_helpers.sql;
 3: explain select * from gp_fastsequence where objid in (select segrelid from gp_dist_random('pg_appendonly') where relid = (select oid from pg_class where relname = 'crash_vacuum_in_appendonly_insert'));
 --! pg_xlogdump -s `cat /tmp/ADBDEV3365` -p `psql -Atc "select datadir from gp_segment_configuration where dbid=2;" -d postgres`;
 --! pg_xlogdump -s `cat /tmp/ADBDEV3365` -p `psql -Atc "select datadir from gp_segment_configuration where content = 0 and role = 'p';" -d postgres`;
-! pg_xlogdump -s `cat /tmp/3365start` -t `cat /tmp/3365timeline` -p `cat /tmp/3365path`;
+! pg_xlogdump -s `cat /tmp/3365start` -t `cat /tmp/3365timeline` -p `cat /tmp/3365path` | grep "desc: checkpoint: redo `cat /tmp/3365start`" | grep -oP "prev \w+/\w+" | cut -f2 -d " " >/tmp/3365prev;
+! pg_xlogdump -s `cat /tmp/3365prev` -t `cat /tmp/3365timeline` -p `cat /tmp/3365path`;
 -- end_ignore
 
 -- reset faults as protection incase tests failed and panic didn't happen
