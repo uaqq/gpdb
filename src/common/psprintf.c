@@ -77,39 +77,6 @@ psprintf(const char *fmt,...)
 	}
 }
 
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-char *
-_psprintf(const char *func, const char *file, int LINE, const char *fmt, ...)
-{
-	size_t		len = 128;		/* initial assumption about buffer size */
-
-	for (;;)
-	{
-		char	   *result;
-		va_list		args;
-		size_t		newlen;
-
-		/*
-		 * Allocate result buffer.  Note that in frontend this maps to malloc
-		 * with exit-on-error.
-		 */
-		result = (char *) palloc(len);
-
-		/* Try to format the data. */
-		va_start(args, fmt);
-		newlen = pvsnprintf(result, len, fmt, args);
-		va_end(args);
-
-		if (newlen < len)
-			return result;		/* success */
-
-		/* Release buffer and loop around to try again with larger len. */
-		pfree(result);
-		len = newlen;
-	}
-}
-#endif
-
 /*
  * pvsnprintf
  *

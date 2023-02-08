@@ -46,4 +46,6 @@ extern char *_psprintf(const char *func, const char *file, int LINE, const char 
 
 #define psprintf(...) _psprintf(__func__, __FILE__, __LINE__, __VA_ARGS__)
 
+void MemoryContext_printTopListOfChunks();
+
 #endif

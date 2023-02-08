@@ -709,79 +709,11 @@ MemoryContext_LogContextStats(uint64 siblingCount, uint64 allAllocated,
 	write_stderr("context: " UINT64_FORMAT ", " UINT64_FORMAT ", " UINT64_FORMAT ", " UINT64_FORMAT ", " UINT64_FORMAT ", %s\n", \
 	siblingCount, (allAllocated - allFreed), curAvailable, \
 	allAllocated, allFreed, contextName);
-}
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-static int
-MemoryContextChunkStats_comparator(const void *l, const void *r)
-{
-	const MemoryContextChunkStat_htabEntry *l_entry =
-		*(MemoryContextChunkStat_htabEntry **)l;
-	const MemoryContextChunkStat_htabEntry *r_entry =
-		*(MemoryContextChunkStat_htabEntry **)r;
-
-	return r_entry->stat.bytes - l_entry->stat.bytes;
-}
-
-static void
-MemoryContext_printTopListOfChunks(HTAB *htable)
-{
-	if (!htable)
-		return;
-
-	long ChunksCount = hash_get_num_entries(htable);
-	if (!ChunksCount)
-	{
-		hash_destroy(htable);
-		return;
-	}
-
-	MemoryContext ChunksStatContext =
-		AllocSetContextCreate(NULL,
-							  "ChunksStat_tempContext",
-							  ALLOCSET_DEFAULT_MINSIZE,
-							  ALLOCSET_DEFAULT_INITSIZE,
-							  ALLOCSET_DEFAULT_MAXSIZE);
-	MemoryContext oldcontext = MemoryContextSwitchTo(ChunksStatContext);
-
-	HASH_SEQ_STATUS hash_seq;
-	int idx = 0;
-	MemoryContextChunkStat_htabEntry *entry = NULL;
-
-	MemoryContextChunkStat_htabEntry **chunks =
-		palloc(ChunksCount * sizeof(MemoryContextChunkStat_htabEntry *));
-
-	int show_count = ChunksCount < MAX_TOP_ALLOC_CHUNK_STATS ?
-						ChunksCount : MAX_TOP_ALLOC_CHUNK_STATS;
-
-	uint64 sumBytes = 0;
-
-	hash_seq_init(&hash_seq, htable);
-	while ((entry = hash_seq_search(&hash_seq)) != NULL)
-	{
-		chunks[idx++] = entry;
-		sumBytes += entry->stat.bytes;
-	}
-
-	qsort(chunks, ChunksCount, sizeof(MemoryContextChunkStat_htabEntry *),
-		  MemoryContextChunkStats_comparator);
-	write_stderr("\tList of top %d (all %ld) the biggest allocations (summary %lu bytes)\n",
-				 show_count, ChunksCount, sumBytes);
-	write_stderr("\tfunction, file:line, bytes, count, function_of_allocation\n");
-
-	for (int idx = 0; idx < show_count; idx++)
-	{
-		write_stderr("\t%s, %s:%d, " UINT64_FORMAT " bytes, " UINT64_FORMAT ", %s\n",
-			chunks[idx]->chunk_info.key.parent_func, chunks[idx]->chunk_info.file,
-			chunks[idx]->chunk_info.key.line, chunks[idx]->stat.bytes,
-			chunks[idx]->stat.count, chunks[idx]->chunk_info.exec_func);
-	}
-
-	MemoryContextSwitchTo(oldcontext);
-	MemoryContextDelete(ChunksStatContext);
-	hash_destroy(htable);
-}
+	MemoryContext_printTopListOfChunks();
 #endif
+}
 
 /*
  * MemoryContextStats_recur
@@ -833,10 +765,6 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 	 * collapse-able with other siblings. So, the siblingCount is set to 1.
 	 */
 	MemoryContext_LogContextStats(1 /* siblingCount */, allAllocatedTop, allFreedTop, currentAvailableTop, topContextName);
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	MemoryContext_printTopListOfChunks(chunks_htable);
-	chunks_htable = NULL;
-#endif
 
     uint64 cumBlocks = 0;
     uint64 cumChunks = 0;
@@ -859,7 +787,14 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		name = MemoryContextName(child, rootContext, nameBuffer, nameBufferSize);
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-		if (child->firstchild == NULL && strcmp(name, prevChildName) != 0)
+		/*
+		   At this case we will get stats of next child,
+		   but after that, we will print stats of previous child.
+		   We must to save chunks_htable to other variable (prev_chunk_htable)
+		   to get correct stats of next child.
+		 */
+		if (child->firstchild == NULL && strcmp(name, prevChildName) != 0 ||
+		    child->firstchild != NULL)
 		{
 			prev_chunk_htable = chunks_htable;
 			chunks_htable = NULL;
@@ -887,15 +822,23 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 			{
 				if (siblingCount != 0)
 				{
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+					/*
+					   Save current chunk_htable to temp_chunk_htab, restore
+					   prev_chunk_htable to chunk_htable, print logs and restore
+					   current chunk_htable from temp_chunk_htab.
+					 */
+					HTAB * temp_chunks_htable = chunks_htable;
+					chunks_htable = prev_chunk_htable;
+#endif
 					/*
 					 * Output the previous cumulative stat, and start a new run. Note: don't just
 					 * pass the new one to MemoryContextStats_recur, as the new one might be the
 					 * start of another run of duplicate contexts
 					 */
-
 					MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-					MemoryContext_printTopListOfChunks(prev_chunk_htable);
+					chunks_htable = temp_chunks_htable;
 #endif
 				}
 
@@ -924,10 +867,18 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 				 * stats that we want to print here. Output the previous cumulative stat.
 				 */
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+				/*
+				   Save current chunk_htable to temp_chunk_htab, restore
+				   prev_chunk_htable to chunk_htable, print logs and restore
+				   current chunk_htable from temp_chunk_htab.
+				 */
+				HTAB * temp_chunks_htable = chunks_htable;
+				chunks_htable = prev_chunk_htable;
+#endif
 				MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-				MemoryContext_printTopListOfChunks(chunks_htable);
-				chunks_htable = NULL;
+				chunks_htable = temp_chunks_htable;
 #endif
 			}
 
@@ -961,10 +912,6 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		/* Output any unprinted cumulative stats */
 
 		MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-		MemoryContext_printTopListOfChunks(chunks_htable);
-		chunks_htable = NULL;
-#endif
 	}
 }
 
@@ -1003,6 +950,7 @@ MemoryContextStats(MemoryContext context)
     		currentAvailable, allAllocated, allFreed, maxHeld);
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	/* Check, if chunks_htable is not NULL after printing stats, and free it */
 	if (chunks_htable)
 	{
 		hash_destroy(chunks_htable);
