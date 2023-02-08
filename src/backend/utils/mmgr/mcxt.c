@@ -715,6 +715,7 @@ MemoryContext_LogContextStats(uint64 siblingCount, uint64 allAllocated,
 #endif
 }
 
+
 /*
  * MemoryContextStats_recur
  *		Print statistics about the named context and all its descendants.
@@ -793,8 +794,8 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		   We must to save chunks_htable to other variable (prev_chunk_htable)
 		   to get correct stats of next child.
 		 */
-		if (child->firstchild == NULL && strcmp(name, prevChildName) != 0 ||
-		    child->firstchild != NULL)
+		if ((child->firstchild == NULL && strcmp(name, prevChildName) != 0) ||
+		    (child->firstchild != NULL && siblingCount != 0))
 		{
 			prev_chunk_htable = chunks_htable;
 			chunks_htable = NULL;
@@ -836,6 +837,7 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 					 * pass the new one to MemoryContextStats_recur, as the new one might be the
 					 * start of another run of duplicate contexts
 					 */
+
 					MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 					chunks_htable = temp_chunks_htable;
@@ -862,11 +864,6 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 			if (siblingCount != 0)
 			{
-				/*
-				 * We have previously collapsed (one or more siblings with empty children) context
-				 * stats that we want to print here. Output the previous cumulative stat.
-				 */
-
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 				/*
 				   Save current chunk_htable to temp_chunk_htab, restore
@@ -876,6 +873,11 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 				HTAB * temp_chunks_htable = chunks_htable;
 				chunks_htable = prev_chunk_htable;
 #endif
+				/*
+				 * We have previously collapsed (one or more siblings with empty children) context
+				 * stats that we want to print here. Output the previous cumulative stat.
+				 */
+
 				MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 				chunks_htable = temp_chunks_htable;
