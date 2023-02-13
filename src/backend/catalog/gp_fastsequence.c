@@ -31,7 +31,8 @@ static void insert_or_update_fastsequence(
 	TupleDesc tupleDesc,
 	Oid objid,
 	int64 objmod,
-	int64 newLastSequence);
+	int64 newLastSequence,
+	bool frozen);
 
 /*
  * gp_fastsequence is used to generate and keep track of row numbers for AO
@@ -131,7 +132,8 @@ InsertFastSequenceEntry(Oid objid, int64 objmod, int64 lastSequence)
 						tupleDesc,
 						objid,
 						objmod,
-						lastSequence);
+						lastSequence,
+						true);
 	systable_endscan(scan);
 
 	/*
@@ -161,7 +163,8 @@ insert_or_update_fastsequence(Relation gp_fastsequence_rel,
 					TupleDesc tupleDesc,
 					Oid objid,
 					int64 objmod,
-					int64 newLastSequence)
+					int64 newLastSequence,
+					bool frozen)
 {
 	Datum *values;
 	bool *nulls;
@@ -181,7 +184,7 @@ insert_or_update_fastsequence(Relation gp_fastsequence_rel,
 
 		newTuple = heaptuple_form_to(tupleDesc, values, nulls, NULL, NULL);
 
-		frozen_heap_insert(gp_fastsequence_rel, newTuple);
+		(frozen ? frozen_heap_insert : simple_heap_insert)(gp_fastsequence_rel, newTuple);
 		CatalogUpdateIndexes(gp_fastsequence_rel, newTuple);
 
 		heap_freetuple(newTuple);
@@ -285,7 +288,7 @@ int64 GetFastSequences(Oid objid, int64 objmod,
 	}
 
 	insert_or_update_fastsequence(gp_fastsequence_rel, tuple, tupleDesc,
-						objid, objmod, newLastSequence);
+						objid, objmod, newLastSequence, false);
 
 	systable_endscan(scan);
 		
