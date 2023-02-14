@@ -526,7 +526,18 @@ aocs_beginscan_internal(Relation relation,
 void
 aocs_afterscan(AOCSScanDesc scan)
 {
-	close_cur_scan_seg(scan);
+	int			nvp = scan->relationTupleDesc->natts;
+	int			i;
+
+	if (scan->cur_seg >= 0)
+	{
+		for (i = 0; i < nvp; ++i)
+		{
+			if (scan->ds[i])
+				datumstreamread_close_file(scan->ds[i]);
+		}
+	}
+
 	close_ds_read(scan->ds, scan->relationTupleDesc->natts);
 }
 
@@ -1786,6 +1797,11 @@ aocs_begin_headerscan(Relation rel, int colno)
 							   "ALTER TABLE ADD COLUMN scan",
 							   &ao_attr);
 	hdesc->colno = colno;
+
+	for (int i = 0; i < RelationGetNumberOfAttributes(rel); i++)
+		pfree(opts[i]);
+	pfree(opts);
+
 	return hdesc;
 }
 
