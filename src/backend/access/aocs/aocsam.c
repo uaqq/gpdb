@@ -168,8 +168,11 @@ open_ds_write(Relation rel, DatumStreamWrite **ds, TupleDesc relationTupleDesc,
 										RelationGetRelationName(rel),
 										/* title */ titleBuf.data,
 										XLogIsNeeded() && RelationNeedsWAL(rel));
-
 	}
+
+	for (int i = 0; i < RelationGetNumberOfAttributes(rel); i++)
+			pfree(opts[i]);
+	pfree(opts);
 }
 
 /*
@@ -230,6 +233,10 @@ open_ds_read(Relation rel, DatumStreamRead **ds, TupleDesc relationTupleDesc,
 										   RelationGetRelationName(rel),
 										    /* title */ titleBuf.data);
 	}
+
+	for (i = 0; i < RelationGetNumberOfAttributes(rel); i++)
+			pfree(opts[i]);
+	pfree(opts);
 }
 
 static void
@@ -1328,11 +1335,12 @@ aocs_fetch_init(Relation relation,
 									    /* title */ titleBuf.data);
 
 		}
-		if (opts[colno])
-			pfree(opts[colno]);
 	}
-	if (opts)
-		pfree(opts);
+
+	for (int i = 0; i < RelationGetNumberOfAttributes(relation); i++)
+		pfree(opts[i]);
+	pfree(opts);
+
 	AppendOnlyVisimap_Init(&aocsFetchDesc->visibilityMap,
 						   relation->rd_appendonly->visimaprelid,
 						   relation->rd_appendonly->visimapidxid,
@@ -1865,6 +1873,11 @@ aocs_addcol_init(Relation rel,
 											   titleBuf.data,
 											   XLogIsNeeded() && RelationNeedsWAL(rel));
 	}
+
+	for (i = 0; i < RelationGetNumberOfAttributes(rel); i++)
+			pfree(opts[i]);
+	pfree(opts);
+
 	return desc;
 }
 
