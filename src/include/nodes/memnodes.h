@@ -17,8 +17,6 @@
 #define MEMNODES_H
 
 #include "nodes/nodes.h"
-#include "utils/hsearch.h"
-#include "access/hash.h"
 
 /*
  * MemoryContext

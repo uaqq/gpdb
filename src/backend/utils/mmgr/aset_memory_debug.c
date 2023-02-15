@@ -1,3 +1,6 @@
+#include "utils/hsearch.h"
+#include "access/hash.h"
+
 extern HTAB *chunks_htable;
 
 static void

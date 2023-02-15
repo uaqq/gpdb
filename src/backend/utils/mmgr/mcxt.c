@@ -56,6 +56,7 @@
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 #include "utils/palloc_memory_debug_undef.h"
+#include "utils/hsearch.h"
 
 HTAB *chunks_htable = NULL;
 #endif
