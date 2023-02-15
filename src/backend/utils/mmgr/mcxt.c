@@ -55,7 +55,7 @@
 #define MAX_CONTEXT_NAME_SIZE 200
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "utils/palloc_override_undef.h"
+#include "utils/palloc_memory_debug_undef.h"
 
 HTAB *chunks_htable = NULL;
 #endif
@@ -782,6 +782,8 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 	{
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
 		HTAB *prev_chunk_htable = NULL;
+		HTAB *temp_chunks_htable = NULL;
+		bool is_need_to_print_logs;
 #endif
 
 		/* Get name and ancestry of this MemoryContext */
@@ -794,8 +796,12 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 		   We must to save chunks_htable to other variable (prev_chunk_htable)
 		   to get correct stats of next child.
 		 */
-		if ((child->firstchild == NULL && strcmp(name, prevChildName) != 0) ||
-		    (child->firstchild != NULL && siblingCount != 0))
+		is_need_to_print_logs = (child->firstchild == NULL &&
+		                         strcmp(name, prevChildName) == 0 &&
+		                         siblingCount != 0) ||
+		                        (child->firstchild == NULL &&
+		                         siblingCount != 0);
+		if (is_need_to_print_logs)
 		{
 			prev_chunk_htable = chunks_htable;
 			chunks_htable = NULL;
@@ -803,6 +809,19 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 #endif
 
 		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		/*
+		   Save current chunk_htable to temp_chunk_htab, restore
+		   prev_chunk_htable to chunk_htable, print logs and restore
+		   current chunk_htable from temp_chunk_htab.
+		 */
+		if (is_need_to_print_logs)
+		{
+			temp_chunks_htable = chunks_htable;
+			chunks_htable = prev_chunk_htable;
+		}
+#endif
 
 		if (child->firstchild == NULL)
 		{
@@ -823,15 +842,6 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 			{
 				if (siblingCount != 0)
 				{
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-					/*
-					   Save current chunk_htable to temp_chunk_htab, restore
-					   prev_chunk_htable to chunk_htable, print logs and restore
-					   current chunk_htable from temp_chunk_htab.
-					 */
-					HTAB * temp_chunks_htable = chunks_htable;
-					chunks_htable = prev_chunk_htable;
-#endif
 					/*
 					 * Output the previous cumulative stat, and start a new run. Note: don't just
 					 * pass the new one to MemoryContextStats_recur, as the new one might be the
@@ -864,15 +874,6 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 			if (siblingCount != 0)
 			{
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-				/*
-				   Save current chunk_htable to temp_chunk_htab, restore
-				   prev_chunk_htable to chunk_htable, print logs and restore
-				   current chunk_htable from temp_chunk_htab.
-				 */
-				HTAB * temp_chunks_htable = chunks_htable;
-				chunks_htable = prev_chunk_htable;
-#endif
 				/*
 				 * We have previously collapsed (one or more siblings with empty children) context
 				 * stats that we want to print here. Output the previous cumulative stat.
@@ -950,15 +951,6 @@ MemoryContextStats(MemoryContext context)
 
     MemoryContextStats_recur(context, context, name, namebuf, namebufsize, nBlocks, nChunks,
     		currentAvailable, allAllocated, allFreed, maxHeld);
-
-#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-	/* Check, if chunks_htable is not NULL after printing stats, and free it */
-	if (chunks_htable)
-	{
-		hash_destroy(chunks_htable);
-		chunks_htable = NULL;
-	}
-#endif
 }
 
 /*
@@ -1590,5 +1582,5 @@ pgport_pfree(void *pointer)
 #endif
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "../backend/utils/mmgr/mcxt_override.c"
+#include "../backend/utils/mmgr/mcxt_memory_debug.c"
 #endif

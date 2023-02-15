@@ -20,35 +20,6 @@
 #include "utils/hsearch.h"
 #include "access/hash.h"
 
-#define CHUNKS_TABLE_SIZE 1024
-
-typedef struct
-{
-	uint64_t count;
-	uint64_t bytes;
-} MemoryContextChunkStat;
-
-typedef struct
-{
-	const char *parent_func;
-	int line;
-} MemoryContextChunkStatKey;
-
-typedef struct
-{
-	MemoryContextChunkStatKey key;
-	const char *file;
-	const char *exec_func;
-	int32_t init;
-	#define DYNAMIC_MEMORY_DEBUG_INIT_MAGIC 0x12345678
-} MemoryContextChunkInfo;
-
-typedef struct
-{
-	MemoryContextChunkInfo chunk_info;
-	MemoryContextChunkStat stat;
-} MemoryContextChunkStat_htabEntry;
-
 /*
  * MemoryContext
  *		A logical context in which memory allocations occur.

@@ -233,7 +233,7 @@ extern void MemoryContextStats(MemoryContext context);
 }
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "utils/palloc_override.h"
+#include "utils/palloc_memory_debug.h"
 #endif
 
 #endif   /* PALLOC_H */

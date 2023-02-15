@@ -30,7 +30,7 @@
 #endif
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "utils/palloc_override_undef.h"
+#include "utils/palloc_memory_debug_undef.h"
 #endif
 
 /*
@@ -193,5 +193,5 @@ pvsnprintf(char *buf, size_t len, const char *fmt, va_list args)
 }
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "../backend/utils/mmgr/psprintf_override.c"
+#include "../backend/utils/mmgr/psprintf_memory_debug.c"
 #endif

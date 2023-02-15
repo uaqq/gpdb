@@ -1,4 +1,4 @@
-#include "utils/palloc_override_undef.h"
+#include "utils/palloc_memory_debug_undef.h"
 
 static void
 MemoryContextWriteFuncAndLineToAllocedMemory(void *ptr, const char *parent_func,
@@ -55,6 +55,13 @@ _##__func_name__(void *pointer, Size size, const char *func, const char *file, i
 	return ret;                                                                              \
 }
 
+/*
+ * We can not use one simple function because
+ * each name of allocation callback requires to
+ * execute different callbacks.
+ * But we can use macro for the same callbacks (
+ * which use the same atributes).
+ */
 MEMORY_CONTEXT_ALLOC_FUNC(MemoryContextAlloc)
 MEMORY_CONTEXT_ALLOC_FUNC(MemoryContextAllocZero)
 MEMORY_CONTEXT_ALLOC_FUNC(MemoryContextAllocZeroAligned)

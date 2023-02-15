@@ -30,7 +30,7 @@ extern void pg_free(void *pointer);
 */
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "utils/palloc_override_undef.h"
+#include "utils/palloc_memory_debug_undef.h"
 #endif
 
 /* Equivalent functions, deliberately named the same as backend functions */

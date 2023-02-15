@@ -1891,7 +1891,7 @@ AllocSetIsEmpty(MemoryContext context)
 }
 
 #ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
-#include "../backend/utils/mmgr/aset_override.c"
+#include "../backend/utils/mmgr/aset_memory_debug.c"
 #endif
 
 /*

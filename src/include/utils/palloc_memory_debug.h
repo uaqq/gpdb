@@ -2,32 +2,61 @@
 #define PALLOC_OVERRIDE_H
 
 #define MAX_TOP_ALLOC_CHUNK_STATS 10
+#define CHUNKS_TABLE_SIZE 1024
+
+typedef struct
+{
+	uint64_t count;
+	uint64_t bytes;
+} MemoryContextChunkStat;
+
+typedef struct
+{
+	const char *parent_func;
+	int line;
+} MemoryContextChunkStatKey;
+
+typedef struct
+{
+	#define DYNAMIC_MEMORY_DEBUG_INIT_MAGIC 0x12345678
+	int32_t init;
+	MemoryContextChunkStatKey key;
+	const char *file;
+	const char *exec_func;
+} MemoryContextChunkInfo;
+
+typedef struct
+{
+	MemoryContextChunkStatKey key;
+	MemoryContextChunkInfo chunk_info;
+	MemoryContextChunkStat stat;
+} MemoryContextChunkStat_htabEntry;
 
 /*
  * Fundamental memory-allocation operations (more are in utils/memutils.h)
  */
-extern void *_MemoryContextAlloc(MemoryContext context, Size size, const char *func, const char *file, int LINE);
-extern void *_MemoryContextAllocZero(MemoryContext context, Size size, const char *func, const char *file, int LINE);
-extern void *_MemoryContextAllocZeroAligned(MemoryContext context, Size size, const char *func, const char *file, int LINE);
+void *_MemoryContextAlloc(MemoryContext context, Size size, const char *func, const char *file, int LINE);
+void *_MemoryContextAllocZero(MemoryContext context, Size size, const char *func, const char *file, int LINE);
+void *_MemoryContextAllocZeroAligned(MemoryContext context, Size size, const char *func, const char *file, int LINE);
 
-extern void *_palloc(Size size, const char *func, const char *file, int LINE);
-extern void *_palloc0(Size size, const char *func, const char *file, int LINE);
-extern void *_repalloc(void *pointer, Size size, const char *func, const char *file, int LINE);
+void *_palloc(Size size, const char *func, const char *file, int LINE);
+void *_palloc0(Size size, const char *func, const char *file, int LINE);
+void *_repalloc(void *pointer, Size size, const char *func, const char *file, int LINE);
 
 /* Higher-limit allocators. */
-extern void *_MemoryContextAllocHuge(MemoryContext context, Size size, const char *func, const char *file, int LINE);
-extern void *_repalloc_huge(void *pointer, Size size, const char *func, const char *file, int LINE);
+void *_MemoryContextAllocHuge(MemoryContext context, Size size, const char *func, const char *file, int LINE);
+void *_repalloc_huge(void *pointer, Size size, const char *func, const char *file, int LINE);
 
 /*
  * These are like standard strdup() except the copied string is
  * allocated in a context, not with malloc().
  */
-extern char *_MemoryContextStrdup(MemoryContext context, const char *string, const char *func, const char *file, int LINE);
-extern char *_pstrdup(const char *in, const char *func, const char *file, int LINE);
-extern char *_pnstrdup(const char *in, Size len, const char *func, const char *file, int LINE);
+char *_MemoryContextStrdup(MemoryContext context, const char *string, const char *func, const char *file, int LINE);
+char *_pstrdup(const char *in, const char *func, const char *file, int LINE);
+char *_pnstrdup(const char *in, Size len, const char *func, const char *file, int LINE);
 
 /* sprintf into a palloc'd buffer --- these are in psprintf.c */
-extern char *_psprintf(const char *func, const char *file, int LINE, const char *fmt, ...) __attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
+char *_psprintf(const char *func, const char *file, int LINE, const char *fmt, ...) __attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
 
 #define MemoryContextAlloc(__context__, __size__) _MemoryContextAlloc(__context__, __size__, __func__, __FILE__, __LINE__)
 #define MemoryContextAllocZero(__context__, __size__) _MemoryContextAllocZero(__context__, __size__, __func__, __FILE__, __LINE__)
