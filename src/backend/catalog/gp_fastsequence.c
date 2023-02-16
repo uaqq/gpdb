@@ -21,6 +21,7 @@
 #include "access/genam.h"
 #include "access/htup.h"
 #include "access/heapam.h"
+#include "access/xact.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 #include "access/appendonlywriter.h"
@@ -181,8 +182,9 @@ insert_or_update_fastsequence(Relation gp_fastsequence_rel,
 
 		newTuple = heaptuple_form_to(tupleDesc, values, nulls, NULL, NULL);
 
-		frozen_heap_insert(gp_fastsequence_rel, newTuple);
+		simple_heap_insert(gp_fastsequence_rel, newTuple);
 		CatalogUpdateIndexes(gp_fastsequence_rel, newTuple);
+		CommandCounterIncrement();
 
 		heap_freetuple(newTuple);
 	}
