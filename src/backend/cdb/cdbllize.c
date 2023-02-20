@@ -28,6 +28,7 @@
 #include "parser/parsetree.h"	/* for rt_fetch() */
 #include "nodes/makefuncs.h"	/* for makeTargetEntry() */
 #include "utils/guc.h"			/* for Debug_pretty_print */
+#include "nodes/nodes.h"
 
 #include "cdb/cdbvars.h"
 #include "cdb/cdbplan.h"
@@ -35,6 +36,15 @@
 #include "cdb/cdbllize.h"
 #include "cdb/cdbmutate.h"
 #include "optimizer/tlist.h"
+
+typedef struct RowsMutator {
+	   plan_tree_base_prefix base;
+	   Node *sliceRoot;
+	   int scaleFactor;
+} RowsMutator;
+
+static bool broadcast_motion_walker(Node *node, RowsMutator *state);
+static bool rows_number_walker(Node *node, RowsMutator *state);
 
 /*
  * A PlanProfile holds state for recursive prescan_walker().
@@ -225,7 +235,51 @@ cdbparallelize(PlannerInfo *root, Plan *plan, Query *query)
 	if (gp_enable_motion_deadlock_sanity)
 		motion_sanity_check(root, plan);
 
+	RowsMutator state;
+	planner_init_plan_tree_base(&state.base, root);
+	state.sliceRoot = (Node*)(plan);
+
+	plan_tree_walker((Node*)plan, broadcast_motion_walker, &state);
 	return plan;
+}
+
+static bool
+broadcast_motion_walker(Node *node, RowsMutator *state)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Motion) && ((Motion*)node)->isBroadcast)
+	{
+		state->scaleFactor = ((Plan*)node)->flow->numsegments;
+		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
+	}
+	else if (IsA(node, Motion) || IsA(node, SubPlan))
+	{
+		state->sliceRoot = node;
+	}
+
+	return plan_tree_walker(node, broadcast_motion_walker, state);
+}
+
+static bool
+rows_number_walker(Node *node, RowsMutator *state)
+{
+	Plan *currentPlan;
+
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Motion))
+		return true;
+
+	if (is_plan_node(node))
+	{
+		currentPlan = (Plan*)node;
+		currentPlan->plan_rows *= state->scaleFactor;
+	}
+
+	return plan_tree_walker(node, rows_number_walker, state);
 }
 
 
@@ -870,35 +924,35 @@ prescan_walker(Node *node, PlanProfile *context)
 		*                          -> ...
 		*   -> ...
 		*/
-        if (!context->visited)
-        {
-            /*
-             * The visited is a flag which is used to initialize the currentPlanFlow.
-             * And it's the top-level slice node of the entire plan.
-             */
-            context->currentPlanFlow = plan->flow;
-        }
-        if (plan->flow && plan->flow->req_move != MOVEMENT_NONE)
-        {
-            /*
-             * To select the correct flow during the plan tree iteration, only
-             * set currentPlanFlow when jump into a new slice. As req_move is
-             * a flag to indicate what motion should be applied to this Plan's
-             * output. So we are using req_move and the motion node to decide
-             * entering into a new slice.
-             */
-            context->currentPlanFlow = plan->flow;
-        }
-        if (IsA(node, Motion))
-        {
-            /*
-             * Motion is used to split slices, use the sub-node's flow of the
-             * motion for ParallelizeSubplan.
-             */
-            context->currentPlanFlow = plan->lefttree->flow;
-        }
+		if (!context->visited)
+		{
+			/*
+			 * The visited is a flag which is used to initialize the currentPlanFlow.
+			 * And it's the top-level slice node of the entire plan.
+			 */
+			context->currentPlanFlow = plan->flow;
+		}
+		if (plan->flow && plan->flow->req_move != MOVEMENT_NONE)
+		{
+			/*
+			 * To select the correct flow during the plan tree iteration, only
+			 * set currentPlanFlow when jump into a new slice. As req_move is
+			 * a flag to indicate what motion should be applied to this Plan's
+			 * output. So we are using req_move and the motion node to decide
+			 * entering into a new slice.
+			 */
+			context->currentPlanFlow = plan->flow;
+		}
+		if (IsA(node, Motion))
+		{
+			/*
+			 * Motion is used to split slices, use the sub-node's flow of the
+			 * motion for ParallelizeSubplan.
+			 */
+			context->currentPlanFlow = plan->lefttree->flow;
+		}
 
-        if (context->currentPlanFlow
+		if (context->currentPlanFlow
 			&& context->currentPlanFlow->flow_before_req_move)
 		{
 			context->currentPlanFlow = context->currentPlanFlow->flow_before_req_move;
@@ -1262,13 +1316,13 @@ adjustPlanFlow(Plan *plan,
 			if (!stable)
 			{
 				/*---------------------------------------------------------
-                 * Q: If order doesn't matter, why is there a Sort here?
-                 * A: Could be INSERT...SELECT...ORDER BY; each QE in the
-                 * inserting gang will sort its own partition locally.  Weird,
-                 * but could be used for clustering.  But note it in the debug
-                 * log; some caller might specify stable = false by mistake.
+				 * Q: If order doesn't matter, why is there a Sort here?
+				 * A: Could be INSERT...SELECT...ORDER BY; each QE in the
+				 * inserting gang will sort its own partition locally.  Weird,
+				 * but could be used for clustering.  But note it in the debug
+				 * log; some caller might specify stable = false by mistake.
 				 *---------------------------------------------------------
-                 */
+				 */
 				ereport(DEBUG4, (errmsg("adjustPlanFlow stable=false applied "
 										"to Sort operator; req_move=%d",
 										req_move)));
