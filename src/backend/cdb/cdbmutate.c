@@ -381,7 +381,9 @@ broadcast_motion_walker(Node *node, RowsMutator *state)
 	if (node == NULL)
 		return false;
 
-	if (is_plan_node(node) && ((Plan*)node)->flow->req_move == MOVEMENT_BROADCAST)
+	if (is_plan_node(node) &&
+		((Plan*)node)->flow != NULL &&
+		((Plan*)node)->flow->req_move == MOVEMENT_BROADCAST)
 	{
 		state->scaleFactor = ((Plan*)node)->flow->numsegments;
 		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
