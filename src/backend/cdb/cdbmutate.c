@@ -387,6 +387,7 @@ broadcast_motion_walker(Node *node, RowsMutator *state)
 	{
 		state->scaleFactor = ((Plan*)node)->flow->numsegments;
 		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
+		return node;
 	}
 	else if (IsA(node, Motion) || IsA(node, SubPlan))
 	{
