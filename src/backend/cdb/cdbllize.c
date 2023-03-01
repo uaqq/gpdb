@@ -37,15 +37,6 @@
 #include "cdb/cdbmutate.h"
 #include "optimizer/tlist.h"
 
-typedef struct RowsMutator {
-	   plan_tree_base_prefix base;
-	   Node *sliceRoot;
-	   int scaleFactor;
-} RowsMutator;
-
-static bool broadcast_motion_walker(Node *node, RowsMutator *state);
-static bool rows_number_walker(Node *node, RowsMutator *state);
-
 /*
  * A PlanProfile holds state for recursive prescan_walker().
  */
@@ -235,53 +226,8 @@ cdbparallelize(PlannerInfo *root, Plan *plan, Query *query)
 	if (gp_enable_motion_deadlock_sanity)
 		motion_sanity_check(root, plan);
 
-	RowsMutator state;
-	planner_init_plan_tree_base(&state.base, root);
-	state.sliceRoot = (Node*)(plan);
-
-	plan_tree_walker((Node*)plan, broadcast_motion_walker, &state);
 	return plan;
 }
-
-static bool
-broadcast_motion_walker(Node *node, RowsMutator *state)
-{
-	if (node == NULL)
-		return false;
-
-	if (IsA(node, Motion) && ((Motion*)node)->isBroadcast)
-	{
-		state->scaleFactor = ((Plan*)node)->flow->numsegments;
-		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
-	}
-	else if (IsA(node, Motion) || IsA(node, SubPlan))
-	{
-		state->sliceRoot = node;
-	}
-
-	return plan_tree_walker(node, broadcast_motion_walker, state);
-}
-
-static bool
-rows_number_walker(Node *node, RowsMutator *state)
-{
-	Plan *currentPlan;
-
-	if (node == NULL)
-		return false;
-
-	if (IsA(node, Motion))
-		return true;
-
-	if (is_plan_node(node))
-	{
-		currentPlan = (Plan*)node;
-		currentPlan->plan_rows *= state->scaleFactor;
-	}
-
-	return plan_tree_walker(node, rows_number_walker, state);
-}
-
 
 /* ----------------------------------------------------------------------- *
  * Functions prescan() and prescan_walker() use the plan_tree_walker()

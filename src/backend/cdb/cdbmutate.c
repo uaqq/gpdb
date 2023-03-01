@@ -94,6 +94,15 @@ typedef struct
 	List	   *cursorPositions;
 } pre_dispatch_function_evaluation_context;
 
+typedef struct RowsMutator {
+	   plan_tree_base_prefix base;
+	   Node *sliceRoot;
+	   int scaleFactor;
+} RowsMutator;
+
+static bool broadcast_motion_walker(Node *node, RowsMutator *state);
+static bool rows_number_walker(Node *node, RowsMutator *state);
+
 static Node *planner_make_plan_constant(struct PlannerInfo *root, Node *n, bool is_SRI);
 
 static Node *pre_dispatch_function_evaluation_mutator(Node *node,
@@ -366,6 +375,44 @@ get_partitioned_policy_from_flow(Plan *plan)
 									   GP_POLICY_DEFAULT_NUMSEGMENTS());
 }
 
+static bool
+broadcast_motion_walker(Node *node, RowsMutator *state)
+{
+	if (node == NULL)
+		return false;
+
+	if (is_plan_node(node) && ((Plan*)node)->flow->req_move == MOVEMENT_BROADCAST)
+	{
+		state->scaleFactor = ((Plan*)node)->flow->numsegments;
+		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
+	}
+	else if (IsA(node, Motion) || IsA(node, SubPlan))
+	{
+		state->sliceRoot = node;
+	}
+
+	return plan_tree_walker(node, broadcast_motion_walker, state);
+}
+
+static bool
+rows_number_walker(Node *node, RowsMutator *state)
+{
+	Plan *currentPlan;
+
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Motion))
+		return true;
+
+	if (is_plan_node(node))
+	{
+		currentPlan = (Plan*)node;
+		currentPlan->plan_rows *= state->scaleFactor;
+	}
+
+	return plan_tree_walker(node, rows_number_walker, state);
+}
 
 /* -------------------------------------------------------------------------
  * Function apply_motion() and apply_motion_mutator() add motion nodes to a
@@ -678,6 +725,12 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 		else
 			Insist(focusPlan(plan, false, false));
 	}
+
+	RowsMutator state2;
+	planner_init_plan_tree_base(&state2.base, root);
+	state2.sliceRoot = (Node*)(plan);
+
+	plan_tree_walker((Node*)plan, broadcast_motion_walker, &state2);
 
 	result = (Plan *) apply_motion_mutator((Node *) plan, &state);
 
@@ -1098,7 +1151,6 @@ add_slice_to_motion(Motion *motion,
 				/* broadcast */
 				motion->plan.flow = makeFlow(FLOW_REPLICATED, numsegments);
 				motion->plan.flow->locustype = CdbLocusType_Replicated;
-				motion->plan.plan_rows *= numsegments;
 
 			}
 			else
