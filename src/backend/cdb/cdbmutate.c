@@ -387,7 +387,6 @@ broadcast_motion_walker(Node *node, RowsMutator *state)
 	{
 		state->scaleFactor = ((Plan*)node)->flow->numsegments;
 		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
-		return node;
 	}
 	else if (IsA(node, Motion) || IsA(node, SubPlan))
 	{
@@ -405,7 +404,9 @@ rows_number_walker(Node *node, RowsMutator *state)
 	if (node == NULL)
 		return false;
 
-	if (IsA(node, Motion))
+	if (is_plan_node(node) &&
+		((Plan*)node)->flow != NULL &&
+		((Plan*)node)->flow->req_move == MOVEMENT_BROADCAST)
 		return true;
 
 	if (is_plan_node(node))
@@ -1154,7 +1155,7 @@ add_slice_to_motion(Motion *motion,
 				/* broadcast */
 				motion->plan.flow = makeFlow(FLOW_REPLICATED, numsegments);
 				motion->plan.flow->locustype = CdbLocusType_Replicated;
-
+				motion->plan.plan_rows *= numsegments;
 			}
 			else
 			{
