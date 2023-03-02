@@ -322,7 +322,7 @@
               <dxl:GroupingColumns/>
               <dxl:ProjList>
                 <dxl:ProjElem ColId="8" Alias="sum">
-                  <dxl:AggFunc AggMdid="0.2110.1.0" AggDistinct="false" AggStage="Normal" AggKind="n">
+                  <dxl:AggFunc AggMdid="0.2110.1.0" AggDistinct="false" AggStage="Normal" AggKind="n" >
                     <dxl:ValuesList ParamType="aggargs">
                     <dxl:Ident ColId="0" ColName="c" TypeMdid="0.700.1.0"/>
                     </dxl:ValuesList>

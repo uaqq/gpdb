@@ -101,6 +101,7 @@ typedef struct RowsMutator {
 } RowsMutator;
 
 static bool broadcast_motion_walker(Node *node, RowsMutator *state);
+
 static bool rows_number_walker(Node *node, RowsMutator *state);
 
 static Node *planner_make_plan_constant(struct PlannerInfo *root, Node *n, bool is_SRI);
@@ -442,11 +443,17 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 	InitPlanItem *item;
 	GpPolicyType targetPolicyType = POLICYTYPE_ENTRY;
 	ApplyMotionState state;
+	RowsMutator broadcast_motion_walker_state;
 	HASHCTL ctl;
 	HASH_SEQ_STATUS status;
 	bool		needToAssignDirectDispatchContentIds = false;
 	bool		bringResultToDispatcher = false;
 	int			numsegments = getgpsegmentCount();
+
+	/* Initialize broadcast motion walker context */
+
+	planner_init_plan_tree_base(&broadcast_motion_walker_state.base, root);
+	broadcast_motion_walker_state.sliceRoot = (Node*)(plan);
 
 	/* Initialize mutator context. */
 
@@ -730,11 +737,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 			Insist(focusPlan(plan, false, false));
 	}
 
-	RowsMutator state2;
-	planner_init_plan_tree_base(&state2.base, root);
-	state2.sliceRoot = (Node*)(plan);
-
-	plan_tree_walker((Node*)plan, broadcast_motion_walker, &state2);
+	plan_tree_walker((Node*)plan, broadcast_motion_walker, &broadcast_motion_walker_state);
 
 	result = (Plan *) apply_motion_mutator((Node *) plan, &state);
 

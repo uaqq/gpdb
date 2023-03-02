@@ -3,6 +3,7 @@
 		<dxl:Comment><![CDATA[
 	CREATE TABLE repl1 (a int, b int) DISTRIBUTED REPLICATED;
 	CREATE TABLE repl2 (c int, d int) DISTRIBUTED REPLICATED;
+
 	EXPLAIN SELECT * FROM repl1 FULL JOIN repl2 ON (a = c);
 	]]>
 	</dxl:Comment>
