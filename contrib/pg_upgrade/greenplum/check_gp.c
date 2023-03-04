@@ -17,9 +17,6 @@
 #include "pg_upgrade_greenplum.h"
 #include "check_gp.h"
 
-#define RELSTORAGE_EXTERNAL	'x'
-
-static void check_external_partition(void);
 static void check_covering_aoindex(void);
 static void check_parent_partitions_with_seg_entries(void);
 static void check_partition_indexes(void);
@@ -29,7 +26,6 @@ static void check_gphdfs_external_tables(void);
 static void check_gphdfs_user_roles(void);
 static void check_unique_primary_constraint(void);
 static void check_for_array_of_partition_table_types(ClusterInfo *cluster);
-static void check_partition_schemas(void);
 static void check_large_objects(void);
 static void check_invalid_indexes(void);
 static void check_foreign_key_constraints_on_root_partition(void);
@@ -52,7 +48,6 @@ void
 check_greenplum(void)
 {
 	check_online_expansion();
-	check_external_partition();
 	check_covering_aoindex();
 	check_parent_partitions_with_seg_entries();
     check_heterogeneous_partition();
@@ -63,7 +58,6 @@ check_greenplum(void)
 	check_gphdfs_user_roles();
 	check_unique_primary_constraint();
 	check_for_array_of_partition_table_types(&old_cluster);
-	check_partition_schemas();
 	check_large_objects();
 	check_invalid_indexes();
 	check_views_with_unsupported_lag_lead_function();
@@ -223,87 +217,6 @@ check_unique_primary_constraint(void)
 			   "| on tables.  These constraints need to be removed\n"
 			   "| from the tables before the upgrade.  A list of\n"
 			   "| constraints to remove is in the file:\n"
-			   "| \t%s\n\n", output_path);
-	}
-	else
-		check_ok();
-}
-/*
- *	check_external_partition
- *
- *	External tables cannot be included in the partitioning hierarchy during the
- *	initial definition with CREATE TABLE, they must be defined separately and
- *	injected via ALTER TABLE EXCHANGE. The partitioning system catalogs are
- *	however not replicated onto the segments which means ALTER TABLE EXCHANGE
- *	is prohibited in utility mode. This means that pg_upgrade cannot upgrade a
- *	cluster containing external partitions, they must be handled manually
- *	before/after the upgrade.
- *
- *	Check for the existence of external partitions and refuse the upgrade if
- *	found.
- */
-static void
-check_external_partition(void)
-{
-	char		output_path[MAXPGPATH];
-	FILE	   *script = NULL;
-	bool		found = false;
-	int			dbnum;
-
-	prep_status("Checking for external tables used in partitioning");
-
-	snprintf(output_path, sizeof(output_path), "external_partitions.txt");
-	/*
-	 * We need to query the inheritance catalog rather than the partitioning
-	 * catalogs since they are not available on the segments.
-	 */
-
-	for (dbnum = 0; dbnum < old_cluster.dbarr.ndbs; dbnum++)
-	{
-		PGresult   *res;
-		int			ntups;
-		int			rowno;
-		DbInfo	   *active_db = &old_cluster.dbarr.dbs[dbnum];
-		PGconn	   *conn;
-
-		conn = connectToServer(&old_cluster, active_db->db_name);
-		res = executeQueryOrDie(conn,
-			 "SELECT cc.relname, c.relname AS partname, c.relnamespace "
-			 "FROM   pg_inherits i "
-			 "       JOIN pg_class c ON (i.inhrelid = c.oid AND c.relstorage = '%c') "
-			 "       JOIN pg_class cc ON (i.inhparent = cc.oid);",
-			 RELSTORAGE_EXTERNAL);
-
-		ntups = PQntuples(res);
-
-		if (ntups > 0)
-		{
-			found = true;
-
-			if (script == NULL && (script = fopen(output_path, "w")) == NULL)
-				pg_log(PG_FATAL, "Could not create necessary file:  %s\n",
-					   output_path);
-
-			for (rowno = 0; rowno < ntups; rowno++)
-			{
-				fprintf(script, "External partition \"%s\" in relation \"%s\"\n",
-						PQgetvalue(res, rowno, PQfnumber(res, "partname")),
-						PQgetvalue(res, rowno, PQfnumber(res, "relname")));
-			}
-		}
-
-		PQclear(res);
-		PQfinish(conn);
-	}
-	if (found)
-	{
-		fclose(script);
-		pg_log(PG_REPORT, "fatal\n");
-		gp_fatal_log(
-			   "| Your installation contains partitioned tables with external\n"
-			   "| tables as partitions.  These partitions need to be removed\n"
-			   "| from the partition hierarchy before the upgrade.  A list of\n"
-			   "| external partitions to remove is in the file:\n"
 			   "| \t%s\n\n", output_path);
 	}
 	else
@@ -922,83 +835,6 @@ check_for_array_of_partition_table_types(ClusterInfo *cluster)
 	pfree(dependee_partition_report);
 
 	check_ok();
-}
-
-void
-check_partition_schemas(void)
-{
-	int				dbnum;
-	FILE		   *script = NULL;
-	bool			found = false;
-	char			output_path[MAXPGPATH];
-
-	prep_status("Checking schemas on partitioned tables");
-
-	snprintf(output_path, sizeof(output_path), "mismatched_partition_schemas.txt");
-
-	for (dbnum = 0; dbnum < old_cluster.dbarr.ndbs; dbnum++)
-	{
-		PGresult   *res;
-		bool		db_used = false;
-		int			ntups;
-		int			rowno;
-		int			i_root,
-					i_child;
-		DbInfo	   *active_db = &old_cluster.dbarr.dbs[dbnum];
-		PGconn	   *conn = connectToServer(&old_cluster, active_db->db_name);
-
-		res = executeQueryOrDie(conn,
-								"SELECT c1.oid::pg_catalog.regclass AS root, "
-								"       c2.oid::pg_catalog.regclass AS child "
-								"  FROM pg_catalog.pg_partition p "
-								"  JOIN pg_catalog.pg_partition_rule pr ON p.oid = pr.paroid "
-								"  JOIN pg_catalog.pg_class c1 ON p.parrelid = c1.oid "
-								"  JOIN pg_catalog.pg_class c2 ON pr.parchildrelid = c2.oid "
-								" WHERE c1.relnamespace != c2.relnamespace "
-								" ORDER BY c1.oid, c2.oid;");
-
-		ntups = PQntuples(res);
-		i_root = PQfnumber(res, "root");
-		i_child = PQfnumber(res, "child");
-
-		for (rowno = 0; rowno < ntups; rowno++)
-		{
-			found = true;
-			if (script == NULL && (script = fopen_priv(output_path, "w")) == NULL)
-				pg_fatal("Could not open file \"%s\": %s\n",
-						 output_path, getErrorText());
-
-			if (!db_used)
-			{
-				fprintf(script, "Database: %s\n", active_db->db_name);
-				db_used = true;
-			}
-
-			fprintf(script, "  %s contains child %s\n",
-					PQgetvalue(res, rowno, i_root),
-					PQgetvalue(res, rowno, i_child));
-		}
-
-		PQclear(res);
-		PQfinish(conn);
-	}
-
-	if (script)
-		fclose(script);
-
-	if (found)
-	{
-		pg_log(PG_REPORT, "fatal\n");
-		gp_fatal_log(
-			"| Your installation contains partitioned tables where one or more\n"
-			"| child partitions are not in the same schema as the root partition.\n"
-			"| ALTER TABLE ... SET SCHEMA must be performed on the child partitions\n"
-			"| to match them before upgrading. A list of problem tables is in the\n"
-			"| file:\n"
-			"|     %s\n\n", output_path);
-	}
-	else
-		check_ok();
 }
 
 /*

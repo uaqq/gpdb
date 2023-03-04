@@ -144,8 +144,6 @@ char		g_comment_end[10];
 
 static const CatalogId nilCatalogId = {0, 0};
 
-const char *EXT_PARTITION_NAME_POSTFIX = "_external_partition__";
-
 /* sorted table of role names */
 static RoleNameItem *rolenames = NULL;
 static int	nrolenames = 0;
@@ -3236,6 +3234,28 @@ binary_upgrade_set_type_oids_by_rel(Archive *fout,
 }
 
 static void
+binary_upgrade_set_type_oids_of_child_partition(Archive *fout,
+										PQExpBuffer upgrade_buffer,
+										const TableInfo *tblinfo)
+{
+	TypeInfo *tyinfo = findTypeByOid(tblinfo->reltype);
+	TableInfo *parenttblinfo = findTableByOid(tblinfo->parrelid);
+
+	simple_oid_list_append(&preassigned_oids, tyinfo->dobj.catId.oid);
+
+	/*
+	 * Child partitions may be in a different schema than it's parent,
+	 * but when they are initially created they have their parent's
+	 * schema.
+	 */
+	appendPQExpBufferStr(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type oid\n");
+	appendPQExpBuffer(upgrade_buffer,
+			"SELECT binary_upgrade.set_next_pg_type_oid('%u'::pg_catalog.oid, "
+			"'%u'::pg_catalog.oid, $$%s$$::text);\n\n",
+			tyinfo->dobj.catId.oid, parenttblinfo->dobj.namespace->dobj.catId.oid, tyinfo->dobj.name);
+}
+
+static void
 binary_upgrade_set_pg_class_oids(Archive *fout,
 								 PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 								 bool is_index)
@@ -3245,12 +3265,30 @@ binary_upgrade_set_pg_class_oids(Archive *fout,
 		TableInfo *tblinfo = findTableByOid(pg_class_oid);
 		Assert(tblinfo != NULL);
 		simple_oid_list_append(&preassigned_oids, pg_class_oid);
-		appendPQExpBufferStr(upgrade_buffer,
-						"\n-- For binary upgrade, must preserve pg_class oids\n");
-		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_heap_pg_class_oid('%u'::pg_catalog.oid, "
-						  "'%u'::pg_catalog.oid, $$%s$$::text);\n",
-						  tblinfo->dobj.catId.oid, tblinfo->dobj.namespace->dobj.catId.oid, tblinfo->dobj.name);
+		if (tblinfo->parrelid)
+		{
+			/*
+			 * Child partitions may be in a different schema than it's parent,
+			 * but when they are initially created they have their parent's
+			 * schema.
+			 */
+			TableInfo *parenttblinfo = findTableByOid(tblinfo->parrelid);
+			appendPQExpBufferStr(upgrade_buffer,
+							"\n-- For binary upgrade, must preserve pg_class oids\n");
+			appendPQExpBuffer(upgrade_buffer,
+							  "SELECT binary_upgrade.set_next_heap_pg_class_oid('%u'::pg_catalog.oid, "
+							  "'%u'::pg_catalog.oid, $$%s$$::text);\n",
+							  tblinfo->dobj.catId.oid, parenttblinfo->dobj.namespace->dobj.catId.oid, tblinfo->dobj.name);
+		}
+		else
+		{
+			appendPQExpBufferStr(upgrade_buffer,
+							"\n-- For binary upgrade, must preserve pg_class oids\n");
+			appendPQExpBuffer(upgrade_buffer,
+							  "SELECT binary_upgrade.set_next_heap_pg_class_oid('%u'::pg_catalog.oid, "
+							  "'%u'::pg_catalog.oid, $$%s$$::text);\n",
+							  tblinfo->dobj.catId.oid, tblinfo->dobj.namespace->dobj.catId.oid, tblinfo->dobj.name);
+		}
 
 		/* Only tables have toast tables, not indexes */
 		if (OidIsValid(tblinfo->toast_oid))
@@ -4972,11 +5010,20 @@ getTables(Archive *fout, int *numTables)
 		if (tblinfo[i].parrelid != 0 && tblinfo[i].relstorage == 'x')
 		{
 			/*
-			 * Length of tmpStr is bigger than the sum of NAMEDATALEN
-			 * and the length of EXT_PARTITION_NAME_POSTFIX
+			 * The temporary external table name has to be under NAMEDATALEN
+			 * in length so that we don't have to deal with any unexpected
+			 * issues in restore table creation where the table name would be
+			 * automatically truncated down. This is especially important for
+			 * binary upgrade dumps where the preserved oid expects a certain
+			 * relation name that is implicitly restricted to NAMEDATALEN. The
+			 * below will generate a temporary table name
+			 * _external_partition_parrelid_<oid>_relid_<oid> which is under
+			 * length NAMEDATALEN and is unique. This generated name will be
+			 * stored in the table map and used later to assist in the ALTER
+			 * TABLE EXCHANGE PARTITION dump logic.
 			 */
-			char tmpStr[500];
-			snprintf(tmpStr, sizeof(tmpStr), "%s%s", tblinfo[i].dobj.name, EXT_PARTITION_NAME_POSTFIX);
+			char tmpStr[NAMEDATALEN];
+			snprintf(tmpStr, NAMEDATALEN, "_external_partition_parrelid_%u_relid_%u", tblinfo[i].parrelid, tblinfo[i].dobj.catId.oid);
 			tblinfo[i].dobj.name = pg_strdup(tmpStr);
 		}
 	
@@ -13514,7 +13561,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 							hasExternalPartitions = true;
 
 						binary_upgrade_set_pg_class_oids(fout, q, part_oid, false);
-						binary_upgrade_set_type_oids_by_rel(fout, q, tbinfo);
+						binary_upgrade_set_type_oids_of_child_partition(fout, q, tbinfo);
 					}
 				}
 
@@ -13769,87 +13816,190 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		appendPQExpBufferStr(q, ";\n");
 
 		/*
-		 * Exchange external partitions. This is an expensive process, so only
-		 * run it if we've found evidence of external partitions up above.
+		 * GPDB: Exchange external partitions. This is an expensive process,
+		 * so only run it if we've found evidence of external partitions up
+		 * above.
 		 */
 		if (hasExternalPartitions)
 		{
-			int i = 0;
-			int ntups = 0;
-			char *relname = NULL;
-			int i_relname = 0;
+			int numExternalPartitions = 0;
+			int i_reloid = 0;
 			int i_parname = 0;
+			int i_parparentrule = 0;
+			int i_parlevel = 0;
 			int i_partitionrank = 0;
-			PQExpBuffer query = createPQExpBuffer();
-			PGresult   *res;
+			int j_paroid = 0;
+			int j_parlevel = 0;
+			int j_parparentrule = 0;
+			int j_parname = 0;
+			int j_partitionrank = 0;
+			char *maxExtPartLevel;
+			PQExpBuffer getExternalPartsQuery = createPQExpBuffer();
+			PQExpBuffer getPartHierarchyQuery = createPQExpBuffer();
+			PGresult   *getExternalPartsResult;
+			PGresult   *getPartHierarchyResult;
 
 			/*
-			 * The multiple JOINs below trigger an apparent planner bug which
-			 * may effectively hang the backend. This bug is present in both
-			 * released versions of GPDB and the current development tip at time
-			 * of writing. Disable nestloops temporarily as a workaround.
-			 *
-			 * TODO: when this bug is fixed, version-gate this code so that we
-			 * don't run it on well-behaved backends.
+			 * We disable nestloops here because the previous original query
+			 * that handled ALTER TABLE EXCHANGE PARTITION had multiple JOINs
+			 * (even joining on pg_partitions view which is usually a big
+			 * no-no) that would trigger an apparent planner bug which
+			 * sometimes would hang the backend. The latest query below is
+			 * much, much simpler so technically we could remove the disabling
+			 * of nestloops... but disabling nestloops actually gives a
+			 * performance boost so we'll keep it for now.
 			 */
 			ExecuteSqlStatement(fout, "SET enable_nestloop TO off");
 
-			appendPQExpBuffer(query, "SELECT DISTINCT cc.relname, ps.partitionrank, pp.parname "
-					"FROM pg_partition p "
-					"JOIN pg_class c on (p.parrelid = c.oid) "
-					"JOIN pg_partitions ps on (c.relname = ps.tablename) "
-					"JOIN pg_class cc on (ps.partitiontablename = cc.relname) "
-					"JOIN pg_partition_rule pp on (cc.oid = pp.parchildrelid) "
-					"WHERE p.parrelid = %u AND cc.relstorage = '%c';",
-					tbinfo->dobj.catId.oid, RELSTORAGE_EXTERNAL);
+			appendPQExpBuffer(getExternalPartsQuery, "SELECT c.oid AS reloid, pr.parname, pr.parparentrule, p.parlevel, "
+							  "CASE "
+							  "    WHEN p.parkind <> 'r'::\"char\" OR pr.parisdefault THEN NULL::bigint "
+							  "    ELSE pr.parruleord "
+							  "END AS partitionrank "
+							  "FROM pg_class c "
+							  "    JOIN pg_partition_rule pr ON c.oid = pr.parchildrelid "
+							  "    JOIN pg_partition p ON pr.paroid = p.oid AND p.paristemplate = false "
+							  "WHERE p.parrelid = %u AND c.relstorage = '%c' "
+							  "ORDER BY p.parlevel DESC;",
+							  tbinfo->dobj.catId.oid, RELSTORAGE_EXTERNAL);
 
-			res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+			getExternalPartsResult = ExecuteSqlQuery(fout, getExternalPartsQuery->data, PGRES_TUPLES_OK);
 
-			ntups = PQntuples(res);
-			i_relname = PQfnumber(res, "relname");
-			i_parname = PQfnumber(res, "parname");
-			i_partitionrank = PQfnumber(res, "partitionrank");
+			numExternalPartitions = PQntuples(getExternalPartsResult);
+			if (numExternalPartitions < 1)
+				exit_horribly(NULL, "partition table %s has external partitions but unable to query more details about them\n",
+							  qualrelname);
 
-			/* FIXME: does this code handle external SUBPARTITIONs correctly? */
-			for (i = 0; i < ntups; i++)
+			i_reloid = PQfnumber(getExternalPartsResult, "reloid");
+			i_parname = PQfnumber(getExternalPartsResult, "parname");
+			i_parparentrule = PQfnumber(getExternalPartsResult, "parparentrule");
+			i_parlevel = PQfnumber(getExternalPartsResult, "parlevel");
+			i_partitionrank = PQfnumber(getExternalPartsResult, "partitionrank");
+
+			/*
+			 * For multi-level partition tables, we must first add ALTER
+			 * PARTITION syntax for the entire subroot hierarchy. The query
+			 * below will get all the necessary subroot information to loop
+			 * over for each external partition.
+			 */
+			maxExtPartLevel = PQgetvalue(getExternalPartsResult, 0, i_parlevel);
+			appendPQExpBuffer(getPartHierarchyQuery, "SELECT pr.oid AS paroid, p.parlevel, pr.parparentrule, pr.parname, "
+							  "CASE "
+							  "    WHEN p.parkind <> 'r'::\"char\" OR pr.parisdefault THEN NULL::bigint "
+							  "    ELSE pr.parruleord "
+							  "END AS partitionrank "
+							  "FROM pg_partition p "
+							  "    JOIN pg_partition_rule pr ON p.oid = pr.paroid AND p.paristemplate = false "
+							  "WHERE p.parrelid = %u AND p.parlevel < %s "
+							  "ORDER BY p.parlevel DESC;",
+							  tbinfo->dobj.catId.oid, maxExtPartLevel);
+			getPartHierarchyResult = ExecuteSqlQuery(fout, getPartHierarchyQuery->data, PGRES_TUPLES_OK);
+
+			j_paroid = PQfnumber(getPartHierarchyResult, "paroid");
+			j_parlevel = PQfnumber(getPartHierarchyResult, "parlevel");
+			j_parparentrule = PQfnumber(getPartHierarchyResult, "parparentrule");
+			j_parname = PQfnumber(getPartHierarchyResult, "parname");
+			j_partitionrank = PQfnumber(getPartHierarchyResult, "partitionrank");
+
+			for (int i = 0; i < numExternalPartitions; i++)
 			{
-				char tmpExtTable[500] = {0};
-				relname = pg_strdup(PQgetvalue(res, i, i_relname));
-				snprintf(tmpExtTable, sizeof(tmpExtTable), "%s%s", relname, EXT_PARTITION_NAME_POSTFIX);
+				int maxParLevel = atoi(PQgetvalue(getExternalPartsResult, i, i_parlevel));
+				int *lookupSubRootHierarchyIndex = (int *) pg_malloc(maxParLevel * sizeof(int));
+				Oid relOid = atooid(PQgetvalue(getExternalPartsResult, i, i_reloid));
+				TableInfo *relInfo = findTableByOid(relOid);
+				char *parentOid = PQgetvalue(getExternalPartsResult, i, i_parparentrule);
 				char *qualTmpExtTable = pg_strdup(fmtQualifiedId(fout->remoteVersion,
 																 tbinfo->dobj.namespace->dobj.name,
-																 tmpExtTable));
+																 relInfo->dobj.name));
 
+				/* Start of the ALTER TABLE EXCHANGE PARTITION statement */
 				appendPQExpBuffer(q, "ALTER TABLE %s ", qualrelname);
+
 				/*
-				 * If it is an anonymous range partition we must exchange for
-				 * the rank rather than the parname.
+				 * Populate the lookupSubRootHierarchyIndex array with the
+				 * getPartHierarchy result row numbers that make up the
+				 * partition hierarchy of a specific external partition. To do
+				 * this, we go backwards (in terms of partition level) from
+				 * the external partition's parent up to the root (ending at
+				 * partition level 0 directly below the root). Because of
+				 * that, the lookupSubRootHierarchyIndex array is actually
+				 * filled out in reverse.
 				 */
-				if (PQgetisnull(res, i, i_parname) || !strlen(PQgetvalue(res, i, i_parname)))
+				for (int j = 0; j < PQntuples(getPartHierarchyResult); j++)
+				{
+					char *currentOid;
+					int currentParLevel;
+
+					currentOid = PQgetvalue(getPartHierarchyResult, j, j_paroid);
+					if (strcmp(parentOid, currentOid) != 0)
+						continue;
+
+					currentParLevel = atoi(PQgetvalue(getPartHierarchyResult, j, j_parlevel));
+					lookupSubRootHierarchyIndex[currentParLevel] = j;
+
+					/*
+					 * Get the next parent OID to search for. If 0, we've
+					 * reached the root and can exit the loop.
+					 */
+					parentOid = PQgetvalue(getPartHierarchyResult, j, j_parparentrule);
+					if (strcmp(parentOid, "0") == 0)
+						break;
+				}
+
+				/*
+				 * Forward traverse the lookupSubRootHierarchyIndex array to
+				 * append the required ALTER PARTITION statement(s) in the
+				 * correct partition level order. If it is an anonymous range
+				 * partition we must exchange for the rank rather than the
+				 * parname.
+				 */
+				for (int parLevel = 0; parLevel < maxParLevel; parLevel++)
+				{
+					int hierarchyIndex = lookupSubRootHierarchyIndex[parLevel];
+
+					if (PQgetisnull(getPartHierarchyResult, hierarchyIndex, j_parname) ||
+						!strlen(PQgetvalue(getPartHierarchyResult, hierarchyIndex, j_parname)))
+					{
+						appendPQExpBuffer(q, "ALTER PARTITION FOR (RANK(%s)) ",
+										  PQgetvalue(getPartHierarchyResult, hierarchyIndex, j_partitionrank));
+					}
+					else
+					{
+						appendPQExpBuffer(q, "ALTER PARTITION %s ",
+										  fmtId(PQgetvalue(getPartHierarchyResult, hierarchyIndex, j_parname)));
+					}
+				}
+
+				/*
+				 * Add the actual EXCHANGE PARTITION part of the ALTER TABLE
+				 * EXCHANGE PARTITION statement. If it is an anonymous range
+				 * partition we must exchange for the rank rather than the
+				 * parname.
+				 */
+				if (PQgetisnull(getExternalPartsResult, i, i_parname) ||
+					!strlen(PQgetvalue(getExternalPartsResult, i, i_parname)))
 				{
 					appendPQExpBuffer(q, "EXCHANGE PARTITION FOR (RANK(%s)) ",
-									  PQgetvalue(res, i, i_partitionrank));
+									  PQgetvalue(getExternalPartsResult, i, i_partitionrank));
 				}
 				else
 				{
 					appendPQExpBuffer(q, "EXCHANGE PARTITION %s ",
-									  fmtId(PQgetvalue(res, i, i_parname)));
+									  fmtId(PQgetvalue(getExternalPartsResult, i, i_parname)));
 				}
-				appendPQExpBuffer(q, "WITH TABLE %s WITHOUT VALIDATION; ", qualTmpExtTable);
 
-				appendPQExpBuffer(q, "\n");
+				appendPQExpBuffer(q, "WITH TABLE %s WITHOUT VALIDATION;\n", qualTmpExtTable);
+				appendPQExpBuffer(q, "DROP TABLE %s;\n", qualTmpExtTable);
 
-				appendPQExpBuffer(q, "DROP TABLE %s; ", qualTmpExtTable);
-
-				appendPQExpBuffer(q, "\n");
-				free(relname);
 				free(qualTmpExtTable);
+				free(lookupSubRootHierarchyIndex);
 			}
 
-			PQclear(res);
-			destroyPQExpBuffer(query);
+			PQclear(getPartHierarchyResult);
+			PQclear(getExternalPartsResult);
+			destroyPQExpBuffer(getPartHierarchyQuery);
+			destroyPQExpBuffer(getExternalPartsQuery);
 
-			/* TODO: version-gate this when the planner bug is fixed; see above. */
 			ExecuteSqlStatement(fout, "SET enable_nestloop TO on");
 		}
 
@@ -14171,6 +14321,52 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			}
 		}
 
+		/*
+		 * Dump ALTER statements for child tables set to a schema that is
+		 * different than the parent.
+		 */
+		if (tbinfo->parparent)
+		{
+			int ntups = 0;
+			int i = 0;
+			int i_oldSchema = 0;
+			int i_newSchema = 0;
+			int i_relname = 0;
+			PQExpBuffer getAlteredChildPartitionSchemas = createPQExpBuffer();
+			PGresult   *res;
+
+			appendPQExpBuffer(getAlteredChildPartitionSchemas,
+							  "SELECT "
+							  "pg_catalog.quote_ident(pgn2.nspname) AS oldschema, "
+							  "pg_catalog.quote_ident(pgn.nspname) AS newschema, "
+							  "pg_catalog.quote_ident(pgc.relname) AS relname "
+							  "FROM pg_catalog.pg_partition_rule pgpr "
+							  "JOIN pg_catalog.pg_partition pgp ON pgp.oid = pgpr.paroid "
+							  "JOIN pg_catalog.pg_class pgc ON pgpr.parchildrelid = pgc.oid "
+							  "JOIN pg_catalog.pg_class pgc2 ON pgp.parrelid = pgc2.oid "
+							  "JOIN pg_catalog.pg_namespace pgn ON pgc.relnamespace = pgn.oid "
+							  "JOIN pg_catalog.pg_namespace pgn2 ON pgc2.relnamespace = pgn2.oid "
+							  "WHERE pgc.relnamespace != pgc2.relnamespace "
+							  "AND pgp.parrelid = %u", tbinfo->dobj.catId.oid);
+			res = ExecuteSqlQuery(fout, getAlteredChildPartitionSchemas->data, PGRES_TUPLES_OK);
+
+			ntups = PQntuples(res);
+			i_oldSchema = PQfnumber(res, "oldschema");
+			i_newSchema = PQfnumber(res, "newschema");
+			i_relname = PQfnumber(res, "relname");
+
+			for (i = 0; i < ntups; i++)
+			{
+				char* oldSchema = PQgetvalue(res, i, i_oldSchema);
+				char* newSchema = PQgetvalue(res, i, i_newSchema);
+				char* relname = PQgetvalue(res, i, i_relname);
+
+				appendPQExpBuffer(q, "\nALTER TABLE %s.%s SET SCHEMA %s;\n", oldSchema, relname, newSchema);
+			}
+
+			PQclear(res);
+			destroyPQExpBuffer(getAlteredChildPartitionSchemas);
+		}
 
 		/* MPP-1890 */
 

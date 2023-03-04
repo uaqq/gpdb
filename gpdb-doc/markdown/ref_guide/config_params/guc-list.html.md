@@ -666,7 +666,7 @@ gpconfig -s 'gp_default_storage_options'
 
 > **Note** <sup>1</sup>The set classification when the parameter is set at the system level with the `gpconfig` utility.
 
-> **Note** <sup>2</sup>QuickLZ compression is available only in the commercial release of Tanzu Greenplum.
+> **Note** <sup>2</sup>QuickLZ compression is available only in the commercial release of VMware Greenplum.
 
 ## <a id="gp_dispatch_keepalives_count"></a>gp\_dispatch\_keepalives\_count 
 
@@ -820,9 +820,9 @@ Enables collection of query metrics. When query metrics collection is enabled, G
 
 After changing this configuration parameter, Greenplum Database must be restarted for the change to take effect.
 
-The Greenplum Database metrics collection extension, when enabled, sends the collected metrics over UDP to a Tanzu Greenplum Command Center agent<sup>1</sup>.
+The Greenplum Database metrics collection extension, when enabled, sends the collected metrics over UDP to a VMware Greenplum Command Center agent<sup>1</sup>.
 
-> **Note** <sup>1</sup>The metrics collection extension is included in VMware's commercial version of Greenplum Database. Tanzu Greenplum Command Center is supported only with Tanzu Greenplum.
+> **Note** <sup>1</sup>The metrics collection extension is included in VMware's commercial version of Greenplum Database. VMware Greenplum Command Center is supported only with VMware Greenplum.
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
@@ -1336,6 +1336,17 @@ Identifies the maximum percentage of system CPU resources to allocate to resourc
 |-----------|-------|-------------------|
 |0.1 - 1.0|0.9|local, system, restart|
 
+## <a id="gp_resource_group_cpu_priority"></a>gp_resource_group_cpu_priority
+
+Sets the CPU priority for Greenplum processes relative to non-Greenplum processes when resource groups are enabled. For example, setting this parameter to `10` sets the ratio of allotted CPU resources for Greenplum processes to non-Greenplum processes to 10:1. 
+
+> **Note** 
+> This ratio calculation applies only when the machine's CPU usage is at 100%.
+
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|1 - 50|10|local, system, restart|
 
 ## <a id="gp_resource_group_enable_recalculate_query_mem"></a>gp\_resource\_group\_enable\_recalculate\_query\_mem
 
