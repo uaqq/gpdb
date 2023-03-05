@@ -383,16 +383,14 @@ broadcast_motion_walker(Node *node, RowsMutator *state)
 		return false;
 
 	if (is_plan_node(node) &&
-		((Plan*)node)->flow != NULL &&
-		((Plan*)node)->flow->req_move == MOVEMENT_BROADCAST)
+		((Plan *) node)->flow != NULL &&
+		((Plan *) node)->flow->req_move == MOVEMENT_BROADCAST)
 	{
-		state->scaleFactor = ((Plan*)node)->flow->numsegments;
+		state->scaleFactor = ((Plan *) node)->flow->numsegments;
 		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
 	}
 	else if (IsA(node, Motion) || IsA(node, SubPlan))
-	{
 		state->sliceRoot = node;
-	}
 
 	return plan_tree_walker(node, broadcast_motion_walker, state);
 }
@@ -400,19 +398,19 @@ broadcast_motion_walker(Node *node, RowsMutator *state)
 static bool
 rows_number_walker(Node *node, RowsMutator *state)
 {
-	Plan *currentPlan;
+	Plan	  *currentPlan;
 
 	if (node == NULL)
 		return false;
 
 	if (is_plan_node(node) &&
-		((Plan*)node)->flow != NULL &&
-		((Plan*)node)->flow->req_move == MOVEMENT_BROADCAST)
+		((Plan *) node)->flow != NULL &&
+		((Plan *) node)->flow->req_move == MOVEMENT_BROADCAST)
 		return true;
 
 	if (is_plan_node(node))
 	{
-		currentPlan = (Plan*)node;
+		currentPlan = (Plan*) node;
 		currentPlan->plan_rows *= state->scaleFactor;
 	}
 
