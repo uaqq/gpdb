@@ -443,6 +443,9 @@ class LocalExecutionContext(ExecutionContext):
         # prepend env. variables from ExcecutionContext.propagate_env_map
         # e.g. Given {'FOO': 1, 'BAR': 2}, we'll produce "FOO=1 BAR=2 ..."
 
+        new_env = dict(os.environ) 
+        new_env['LC_ALL'] = 'C' 
+
         # also propagate env from command instance specific map
         keys = sorted(cmd.propagate_env_map.keys(), reverse=True)
         for k in keys:
@@ -450,7 +453,7 @@ class LocalExecutionContext(ExecutionContext):
 
         # executable='/bin/bash' is to ensure the shell is bash.  bash isn't the
         # actual command executed, but the shell that command string runs under.
-        self.proc = gpsubprocess.Popen(cmd.cmdStr, env=None, shell=True,
+        self.proc = gpsubprocess.Popen(cmd.cmdStr, env=new_env, shell=True,
                                        executable='/bin/bash',
                                        stdin=subprocess.PIPE,
                                        stderr=subprocess.PIPE,

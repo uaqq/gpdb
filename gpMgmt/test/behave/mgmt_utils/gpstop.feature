@@ -38,3 +38,9 @@ Feature: gpstop behave tests
           And gpstop should print "invalid_host is unreachable.Skipping cleaning shared memory." to stdout
           And gpstop should return a return code of 0
           And the standby host is made reachable
+
+	@demo_cluster
+	Scenario: gpstop exits without a warning
+		Given the database is running
+		When "LC_ALL" is different from English
+		Then gpstop should not print "Failed to kill processes for segment"
