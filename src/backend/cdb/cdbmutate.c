@@ -94,15 +94,15 @@ typedef struct
 	List	   *cursorPositions;
 } pre_dispatch_function_evaluation_context;
 
-typedef struct RowsMutator {
+typedef struct RowsMutatorState {
 	   plan_tree_base_prefix base;
 	   Node *sliceRoot;
 	   int scaleFactor;
-} RowsMutator;
+} RowsMutatorState;
 
-static bool broadcast_motion_walker(Node *node, RowsMutator *state);
+static bool broadcast_motion_walker(Node *node, RowsMutatorState *state);
 
-static bool rows_number_walker(Node *node, RowsMutator *state);
+static bool rows_number_walker(Node *node, RowsMutatorState *state);
 
 static Node *planner_make_plan_constant(struct PlannerInfo *root, Node *n, bool is_SRI);
 
@@ -377,7 +377,7 @@ get_partitioned_policy_from_flow(Plan *plan)
 }
 
 static bool
-broadcast_motion_walker(Node *node, RowsMutator *state)
+broadcast_motion_walker(Node *node, RowsMutatorState *state)
 {
 	if (node == NULL)
 		return false;
@@ -396,21 +396,20 @@ broadcast_motion_walker(Node *node, RowsMutator *state)
 }
 
 static bool
-rows_number_walker(Node *node, RowsMutator *state)
+rows_number_walker(Node *node, RowsMutatorState *state)
 {
 	Plan	  *currentPlan;
 
 	if (node == NULL)
 		return false;
 
-	if (is_plan_node(node) &&
-		((Plan *) node)->flow != NULL &&
-		((Plan *) node)->flow->req_move == MOVEMENT_BROADCAST)
-		return true;
-
 	if (is_plan_node(node))
 	{
-		currentPlan = (Plan*) node;
+		if (((Plan *) node)->flow != NULL &&
+			((Plan *) node)->flow->req_move == MOVEMENT_BROADCAST)
+			return true;
+
+		currentPlan = (Plan *) node;
 		currentPlan->plan_rows *= state->scaleFactor;
 	}
 
@@ -441,7 +440,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 	InitPlanItem *item;
 	GpPolicyType targetPolicyType = POLICYTYPE_ENTRY;
 	ApplyMotionState state;
-	RowsMutator broadcast_motion_walker_state;
+	RowsMutatorState broadcast_motion_walker_state;
 	HASHCTL ctl;
 	HASH_SEQ_STATUS status;
 	bool		needToAssignDirectDispatchContentIds = false;
