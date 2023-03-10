@@ -6,7 +6,7 @@ from behave.model_core import Status
 
 
 def before_scenario(scenario):
-    pass
+    scenario.name = scenario.name + " " + os.uname()[4]
 
 
 def after_scenario(scenario):
