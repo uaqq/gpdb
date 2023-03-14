@@ -3566,6 +3566,7 @@ CTranslatorDXLToPlStmt::TranslateDXLCTEProducerToSharedScan(
 	CDXLPhysicalCTEProducer *cte_prod_dxlop =
 		CDXLPhysicalCTEProducer::Cast(cte_producer_dxlnode->GetOperator());
 	ULONG cte_id = cte_prod_dxlop->Id();
+	BOOL fOnMaster = cte_prod_dxlop->FOnMaster();
 
 	// create the shared input scan representing the CTE Producer
 	ShareInputScan *shared_input_scan = MakeNode(ShareInputScan);
@@ -3651,7 +3652,7 @@ CTranslatorDXLToPlStmt::TranslateDXLCTEProducerToSharedScan(
 		GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiDXL2PlStmtConversion,
 			GPOS_WSZ_LIT("Shared Scan and child plan targetlist mismatch."));
 
-	InitializeSpoolingInfo(child_plan, cte_id);
+	InitializeSpoolingInfo(child_plan, cte_id, fOnMaster);
 
 	plan->lefttree = child_plan;
 	plan->nMotionNodes = child_plan->nMotionNodes;
@@ -3674,13 +3675,13 @@ CTranslatorDXLToPlStmt::TranslateDXLCTEProducerToSharedScan(
 //		(2) SIS nodes representing the producer/consumer nodes
 //---------------------------------------------------------------------------
 void
-CTranslatorDXLToPlStmt::InitializeSpoolingInfo(Plan *plan, ULONG share_id)
+CTranslatorDXLToPlStmt::InitializeSpoolingInfo(Plan *plan, ULONG share_id, BOOL fOnMaster)
 {
 	List *shared_scan_cte_consumer_list =
 		m_dxl_to_plstmt_context->GetCTEConsumerList(share_id);
 	GPOS_ASSERT(NULL != shared_scan_cte_consumer_list);
 
-	Flow *flow = GetFlowCTEConsumer(shared_scan_cte_consumer_list);
+	Flow *flow = GetFlowCTEConsumer(shared_scan_cte_consumer_list, fOnMaster);
 
 	const ULONG num_of_shared_scan =
 		gpdb::ListLength(shared_scan_cte_consumer_list);
@@ -3739,7 +3740,7 @@ CTranslatorDXLToPlStmt::InitializeSpoolingInfo(Plan *plan, ULONG share_id)
 //		same type
 //---------------------------------------------------------------------------
 Flow *
-CTranslatorDXLToPlStmt::GetFlowCTEConsumer(List *shared_scan_cte_consumer_list)
+CTranslatorDXLToPlStmt::GetFlowCTEConsumer(List *shared_scan_cte_consumer_list, BOOL fOnMaster)
 {
 	Flow *flow = NULL;
 
@@ -3766,6 +3767,11 @@ CTranslatorDXLToPlStmt::GetFlowCTEConsumer(List *shared_scan_cte_consumer_list)
 	{
 		flow = MakeNode(Flow);
 		flow->flotype = FLOW_UNDEFINED;	 // default flow
+		if (fOnMaster)
+		{
+			flow->segindex = -1;
+			flow->flotype = FLOW_SINGLETON;
+		}
 	}
 
 	return flow;

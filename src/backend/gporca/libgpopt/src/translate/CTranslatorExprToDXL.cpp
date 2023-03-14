@@ -2055,6 +2055,7 @@ CTranslatorExprToDXL::PdxlnCTEProducer(
 
 	// extract the CTE id and the array of colids
 	const ULONG ulCTEId = popCTEProducer->UlCTEId();
+	const BOOL fOnMaster = popCTEProducer->FOnMaster();
 	ULongPtrArray *colids = CUtils::Pdrgpul(m_mp, popCTEProducer->Pdrgpcr());
 
 	GPOS_ASSERT(NULL != pexprCTEProducer->Prpp());
@@ -2071,7 +2072,7 @@ CTranslatorExprToDXL::PdxlnCTEProducer(
 	pcrsOutput->Release();
 
 	CDXLNode *pdxlnCTEProducer = GPOS_NEW(m_mp) CDXLNode(
-		m_mp, GPOS_NEW(m_mp) CDXLPhysicalCTEProducer(m_mp, ulCTEId, colids),
+		m_mp, GPOS_NEW(m_mp) CDXLPhysicalCTEProducer(m_mp, ulCTEId, fOnMaster, colids),
 		pdxlnPrL, child_dxlnode);
 
 	pdxlnCTEProducer->SetProperties(dxl_properties);

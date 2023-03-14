@@ -75,7 +75,7 @@ CParseHandlerPhysicalCTEProducer::StartElement(
 
 	m_dxl_node = GPOS_NEW(m_mp) CDXLNode(
 		m_mp,
-		GPOS_NEW(m_mp) CDXLPhysicalCTEProducer(m_mp, id, output_colids_array));
+		GPOS_NEW(m_mp) CDXLPhysicalCTEProducer(m_mp, id, false, output_colids_array));
 
 	// create and activate the parse handler for the child expression node
 	CParseHandlerBase *child_parse_handler =

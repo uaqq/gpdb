@@ -21,6 +21,7 @@
 #include "gpos/task/CAutoTraceFlag.h"
 
 #include "gpopt/base/CCostContext.h"
+#include "gpopt/base/CDistributionSpecSingleton.h"
 #include "gpopt/base/CDrvdPropCtxtPlan.h"
 #include "gpopt/base/COptCtxt.h"
 #include "gpopt/base/COptimizationContext.h"
@@ -37,6 +38,7 @@
 #include "gpopt/operators/CPattern.h"
 #include "gpopt/operators/CPatternLeaf.h"
 #include "gpopt/operators/CPhysicalAgg.h"
+#include "gpopt/operators/CPhysicalCTEProducer.h"
 #include "gpopt/operators/CPhysicalMotionGather.h"
 #include "gpopt/operators/CPhysicalSort.h"
 #include "gpopt/optimizer/COptimizerConfig.h"
@@ -2128,6 +2130,16 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 	// get distribution enforcing type
 	CEnfdProp::EPropEnforcingType epetDistribution = prpp->Ped()->Epet(
 		exprhdl, popPhysical, prpp->Pepp()->PppsRequired(), fDistributionReqd);
+
+	if (popPhysical->Eopid() == COperator::EopPhysicalCTEProducer && CEnfdProp::EpetUnnecessary == epetDistribution)
+	{
+		CDistributionSpec *pds = CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds();
+		if (CDistributionSpec::EdtSingleton == pds->Edt() && CDistributionSpecSingleton::PdssConvert(pds)->FOnMaster())
+		{
+			CPhysicalCTEProducer *popProducer = CPhysicalCTEProducer::PopConvert(popPhysical);
+			popProducer->setFOnMaster();
+		}
+	}
 
 	// get rewindability enforcing type
 	CEnfdProp::EPropEnforcingType epetRewindability =

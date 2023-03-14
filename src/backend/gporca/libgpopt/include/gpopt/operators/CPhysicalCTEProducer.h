@@ -37,6 +37,8 @@ private:
 	// set representation of cte columns
 	CColRefSet *m_pcrs;
 
+	BOOL m_fOnMaster;
+
 	// private copy ctor
 	CPhysicalCTEProducer(const CPhysicalCTEProducer &);
 
@@ -58,6 +60,18 @@ public:
 	SzId() const
 	{
 		return "CPhysicalCTEProducer";
+	}
+
+	BOOL
+	FOnMaster() const
+	{
+		return m_fOnMaster;
+	}
+
+	virtual void
+	setFOnMaster()
+	{
+		m_fOnMaster = true;
 	}
 
 	// cte identifier
@@ -176,6 +190,10 @@ public:
 	//-------------------------------------------------------------------------------------
 	// Enforced Properties
 	//-------------------------------------------------------------------------------------
+
+	/*// return distribution property enforcing type for this operator
+	virtual CEnfdProp::EPropEnforcingType EpetDistribution(
+		CExpressionHandle &exprhdl, const CEnfdDistribution *ped) const;*/
 
 	// return order property enforcing type for this operator
 	virtual CEnfdProp::EPropEnforcingType EpetOrder(

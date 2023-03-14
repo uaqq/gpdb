@@ -30,8 +30,8 @@ using namespace gpdxl;
 //
 //---------------------------------------------------------------------------
 CDXLPhysicalCTEProducer::CDXLPhysicalCTEProducer(
-	CMemoryPool *mp, ULONG id, ULongPtrArray *output_colids_array)
-	: CDXLPhysical(mp), m_id(id), m_output_colids_array(output_colids_array)
+	CMemoryPool *mp, ULONG id, BOOL fOnMaster, ULongPtrArray *output_colids_array)
+	: CDXLPhysical(mp), m_id(id), m_fOnMaster(fOnMaster), m_output_colids_array(output_colids_array)
 {
 	GPOS_ASSERT(NULL != output_colids_array);
 }

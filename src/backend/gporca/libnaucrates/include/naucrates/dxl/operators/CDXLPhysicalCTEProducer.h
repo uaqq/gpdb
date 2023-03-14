@@ -32,6 +32,8 @@ private:
 	// cte id
 	ULONG m_id;
 
+	BOOL m_fOnMaster;
+
 	// output column ids
 	ULongPtrArray *m_output_colids_array;
 
@@ -40,7 +42,7 @@ private:
 
 public:
 	// ctor
-	CDXLPhysicalCTEProducer(CMemoryPool *mp, ULONG id,
+	CDXLPhysicalCTEProducer(CMemoryPool *mp, ULONG id, BOOL fOnMaster,
 							ULongPtrArray *output_colids_array);
 
 	// dtor
@@ -57,6 +59,12 @@ public:
 	Id() const
 	{
 		return m_id;
+	}
+
+	BOOL
+	FOnMaster() const
+	{
+		return m_fOnMaster;
 	}
 
 	ULongPtrArray *
