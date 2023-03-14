@@ -191,10 +191,6 @@ public:
 	// Enforced Properties
 	//-------------------------------------------------------------------------------------
 
-	/*// return distribution property enforcing type for this operator
-	virtual CEnfdProp::EPropEnforcingType EpetDistribution(
-		CExpressionHandle &exprhdl, const CEnfdDistribution *ped) const;*/
-
 	// return order property enforcing type for this operator
 	virtual CEnfdProp::EPropEnforcingType EpetOrder(
 		CExpressionHandle &exprhdl, const CEnfdOrder *peo) const;
