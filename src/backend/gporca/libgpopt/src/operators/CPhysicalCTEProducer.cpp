@@ -277,7 +277,6 @@ CPhysicalCTEProducer::FProvidesReqdCols(CExpressionHandle &exprhdl,
 	return FUnaryProvidesReqdCols(exprhdl, pcrsRequired);
 }
 
-
 //---------------------------------------------------------------------------
 //	@function:
 //		CPhysicalCTEProducer::EpetOrder
