@@ -3762,12 +3762,6 @@ CTranslatorDXLToPlStmt::GetFlowCTEConsumer(List *shared_scan_cte_consumer_list)
 		}
 	}
 
-	if (NULL == flow)
-	{
-		flow = MakeNode(Flow);
-		flow->flotype = FLOW_UNDEFINED;	 // default flow
-	}
-
 	return flow;
 }
 

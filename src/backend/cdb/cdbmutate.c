@@ -2415,8 +2415,7 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 		int			motId = shareinput_peekmot(ctxt);
 		Plan	   *shared = plan->lefttree;
 
-		Assert(sisc->scan.plan.flow);
-		if (sisc->scan.plan.flow->flotype == FLOW_SINGLETON)
+		if (sisc->scan.plan.flow && sisc->scan.plan.flow->flotype == FLOW_SINGLETON)
 		{
 			if (sisc->scan.plan.flow->segindex < 0)
 				ctxt->qdShares = list_append_unique_int(ctxt->qdShares, sisc->share_id);
