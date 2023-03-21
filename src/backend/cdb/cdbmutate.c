@@ -2415,12 +2415,6 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 		int			motId = shareinput_peekmot(ctxt);
 		Plan	   *shared = plan->lefttree;
 
-		if (sisc->scan.plan.flow && sisc->scan.plan.flow->flotype == FLOW_SINGLETON)
-		{
-			if (sisc->scan.plan.flow->segindex < 0)
-				ctxt->qdShares = list_append_unique_int(ctxt->qdShares, sisc->share_id);
-		}
-
 		if (shared)
 		{
 			Assert(get_plan_share_id(plan) == get_plan_share_id(shared));
@@ -2529,7 +2523,6 @@ shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 	if (IsA(plan, ShareInputScan))
 	{
 		ShareInputScan *sisc = (ShareInputScan *) plan;
-		int			motId = shareinput_peekmot(ctxt);
 
 		ShareNodeWithSliceMark plan_slicemark = {NULL, 0};
 		ShareType	stype = SHARE_NOTSHARED;
@@ -2555,13 +2548,6 @@ shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 				Assert(sisc->share_type == stype);
 				break;
 		}
-
-		if (list_member_int(ctxt->qdShares, sisc->share_id))
-		{
-			Assert(sisc->scan.plan.flow);
-			Assert(sisc->scan.plan.flow->flotype == FLOW_SINGLETON);
-			ctxt->qdSlices = list_append_unique_int(ctxt->qdSlices, motId);
-		}
 	}
 	return true;
 }
@@ -2576,7 +2562,6 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
-	int			motId = shareinput_peekmot(ctxt);
 
 	if (fPop)
 	{
@@ -2593,19 +2578,6 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 		/* Do not return.  Motion need to be adjusted as well */
 	}
 
-	/*
-	 * Well, the following test can be optimized if we record the test result
-	 * so we test just once for all node in one slice.  But this code is not
-	 * perf critical so be lazy.
-	 */
-	if (list_member_int(ctxt->qdSlices, motId))
-	{
-		if (plan->flow)
-		{
-			Assert(plan->flow->flotype == FLOW_SINGLETON);
-			plan->flow->segindex = -1;
-		}
-	}
 	return true;
 }
 
@@ -2617,8 +2589,6 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	ShareInputContext walker_ctxt;
 
 	ctxt->motStack = NULL;
-	ctxt->qdShares = NULL;
-	ctxt->qdSlices = NULL;
 	ctxt->nextPlanId = 0;
 
 	ctxt->sliceMarks = palloc0(ctxt->producer_count * sizeof(int));

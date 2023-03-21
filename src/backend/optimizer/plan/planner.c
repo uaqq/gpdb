@@ -307,8 +307,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	glob->share.producer_count = 0;
 	glob->share.sliceMarks = NULL;
 	glob->share.motStack = NIL;
-	glob->share.qdShares = NIL;
-	glob->share.qdSlices = NIL;
 	glob->share.nextPlanId = 0;
 
 	if ((cursorOptions & CURSOR_OPT_UPDATABLE) != 0)
