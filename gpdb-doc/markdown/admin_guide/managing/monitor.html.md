@@ -14,7 +14,7 @@ Also, be sure to review [Recommended Monitoring and Maintenance Tasks](../monito
 
 Greenplum Database includes an optional system monitoring and management database, `gpperfmon`, that administrators can enable. The `gpperfmon_install` command-line utility creates the `gpperfmon` database and enables data collection agents that collect and store query and system metrics in the database. Administrators can query metrics in the `gpperfmon` database. See the documentation for the `gpperfmon` database in the _Greenplum Database Reference Guide_.
 
-VMware Tanzu Greenplum Command Center, an optional web-based interface, provides cluster status information, graphical administrative tools, real-time query monitoring, and historical cluster and query data. Download the Greenplum Command Center package from [VMware Tanzu Network](https://network.pivotal.io/products/pivotal-gpdb) and view the documentation at the [Greenplum Command Center Documentation](http://docs.vmware.com/en/VMware-Tanzu-Greenplum-Command-Center/index.html) web site.
+VMware Greenplum Command Center, an optional web-based interface, provides cluster status information, graphical administrative tools, real-time query monitoring, and historical cluster and query data. Download the Greenplum Command Center package from [VMware Tanzu Network](https://network.pivotal.io/products/pivotal-gpdb) and view the documentation at the [Greenplum Command Center Documentation](http://docs.vmware.com/en/VMware-Greenplum-Command-Center/index.html) web site.
 
 ## <a id="topic3"></a>Monitoring System State 
 
@@ -166,7 +166,7 @@ To see the data distribution of a table's rows \(the number of rows on each segm
 
 A table is considered to have a balanced distribution if all segments have roughly the same number of rows.
 
-**Note:** If you run this query on a replicated table, it fails because Greenplum Database does not permit user queries to reference the system column `gp_segment_id` \(or the system columns `ctid`, `cmin`, `cmax`, `xmin`, and `xmax`\) in replicated tables. Because every segment has all of the tables' rows, replicated tables are evenly distributed by definition.
+> **Note** If you run this query on a replicated table, it fails because Greenplum Database does not permit user queries to reference the system column `gp_segment_id` \(or the system columns `ctid`, `cmin`, `cmax`, `xmin`, and `xmax`\) in replicated tables. Because every segment has all of the tables' rows, replicated tables are evenly distributed by definition.
 
 ### <a id="topic23"></a>Checking for Query Processing Skew 
 
@@ -456,7 +456,7 @@ The following table lists all the defined error codes. Some are not used, but ar
 
 The PL/pgSQL condition name for each error code is the same as the phrase shown in the table, with underscores substituted for spaces. For example, code 22012, DIVISION BY ZERO, has condition name DIVISION\_BY\_ZERO. Condition names can be written in either upper or lower case.
 
-**Note:** PL/pgSQL does not recognize warning, as opposed to error, condition names; those are classes 00, 01, and 02.
+> **Note** PL/pgSQL does not recognize warning, as opposed to error, condition names; those are classes 00, 01, and 02.
 
 |Error Code|Meaning|Constant|
 |----------|-------|--------|
