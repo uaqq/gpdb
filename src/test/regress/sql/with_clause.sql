@@ -403,3 +403,5 @@ WITH e AS (
 ), h AS (
     SELECT a FROM d JOIN e f USING (b) JOIN e USING (b)
 ) SELECT * FROM r JOIN h USING (a) JOIN h i USING (a);
+DROP TABLE d;
+DROP TABLE r;

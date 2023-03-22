@@ -2269,3 +2269,5 @@ WITH e AS (
  Optimizer: Postgres query optimizer
 (39 rows)
 
+DROP TABLE d;
+DROP TABLE r;

@@ -2272,3 +2272,5 @@ WITH e AS (
  Optimizer: Pivotal Optimizer (GPORCA)
 (41 rows)
 
+DROP TABLE d;
+DROP TABLE r;
