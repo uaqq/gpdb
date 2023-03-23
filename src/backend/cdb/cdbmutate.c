@@ -2603,7 +2603,7 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 	{
 		if (plan->flow)
 		{
-			Assert(plan->flow->flotype == FLOW_SINGLETON);
+			plan->flow->flotype = FLOW_SINGLETON;
 			plan->flow->segindex = -1;
 		}
 	}
