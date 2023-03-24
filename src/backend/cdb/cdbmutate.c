@@ -2236,6 +2236,22 @@ shareinput_peekmot(ApplyShareInputContext *ctxt)
 	return linitial_int(ctxt->motStack);
 }
 
+static void
+shareinput_pushind(ApplyShareInputContext *ctxt, int ind)
+{
+	ctxt->indStack = lcons_int(ind, ctxt->indStack);
+}
+static void
+shareinput_popind(ApplyShareInputContext *ctxt)
+{
+	list_delete_first(ctxt->indStack);
+}
+static int
+shareinput_peekind(ApplyShareInputContext *ctxt)
+{
+	return linitial_int(ctxt->indStack);
+}
+
 
 /*
  * Replace the target list of ShareInputScan nodes, with references
@@ -2397,7 +2413,11 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 	if (fPop)
 	{
 		if (IsA(plan, Motion))
+		{
 			shareinput_popmot(ctxt);
+			shareinput_popind(ctxt);
+		}
+
 		return false;
 	}
 
@@ -2406,6 +2426,12 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 		Motion	   *motion = (Motion *) plan;
 
 		shareinput_pushmot(ctxt, motion->motionID);
+
+		if (motion->plan.lefttree && motion->plan.lefttree->flow)
+			shareinput_pushind(ctxt, motion->plan.lefttree->flow->segindex);
+		else
+			shareinput_pushind(ctxt, 0);
+
 		return true;
 	}
 
@@ -2413,13 +2439,12 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 	{
 		ShareInputScan *sisc = (ShareInputScan *) plan;
 		int			motId = shareinput_peekmot(ctxt);
+		int			ind = shareinput_peekind(ctxt);
 		Plan	   *shared = plan->lefttree;
 
-		Assert(sisc->scan.plan.flow);
-		if (sisc->scan.plan.flow->flotype == FLOW_SINGLETON)
+		if (ind < 0)
 		{
-			if (sisc->scan.plan.flow->segindex < 0)
-				ctxt->qdShares = list_append_unique_int(ctxt->qdShares, sisc->share_id);
+			ctxt->qdShares = list_append_unique_int(ctxt->qdShares, sisc->share_id);
 		}
 
 		if (shared)
@@ -2559,8 +2584,6 @@ shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 
 		if (list_member_int(ctxt->qdShares, sisc->share_id))
 		{
-			Assert(sisc->scan.plan.flow);
-			Assert(sisc->scan.plan.flow->flotype == FLOW_SINGLETON);
 			ctxt->qdSlices = list_append_unique_int(ctxt->qdSlices, motId);
 		}
 	}
@@ -2603,7 +2626,6 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 	{
 		if (plan->flow)
 		{
-			Assert(plan->flow->flotype == FLOW_SINGLETON);
 			plan->flow->segindex = -1;
 		}
 	}
@@ -2617,6 +2639,7 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
 
+	ctxt->indStack = NULL;
 	ctxt->motStack = NULL;
 	ctxt->qdShares = NULL;
 	ctxt->qdSlices = NULL;
@@ -2625,6 +2648,7 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	ctxt->sliceMarks = palloc0(ctxt->producer_count * sizeof(int));
 
 	shareinput_pushmot(ctxt, 0);
+	shareinput_pushind(ctxt, 0);
 
 	walker_ctxt.base.node = (Node *) root;
 
