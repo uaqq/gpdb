@@ -2140,8 +2140,10 @@ CEngine::FCheckEnfdProps(CMemoryPool *mp, CGroupExpression *pgexpr,
 
 	if (CEnfdProp::EpetUnnecessary == epetDistribution &&
 		CDistributionSpec::EdtAny == prpp->Ped()->PdsRequired()->Edt() &&
-		!CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())->FAllowReplicated() &&
-		CDistributionSpec::EdtStrictReplicated == CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt())
+		!CDistributionSpecAny::PdsConvert(prpp->Ped()->PdsRequired())
+			 ->FAllowReplicated() &&
+		CDistributionSpec::EdtStrictReplicated ==
+			CDrvdPropPlan::Pdpplan(exprhdl.Pdp())->Pds()->Edt())
 	{
 		epetDistribution = CEnfdProp::EpetProhibited;
 	}

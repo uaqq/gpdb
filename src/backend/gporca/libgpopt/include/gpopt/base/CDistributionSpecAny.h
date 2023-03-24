@@ -48,24 +48,27 @@ private:
 public:
 	//ctor
 	CDistributionSpecAny(COperator::EOperatorId eopidRequested)
-		: m_eopidRequested(eopidRequested), m_fAllowOuterRefs(false),
-		m_fAllowReplicated(true)
+		: m_eopidRequested(eopidRequested),
+		  m_fAllowOuterRefs(false),
+		  m_fAllowReplicated(true)
 	{
 	}
 
 	//ctor
 	CDistributionSpecAny(COperator::EOperatorId eopidRequested,
 						 BOOL fAllowOuterRefs)
-		: m_eopidRequested(eopidRequested), m_fAllowOuterRefs(fAllowOuterRefs),
-		m_fAllowReplicated(true)
+		: m_eopidRequested(eopidRequested),
+		  m_fAllowOuterRefs(fAllowOuterRefs),
+		  m_fAllowReplicated(true)
 	{
 	}
 
 	//ctor
 	CDistributionSpecAny(COperator::EOperatorId eopidRequested,
 						 BOOL fAllowOuterRefs, BOOL fAllowReplicated)
-		: m_eopidRequested(eopidRequested), m_fAllowOuterRefs(fAllowOuterRefs),
-		m_fAllowReplicated(fAllowReplicated)
+		: m_eopidRequested(eopidRequested),
+		  m_fAllowOuterRefs(fAllowOuterRefs),
+		  m_fAllowReplicated(fAllowReplicated)
 	{
 	}
 

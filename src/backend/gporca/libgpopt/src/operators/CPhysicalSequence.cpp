@@ -294,8 +294,7 @@ CPhysicalSequence::PdsRequired(CMemoryPool *mp,
 		 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
 			  ->FAllowReplicated()) ||
 		(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
-		 !CDistributionSpecAny::PdsConvert(pdsRequired)
-			  ->FAllowReplicated()))
+		 !CDistributionSpecAny::PdsConvert(pdsRequired)->FAllowReplicated()))
 	{
 		return GPOS_NEW(mp) CDistributionSpecNonSingleton(
 			false /* fAllowReplicated */, true /* fAllowEnforced */);

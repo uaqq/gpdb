@@ -453,13 +453,13 @@ CPhysical::PdsUnary(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
 			  ->FAllowReplicated()) ||
 		(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
-		 !CDistributionSpecAny::PdsConvert(pdsRequired)
-			  ->FAllowReplicated()))
+		 !CDistributionSpecAny::PdsConvert(pdsRequired)->FAllowReplicated()))
 	{
 		// this situation arises when we have Filter instead inlined CTE,
 		// in this case, we need to not allow replicated through Filter
 		return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid(),
-			false /* fAllowOuterRefs */, false /* fAllowReplicated */);
+												 false /* fAllowOuterRefs */,
+												 false /* fAllowReplicated */);
 	}
 
 	// operator does not have distribution requirements, required distribution
