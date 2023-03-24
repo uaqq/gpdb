@@ -19,6 +19,7 @@
 #include "gpopt/base/CCTEReq.h"
 #include "gpopt/base/CDistributionSpecAny.h"
 #include "gpopt/base/CDistributionSpecHashed.h"
+#include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecRandom.h"
 #include "gpopt/base/CDistributionSpecReplicated.h"
 #include "gpopt/base/CDistributionSpecSingleton.h"
@@ -444,6 +445,21 @@ CPhysical::PdsUnary(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	if (NULL != pds)
 	{
 		return pds;
+	}
+
+	if ((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
+		 CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
+		(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+		 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
+			  ->FAllowReplicated()) ||
+		(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
+		 !CDistributionSpecAny::PdsConvert(pdsRequired)
+			  ->FAllowReplicated()))
+	{
+		// this situation arises when we have Filter instead inlined CTE,
+		// in this case, we need to not allow replicated through Filter
+		return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid(),
+			false /* fAllowOuterRefs */, false /* fAllowReplicated */);
 	}
 
 	// operator does not have distribution requirements, required distribution
