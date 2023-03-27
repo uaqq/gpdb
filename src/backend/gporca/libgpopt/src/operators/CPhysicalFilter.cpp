@@ -146,6 +146,8 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 			  !CDistributionSpecAny::PdsConvert(pdsRequired)
 				   ->FAllowReplicated())))
 		{
+			pds->Release();
+
 			// this situation arises when we have Filter instead inlined CTE,
 			// in this case, we need to not allow replicated through Filter
 			return GPOS_NEW(mp) CDistributionSpecAny(
