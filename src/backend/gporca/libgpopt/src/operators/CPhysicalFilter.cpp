@@ -132,9 +132,9 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	if (CUtils::FScalarConstTrue(pexprScalar) &&
 		((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
 		  CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
-		(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-		CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
-			->FProhibitReplicated())))
+		 (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+		  CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
+			  ->FProhibitReplicated())))
 	{
 		pdsRequired->AddRef();
 		return pdsRequired;
