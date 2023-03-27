@@ -286,7 +286,7 @@ SELECT generate_series((
         </dxl:OpExpr>
       </dxl:LogicalTVF>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="342">
+    <dxl:Plan Id="0" SpaceSize="171">
       <dxl:TableValuedFunction FuncId="0.1068.1.0" Name="generate_series" TypeMdid="0.20.1.0">
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="0.008000" Rows="1000.000000" Width="8"/>
