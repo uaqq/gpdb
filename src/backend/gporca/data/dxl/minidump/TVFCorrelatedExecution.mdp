@@ -91,7 +91,7 @@
         </dxl:ScalarSubquery>
       </dxl:LogicalTVF>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="72">
+    <dxl:Plan Id="0" SpaceSize="144">
       <dxl:TableValuedFunction FuncId="0.65639.1.0" Name="myfunc" TypeMdid="0.2249.1.0">
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="0.008000" Rows="1000.000000" Width="8"/>
