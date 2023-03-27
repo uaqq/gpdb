@@ -131,12 +131,12 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 
 	if (CUtils::FScalarConstTrue(pexprScalar) &&
 		((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
-		 CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
-		(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-		 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
-			  ->FAllowReplicated()) ||
-		(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
-		 !CDistributionSpecAny::PdsConvert(pdsRequired)->FAllowReplicated())))
+		  CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
+		 (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+		  !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
+			   ->FAllowReplicated()) ||
+		 (CDistributionSpec::EdtAny == pdsRequired->Edt() &&
+		  !CDistributionSpecAny::PdsConvert(pdsRequired)->FAllowReplicated())))
 	{
 		// this situation arises when we have Filter instead inlined CTE,
 		// in this case, we need to not allow replicated through Filter
