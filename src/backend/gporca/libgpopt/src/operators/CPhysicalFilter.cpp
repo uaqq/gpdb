@@ -136,8 +136,9 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		  CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
 			  ->FProhibitReplicated())))
 	{
-		pdsRequired->AddRef();
-		return pdsRequired;
+		return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid(),
+												 false /* fAllowOuterRefs */,
+												 false /* fAllowReplicated */);
 	}
 
 	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);

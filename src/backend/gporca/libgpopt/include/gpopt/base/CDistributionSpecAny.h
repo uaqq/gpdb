@@ -39,6 +39,8 @@ private:
 	// allow outer references in the operator tree where distribution is requested
 	BOOL m_fAllowOuterRefs;
 
+	BOOL m_fAllowReplicated;
+
 	// private copy ctor
 	CDistributionSpecAny(const CDistributionSpecAny &);
 
@@ -46,14 +48,27 @@ private:
 public:
 	//ctor
 	CDistributionSpecAny(COperator::EOperatorId eopidRequested)
-		: m_eopidRequested(eopidRequested), m_fAllowOuterRefs(false)
+		: m_eopidRequested(eopidRequested),
+		  m_fAllowOuterRefs(false),
+		  m_fAllowReplicated(true)
 	{
 	}
 
 	//ctor
 	CDistributionSpecAny(COperator::EOperatorId eopidRequested,
 						 BOOL fAllowOuterRefs)
-		: m_eopidRequested(eopidRequested), m_fAllowOuterRefs(fAllowOuterRefs)
+		: m_eopidRequested(eopidRequested),
+		  m_fAllowOuterRefs(fAllowOuterRefs),
+		  m_fAllowReplicated(true)
+	{
+	}
+
+	//ctor
+	CDistributionSpecAny(COperator::EOperatorId eopidRequested,
+						 BOOL fAllowOuterRefs, BOOL fAllowReplicated)
+		: m_eopidRequested(eopidRequested),
+		  m_fAllowOuterRefs(fAllowOuterRefs),
+		  m_fAllowReplicated(fAllowReplicated)
 	{
 	}
 
@@ -111,6 +126,12 @@ public:
 	FAllowOuterRefs() const
 	{
 		return m_fAllowOuterRefs;
+	}
+
+	BOOL
+	FAllowReplicated() const
+	{
+		return m_fAllowReplicated;
 	}
 
 	// conversion function
