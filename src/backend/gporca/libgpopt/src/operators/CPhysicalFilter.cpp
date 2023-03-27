@@ -127,26 +127,30 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pdsRequired;
 	}
 
-	CDistributionSpec *pds = CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
+	CDistributionSpec *pds =
+		CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
 
 	if (CDistributionSpec::EdtAny == pds->Edt())
 	{
-		CExpression *pexprScalar = exprhdl.PexprScalarExactChild(1 /*child_index*/);
+		CExpression *pexprScalar =
+			exprhdl.PexprScalarExactChild(1 /*child_index*/);
 
 		if (CUtils::FScalarConstTrue(pexprScalar) &&
 			((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
-			CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
-			(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-			!CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
-				->FAllowReplicated()) ||
-			(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
-			!CDistributionSpecAny::PdsConvert(pdsRequired)->FAllowReplicated())))
+			  CDistributionSpecSingleton::PdssConvert(pdsRequired)
+				  ->FOnMaster()) ||
+			 (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+			  !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
+				   ->FAllowReplicated()) ||
+			 (CDistributionSpec::EdtAny == pdsRequired->Edt() &&
+			  !CDistributionSpecAny::PdsConvert(pdsRequired)
+				   ->FAllowReplicated())))
 		{
 			// this situation arises when we have Filter instead inlined CTE,
 			// in this case, we need to not allow replicated through Filter
-			return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid(),
-													false /* fAllowOuterRefs */,
-													false /* fAllowReplicated */);
+			return GPOS_NEW(mp) CDistributionSpecAny(
+				exprhdl.Pop()->Eopid(), false /* fAllowOuterRefs */,
+				false /* fAllowReplicated */);
 		}
 	}
 
