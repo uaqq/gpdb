@@ -447,7 +447,9 @@ CPhysical::PdsUnary(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pds;
 	}
 
-	if ((CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+	if ((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
+		 CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
+		(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
 		 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
 			  ->FAllowReplicated()) ||
 		(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
