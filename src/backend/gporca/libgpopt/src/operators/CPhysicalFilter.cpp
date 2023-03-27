@@ -14,6 +14,7 @@
 #include "gpos/base.h"
 
 #include "gpopt/base/CDistributionSpecAny.h"
+#include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecReplicated.h"
 #include "gpopt/base/CPartInfo.h"
 #include "gpopt/operators/CExpressionHandle.h"
@@ -124,6 +125,24 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		// we need to have outer references referring to join's outer child
 		pdsRequired->AddRef();
 		return pdsRequired;
+	}
+
+	CExpression *pexprScalar = exprhdl.PexprScalarExactChild(1 /*child_index*/);
+
+	if (CUtils::FScalarConstTrue(pexprScalar) &&
+		((CDistributionSpec::EdtSingleton == pdsRequired->Edt() &&
+		 CDistributionSpecSingleton::PdssConvert(pdsRequired)->FOnMaster()) ||
+		(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+		 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
+			  ->FAllowReplicated()) ||
+		(CDistributionSpec::EdtAny == pdsRequired->Edt() &&
+		 !CDistributionSpecAny::PdsConvert(pdsRequired)->FAllowReplicated())))
+	{
+		// this situation arises when we have Filter instead inlined CTE,
+		// in this case, we need to not allow replicated through Filter
+		return GPOS_NEW(mp) CDistributionSpecAny(exprhdl.Pop()->Eopid(),
+												 false /* fAllowOuterRefs */,
+												 false /* fAllowReplicated */);
 	}
 
 	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
