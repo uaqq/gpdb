@@ -61,7 +61,8 @@ const CHAR *rgszCTEFileNames[] = {
 	"../data/dxl/minidump/CTEMergeGroupsCircularDeriveStats.mdp",
 	"../data/dxl/minidump/CTE1Replicated.mdp",
 	"../data/dxl/minidump/CTE15Replicated.mdp",
-	"../data/dxl/minidump/CTE2Replicated.mdp"};
+	"../data/dxl/minidump/CTE2Replicated.mdp",
+	"../data/dxl/minidump/CTE25Replicated.mdp"};
 
 
 //---------------------------------------------------------------------------
