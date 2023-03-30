@@ -1,3 +1,7 @@
+# Prerequisities
+
+docker-compose v2 or newer is required
+
 # How to run tests
 
 ## Build docker gpdb image with developer options
