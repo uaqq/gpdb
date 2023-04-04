@@ -127,16 +127,6 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pdsRequired;
 	}
 
-	if (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-		!CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
-			 ->FAllowReplicated())
-	{
-		// this situation arises when we have Filter instead inlined CTE,
-		// in this case, we need to push down non-singleton with not allowed replicated through Filter
-		pdsRequired->AddRef();
-		return pdsRequired;
-	}
-
 	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
 }
 
