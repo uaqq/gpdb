@@ -99,10 +99,10 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 
 	// child of CTE anchor
 	CExpression *pexprChild = (*pexpr)[0];
-	CLogicalCTEConsumer *popConsumer = CLogicalCTEConsumer::PopConvert(pexprChild->Pop());
+	CLogicalCTEConsumer *popConsumer =
+		CLogicalCTEConsumer::PopConvert(pexprChild->Pop());
 
-	CExpression *pexprSelect = GPOS_NEW(mp)
-		CExpression(mp, popConsumer);
+	CExpression *pexprSelect = GPOS_NEW(mp) CExpression(mp, popConsumer);
 
 	pxfres->Add(pexprSelect);
 }
