@@ -14,6 +14,7 @@
 #include "gpos/base.h"
 
 #include "gpopt/base/CDistributionSpecAny.h"
+#include "gpopt/base/CDistributionSpecNonSingleton.h"
 #include "gpopt/base/CDistributionSpecReplicated.h"
 #include "gpopt/base/CPartInfo.h"
 #include "gpopt/operators/CExpressionHandle.h"
@@ -126,7 +127,26 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pdsRequired;
 	}
 
-	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
+	CDistributionSpec *pds =
+		CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
+
+	if (CDistributionSpec::EdtAny == pds->Edt())
+	{
+		CExpression *pexprScalar =
+			exprhdl.PexprScalarExactChild(1 /*child_index*/);
+
+		if (CUtils::FScalarConstTrue(pexprScalar) &&
+			(CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
+			 !CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
+				  ->FAllowReplicated()))
+		{
+			pds->Release();
+			pdsRequired->AddRef();
+			return pdsRequired;
+		}
+	}
+
+	return pds;
 }
 
 
