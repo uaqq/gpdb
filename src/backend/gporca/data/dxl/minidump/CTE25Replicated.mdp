@@ -400,7 +400,7 @@
         <dxl:LogicalCTEConsumer CTEId="3" Columns="35,36,37"/>
       </dxl:LogicalCTEAnchor>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="439266">
+    <dxl:Plan Id="0" SpaceSize="878532">
       <dxl:Sequence>
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="3017.007241" Rows="1.000000" Width="267"/>
