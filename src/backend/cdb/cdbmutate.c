@@ -2428,7 +2428,8 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 		shareinput_pushmot(ctxt, motion->motionID);
 
 		/* Top node of subplan should have a Flow node. */
-		Insist(motion->plan.lefttree && motion->plan.lefttree->flow);
+		Assert(motion->plan.lefttree);
+		Assert(motion->plan.lefttree->flow);
 		shareinput_pushind(ctxt, motion->plan.lefttree->flow->segindex);
 
 		return true;
