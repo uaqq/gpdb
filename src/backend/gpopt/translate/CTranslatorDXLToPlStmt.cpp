@@ -3725,7 +3725,7 @@ CTranslatorDXLToPlStmt::InitializeSpoolingInfo(Plan *plan, ULONG share_id)
 		{
 			if (NULL == flow)
 			{
-				flow = (Flow *) gpdb::CopyObject(flow_cte);
+				flow = flow_cte;
 			}
 			else
 			{
