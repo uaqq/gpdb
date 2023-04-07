@@ -2418,7 +2418,6 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 	{
 		if (IsA(plan, Motion))
 			shareinput_popmot(ctxt);
-
 		return false;
 	}
 
