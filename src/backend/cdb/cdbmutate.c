@@ -2223,37 +2223,28 @@ collect_shareinput_producers(PlannerInfo *root, Plan *plan)
 static void
 shareinput_pushmot(ApplyShareInputContext *ctxt, Motion *motion)
 {
-	ctxt->motStack = lcons(motion, ctxt->motStack);
+	/* Top node of subplan should have a Flow node. */
+	Assert(motion->plan.lefttree);
+	Assert(motion->plan.lefttree->flow);
+	ctxt->indStack = lcons_int(motion->plan.lefttree->flow->segindex, ctxt->indStack);
+	ctxt->motStack = lcons_int(motion->motionID, ctxt->motStack);
 }
 static void
 shareinput_popmot(ApplyShareInputContext *ctxt)
 {
+	list_delete_first(ctxt->indStack);
 	list_delete_first(ctxt->motStack);
 }
 static int
 shareinput_peekmot(ApplyShareInputContext *ctxt)
 {
-	Motion *motion = linitial(ctxt->motStack);
-
-	if (!motion)
-		return 0;
-
-	return motion->motionID;
+	return linitial_int(ctxt->motStack);
 }
 
 static int
 shareinput_peekind(ApplyShareInputContext *ctxt)
 {
-	Motion *motion = linitial(ctxt->motStack);
-
-	if (!motion)
-		return 0;
-
-	/* Top node of subplan should have a Flow node. */
-	Assert(motion->plan.lefttree);
-	Assert(motion->plan.lefttree->flow);
-
-	return motion->plan.lefttree->flow->segindex;
+	return linitial_int(ctxt->indStack);
 }
 
 
@@ -2634,14 +2625,13 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
 
-	ctxt->motStack = NULL;
+	ctxt->indStack = lcons_int(0, NULL);
+	ctxt->motStack = lcons_int(0, NULL);
 	ctxt->qdShares = NULL;
 	ctxt->qdSlices = NULL;
 	ctxt->nextPlanId = 0;
 
 	ctxt->sliceMarks = palloc0(ctxt->producer_count * sizeof(int));
-
-	shareinput_pushmot(ctxt, NULL);
 
 	walker_ctxt.base.node = (Node *) root;
 
