@@ -2624,8 +2624,54 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
+	int segindex = -1;
 
-	ctxt->indStack = lcons_int(0, NULL);
+	if (root->glob->is_parallel_cursor)
+	{
+		Flow *flow = plan->flow;
+		if (flow->flotype != FLOW_SINGLETON ||
+			(flow->locustype != CdbLocusType_Entry &&
+			flow->locustype != CdbLocusType_General &&
+			flow->locustype != CdbLocusType_SingleQE))
+		{
+			segindex = 0;
+		}
+	}
+	else if (IsA(plan, ModifyTable))
+	{
+		ModifyTable *mt = (ModifyTable *) plan;
+
+		if (list_length(mt->resultRelations) > 0)
+		{
+			ListCell   *lc = list_head(mt->resultRelations);
+			int			idx = lfirst_int(lc);
+			Oid			reloid = getrelid(idx, root->parse->rtable);
+			GpPolicyType policyType = GpPolicyFetch(reloid)->ptype;
+
+			if (policyType != POLICYTYPE_ENTRY)
+			{
+				segindex = 0;
+			}
+		}
+	}
+	else if (IsA(plan, DML))
+	{
+		DML		   *dml = (DML *) plan;
+		int			idx = dml->scanrelid;
+		Oid			reloid = getrelid(idx, root->parse->rtable);
+		GpPolicyType policyType = GpPolicyFetch(reloid)->ptype;
+
+		if (policyType != POLICYTYPE_ENTRY)
+		{
+			segindex = 0;
+		}
+	}
+	else if (root->parse->intoClause || root->parse->copyIntoClause || root->parse->refreshClause)
+	{
+		segindex = 0;
+	}
+
+	ctxt->indStack = lcons_int(segindex, NULL);
 	ctxt->motStack = lcons_int(0, NULL);
 	ctxt->qdShares = NULL;
 	ctxt->qdSlices = NULL;

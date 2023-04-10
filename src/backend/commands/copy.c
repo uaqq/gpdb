@@ -1852,6 +1852,9 @@ BeginCopy(bool is_from,
 		Assert(query->commandType == CMD_SELECT);
 		Assert(query->utilityStmt == NULL);
 
+		if (cstate->on_segment)
+			query->copyIntoClause = glob_copystmt;
+
 		/* plan the query */
 		plan = planner(query, 0, NULL);
 

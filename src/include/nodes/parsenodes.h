@@ -215,6 +215,10 @@ typedef struct Query
 	 */
 	ParentStmtType	parentStmtType;
 	bool		expandMatViews; /* force expansion of materialized views during rewrite to treat as views */
+
+	IntoClause *intoClause;
+	CopyIntoClause *copyIntoClause;
+	RefreshClause *refreshClause;
 } Query;
 
 /****************************************************************************

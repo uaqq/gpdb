@@ -406,6 +406,9 @@ ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
 
 		INSTR_TIME_SET_CURRENT(planstart);
 
+		if (into != NULL)
+			query->intoClause = into;
+
 		/* plan the query */
 		plan = pg_plan_query(query, 0, params);
 
