@@ -2624,8 +2624,18 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
+	int segindex = 0;
 
-	ctxt->indStack = lcons_int(plan->flow ? plan->flow->segindex : -1, NULL);
+	if (NULL == plan->flow)
+	{
+		segindex = -1;
+	}
+	else if (plan->flow->flotype == FLOW_SINGLETON && plan->flow->segindex < 0)
+	{
+		segindex = -1;
+	}
+
+	ctxt->indStack = lcons_int(segindex, NULL);
 	ctxt->motStack = lcons_int(0, NULL);
 	ctxt->qdShares = NULL;
 	ctxt->qdSlices = NULL;
