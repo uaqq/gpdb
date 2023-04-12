@@ -421,8 +421,6 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
 
-	query->refreshClause = refreshClause;
-
 	/* Plan the query which will generate data for the refresh. */
 	plan = pg_plan_query(query, 0, NULL);
 
