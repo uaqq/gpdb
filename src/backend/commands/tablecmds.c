@@ -14690,8 +14690,6 @@ build_ctas_with_dist(Relation rel, DistributedBy *dist_clause,
 	q = (Query *) linitial(rewritten);
 	Assert(q->commandType == CMD_SELECT || q->commandType == CMD_INSERT);
 
-	q->intoClause = into;
-
 	/* plan the query */
 	stmt = planner(q, 0, NULL);
 	stmt->intoClause = into;

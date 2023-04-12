@@ -393,8 +393,6 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	query = (Query *) linitial(rewritten);
 	Assert(query->commandType == CMD_SELECT);
 
-	query->intoClause = stmt->into;
-
 	/* plan the query */
 	plan = pg_plan_query(query, 0, params);
 

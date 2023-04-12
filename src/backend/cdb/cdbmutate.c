@@ -2221,30 +2221,19 @@ collect_shareinput_producers(PlannerInfo *root, Plan *plan)
 
 /* Some helper: implements a stack using List. */
 static void
-shareinput_pushmot(ApplyShareInputContext *ctxt, Motion *motion)
+shareinput_pushmot(ApplyShareInputContext *ctxt, int motid)
 {
-	/* Top node of subplan should have a Flow node. */
-	Assert(motion->plan.lefttree);
-	Assert(motion->plan.lefttree->flow);
-	ctxt->indStack = lcons_int(motion->plan.lefttree->flow->segindex, ctxt->indStack);
-	ctxt->motStack = lcons_int(motion->motionID, ctxt->motStack);
+	ctxt->motStack = lcons_int(motid, ctxt->motStack);
 }
 static void
 shareinput_popmot(ApplyShareInputContext *ctxt)
 {
-	list_delete_first(ctxt->indStack);
 	list_delete_first(ctxt->motStack);
 }
 static int
 shareinput_peekmot(ApplyShareInputContext *ctxt)
 {
 	return linitial_int(ctxt->motStack);
-}
-
-static int
-shareinput_peekind(ApplyShareInputContext *ctxt)
-{
-	return linitial_int(ctxt->indStack);
 }
 
 
@@ -2416,7 +2405,7 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 	{
 		Motion	   *motion = (Motion *) plan;
 
-		shareinput_pushmot(ctxt, motion);
+		shareinput_pushmot(ctxt, motion->motionID);
 		return true;
 	}
 
@@ -2424,13 +2413,7 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 	{
 		ShareInputScan *sisc = (ShareInputScan *) plan;
 		int			motId = shareinput_peekmot(ctxt);
-		int			ind = shareinput_peekind(ctxt);
 		Plan	   *shared = plan->lefttree;
-
-		if (ind < 0)
-		{
-			ctxt->qdShares = list_append_unique_int(ctxt->qdShares, sisc->share_id);
-		}
 
 		if (shared)
 		{
@@ -2473,7 +2456,7 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 	{
 		Motion	   *motion = (Motion *) plan;
 
-		shareinput_pushmot(ctxt, motion);
+		shareinput_pushmot(ctxt, motion->motionID);
 		return true;
 	}
 
@@ -2533,15 +2516,13 @@ shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 	{
 		Motion	   *motion = (Motion *) plan;
 
-		shareinput_pushmot(ctxt, motion);
+		shareinput_pushmot(ctxt, motion->motionID);
 		return true;
 	}
 
 	if (IsA(plan, ShareInputScan))
 	{
 		ShareInputScan *sisc = (ShareInputScan *) plan;
-		int			motId = shareinput_peekmot(ctxt);
-
 		ShareNodeWithSliceMark plan_slicemark = {NULL, 0};
 		ShareType	stype = SHARE_NOTSHARED;
 
@@ -2566,11 +2547,6 @@ shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 				Assert(sisc->share_type == stype);
 				break;
 		}
-
-		if (list_member_int(ctxt->qdShares, sisc->share_id))
-		{
-			ctxt->qdSlices = list_append_unique_int(ctxt->qdSlices, motId);
-		}
 	}
 	return true;
 }
@@ -2585,7 +2561,6 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	Plan	   *plan = (Plan *) node;
-	int			motId = shareinput_peekmot(ctxt);
 
 	if (fPop)
 	{
@@ -2598,23 +2573,10 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 	{
 		Motion	   *motion = (Motion *) plan;
 
-		shareinput_pushmot(ctxt, motion);
+		shareinput_pushmot(ctxt, motion->motionID);
 		/* Do not return.  Motion need to be adjusted as well */
 	}
 
-	/*
-	 * Well, the following test can be optimized if we record the test result
-	 * so we test just once for all node in one slice.  But this code is not
-	 * perf critical so be lazy.
-	 */
-	if (list_member_int(ctxt->qdSlices, motId))
-	{
-		if (plan->flow)
-		{
-			Assert(plan->flow->flotype == FLOW_SINGLETON);
-			plan->flow->segindex = -1;
-		}
-	}
 	return true;
 }
 
@@ -2624,60 +2586,13 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
-	int segindex = -1;
 
-	if (root->glob->is_parallel_cursor)
-	{
-		Flow *flow = plan->flow;
-		if (flow->flotype != FLOW_SINGLETON ||
-			(flow->locustype != CdbLocusType_Entry &&
-			flow->locustype != CdbLocusType_General &&
-			flow->locustype != CdbLocusType_SingleQE))
-		{
-			segindex = 0;
-		}
-	}
-	else if (IsA(plan, ModifyTable))
-	{
-		ModifyTable *mt = (ModifyTable *) plan;
-
-		if (list_length(mt->resultRelations) > 0)
-		{
-			ListCell   *lc = list_head(mt->resultRelations);
-			int			idx = lfirst_int(lc);
-			Oid			reloid = getrelid(idx, root->parse->rtable);
-			GpPolicyType policyType = GpPolicyFetch(reloid)->ptype;
-
-			if (policyType != POLICYTYPE_ENTRY)
-			{
-				segindex = 0;
-			}
-		}
-	}
-	else if (IsA(plan, DML))
-	{
-		DML		   *dml = (DML *) plan;
-		int			idx = dml->scanrelid;
-		Oid			reloid = getrelid(idx, root->parse->rtable);
-		GpPolicyType policyType = GpPolicyFetch(reloid)->ptype;
-
-		if (policyType != POLICYTYPE_ENTRY)
-		{
-			segindex = 0;
-		}
-	}
-	else if (root->parse->intoClause || root->parse->copyIntoClause || root->parse->refreshClause)
-	{
-		segindex = 0;
-	}
-
-	ctxt->indStack = lcons_int(segindex, NULL);
-	ctxt->motStack = lcons_int(0, NULL);
-	ctxt->qdShares = NULL;
-	ctxt->qdSlices = NULL;
+	ctxt->motStack = NULL;
 	ctxt->nextPlanId = 0;
 
 	ctxt->sliceMarks = palloc0(ctxt->producer_count * sizeof(int));
+
+	shareinput_pushmot(ctxt, 0);
 
 	walker_ctxt.base.node = (Node *) root;
 
