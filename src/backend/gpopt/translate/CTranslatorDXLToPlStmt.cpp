@@ -3730,6 +3730,7 @@ CTranslatorDXLToPlStmt::InitializeSpoolingInfo(Plan *plan, ULONG share_id)
 			else
 			{
 				GPOS_ASSERT(flow->flotype == flow_cte->flotype);
+				GPOS_ASSERT(flow->segindex == flow_cte->segindex);
 			}
 		}
 	}
