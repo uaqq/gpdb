@@ -2612,7 +2612,7 @@ shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
 		if (plan->flow)
 		{
 			Assert(plan->flow->flotype == FLOW_SINGLETON);
-			plan->flow->segindex = -1;
+			Assert(plan->flow->segindex == -1);
 		}
 	}
 	return true;
@@ -2624,15 +2624,21 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
-	int segindex = 0;
+	int segindex = -1;
 
-	if (NULL == plan->flow)
+	if (NULL != plan->flow)
 	{
-		segindex = -1;
+		segindex = plan->flow->segindex;
 	}
-	else if (plan->flow->flotype == FLOW_SINGLETON && plan->flow->segindex < 0)
+	else if (IsA(plan, DML))
 	{
-		segindex = -1;
+		DML *dml = (DML *) plan;
+		Oid  reloid = getrelid(dml->scanrelid, root->parse->rtable);
+
+		if (POLICYTYPE_ENTRY != GpPolicyFetch(reloid)->ptype)
+		{
+			segindex = 0;
+		}
 	}
 
 	ctxt->indStack = lcons_int(segindex, NULL);
