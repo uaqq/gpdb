@@ -2551,35 +2551,6 @@ shareinput_mutator_xslice_3(Node *node, PlannerInfo *root, bool fPop)
 	return true;
 }
 
-/*
- * The fourth pass.  If a shareinput is running on QD, then all slices in
- * this share must be on QD.  Move them to QD.
- */
-static bool
-shareinput_mutator_xslice_4(Node *node, PlannerInfo *root, bool fPop)
-{
-	PlannerGlobal *glob = root->glob;
-	ApplyShareInputContext *ctxt = &glob->share;
-	Plan	   *plan = (Plan *) node;
-
-	if (fPop)
-	{
-		if (IsA(plan, Motion))
-			shareinput_popmot(ctxt);
-		return false;
-	}
-
-	if (IsA(plan, Motion))
-	{
-		Motion	   *motion = (Motion *) plan;
-
-		shareinput_pushmot(ctxt, motion->motionID);
-		/* Do not return.  Motion need to be adjusted as well */
-	}
-
-	return true;
-}
-
 Plan *
 apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 {
@@ -2616,9 +2587,6 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	shareinput_walker((Node *) plan, &walker_ctxt);
 
 	walker_ctxt.mutator = shareinput_mutator_xslice_3;
-	shareinput_walker((Node *) plan, &walker_ctxt);
-
-	walker_ctxt.mutator = shareinput_mutator_xslice_4;
 	shareinput_walker((Node *) plan, &walker_ctxt);
 
 	return plan;
