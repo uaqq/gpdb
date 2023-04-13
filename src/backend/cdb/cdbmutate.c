@@ -2226,13 +2226,13 @@ shareinput_pushmot(ApplyShareInputContext *ctxt, Motion *motion)
 	/* Top node of subplan should have a Flow node. */
 	Assert(motion->plan.lefttree);
 	Assert(motion->plan.lefttree->flow);
-	ctxt->indStack = lcons_int(motion->plan.lefttree->flow->segindex, ctxt->indStack);
+	ctxt->qdsStack = lcons_int(motion->plan.lefttree->flow->segindex, ctxt->qdsStack);
 	ctxt->motStack = lcons_int(motion->motionID, ctxt->motStack);
 }
 static void
 shareinput_popmot(ApplyShareInputContext *ctxt)
 {
-	list_delete_first(ctxt->indStack);
+	list_delete_first(ctxt->qdsStack);
 	list_delete_first(ctxt->motStack);
 }
 static int
@@ -2242,9 +2242,9 @@ shareinput_peekmot(ApplyShareInputContext *ctxt)
 }
 
 static int
-shareinput_peekind(ApplyShareInputContext *ctxt)
+shareinput_peekqds(ApplyShareInputContext *ctxt)
 {
-	return linitial_int(ctxt->indStack);
+	return linitial_int(ctxt->qdsStack);
 }
 
 
@@ -2424,10 +2424,10 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 	{
 		ShareInputScan *sisc = (ShareInputScan *) plan;
 		int			motId = shareinput_peekmot(ctxt);
-		int			ind = shareinput_peekind(ctxt);
+		int			qds = shareinput_peekqds(ctxt);
 		Plan	   *shared = plan->lefttree;
 
-		if (ind < 0)
+		if (qds)
 		{
 			ctxt->qdShares = list_append_unique_int(ctxt->qdShares, sisc->share_id);
 		}
@@ -2624,7 +2624,7 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	PlannerGlobal *glob = root->glob;
 	ApplyShareInputContext *ctxt = &glob->share;
 	ShareInputContext walker_ctxt;
-	int segindex = -1;
+	int qds = 1;
 
 	if (root->glob->is_parallel_cursor)
 	{
@@ -2634,7 +2634,7 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 			flow->locustype != CdbLocusType_General &&
 			flow->locustype != CdbLocusType_SingleQE))
 		{
-			segindex = 0;
+			qds = 0;
 		}
 	}
 	else if (IsA(plan, ModifyTable))
@@ -2650,7 +2650,7 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 
 			if (policyType != POLICYTYPE_ENTRY)
 			{
-				segindex = 0;
+				qds = 0;
 			}
 		}
 	}
@@ -2663,19 +2663,22 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 
 		if (policyType != POLICYTYPE_ENTRY)
 		{
-			segindex = 0;
+			qds = 0;
 		}
 	}
 	else if (root->parse->intoClause || root->parse->copyIntoClause || root->parse->refreshClause)
 	{
-		segindex = 0;
+		qds = 0;
 	}
 	else if (NULL != plan->flow)
 	{
-		segindex = plan->flow->segindex;
+		if (FLOW_SINGLETON != plan->flow->flotype || -1 != plan->flow->segindex)
+		{
+			qds = 0;
+		}
 	}
 
-	ctxt->indStack = lcons_int(segindex, NULL);
+	ctxt->qdsStack = lcons_int(qds, NULL);
 	ctxt->motStack = lcons_int(0, NULL);
 	ctxt->qdShares = NULL;
 	ctxt->qdSlices = NULL;
