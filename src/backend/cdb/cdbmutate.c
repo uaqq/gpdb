@@ -2670,6 +2670,10 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root)
 	{
 		segindex = 0;
 	}
+	else if (NULL != plan->flow)
+	{
+		segindex = plan->flow->segindex;
+	}
 
 	ctxt->indStack = lcons_int(segindex, NULL);
 	ctxt->motStack = lcons_int(0, NULL);
