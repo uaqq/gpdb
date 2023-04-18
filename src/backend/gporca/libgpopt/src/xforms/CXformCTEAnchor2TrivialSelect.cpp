@@ -103,7 +103,8 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	CExpression *pexprSelect = pexprChild;
 
 	if (COperator::EopLogicalCTEAnchor != pexpr->Pop()->Eopid() ||
-		COperator::EopLogicalLeftOuterCorrelatedApply == pexprChild->Pop()->Eopid())
+		COperator::EopLogicalLeftOuterCorrelatedApply ==
+			pexprChild->Pop()->Eopid())
 	{
 		pexprSelect = GPOS_NEW(mp)
 			CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp), pexprChild,
