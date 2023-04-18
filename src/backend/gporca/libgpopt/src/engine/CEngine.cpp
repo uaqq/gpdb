@@ -306,8 +306,6 @@ CEngine::PgroupInsert(CGroup *pgroupTarget, CExpression *pexpr,
 	if (NULL != pexpr->Pgexpr())
 	{
 		pgroupOrigin = pexpr->Pgexpr()->Pgroup();
-		GPOS_ASSERT(NULL != pgroupOrigin && NULL == pgroupTarget &&
-					"A valid group is expected");
 
 		// if parent has group pointer, all children must have group pointers;
 		// terminate recursive insertion here
