@@ -98,11 +98,23 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 
 	// child of CTE anchor
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->AddRef();
+	CExpression *pexprSelect;
 
-	CExpression *pexprSelect = GPOS_NEW(mp)
-		CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp), pexprChild,
-					CUtils::PexprScalarConstBool(mp, true /*fValue*/));
+	if (COperator::EopLogicalCTEAnchor != pexpr->Pop()->Eopid() ||
+		COperator::EopLogicalLeftOuterCorrelatedApply ==
+			pexprChild->Pop()->Eopid())
+	{
+		pexprChild->AddRef();
+		pexprSelect = GPOS_NEW(mp)
+			CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp), pexprChild,
+						CUtils::PexprScalarConstBool(mp, true /*fValue*/));
+	}
+	else
+	{
+		UlongToColRefMap *colref_mapping = GPOS_NEW(mp) UlongToColRefMap(mp);
+		pexprSelect = pexprChild->PexprCopyWithRemappedColumns(mp, colref_mapping, false);
+		colref_mapping->Release();
+	}
 
 	pxfres->Add(pexprSelect);
 }
