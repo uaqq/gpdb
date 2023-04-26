@@ -86,6 +86,9 @@ private:
 	// group reference to Memo
 	CGroupExpression *m_pgexpr;
 
+	// origin group reference to Memo
+	CGroupExpression *m_pgexprorg;
+
 	// cost of physical expression node when copied out of the memo
 	CCost m_cost;
 
@@ -187,6 +190,25 @@ public:
 	Pgexpr() const
 	{
 		return m_pgexpr;
+	}
+
+	// accessor for origin group expression
+	CGroupExpression *
+	Pgexprorg() const
+	{
+		return m_pgexprorg;
+	}
+
+	void
+	SetPgexpr(CGroupExpression *pgexpr)
+	{
+		m_pgexpr = pgexpr;
+	}
+
+	void
+	SetPgexprorg(CGroupExpression *pgexpr)
+	{
+		m_pgexprorg = pgexpr;
 	}
 
 	// accessor for computed required plan props
