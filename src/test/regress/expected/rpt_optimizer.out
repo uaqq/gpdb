@@ -55,25 +55,29 @@ WITH
       t1 AS (SELECT * FROM with_test2),
       t2 AS (SELECT id, rc FROM with_test3 WHERE ri = 101991)
 SELECT p.*FROM t1 p JOIN t2 r ON p.isc = r.rc JOIN t2 r1 ON p.iscd = r1.rc LIMIT 1;
-                                              QUERY PLAN                                              
-------------------------------------------------------------------------------------------------------
- Limit  (cost=0.16..0.23 rows=1 width=104)
-   ->  Gather Motion 1:1  (slice1; segments: 1)  (cost=0.16..0.40 rows=4 width=104)
-         ->  Hash Join  (cost=0.16..0.34 rows=4 width=104)
-               Hash Cond: ((with_test2.iscd)::text = (r1.rc)::text)
-               ->  Hash Join  (cost=0.03..0.16 rows=4 width=104)
-                     Hash Cond: ((r.rc)::text = (with_test2.isc)::text)
-                     ->  Subquery Scan on r  (cost=0.00..1.09 rows=4 width=19)
-                           ->  Seq Scan on with_test3  (cost=0.00..1.05 rows=4 width=19)
-                                 Filter: (ri = '101991'::numeric)
-                     ->  Hash  (cost=1.02..1.02 rows=1 width=32)
-                           ->  Seq Scan on with_test2  (cost=0.00..1.01 rows=1 width=32)
-               ->  Hash  (cost=1.09..1.09 rows=2 width=19)
-                     ->  Subquery Scan on r1  (cost=0.00..1.09 rows=4 width=19)
-                           ->  Seq Scan on with_test3 with_test3_1  (cost=0.00..1.05 rows=4 width=19)
-                                 Filter: (ri = '101991'::numeric)
- Optimizer: Postgres query optimizer
-(16 rows)
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Sequence  (cost=0.00..1724.00 rows=1 width=32)
+   ->  Shared Scan (share slice:id 0:1)  (cost=0.00..431.00 rows=2 width=1)
+         ->  Materialize  (cost=0.00..431.00 rows=2 width=1)
+               ->  Gather Motion 1:1  (slice3; segments: 1)  (cost=0.00..431.00 rows=4 width=19)
+                     ->  Seq Scan on with_test3  (cost=0.00..431.00 rows=4 width=19)
+                           Filter: (ri = '101991'::numeric)
+   ->  Limit  (cost=0.00..1293.00 rows=1 width=32)
+         ->  Hash Join  (cost=0.00..1293.00 rows=1 width=32)
+               Hash Cond: ((share1_ref3.rc)::text = (with_test2.isc)::text)
+               ->  Shared Scan (share slice:id 0:1)  (cost=0.00..431.00 rows=2 width=12)
+               ->  Hash  (cost=862.00..862.00 rows=1 width=32)
+                     ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..862.00 rows=1 width=32)
+                           ->  Hash Join  (cost=0.00..862.00 rows=1 width=32)
+                                 Hash Cond: ((share1_ref2.rc)::text = (with_test2.iscd)::text)
+                                 ->  Redistribute Motion 1:3  (slice1)  (cost=0.00..431.00 rows=4 width=12)
+                                       ->  Result  (cost=0.00..431.00 rows=2 width=12)
+                                             ->  Shared Scan (share slice:id 1:1)  (cost=0.00..431.00 rows=2 width=12)
+                                 ->  Hash  (cost=431.00..431.00 rows=1 width=32)
+                                       ->  Seq Scan on with_test2  (cost=0.00..431.00 rows=1 width=32)
+ Optimizer: Pivotal Optimizer (GPORCA)
+(20 rows)
 
 WITH
     t1 AS (SELECT * FROM with_test2),
