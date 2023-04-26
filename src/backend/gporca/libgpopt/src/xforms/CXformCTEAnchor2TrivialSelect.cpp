@@ -112,7 +112,8 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	else
 	{
 		UlongToColRefMap *colref_mapping = GPOS_NEW(mp) UlongToColRefMap(mp);
-		pexprSelect = pexprChild->PexprCopyWithRemappedColumns(mp, colref_mapping, false);
+		pexprSelect =
+			pexprChild->PexprCopyWithRemappedColumns(mp, colref_mapping, false);
 		pexprSelect->SetPgexprorg(pexprChild->Pgexpr());
 		colref_mapping->Release();
 	}
