@@ -694,7 +694,8 @@ private:
 	CDXLNode *PdxlnFilter(CDXLNode *pdxlnCond);
 
 	// construct an array with input segment ids for the given motion expression
-	IntPtrArray *GetInputSegIdsArray(CExpression *pexprMotion);
+	IntPtrArray *GetInputSegIdsArray(CExpression *pexprMotion,
+									 BOOL fDuplicateHazardMotion = false);
 
 	// construct an array with output segment ids for the given motion expression
 	IntPtrArray *GetOutputSegIdsArray(CExpression *pexprMotion);

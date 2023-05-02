@@ -4473,7 +4473,8 @@ CTranslatorExprToDXL::PdxlnMotion(CExpression *pexprMotion,
 	GPOS_ASSERT(NULL != pexprMotion);
 	GPOS_ASSERT(1 == pexprMotion->Arity());
 
-	gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexprMotion);
+	BOOL fDuplicateHazardMotion = CUtils::FDuplicateHazardMotion(pexprMotion);
+	gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexprMotion, fDuplicateHazardMotion);
 
 	// extract components
 	CExpression *pexprChild = (*pexprMotion)[0];
@@ -4486,7 +4487,6 @@ CTranslatorExprToDXL::PdxlnMotion(CExpression *pexprMotion,
 
 	// construct a motion node
 	CDXLPhysicalMotion *motion = NULL;
-	BOOL fDuplicateHazardMotion = CUtils::FDuplicateHazardMotion(pexprMotion);
 	switch (pexprMotion->Pop()->Eopid())
 	{
 		case COperator::EopPhysicalMotionGather:
@@ -8257,7 +8257,7 @@ CTranslatorExprToDXL::GetOutputSegIdsArray(CExpression *pexprMotion)
 //
 //---------------------------------------------------------------------------
 IntPtrArray *
-CTranslatorExprToDXL::GetInputSegIdsArray(CExpression *pexprMotion)
+CTranslatorExprToDXL::GetInputSegIdsArray(CExpression *pexprMotion, BOOL fDuplicateHazardMotion)
 {
 	GPOS_ASSERT(1 == pexprMotion->Arity());
 
@@ -8280,6 +8280,20 @@ CTranslatorExprToDXL::GetInputSegIdsArray(CExpression *pexprMotion)
 		}
 		pdrgpi->Append(GPOS_NEW(m_mp) INT(iSegmentId));
 		return pdrgpi;
+	}
+
+	/* 
+		If this is a Random Motion which is sensitive for duplicates,
+		then it will be replaced by a Result node at the stage of conversion
+		from dxl plan to postgres plan. For such type of motions we 
+		set that it will be executed on the entire cluster to make the
+		scaling correct, since the data distribution is replicated.
+	 */
+	if (COperator::EopPhysicalMotionRandom == pexprMotion->Pop()->Eopid() &&
+		true == fDuplicateHazardMotion)
+	{
+		m_pdrgpiSegments->AddRef();
+		return m_pdrgpiSegments;
 	}
 
 	if (CUtils::FDuplicateHazardMotion(pexprMotion) ||
