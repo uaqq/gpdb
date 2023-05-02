@@ -1,5 +1,7 @@
 # How to run tests
 
+test
+
 ## Build docker gpdb image with developer options
 
 Change directory to gpdb sources destination. Make sure that directry doesn't contain binary objects from previous builds. Then run:
