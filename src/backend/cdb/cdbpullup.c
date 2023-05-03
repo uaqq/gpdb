@@ -325,6 +325,41 @@ cdbpullup_findEclassInTargetList(EquivalenceClass *eclass, List *targetlist,
 				continue;
 		}
 
+		foreach(lc_tle, targetlist)
+		{
+			Node	   *tlexpr = lfirst(lc_tle);
+			if (IsA(tlexpr, TargetEntry))
+				tlexpr = (Node *) ((TargetEntry *) tlexpr)->expr;
+			if (equal(tlexpr, key))
+				return key;
+		}
+	}
+
+	foreach(lc, eclass->ec_members)
+	{
+		EquivalenceMember *em = (EquivalenceMember *) lfirst(lc);
+		Expr	   *key = (Expr *) em->em_expr;
+		ListCell *lc_tle;
+
+		if (OidIsValid(hashOpFamily))
+		{
+			/*
+			 * To check if the member is hashable, we should invoke cdb_hashproc_in_opfamily
+			 * to try to see if there is a hash proc for the type in the opfamily.
+			 *
+			 * Previous code just get_opfamily_member here, that is not enough, since
+			 * there are binary compatible types, e.g. varchar and text.
+			 *
+			 * See Issue: https://github.com/greenplum-db/gpdb/issues/12700 for a detailed case.
+			 */
+			Oid hash_proc;
+
+			hash_proc = cdb_hashproc_in_opfamily_no_error(hashOpFamily, em->em_datatype);
+
+			if (!OidIsValid(hash_proc))
+				continue;
+		}
+
 		/* A constant is OK regardless of the target list */
 		if (em->em_is_const)
 			return key;
