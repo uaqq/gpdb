@@ -1190,15 +1190,15 @@ ExplainNode(PlanState *planstate, List *ancestors,
 {
 	Plan	   *plan = planstate->plan;
 	PlanState  *parentplanstate;
-	Slice	   *save_currentSlice = es->currentSlice;	/* save */
+    Slice      *save_currentSlice = es->currentSlice;    /* save */
 	const char *pname;			/* node type name for text output */
 	const char *sname;			/* node type name for non-text output */
 	const char *strategy = NULL;
 	const char *operation = NULL;
 	int			save_indent = es->indent;
 	bool		haschildren;
-	bool		skip_outer = false;
-	char	   *skip_outer_msg = NULL;
+	bool		skip_outer=false;
+	char       *skip_outer_msg = NULL;
 	int			motion_recv;
 	int			motion_snd;
 
@@ -1276,7 +1276,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_NestLoop:
 			pname = sname = "Nested Loop";
-			if (((NestLoop *) plan)->shared_outer)
+			if (((NestLoop *)plan)->shared_outer)
 			{
 				skip_outer = true;
 				skip_outer_msg = "See first subplan of Hash Join";
