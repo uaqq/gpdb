@@ -376,6 +376,10 @@ get_partitioned_policy_from_flow(Plan *plan)
 									   GP_POLICY_DEFAULT_NUMSEGMENTS());
 }
 
+/*
+	Make a single traversal to fixup rows number in slices which are
+	below Broadcast Motion nodes. 
+ */
 static bool
 broadcast_motion_walker(Node *node, RowsMutatorState *state)
 {
