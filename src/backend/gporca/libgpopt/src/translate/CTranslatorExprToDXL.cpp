@@ -4565,8 +4565,7 @@ CTranslatorExprToDXL::PdxlnMotion(CExpression *pexprMotion,
 			m_mp, m_pcf, m_phmcrdxln, pdxlnProjListChild);
 
 	// set input and output segment information
-	motion->SetSegmentInfo(inputSegmentInfo,
-						   GetOutputSegIdsArray(pexprMotion));
+	motion->SetSegmentInfo(inputSegmentInfo, GetOutputSegIdsArray(pexprMotion));
 
 	CDXLNode *pdxlnMotion = GPOS_NEW(m_mp) CDXLNode(m_mp, motion);
 	CDXLPhysicalProperties *dxl_properties = GetProperties(pexprMotion);
@@ -7699,9 +7698,10 @@ CTranslatorExprToDXL::GetProperties(const CExpression *pexpr)
 			pexpr->GetDrvdPropPlan()->Pds()->Edt())
 	{
 		// if distribution is replicated, multiply number of rows by number of segments
-		ULONG ulSegments = pexpr->GetMotionInputs() ?
-						   pexpr->GetMotionInputs()->Size() :
-						   COptCtxt::PoctxtFromTLS()->GetCostModel()->UlHosts();
+		ULONG ulSegments =
+			pexpr->GetMotionInputs()
+				? pexpr->GetMotionInputs()->Size()
+				: COptCtxt::PoctxtFromTLS()->GetCostModel()->UlHosts();
 		rows = rows * ulSegments;
 	}
 
