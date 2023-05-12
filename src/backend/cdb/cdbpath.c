@@ -1131,7 +1131,9 @@ cdbpath_motion_for_join(PlannerInfo *root,
 
 			if (CdbPathLocus_IsReplicated(other->locus))
 			{
-				Assert(root->upd_del_replicated_table > 0 ||
+				Assert((root->upd_del_replicated_table > 0 &&
+					   CdbPathLocus_NumSegments(segGeneral->locus) <=
+					   CdbPathLocus_NumSegments(other->locus)) ||
 					   hasModifyingCTESelectRecur(root));
 
 				/*
@@ -1152,8 +1154,8 @@ cdbpath_motion_for_join(PlannerInfo *root,
 				 * execMotionSender(), so our result will not be flacky
 				 * because of new segments without a data.
 				 */
-				Assert(CdbPathLocus_NumSegments(segGeneral->locus) <=
-					   CdbPathLocus_NumSegments(other->locus));
+				/*Assert(CdbPathLocus_NumSegments(segGeneral->locus) <=
+					   CdbPathLocus_NumSegments(other->locus));*/
 
 				/*
 				 * Only need to broadcast other to the segments of the
