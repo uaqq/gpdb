@@ -474,7 +474,7 @@ vacuum_assign_compaction_segno(Relation onerel,
 		return true;
 	}
 
-	if (HasSerializableBackends(false))
+	if (!ConditionalLockRelationOid(onerel->rd_id, AccessExclusiveLock) || HasSerializableBackends(false))
 	{
 		elog(LOG, "Skip compaction because of concurrent serializable transactions");
 		return false;
