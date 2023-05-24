@@ -345,9 +345,15 @@ cdbpath_create_motion_path(PlannerInfo *root,
 			subpath->locus.numsegments = numsegments;
 			return subpath;
 		}
-
-		/* Other destinations aren't used or supported at present. */
-		goto invalid_motion_request;
+		else if (CdbPathLocus_IsHashed(locus) &&
+				(CdbPathLocus_NumSegments(locus) >
+				 CdbPathLocus_NumSegments(subpath->locus)))
+		{
+			pathkeys = subpath->pathkeys;
+		}
+		else
+			/* Other destinations aren't used or supported at present. */
+			goto invalid_motion_request;
 	}
 
 	/* Most motions from SegmentGeneral (replicated table) are disallowed */
@@ -1290,30 +1296,66 @@ cdbpath_motion_for_join(PlannerInfo *root,
 	 * join, but change the current one. To support this solution we should
 	 * add more cases to cdbpath_create_motion_path().
 	 */
-	else if (CdbPathLocus_IsReplicated(outer.locus))
+	else if (CdbPathLocus_IsReplicated(outer.locus) ||
+			 CdbPathLocus_IsReplicated(inner.locus))
 	{
-		if (root->upd_del_replicated_table > 0 ||
-			hasModifyingCTESelectRecur(root))
-			CdbPathLocus_MakeReplicated(&inner.move_to,
-										CdbPathLocus_NumSegments(outer.locus));
+		CdbpathMfjRel *replicated;
+		CdbpathMfjRel *other;
+
+		if (CdbPathLocus_IsReplicated(outer.locus))
+		{
+			replicated = &outer;
+			other = &inner;
+		}
+		else
+		{
+			replicated = &inner;
+			other = &outer;
+		}
+
+		if (root->upd_del_replicated_table > 0)
+			CdbPathLocus_MakeReplicated(&other->move_to,
+										CdbPathLocus_NumSegments(replicated->locus));
+		else if (hasModifyingCTESelectRecur(root))
+		{
+			if (CdbPathLocus_IsEntry(other->locus))
+				CdbPathLocus_MakeReplicated(&other->move_to,
+											CdbPathLocus_NumSegments(replicated->locus));
+			else if (CdbPathLocus_IsSingleQE(other->locus))
+			{
+				replicated->move_to = other->locus;
+				replicated->move_to.numsegments = CdbPathLocus_CommonSegments(replicated->locus,
+												  other->locus);
+			}
+			else if (CdbPathLocus_IsPartitioned(other->locus) &&
+					 CdbPathLocus_NumSegments(replicated->locus) <
+					 CdbPathLocus_NumSegments(other->locus))
+			{
+				if (CdbPathLocus_IsHashed(other->locus) &&
+					replicated->ok_to_replicate &&
+					cdbpath_match_preds_to_distkey(root,
+												   redistribution_clauses,
+												   other->path,
+												   other->locus,
+												   &replicated->move_to))
+					/* the result is distributed on the same segments with other */
+					AssertEquivalent(CdbPathLocus_NumSegments(other->locus),
+									 CdbPathLocus_NumSegments(replicated->move_to));
+				else
+				{
+					int numsegments = CdbPathLocus_NumSegments(replicated->locus);
+					CdbPathLocus_MakeSingleQE(&replicated->move_to, numsegments);
+					CdbPathLocus_MakeSingleQE(&other->move_to, numsegments);
+				}
+			}
+		}
 		else
 		{
 			Assert(false);
 			goto fail;
 		}
 	}
-	else if (CdbPathLocus_IsReplicated(inner.locus))
-	{
-		if (root->upd_del_replicated_table > 0 ||
-			hasModifyingCTESelectRecur(root))
-			CdbPathLocus_MakeReplicated(&outer.move_to,
-										CdbPathLocus_NumSegments(inner.locus));
-		else
-		{
-			Assert(false);
-			goto fail;
-		}
-	}
+
 	/*
 	 * Is either source confined to a single process? NB: Motion to a single
 	 * process (qDisp or qExec) is the only motion in which we may use Merge

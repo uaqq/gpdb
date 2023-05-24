@@ -565,6 +565,15 @@ with cte as (
     insert into with_dml_dr select i, i * 100 from generate_series(1,5) i
     returning i
 ) select count(*) from cte left join with_dml_dr_seg1 on cte.i = with_dml_dr_seg1.i;
+explain (costs off)
+with cte as (
+    insert into with_dml_dr_seg1 select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
+with cte as (
+    insert into with_dml_dr_seg1 select i, i * 100 from generate_series(1,5) i
+    returning i
+) select count(*) from cte join with_dml_dr on cte.i = with_dml_dr.i;
 truncate with_dml_dr;
 drop table with_dml_dr_seg1;
 
