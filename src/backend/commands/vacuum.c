@@ -922,25 +922,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 			SIMPLE_FAULT_INJECTOR("vacuum_relation_open_relation_during_drop_phase");
 			onerel = try_relation_open(relid, AccessExclusiveLock, true /* dontwait */);
 
-			if (!RelationIsValid(onerel))
-			{
-				/* Couldn't get AccessExclusiveLock. */
-				PopActiveSnapshot();
-				CommitTransactionCommand();
-
-				/*
-				 * Skip performing DROP and continue with other segfiles in
-				 * case they have crossed threshold and need to be compacted
-				 * or marked as AOSEG_STATE_AWAITING_DROP. To ensure that
-				 * vacuum decreases the age for appendonly tables even if drop
-				 * phase is getting skipped, perform cleanup phase when done
-				 * iterating through all segfiles so that the relfrozenxid
-				 * value is updated correctly in pg_class.
-				 */
-				continue;
-			}
-
-			if (HasSerializableBackends(false))
+			if (!RelationIsValid(onerel) || HasSerializableBackends(false))
 			{
 				/*
 				 * Checking at this point is safe because
