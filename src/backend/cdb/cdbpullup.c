@@ -298,7 +298,8 @@ Expr *
 cdbpullup_findEclassInTargetList(EquivalenceClass *eclass, List *targetlist,
 								 Oid hashOpFamily)
 {
-	ListCell   *lc;
+	Expr	 *fin_expr = NULL;
+	ListCell *lc;
 
 	foreach(lc, eclass->ec_members)
 	{
@@ -326,8 +327,11 @@ cdbpullup_findEclassInTargetList(EquivalenceClass *eclass, List *targetlist,
 		}
 
 		/* A constant is OK regardless of the target list */
-		if (em->em_is_const)
-			return key;
+		//if (em->em_is_const)
+		//{
+		//	fin_expr = key;
+		//	continue;
+		//}
 
 		/*-------
 		 * Try to find this EC member in the target list.
@@ -394,7 +398,7 @@ cdbpullup_findEclassInTargetList(EquivalenceClass *eclass, List *targetlist,
 		}
 	}
 
-	return NULL;
+	return fin_expr;
 }
 
 /*
