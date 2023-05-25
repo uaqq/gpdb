@@ -2,6 +2,14 @@
 -- test helpers
 ----------------------------------------------------------------------------------------------------------
 
+-- start_matchsubs
+-- m/oid_\d+/
+-- s/oid_\d+/oid_oid/
+
+-- m/pg_ao(seg|visimap)_\d+/
+-- s/pg_ao(seg|visimap)_\d+/pg_ao$1_oid/
+-- end_matchsubs
+
 -- function that mocks manual installation of arenadata_toolkit from bundle
 CREATE FUNCTION mock_manual_installation() RETURNS VOID AS $$
 BEGIN
@@ -15,15 +23,28 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- function that returns information about tables that belongs to the arenadata_toolkit schema (and schema itself)
-CREATE FUNCTION get_toolkit_objects_info() RETURNS TABLE (objid OID, objtype TEXT, objname NAME, objstorage "char", objacl TEXT) AS $$
+CREATE or replace FUNCTION get_toolkit_objects_info() RETURNS TABLE (objid oid, textoid text, objtype TEXT, objname NAME, objstorage "char", objacl TEXT) AS $$
+DECLARE
+	r RECORD;
+	tables name[];
 BEGIN
+	FOR r IN 
+		SELECT oid, relname, relstorage from pg_class where relnamespace = (select oid from pg_namespace where nspname = 'arenadata_toolkit') order by relname
+	LOOP
+		SELECT array_append(tables, r.relname) into tables;
+		-- AO tables creates additional pg_aoseg and pg_aovisimap tables with suffix _<oid> where oid - oid of AO table
+		IF r.relstorage = 'a'::"char" THEN
+			SELECT array_append(tables, ('pg_aoseg_' || r.oid)::name) into tables;
+			SELECT array_append(tables, ('pg_aovisimap_' || r.oid)::name) into tables;
+		END IF;
+	END LOOP;
 	RETURN QUERY SELECT * FROM
-		(SELECT oid, 'schema', nspname, '-'::"char",
+		(SELECT oid, 'oid_' || oid, 'schema', nspname, '-'::"char",
 			replace(nspacl::text, (select current_user), 'owner') AS acl -- replace current_user to static string, to prevent test flakiness
 			FROM pg_namespace WHERE nspname = 'arenadata_toolkit') a UNION
-		(SELECT oid, 'table', relname, relstorage,
+		(SELECT oid, 'oid_' || oid, 'table', relname, relstorage,
 			replace(relacl::text, (select current_user), 'owner') AS acl -- replace current_user to static string, to prevent test flakiness
-			FROM pg_class WHERE relname IN (SELECT table_name FROM information_schema.tables WHERE table_schema = 'arenadata_toolkit')
+			FROM pg_class WHERE relname IN (select unnest(tables))
 		);
 END;
 $$ LANGUAGE plpgsql;
@@ -41,16 +62,16 @@ SELECT mock_manual_installation();
 SELECT * FROM pg_depend d JOIN (SELECT * FROM get_toolkit_objects_info()) objs ON d.objid = objs.objid AND d.deptype='e';
 
 -- show toolkit objects (and their grants) that belongs to arenadata_toolkit schema
-SELECT objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
+SELECT textoid, objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
 
 -- run the unpackaged script
 CREATE extension arenadata_toolkit FROM unpackaged;
 
 -- show toolkit objects (and their grants) that belongs to arenadata_toolkit schema after creating extension
-SELECT objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
+SELECT textoid, objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
 
 -- check that toolkit objects now depends on extension
-SELECT objname, objtype, extname, deptype FROM pg_depend d JOIN
+SELECT textoid, objname, objtype, extname, deptype FROM pg_depend d JOIN
 	(SELECT * FROM get_toolkit_objects_info()) objs ON d.objid = objs.objid JOIN
 	pg_extension e ON d.refobjid = e.oid
 WHERE d.deptype = 'e' AND e.extname = 'arenadata_toolkit' ORDER BY objname;
@@ -75,16 +96,16 @@ CREATE EXTERNAL WEB TABLE arenadata_toolkit.db_files (field TEXT) EXECUTE 'echo 
 SELECT * FROM pg_depend d JOIN (SELECT * FROM get_toolkit_objects_info()) objs ON d.objid = objs.objid AND d.deptype='e';
 
 -- show toolkit objects (and their grants) that belongs to arenadata_toolkit schema
-SELECT objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
+SELECT textoid, objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
 
 -- run the unpackaged script
 CREATE extension arenadata_toolkit FROM unpackaged;
 
 -- show toolkit objects (and their grants) that belongs to arenadata_toolkit schema after creating extension
-SELECT objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
+SELECT textoid, objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
 
 -- check that toolkit objects now depends on extension
-SELECT objname, objtype, extname, deptype FROM pg_depend d JOIN
+SELECT textoid, objname, objtype, extname, deptype FROM pg_depend d JOIN
 	(SELECT * FROM get_toolkit_objects_info()) objs ON d.objid = objs.objid JOIN
 	pg_extension e ON d.refobjid = e.oid
 WHERE d.deptype = 'e' AND e.extname = 'arenadata_toolkit' ORDER BY objname;
@@ -105,10 +126,10 @@ SELECT * FROM (SELECT * FROM get_toolkit_objects_info()) t;
 create extension arenadata_toolkit;
 
 -- show toolkit objects (and their grants) that belongs to arenadata_toolkit schema after creating extension
-SELECT objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
+SELECT textoid, objname, objtype, objstorage, objacl FROM (SELECT * FROM get_toolkit_objects_info()) t ORDER BY objname;
 
 -- check that toolkit objects were created by extension and check their grants
-SELECT objname, objtype, extname, deptype FROM pg_depend d JOIN
+SELECT textoid, objname, objtype, extname, deptype FROM pg_depend d JOIN
 	(SELECT * FROM get_toolkit_objects_info()) objs ON d.objid = objs.objid JOIN
 	pg_extension e ON d.refobjid = e.oid
 WHERE d.deptype = 'e' AND e.extname = 'arenadata_toolkit' ORDER BY objname;
