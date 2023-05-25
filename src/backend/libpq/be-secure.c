@@ -484,6 +484,7 @@ my_sock_write(BIO *h, const char *buf, int size)
 	prepare_for_client_write();
 
 	res = send(h->num, buf, size, 0);
+	BIO_clear_retry_flags(h);
 	if (res <= 0)
 	{
 		if (errno == EINTR)
@@ -836,6 +837,7 @@ initialize_SSL(void)
 	/* set up ephemeral DH keys, and disallow SSL v2 while at it */
 	SSL_CTX_set_tmp_dh_callback(SSL_context, tmp_dh_cb);
 	SSL_CTX_set_options(SSL_context, SSL_OP_SINGLE_DH_USE | SSL_OP_NO_SSLv2);
+	SSL_CTX_set_ecdh_auto(SSL_context, 1);
 
 	/* setup the allowed cipher list */
 	if (SSL_CTX_set_cipher_list(SSL_context, SSLCipherSuites) != 1)
