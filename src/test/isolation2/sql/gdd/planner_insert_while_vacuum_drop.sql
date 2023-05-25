@@ -51,7 +51,7 @@ SELECT gp_wait_until_triggered_fault('vacuum_relation_open_relation_during_drop_
 2: set optimizer to off;
 -- INSERT takes RowExclusiveLock on the leaf partition on QE
 2&: INSERT INTO ao_part_tbl VALUES (1, 1);
-SELECT wait_until_acquired_lock_on_rel('ao_part_tbl_1_prt_1', 'ShareUpdateExclusiveLock', content) FROM gp_segment_configuration WHERE content = 1 AND role = 'p';
+SELECT wait_until_acquired_lock_on_rel('ao_part_tbl_1_prt_1', 'RowExclusiveLock', content) FROM gp_segment_configuration WHERE content = 1 AND role = 'p';
 
 -- Reset the fault on VACUUM. 
 SELECT gp_inject_fault('vacuum_relation_open_relation_during_drop_phase', 'reset', dbid) FROM gp_segment_configuration WHERE content = 1 AND role = 'p';
