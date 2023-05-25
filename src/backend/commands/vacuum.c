@@ -684,7 +684,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 	if (vacstmt->appendonly_phase == AOVAC_DROP)
 	{
 		Assert(Gp_role == GP_ROLE_EXECUTE);
-		lmode = AccessExclusiveLock;
+		lmode = ShareUpdateExclusiveLock;
 		SIMPLE_FAULT_INJECTOR("vacuum_relation_open_relation_during_drop_phase");
 	}
 	else if (!(vacstmt->options & VACOPT_VACUUM))
@@ -920,7 +920,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 			 * that all segfiles are marked.
 			 */
 			SIMPLE_FAULT_INJECTOR("vacuum_relation_open_relation_during_drop_phase");
-			onerel = try_relation_open(relid, AccessExclusiveLock, true /* dontwait */);
+			onerel = try_relation_open(relid, lmode, true /* dontwait */);
 
 			if (!RelationIsValid(onerel))
 			{
