@@ -11,7 +11,6 @@ CREATE or REPLACE FUNCTION wait_until_acquired_lock_on_rel (rel_name text, lmode
   bool AS $$ /*in func*/
 declare /*in func*/
   result bool; /*in func*/
-  i int default 0; /*in func*/
 begin /*in func*/
   result := false; /*in func*/
   -- Wait until lock is acquired /*in func*/
@@ -22,8 +21,7 @@ begin /*in func*/
       and l.mode=lmode /*in func*/
       and l.gp_segment_id=segment_id; /*in func*/
     perform pg_sleep(0.1); /*in func*/
-    i = i + 1; /*in func*/
-    if i >= 1000 then return result; end if; /*in func*/
+    if clock_timestamp() >= now() + '1 min'::interval then return result; end if; /*in func*/
   end loop; /*in func*/
   return result; /*in func*/
 end; /*in func*/
