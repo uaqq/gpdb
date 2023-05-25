@@ -4763,6 +4763,14 @@ PostgresMain(int argc, char *argv[],
 	 * because if we are under a postmaster then BackendInitialize() did it.
 	 */
 
+	static char stack[SIGSTKSZ];
+	stack_t ss = {
+		.ss_flags = 0,
+		.ss_size = SIGSTKSZ,
+		.ss_sp = stack,
+	};
+	sigaltstack(&ss, 0);
+
 	/*
 	 * Set up signal handlers and masks.
 	 *

@@ -60,7 +60,7 @@ pqsignal(int signo, pqsigfunc func)
 
 	act.sa_handler = func;
 	sigemptyset(&act.sa_mask);
-	act.sa_flags = SA_RESTART;
+	act.sa_flags = SA_RESTART|SA_ONSTACK;
 #ifdef SA_NOCLDSTOP
 	if (signo == SIGCHLD)
 		act.sa_flags |= SA_NOCLDSTOP;
