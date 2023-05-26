@@ -615,10 +615,11 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 			}
 			else
 			{
+				/* Decide whether one need to bring the result to QD*/
 				if ((plan->flow->flotype == FLOW_PARTITIONED ||
 					(plan->flow->flotype == FLOW_SINGLETON &&
 					 plan->flow->locustype == CdbLocusType_SegmentGeneral) ||
-					 query->hasModifyingCTE) &&
+					 plan->flow->flotype == FLOW_REPLICATED) &&
 					 !root->glob->is_parallel_cursor)
 					bringResultToDispatcher = true;
 

@@ -248,9 +248,8 @@ cdbpath_create_motion_path(PlannerInfo *root,
 		 */
 		if (CdbPathLocus_IsReplicated(subpath->locus))
 		{
-			if (root->upd_del_replicated_table == 0 &&
-				!hasModifyingCTESelectRecur(root))
-				goto invalid_motion_request;
+			int a;
+			a = 5;
 		}
 
 		/*
