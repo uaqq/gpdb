@@ -494,8 +494,7 @@ AOCSDrop(Relation aorel,
  * Performs dead segments collection for an ao_column relation.
  */
 Bitmapset *
-AOCSCollectDeadSegments(Relation aorel,
-						List *compaction_segno)
+AOCSCollectDeadSegments(Relation aorel)
 {
 	int	total_segfiles;
 	AOCSFileSegInfo **segfile_array;

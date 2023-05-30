@@ -508,7 +508,7 @@ HasLockForSegmentFileDrop(Relation aorel)
  * Performs dead segments collection for an ao_row relation.
  */
 Bitmapset *
-AppendOnlyCollectDeadSegments(Relation aorel, List *compaction_segno)
+AppendOnlyCollectDeadSegments(Relation aorel)
 {
 	int total_segfiles;
 	FileSegInfo **segfile_array;
