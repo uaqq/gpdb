@@ -509,7 +509,7 @@ HasLockForSegmentFileDrop(Relation aorel)
  * Performs dead segments collection for an ao_row relation.
  */
 Bitmapset *
-AppendOnlyCollectDeadSegments(Relation aorel)
+AppendOnlyCollectDeadSegments(Relation aorel, List *compaction_segno)
 {
 	int total_segfiles;
 	FileSegInfo **segfile_array;
@@ -531,23 +531,26 @@ AppendOnlyCollectDeadSegments(Relation aorel)
 	{
 		int segno = segfile_array[i]->segno;
 
-		FileSegInfo *fsinfo = GetFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
-		if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
+		if (list_member_int(compaction_segno, segno))
 		{
-			if (TransactionIdPrecedesOrEquals(segfile_array[i]->tupleVisibilitySummary.xmin, cutoff_xid) && TransactionIdPrecedes(cutoff_xid, GetTopTransactionId()))
+			FileSegInfo *fsinfo = GetFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
+			if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
 			{
-				ereportif(Debug_appendonly_print_segfile_choice, LOG,
-						(errmsg("Skip segno %d for drop "
-								"relation \"%s\" (%d)", segno,
-								get_rel_name(aorel->rd_id), aorel->rd_id)));
+				if (TransactionIdPrecedesOrEquals(segfile_array[i]->tupleVisibilitySummary.xmin, cutoff_xid) && TransactionIdPrecedes(cutoff_xid, GetTopTransactionId()))
+				{
+					ereportif(Debug_appendonly_print_segfile_choice, LOG,
+							(errmsg("Skip segno %d for drop "
+									"relation \"%s\" (%d)", segno,
+									get_rel_name(aorel->rd_id), aorel->rd_id)));
+				}
+				else
+				{
+					dead_segs = bms_add_member(dead_segs, segno);
+				}
 			}
-			else
-			{
-				dead_segs = bms_add_member(dead_segs, segno);
-			}
-		}
 
-		pfree(fsinfo);
+			pfree(fsinfo);
+		}
 	}
 
 	if (segfile_array)

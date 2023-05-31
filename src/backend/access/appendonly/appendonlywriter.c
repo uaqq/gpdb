@@ -772,8 +772,6 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 								"relation \"%s\" (%d)", i,
 								get_rel_name(relid), relid)));
 
-				appendOnlyInsertXact = true;
-				segfilestat->xid = CurrentXid;
 				continue;
 			}
 
@@ -1812,7 +1810,6 @@ AtCommit_AppendOnly(void)
 						   segfilestat->state == COMPACTION_USE ||
 						   segfilestat->state == DROP_USE ||
 						   segfilestat->state == PSEUDO_COMPACTION_USE ||
-						   segfilestat->state == COMPACTED_AWAITING_DROP ||
 						   segfilestat->state == COMPACTED_DROP_SKIPPED);
 
 					ereportif(Debug_appendonly_print_segfile_choice, LOG,
@@ -1942,7 +1939,6 @@ AtEOXact_AppendOnly_StateTransition(AORelHashEntry aoentry, int segno,
 		   segfilestat->state == COMPACTION_USE ||
 		   segfilestat->state == DROP_USE ||
 		   segfilestat->state == PSEUDO_COMPACTION_USE ||
-		   segfilestat->state == COMPACTED_AWAITING_DROP ||
 		   segfilestat->state == COMPACTED_DROP_SKIPPED);
 
 	oldstate = segfilestat->state;
@@ -1986,10 +1982,6 @@ AtEOXact_AppendOnly_StateTransition(AORelHashEntry aoentry, int segno,
 	else if (segfilestat->state == COMPACTED_DROP_SKIPPED)
 	{
 		segfilestat->state = AWAITING_DROP_READY;
-	}
-	else if (segfilestat->state == COMPACTED_AWAITING_DROP)
-	{
-
 	}
 	else
 	{
