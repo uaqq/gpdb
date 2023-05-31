@@ -772,7 +772,6 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 								"relation \"%s\" (%d)", i,
 								get_rel_name(relid), relid)));
 
-				Assert(segfilestat->state == COMPACTED_AWAITING_DROP);
 				appendOnlyInsertXact = true;
 				segfilestat->xid = CurrentXid;
 				continue;
