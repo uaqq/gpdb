@@ -734,7 +734,7 @@ DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	return;
 }
 
-void
+List *
 RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
@@ -745,12 +745,12 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	Assert(Gp_role != GP_ROLE_EXECUTE);
 	if (Gp_role == GP_ROLE_UTILITY)
 	{
-		return;
+		return compactedSegmentFileList;
 	}
 
 	if (compactedSegmentFileList == NIL)
 	{
-		return;
+		return compactedSegmentFileList;
 	}
 
 	acquire_lightweight_lock();
@@ -772,6 +772,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 								"relation \"%s\" (%d)", i,
 								get_rel_name(relid), relid)));
 
+				compactedSegmentFileList = list_delete_int(compactedSegmentFileList, i);
 				continue;
 			}
 
@@ -787,7 +788,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	}
 
 	release_lightweight_lock();
-	return;
+	return compactedSegmentFileList;
 }
 
 /*

@@ -211,7 +211,7 @@ extern Size AppendOnlyWriterShmemSize(void);
 extern void InitAppendOnlyWriter(void);
 extern Size AppendOnlyWriterShmemSize(void);
 extern int	SetSegnoForWrite(Relation rel, int existingsegno);
-extern void RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList);
+extern List *RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList);
 extern void DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList);
 extern List *SetSegnoForCompaction(Relation rel, List *compactedSegmentFileList,
 					  List *insertedSegmentFileList, bool *isdrop);

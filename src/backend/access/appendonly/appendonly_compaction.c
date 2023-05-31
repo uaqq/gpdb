@@ -31,7 +31,6 @@
 #include "access/heapam.h"
 #include "access/transam.h"
 #include "access/tuptoaster.h"
-#include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_appendonly_fn.h"
@@ -40,7 +39,6 @@
 #include "commands/vacuum.h"
 #include "executor/executor.h"
 #include "nodes/execnodes.h"
-#include "storage/procarray.h"
 #include "storage/lmgr.h"
 #include "utils/faultinjector.h"
 #include "utils/lsyscache.h"
@@ -514,7 +512,6 @@ AppendOnlyCollectDeadSegments(Relation aorel, List *compaction_segno)
 	int total_segfiles;
 	FileSegInfo **segfile_array;
 	Snapshot appendOnlyMetaDataSnapshot = SnapshotSelf;
-	TransactionId cutoff_xid = GetOldestXmin(NULL, true);
 	Bitmapset *dead_segs = NULL;
 
 
@@ -531,26 +528,14 @@ AppendOnlyCollectDeadSegments(Relation aorel, List *compaction_segno)
 	{
 		int segno = segfile_array[i]->segno;
 
-		if (list_member_int(compaction_segno, segno))
-		{
-			FileSegInfo *fsinfo = GetFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
-			if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
-			{
-				if (TransactionIdPrecedesOrEquals(segfile_array[i]->tupleVisibilitySummary.xmin, cutoff_xid) && TransactionIdPrecedes(cutoff_xid, GetTopTransactionId()))
-				{
-					ereportif(Debug_appendonly_print_segfile_choice, LOG,
-							(errmsg("Skip segno %d for drop "
-									"relation \"%s\" (%d)", segno,
-									get_rel_name(aorel->rd_id), aorel->rd_id)));
-				}
-				else
-				{
-					dead_segs = bms_add_member(dead_segs, segno);
-				}
-			}
+		if (!list_member_int(compaction_segno, segno))
+			continue;
 
-			pfree(fsinfo);
-		}
+		FileSegInfo *fsinfo = GetFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
+		if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
+			dead_segs = bms_add_member(dead_segs, segno);
+
+		pfree(fsinfo);
 	}
 
 	if (segfile_array)
