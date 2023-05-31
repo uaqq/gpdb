@@ -29,6 +29,7 @@
 #include "libpq-fe.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
+#include "storage/procarray.h"
 #include "utils/builtins.h"
 #include "utils/faultinjector.h"
 #include "utils/guc.h"
@@ -737,6 +738,7 @@ void
 RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
+	TransactionId cutoff_xid = GetOldestXmin(NULL, true);
 	AORelHashEntryData *aoentry;
 	int			i;
 
@@ -763,6 +765,19 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 
 		if (list_member_int(compactedSegmentFileList, i))
 		{
+			if (TransactionIdPrecedesOrEquals(segfilestat->latestWriteXid, cutoff_xid) && TransactionIdPrecedes(cutoff_xid, GetTopTransactionId()))
+			{
+				ereportif(Debug_appendonly_print_segfile_choice, LOG,
+						(errmsg("Skip segno %d for drop "
+								"relation \"%s\" (%d)", i,
+								get_rel_name(relid), relid)));
+
+				Assert(segfilestat->state == COMPACTED_AWAITING_DROP);
+				appendOnlyInsertXact = true;
+				segfilestat->xid = CurrentXid;
+				continue;
+			}
+
 			ereportif(Debug_appendonly_print_segfile_choice, LOG,
 					  (errmsg("Register segno %d for drop "
 							  "relation \"%s\" (%d)", i,
@@ -1798,6 +1813,7 @@ AtCommit_AppendOnly(void)
 						   segfilestat->state == COMPACTION_USE ||
 						   segfilestat->state == DROP_USE ||
 						   segfilestat->state == PSEUDO_COMPACTION_USE ||
+						   segfilestat->state == COMPACTED_AWAITING_DROP ||
 						   segfilestat->state == COMPACTED_DROP_SKIPPED);
 
 					ereportif(Debug_appendonly_print_segfile_choice, LOG,
@@ -1927,6 +1943,7 @@ AtEOXact_AppendOnly_StateTransition(AORelHashEntry aoentry, int segno,
 		   segfilestat->state == COMPACTION_USE ||
 		   segfilestat->state == DROP_USE ||
 		   segfilestat->state == PSEUDO_COMPACTION_USE ||
+		   segfilestat->state == COMPACTED_AWAITING_DROP ||
 		   segfilestat->state == COMPACTED_DROP_SKIPPED);
 
 	oldstate = segfilestat->state;
@@ -1970,6 +1987,10 @@ AtEOXact_AppendOnly_StateTransition(AORelHashEntry aoentry, int segno,
 	else if (segfilestat->state == COMPACTED_DROP_SKIPPED)
 	{
 		segfilestat->state = AWAITING_DROP_READY;
+	}
+	else if (segfilestat->state == COMPACTED_AWAITING_DROP)
+	{
+
 	}
 	else
 	{
