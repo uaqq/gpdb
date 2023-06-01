@@ -772,6 +772,9 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 								"relation \"%s\" (%d)", i,
 								get_rel_name(relid), relid)));
 
+				appendOnlyInsertXact = true;
+				segfilestat->xid = CurrentXid;
+				segfilestat->state = COMPACTED_DROP_SKIPPED;
 				compactedSegmentFileList = list_delete_int(compactedSegmentFileList, i);
 				continue;
 			}
