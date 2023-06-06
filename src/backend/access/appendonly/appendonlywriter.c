@@ -735,7 +735,7 @@ DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 }
 
 List *
-RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
+RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
 	TransactionId cutoff_xid = GetOldestXmin(NULL, true);
@@ -765,7 +765,10 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 
 		if (list_member_int(compactedSegmentFileList, i))
 		{
-			if (TransactionIdPrecedesOrEquals(segfilestat->latestWriteXid, cutoff_xid) && TransactionIdPrecedes(cutoff_xid, GetTopTransactionId()))
+			if (!exclusive && (
+				(cutoff_xid == GetTopTransactionId() && GetTopTransactionId() == snapshot->xmin && snapshot->xmin == snapshot->xmax && TransactionIdPrecedes(segfilestat->latestWriteXid, cutoff_xid)) ||
+				(cutoff_xid == snapshot->xmin && snapshot->xmax == GetTopTransactionId() && TransactionIdFollows(segfilestat->latestWriteXid, cutoff_xid)) ||
+				(segfilestat->latestWriteXid == cutoff_xid && GetTopTransactionId() == snapshot->xmin && snapshot->xmin == snapshot->xmax && TransactionIdFollows(snapshot->xmin, cutoff_xid))))
 			{
 				ereportif(Debug_appendonly_print_segfile_choice, LOG,
 						(errmsg("Skip segno %d for drop "

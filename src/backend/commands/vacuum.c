@@ -852,6 +852,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 		{
 			List	   *compactNowList = NIL;
 			int			insertSegNo = -1;
+			bool		exclusive = false;
 
 			if (gp_appendonly_compaction)
 			{
@@ -920,7 +921,15 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 			 * that all segfiles are marked.
 			 */
 			SIMPLE_FAULT_INJECTOR("vacuum_relation_open_relation_during_drop_phase");
-			onerel = try_relation_open(relid, lmode, true /* dontwait */);
+			onerel = try_relation_open(relid, AccessExclusiveLock, true /* dontwait */);
+			if (RelationIsValid(onerel))
+			{
+				exclusive = true;
+			}
+			else if (lmode != AccessExclusiveLock)
+			{
+				onerel = try_relation_open(relid, lmode, true /* dontwait */);
+			}
 
 			if (!RelationIsValid(onerel))
 			{
@@ -966,7 +975,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 				   RelationGetRelationName(onerel));
 
 			/* Perform the DROP phase */
-			compactNowList = RegisterSegnoForCompactionDrop(relid, compactNowList);
+			compactNowList = RegisterSegnoForCompactionDrop(relid, compactNowList, exclusive);
 
 			vacuum_rel_ao_phase(onerel, relid, vacstmt, lmode, for_wraparound,
 								NIL,	/* insert segno */
