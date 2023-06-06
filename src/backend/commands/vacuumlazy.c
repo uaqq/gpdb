@@ -175,7 +175,7 @@ static bool heap_page_is_all_visible(Relation rel, Buffer buf,
 static void ao_vacuum_rel_prepare(Relation onerel, VacuumStmt *vacstmt);
 static void ao_vacuum_rel_compact(Relation onerel, VacuumStmt *vacstmt);
 static void ao_vacuum_rel_cleanup(Relation onerel, VacuumStmt *vacstmt, LVRelStats *vacrelstats);
-static void ao_vacuum_rel_recycle_dead_segments(Relation onerel, VacuumStmt *vacstmt);
+static void ao_vacuum_rel_recycle_dead_segments(Relation onerel, VacuumStmt *vacstmt, bool prepare);
 
 
 /*
@@ -555,7 +555,7 @@ ao_vacuum_rel_prepare(Relation onerel, VacuumStmt *vacstmt)
 		 *
 		 * This could run in a local transaction.
 		 */
-		ao_vacuum_rel_recycle_dead_segments(onerel, vacstmt);
+		ao_vacuum_rel_recycle_dead_segments(onerel, vacstmt, true);
 
 	/*
 	 * Also truncate all live segments to the EOF values stored in pg_aoseg.
@@ -622,15 +622,15 @@ ao_vacuum_rel_cleanup(Relation onerel, VacuumStmt *vacstmt, LVRelStats *vacrelst
  * Recycling AWAITING_DROP segments.
  */
 static void
-ao_vacuum_rel_recycle_dead_segments(Relation onerel, VacuumStmt *vacstmt)
+ao_vacuum_rel_recycle_dead_segments(Relation onerel, VacuumStmt *vacstmt, bool prepare)
 {
 	Bitmapset	*dead_segs;
 	bool		need_drop;
 
 	if (RelationIsAoRows(onerel))
-		dead_segs = AppendOnlyCollectDeadSegments(onerel, vacstmt->appendonly_compaction_segno);
+		dead_segs = AppendOnlyCollectDeadSegments(onerel, vacstmt->appendonly_compaction_segno, prepare);
 	else
-		dead_segs = AOCSCollectDeadSegments(onerel, vacstmt->appendonly_compaction_segno);
+		dead_segs = AOCSCollectDeadSegments(onerel, vacstmt->appendonly_compaction_segno, prepare);
 
 	need_drop = !bms_is_empty(dead_segs);
 	if (need_drop)
@@ -1967,7 +1967,7 @@ vacuum_appendonly_rel(Relation aorel, VacuumStmt *vacstmt)
 		elogif(Debug_appendonly_print_compaction, LOG,
 			"Vacuum drop phase %s", RelationGetRelationName(aorel));
 
-		ao_vacuum_rel_recycle_dead_segments(aorel, vacstmt);
+		ao_vacuum_rel_recycle_dead_segments(aorel, vacstmt, false);
 	}
 	else
 		ao_vacuum_rel_compact(aorel, vacstmt);

@@ -23,7 +23,8 @@
 
 extern void AppendOptimizedDropDeadSegments(Relation aorel, Bitmapset *segnos);
 extern Bitmapset *AppendOnlyCollectDeadSegments(Relation aorel,
-				  List *compaction_segno);
+				  List *compaction_segno,
+				  bool prepare);
 extern void AppendOnlyCompact(Relation aorel,
 				  List *compaction_segno_list,
 				  int insert_segno,

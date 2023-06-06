@@ -495,7 +495,8 @@ AOCSDrop(Relation aorel,
  */
 Bitmapset *
 AOCSCollectDeadSegments(Relation aorel,
-						List *compaction_segno)
+						List *compaction_segno,
+						bool prepare)
 {
 	int	total_segfiles;
 	AOCSFileSegInfo **segfile_array;
@@ -515,7 +516,7 @@ AOCSCollectDeadSegments(Relation aorel,
 	{
 		int segno = segfile_array[i]->segno;
 
-		if (!list_member_int(compaction_segno, segno))
+		if (!prepare && !list_member_int(compaction_segno, segno))
 			continue;
 
 		AOCSFileSegInfo *fsinfo = GetAOCSFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);

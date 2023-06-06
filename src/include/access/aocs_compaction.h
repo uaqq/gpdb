@@ -19,7 +19,8 @@
 extern void AOCSDrop(Relation aorel,
 			List *compaction_segno);
 extern Bitmapset *AOCSCollectDeadSegments(Relation aorel,
-			List *compaction_segno);
+			List *compaction_segno,
+			bool prepare);
 extern void AOCSCompact(Relation aorel,
 			List *compaction_segno_list,
 			int insert_segno,
