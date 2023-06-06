@@ -768,7 +768,6 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool e
 		{
 			if (!exclusive && (
 				(cutoff_xid == GetTopTransactionId() && GetTopTransactionId() == snapshot->xmin && snapshot->xmin == snapshot->xmax && TransactionIdPrecedes(segfilestat->latestWriteXid, cutoff_xid)) ||
-				(cutoff_xid == snapshot->xmin && snapshot->xmax == GetTopTransactionId() && TransactionIdFollows(segfilestat->latestWriteXid, cutoff_xid)) ||
 				(segfilestat->latestWriteXid == cutoff_xid && GetTopTransactionId() == snapshot->xmin && snapshot->xmin == snapshot->xmax && TransactionIdFollows(snapshot->xmin, cutoff_xid))))
 			{
 				ereportif(Debug_appendonly_print_segfile_choice, LOG,
