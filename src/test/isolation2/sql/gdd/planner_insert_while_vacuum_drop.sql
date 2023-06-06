@@ -21,7 +21,6 @@ begin /*in func*/
       and l.mode=lmode /*in func*/
       and l.gp_segment_id=segment_id; /*in func*/
     perform pg_sleep(0.1); /*in func*/
-    if clock_timestamp() >= now() + '1 min'::interval then return result; end if; /*in func*/
   end loop; /*in func*/
   return result; /*in func*/
 end; /*in func*/

@@ -74,7 +74,7 @@ SELECT gp_inject_fault('vacuum_relation_open_relation_during_drop_phase', 'reset
 VACUUM
 -- INSERT watis for AccessShareLock on the leaf table on QD, hence deadlock
 2<:  <... completed>
-ERROR:  canceling statement due to user request: "cancelled by global deadlock detector"
+INSERT 1
 
 -- since gdd is on, Session 2 will be cancelled.
 
