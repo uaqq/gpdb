@@ -516,11 +516,13 @@ AOCSCollectDeadSegments(Relation aorel,
 	{
 		int segno = segfile_array[i]->segno;
 
+		if (segfile_array[i]->state != AOSEG_STATE_AWAITING_DROP)
+			continue;
+
 		if (!prepare && !list_member_int(compaction_segno, segno))
 			continue;
 
-		if (segfile_array[i]->state == AOSEG_STATE_AWAITING_DROP)
-			dead_segs = bms_add_member(dead_segs, segno);
+		dead_segs = bms_add_member(dead_segs, segno);
 	}
 
 	if (segfile_array)
