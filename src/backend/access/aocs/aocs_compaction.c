@@ -519,11 +519,8 @@ AOCSCollectDeadSegments(Relation aorel,
 		if (!prepare && !list_member_int(compaction_segno, segno))
 			continue;
 
-		AOCSFileSegInfo *fsinfo = GetAOCSFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
-		if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
+		if (segfile_array[i]->state == AOSEG_STATE_AWAITING_DROP)
 			dead_segs = bms_add_member(dead_segs, segno);
-
-		pfree(fsinfo);
 	}
 
 	if (segfile_array)
