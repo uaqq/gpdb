@@ -531,7 +531,7 @@ AppendOnlyCollectDeadSegments(Relation aorel, VacuumStmt *vacstmt)
 		if (segfile_array[i]->state != AOSEG_STATE_AWAITING_DROP)
 			continue;
 
-		if (vacstmt->appendonly_phase != AOVAC_PREPARE &&
+		if (!vacstmt->exclusive && vacstmt->appendonly_phase != AOVAC_PREPARE &&
 			!list_member_int(vacstmt->appendonly_compaction_segno, segno))
 		{
 			continue;
