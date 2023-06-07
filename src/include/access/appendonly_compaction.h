@@ -13,6 +13,7 @@
 #ifndef APPENDONLY_COMPACTION_H
 #define APPENDONLY_COMPACTION_H
 
+#include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
 #include "access/appendonly_visimap.h"
 #include "utils/rel.h"
@@ -23,7 +24,7 @@
 
 extern void AppendOptimizedDropDeadSegments(Relation aorel, Bitmapset *segnos);
 extern Bitmapset *AppendOnlyCollectDeadSegments(Relation aorel,
-				  List *compaction_segno);
+				  VacuumStmt *vacstmt);
 extern void AppendOnlyCompact(Relation aorel,
 				  List *compaction_segno_list,
 				  int insert_segno,

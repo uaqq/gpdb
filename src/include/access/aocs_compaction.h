@@ -13,13 +13,13 @@
 #ifndef AOCS_COMPACTION_H
 #define AOCS_COMPACTION_H
 
+#include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
 #include "utils/rel.h"
 
 extern void AOCSDrop(Relation aorel,
 			List *compaction_segno);
-extern Bitmapset *AOCSCollectDeadSegments(Relation aorel,
-			List *compaction_segno);
+extern Bitmapset *AOCSCollectDeadSegments(Relation aorel, VacuumStmt *vacstmt);
 extern void AOCSCompact(Relation aorel,
 			List *compaction_segno_list,
 			int insert_segno,

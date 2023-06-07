@@ -3159,6 +3159,7 @@ typedef struct VacuumStmt
 
 	/* invoked via automatic statistic collection */
 	bool auto_stats;
+	bool exclusive;
 } VacuumStmt;
 
 /* ----------------------

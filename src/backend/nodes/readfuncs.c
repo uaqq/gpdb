@@ -2820,6 +2820,7 @@ _readVacuumStmt(void)
 	READ_NODE_FIELD(appendonly_compaction_segno);
 	READ_NODE_FIELD(appendonly_compaction_insert_segno);
 	READ_BOOL_FIELD(appendonly_relation_empty);
+	READ_BOOL_FIELD(exclusive);
 	READ_ENUM_FIELD(appendonly_phase, AOVacuumPhase);
 
 	READ_DONE();

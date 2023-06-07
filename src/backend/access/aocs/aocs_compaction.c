@@ -494,8 +494,7 @@ AOCSDrop(Relation aorel,
  * Performs dead segments collection for an ao_column relation.
  */
 Bitmapset *
-AOCSCollectDeadSegments(Relation aorel,
-						List *compaction_segno)
+AOCSCollectDeadSegments(Relation aorel, VacuumStmt *vacstmt)
 {
 	int	total_segfiles;
 	AOCSFileSegInfo **segfile_array;
@@ -515,11 +514,16 @@ AOCSCollectDeadSegments(Relation aorel,
 	{
 		int segno = segfile_array[i]->segno;
 
-		AOCSFileSegInfo *fsinfo = GetAOCSFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
-		if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
-			dead_segs = bms_add_member(dead_segs, segno);
+		if (segfile_array[i]->state != AOSEG_STATE_AWAITING_DROP)
+			continue;
 
-		pfree(fsinfo);
+		if (vacstmt->appendonly_phase != AOVAC_PREPARE &&
+			!list_member_int(vacstmt->appendonly_compaction_segno, segno))
+		{
+			continue;
+		}
+
+		dead_segs = bms_add_member(dead_segs, segno);
 	}
 
 	if (segfile_array)

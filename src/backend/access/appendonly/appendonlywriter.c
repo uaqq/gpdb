@@ -29,6 +29,7 @@
 #include "libpq-fe.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
+#include "storage/procarray.h"
 #include "utils/builtins.h"
 #include "utils/faultinjector.h"
 #include "utils/guc.h"
@@ -733,22 +734,24 @@ DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	return;
 }
 
-void
-RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
+List *
+RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
+	TransactionId cutoff_xid = GetOldestXmin(NULL, true);
+	Snapshot snapshot = GetActiveSnapshot();
 	AORelHashEntryData *aoentry;
 	int			i;
 
 	Assert(Gp_role != GP_ROLE_EXECUTE);
 	if (Gp_role == GP_ROLE_UTILITY)
 	{
-		return;
+		return compactedSegmentFileList;
 	}
 
 	if (compactedSegmentFileList == NIL)
 	{
-		return;
+		return compactedSegmentFileList;
 	}
 
 	acquire_lightweight_lock();
@@ -763,6 +766,20 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 
 		if (list_member_int(compactedSegmentFileList, i))
 		{
+			if (!exclusive && TransactionIdPrecedes(segfilestat->latestWriteXid, snapshot->xmin) && (cutoff_xid == snapshot->xmin || cutoff_xid == segfilestat->latestWriteXid))
+			{
+				ereportif(Debug_appendonly_print_segfile_choice, LOG,
+						(errmsg("Skip segno %d for drop "
+								"relation \"%s\" (%d)", i,
+								get_rel_name(relid), relid)));
+
+				appendOnlyInsertXact = true;
+				segfilestat->xid = CurrentXid;
+				segfilestat->state = COMPACTED_DROP_SKIPPED;
+				compactedSegmentFileList = list_delete_int(compactedSegmentFileList, i);
+				continue;
+			}
+
 			ereportif(Debug_appendonly_print_segfile_choice, LOG,
 					  (errmsg("Register segno %d for drop "
 							  "relation \"%s\" (%d)", i,
@@ -775,7 +792,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	}
 
 	release_lightweight_lock();
-	return;
+	return compactedSegmentFileList;
 }
 
 /*

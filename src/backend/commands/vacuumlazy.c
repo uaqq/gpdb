@@ -628,9 +628,9 @@ ao_vacuum_rel_recycle_dead_segments(Relation onerel, VacuumStmt *vacstmt)
 	bool		need_drop;
 
 	if (RelationIsAoRows(onerel))
-		dead_segs = AppendOnlyCollectDeadSegments(onerel, vacstmt->appendonly_compaction_segno);
+		dead_segs = AppendOnlyCollectDeadSegments(onerel, vacstmt);
 	else
-		dead_segs = AOCSCollectDeadSegments(onerel, vacstmt->appendonly_compaction_segno);
+		dead_segs = AOCSCollectDeadSegments(onerel, vacstmt);
 
 	need_drop = !bms_is_empty(dead_segs);
 	if (need_drop)

@@ -684,7 +684,10 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 	if (vacstmt->appendonly_phase == AOVAC_DROP)
 	{
 		Assert(Gp_role == GP_ROLE_EXECUTE);
-		lmode = AccessExclusiveLock;
+		if (vacstmt->exclusive)
+			lmode = AccessExclusiveLock;
+		else
+			lmode = (vacstmt->options & VACOPT_FULL) ? AccessExclusiveLock : ShareUpdateExclusiveLock;
 		SIMPLE_FAULT_INJECTOR("vacuum_relation_open_relation_during_drop_phase");
 	}
 	else if (!(vacstmt->options & VACOPT_VACUUM))
@@ -919,8 +922,18 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 			 * However, we do not expect this to happen too frequently such
 			 * that all segfiles are marked.
 			 */
+			vacstmt->exclusive = false;
 			SIMPLE_FAULT_INJECTOR("vacuum_relation_open_relation_during_drop_phase");
 			onerel = try_relation_open(relid, AccessExclusiveLock, true /* dontwait */);
+
+			if (RelationIsValid(onerel))
+			{
+				vacstmt->exclusive = true;
+			}
+			else if (lmode != AccessExclusiveLock)
+			{
+				onerel = try_relation_open(relid, lmode, true /* dontwait */);
+			}
 
 			if (!RelationIsValid(onerel))
 			{
@@ -966,7 +979,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 				   RelationGetRelationName(onerel));
 
 			/* Perform the DROP phase */
-			RegisterSegnoForCompactionDrop(relid, compactNowList);
+			compactNowList = RegisterSegnoForCompactionDrop(relid, compactNowList, vacstmt->exclusive);
 
 			vacuum_rel_ao_phase(onerel, relid, vacstmt, lmode, for_wraparound,
 								NIL,	/* insert segno */

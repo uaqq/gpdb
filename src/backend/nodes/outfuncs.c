@@ -4434,6 +4434,7 @@ _outVacuumStmt(StringInfo str, const VacuumStmt *node)
 	WRITE_NODE_FIELD(appendonly_compaction_segno);
 	WRITE_NODE_FIELD(appendonly_compaction_insert_segno);
 	WRITE_BOOL_FIELD(appendonly_relation_empty);
+	WRITE_BOOL_FIELD(exclusive);
 	WRITE_ENUM_FIELD(appendonly_phase, AOVacuumPhase);
 }
 

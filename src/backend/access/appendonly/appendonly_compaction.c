@@ -39,7 +39,6 @@
 #include "commands/vacuum.h"
 #include "executor/executor.h"
 #include "nodes/execnodes.h"
-#include "storage/procarray.h"
 #include "storage/lmgr.h"
 #include "utils/faultinjector.h"
 #include "utils/lsyscache.h"
@@ -508,7 +507,7 @@ HasLockForSegmentFileDrop(Relation aorel)
  * Performs dead segments collection for an ao_row relation.
  */
 Bitmapset *
-AppendOnlyCollectDeadSegments(Relation aorel, List *compaction_segno)
+AppendOnlyCollectDeadSegments(Relation aorel, VacuumStmt *vacstmt)
 {
 	int total_segfiles;
 	FileSegInfo **segfile_array;
@@ -529,11 +528,16 @@ AppendOnlyCollectDeadSegments(Relation aorel, List *compaction_segno)
 	{
 		int segno = segfile_array[i]->segno;
 
-		FileSegInfo *fsinfo = GetFileSegInfo(aorel, appendOnlyMetaDataSnapshot, segno);
-		if (fsinfo->state == AOSEG_STATE_AWAITING_DROP)
-			dead_segs = bms_add_member(dead_segs, segno);
+		if (segfile_array[i]->state != AOSEG_STATE_AWAITING_DROP)
+			continue;
 
-		pfree(fsinfo);
+		if (vacstmt->appendonly_phase != AOVAC_PREPARE &&
+			!list_member_int(vacstmt->appendonly_compaction_segno, segno))
+		{
+			continue;
+		}
+
+		dead_segs = bms_add_member(dead_segs, segno);
 	}
 
 	if (segfile_array)
