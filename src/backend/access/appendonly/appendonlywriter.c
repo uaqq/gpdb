@@ -766,7 +766,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool e
 
 		if (list_member_int(compactedSegmentFileList, i))
 		{
-			if (!exclusive && TransactionIdPrecedes(segfilestat->latestWriteXid, snapshot->xmin) && (cutoff_xid == snapshot->xmin || cutoff_xid == segfilestat->latestWriteXid))
+			if (!exclusive && (TransactionIdPrecedes(segfilestat->latestWriteXid, cutoff_xid) || TransactionIdPrecedes(cutoff_xid, snapshot->xmin)))
 			{
 				ereportif(Debug_appendonly_print_segfile_choice, LOG,
 						(errmsg("Skip segno %d for drop "
