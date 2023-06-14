@@ -11,6 +11,9 @@
 #include "pg_upgrade.h"
 #include <portability/instr_time.h>
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+#include "utils/palloc_memory_debug_undef.h"
+#endif
 
 #define PG_OPTIONS_UTILITY_MODE " PGOPTIONS='-c gp_session_role=utility' "
 
@@ -81,12 +84,6 @@ void reset_system_identifier(void);
 
 /* frozenxids_gp.c */
 void update_db_xids(void);
-
-/* aotable.c */
-
-void		restore_aosegment_tables(void);
-bool        is_appendonly(char relstorage);
-
 
 /* version_gp.c */
 
