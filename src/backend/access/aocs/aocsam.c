@@ -466,7 +466,7 @@ aocs_beginscan_internal(Relation relation,
 	int			nvp;
 	int			i;
 
-	if (Gp_role == GP_ROLE_DISPATCH)
+	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
 	{
 		AORelHashEntryData *aoentry;
 

@@ -1563,7 +1563,7 @@ appendonly_beginrangescan_internal(Relation relation,
 
 	StringInfoData titleBuf;
 
-	if (Gp_role == GP_ROLE_DISPATCH)
+	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
 	{
 		AORelHashEntryData *aoentry;
 
