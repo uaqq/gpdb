@@ -40,3 +40,28 @@ EXPLAIN (ANALYZE, TIMING OFF, COSTS OFF) SELECT a FROM empty_table WHERE b = 2;
 ANALYZE empty_table;
 EXPLAIN (ANALYZE, TIMING OFF, COSTS OFF) SELECT a FROM empty_table WHERE b = 2;
 -- explain_processing_on
+
+--
+-- Test EXPLAIN ANALYZE with DECLARE CURSOR.
+-- DECLARE CURSOR should not be created if we have ANALYZE in Query.
+--
+
+-- start_ignore
+DROP TABLE IF EXISTS d,r;
+-- end_ignore
+
+CREATE TABLE d (a int, b int, c int) DISTRIBUTED BY (a);
+CREATE TABLE r (a int, b int, c char(2)) DISTRIBUTED REPLICATED;
+
+EXPLAIN (ANALYZE on, COSTS off, VERBOSE off)
+DECLARE c CURSOR FOR
+WITH e AS (
+    SELECT b FROM d LIMIT 2
+)
+SELECT * FROM r
+    JOIN (
+        SELECT count(*) b FROM e
+        ) i USING (b)
+    JOIN e USING (b);
+
+DROP TABLE d, r;

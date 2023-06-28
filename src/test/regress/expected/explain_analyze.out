@@ -91,3 +91,55 @@ EXPLAIN (ANALYZE, TIMING OFF, COSTS OFF) SELECT a FROM empty_table WHERE b = 2;
 (9 rows)
 
 -- explain_processing_on
+--
+-- Test EXPLAIN ANALYZE with DECLARE CURSOR.
+-- DECLARE CURSOR should not be created if we have ANALYZE in Query.
+--
+-- start_ignore
+DROP TABLE IF EXISTS d,r;
+NOTICE:  table "d" does not exist, skipping
+NOTICE:  table "r" does not exist, skipping
+-- end_ignore
+CREATE TABLE d (a int, b int, c int) DISTRIBUTED BY (a);
+CREATE TABLE r (a int, b int, c char(2)) DISTRIBUTED REPLICATED;
+EXPLAIN (ANALYZE on, COSTS off, VERBOSE off)
+DECLARE c CURSOR FOR
+WITH e AS (
+    SELECT b FROM d LIMIT 2
+)
+SELECT * FROM r
+    JOIN (
+        SELECT count(*) b FROM e
+        ) i USING (b)
+    JOIN e USING (b);
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Sequence (actual time=1.918..1.918 rows=0 loops=1)
+   ->  Shared Scan (share slice:id 0:0) (actual time=0.955..0.955 rows=0 loops=1)
+         ->  Materialize (actual time=0.951..0.952 rows=0 loops=1)
+               ->  Limit (actual time=0.930..0.930 rows=0 loops=1)
+                     ->  Gather Motion 1:1  (slice2; segments: 1) (actual time=0.926..0.926 rows=0 loops=1)
+                           ->  Seq Scan on d (actual time=0.000..0.003 rows=0 loops=1)
+   ->  Hash Join (actual time=0.960..0.960 rows=0 loops=1)
+         Hash Cond: ((count()) = (share0_ref2.b)::bigint)
+         Extra Text: Hash chain length 0.0 avg, 0 max, using 0 of 131072 buckets.
+         ->  Hash Join (never executed)
+               Hash Cond: ((r.b)::bigint = (count()))
+               ->  Gather Motion 1:1  (slice1; segments: 1) (never executed)
+                     ->  Seq Scan on r (actual time=0.000..0.002 rows=0 loops=1)
+               ->  Hash (never executed)
+                     ->  Aggregate (never executed)
+                           ->  Shared Scan (share slice:id 0:0) (never executed)
+         ->  Hash (actual time=0.006..0.006 rows=0 loops=1)
+               Buckets: 131072  Batches: 1  Memory Usage: 0kB
+               ->  Shared Scan (share slice:id 0:0) (actual time=0.004..0.004 rows=0 loops=1)
+ Planning time: 547.966 ms
+   (slice0)    Executor memory: 1196K bytes.
+   (slice1)    Executor memory: 58K bytes (seg0).
+   (slice2)    Executor memory: 42K bytes (seg0).
+ Memory used:  128000kB
+ Optimizer: Pivotal Optimizer (GPORCA)
+ Execution time: 11.661 ms
+(26 rows)
+
+DROP TABLE d, r;
