@@ -466,19 +466,6 @@ aocs_beginscan_internal(Relation relation,
 	int			nvp;
 	int			i;
 
-	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
-	{
-		AORelHashEntryData *aoentry;
-
-		LWLockAcquire(AOSegFileLock, LW_EXCLUSIVE);
-
-		aoentry = AORelGetOrCreateHashEntry(relation->rd_id);
-		Assert(aoentry);
-		aoentry->xid = GetTopTransactionId();
-
-		LWLockRelease(AOSegFileLock);
-	}
-
 	if (!relationTupleDesc)
 		relationTupleDesc = relation->rd_att;
 
@@ -1270,19 +1257,6 @@ aocs_fetch_init(Relation relation,
 	char	   *basePath = relpathbackend(relation->rd_node, relation->rd_backend, MAIN_FORKNUM);
 	TupleDesc	tupleDesc = RelationGetDescr(relation);
 	StdRdOptions **opts = RelationGetAttributeOptions(relation);
-
-	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
-	{
-		AORelHashEntryData *aoentry;
-
-		LWLockAcquire(AOSegFileLock, LW_EXCLUSIVE);
-
-		aoentry = AORelGetOrCreateHashEntry(relation->rd_id);
-		Assert(aoentry);
-		aoentry->xid = GetTopTransactionId();
-
-		LWLockRelease(AOSegFileLock);
-	}
 
 	/*
 	 * increment relation ref count while scanning relation

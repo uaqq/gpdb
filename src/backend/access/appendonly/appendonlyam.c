@@ -1563,19 +1563,6 @@ appendonly_beginrangescan_internal(Relation relation,
 
 	StringInfoData titleBuf;
 
-	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
-	{
-		AORelHashEntryData *aoentry;
-
-		LWLockAcquire(AOSegFileLock, LW_EXCLUSIVE);
-
-		aoentry = AORelGetOrCreateHashEntry(relation->rd_id);
-		Assert(aoentry);
-		aoentry->xid = GetTopTransactionId();
-
-		LWLockRelease(AOSegFileLock);
-	}
-
 	/*
 	 * increment relation ref count while scanning relation
 	 *
@@ -2122,19 +2109,6 @@ appendonly_fetch_init(Relation relation,
 	PGFunction *fns;
 
 	StringInfoData titleBuf;
-
-	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
-	{
-		AORelHashEntryData *aoentry;
-
-		LWLockAcquire(AOSegFileLock, LW_EXCLUSIVE);
-
-		aoentry = AORelGetOrCreateHashEntry(relation->rd_id);
-		Assert(aoentry);
-		aoentry->xid = GetTopTransactionId();
-
-		LWLockRelease(AOSegFileLock);
-	}
 
 	/*
 	 * increment relation ref count while scanning relation

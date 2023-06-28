@@ -29,7 +29,7 @@
 #include "libpq-fe.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
-#include "storage/procarray.h"
+//#include "storage/procarray.h"
 #include "utils/builtins.h"
 #include "utils/faultinjector.h"
 #include "utils/guc.h"
@@ -272,7 +272,6 @@ AORelCreateHashEntry(Oid relid)
 
 	Assert(aoHashEntry->relid == relid);
 	aoHashEntry->txns_using_rel = 0;
-	aoHashEntry->xid = InvalidTransactionId;
 
 	/*
 	 * Initialize all segfile array to zero
@@ -434,7 +433,7 @@ AORelGetHashEntry(Oid relid)
  * The AOSegFileLock will still be acquired when this function returns, expect
  * if it errors out.
  */
-AORelHashEntryData *
+static AORelHashEntryData *
 AORelGetOrCreateHashEntry(Oid relid)
 {
 
@@ -735,7 +734,7 @@ DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	return;
 }
 
-List *
+void
 RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
@@ -745,12 +744,12 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool e
 	Assert(Gp_role != GP_ROLE_EXECUTE);
 	if (Gp_role == GP_ROLE_UTILITY)
 	{
-		return compactedSegmentFileList;
+		return;
 	}
 
 	if (compactedSegmentFileList == NIL)
 	{
-		return compactedSegmentFileList;
+		return;
 	}
 
 	acquire_lightweight_lock();
@@ -765,20 +764,6 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool e
 
 		if (list_member_int(compactedSegmentFileList, i))
 		{
-			if (!exclusive && aoentry->xid != InvalidTransactionId)
-			{
-				ereportif(Debug_appendonly_print_segfile_choice, LOG,
-						(errmsg("Skip segno %d for drop "
-								"relation \"%s\" (%d)", i,
-								get_rel_name(relid), relid)));
-
-				appendOnlyInsertXact = true;
-				segfilestat->xid = CurrentXid;
-				segfilestat->state = COMPACTED_DROP_SKIPPED;
-				compactedSegmentFileList = list_delete_int(compactedSegmentFileList, i);
-				continue;
-			}
-
 			ereportif(Debug_appendonly_print_segfile_choice, LOG,
 					  (errmsg("Register segno %d for drop "
 							  "relation \"%s\" (%d)", i,
@@ -791,7 +776,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool e
 	}
 
 	release_lightweight_lock();
-	return compactedSegmentFileList;
+	return;
 }
 
 /*

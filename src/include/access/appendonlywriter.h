@@ -191,7 +191,6 @@ typedef struct AORelHashEntryData
 {
 	Oid			relid;
 	int			txns_using_rel;
-	TransactionId xid;
 	AOSegfileStatus relsegfiles[MAX_AOREL_CONCURRENCY];
 
 } AORelHashEntryData;
@@ -212,7 +211,7 @@ extern Size AppendOnlyWriterShmemSize(void);
 extern void InitAppendOnlyWriter(void);
 extern Size AppendOnlyWriterShmemSize(void);
 extern int	SetSegnoForWrite(Relation rel, int existingsegno);
-extern List *RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive);
+extern void RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive);
 extern void DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList);
 extern List *SetSegnoForCompaction(Relation rel, List *compactedSegmentFileList,
 					  List *insertedSegmentFileList, bool *isdrop);
@@ -227,7 +226,6 @@ extern void UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									Snapshot appendOnlyMetaDataSnapshot, List *segmentNumList,
 									int64 modcount_added);
 extern bool AORelRemoveHashEntry(Oid relid);
-extern AORelHashEntryData *AORelGetOrCreateHashEntry(Oid relid);
 extern void AtCommit_AppendOnly(void);
 extern void AtAbort_AppendOnly(void);
 extern void AtEOXact_AppendOnly(void);

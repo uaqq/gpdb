@@ -979,7 +979,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 				   RelationGetRelationName(onerel));
 
 			/* Perform the DROP phase */
-			compactNowList = RegisterSegnoForCompactionDrop(relid, compactNowList, vacstmt->exclusive);
+			RegisterSegnoForCompactionDrop(relid, compactNowList, vacstmt->exclusive);
 
 			vacuum_rel_ao_phase(onerel, relid, vacstmt, lmode, for_wraparound,
 								NIL,	/* insert segno */

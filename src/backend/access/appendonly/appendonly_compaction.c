@@ -40,6 +40,7 @@
 #include "executor/executor.h"
 #include "nodes/execnodes.h"
 #include "storage/lmgr.h"
+#include "storage/procarray.h"
 #include "utils/faultinjector.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -513,7 +514,7 @@ AppendOnlyCollectDeadSegments(Relation aorel, VacuumStmt *vacstmt)
 	FileSegInfo **segfile_array;
 	Snapshot appendOnlyMetaDataSnapshot = SnapshotSelf;
 	Bitmapset *dead_segs = NULL;
-
+	TransactionId cutoff_xid = GetOldestXmin(NULL, true);
 
 	Assert(Gp_role == GP_ROLE_EXECUTE || Gp_role == GP_ROLE_UTILITY);
 	Assert(RelationIsAoRows(aorel));
@@ -532,7 +533,8 @@ AppendOnlyCollectDeadSegments(Relation aorel, VacuumStmt *vacstmt)
 			continue;
 
 		if (!vacstmt->exclusive && vacstmt->appendonly_phase != AOVAC_PREPARE &&
-			!list_member_int(vacstmt->appendonly_compaction_segno, segno))
+			segfile_array[i]->tupleVisibilitySummary.xmin != FrozenTransactionId &&
+			!TransactionIdPrecedes(segfile_array[i]->tupleVisibilitySummary.xmin, cutoff_xid))
 		{
 			continue;
 		}
