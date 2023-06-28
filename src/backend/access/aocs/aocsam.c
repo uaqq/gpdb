@@ -1271,6 +1271,19 @@ aocs_fetch_init(Relation relation,
 	TupleDesc	tupleDesc = RelationGetDescr(relation);
 	StdRdOptions **opts = RelationGetAttributeOptions(relation);
 
+	if (Gp_role == GP_ROLE_DISPATCH && !InSecurityRestrictedOperation())
+	{
+		AORelHashEntryData *aoentry;
+
+		LWLockAcquire(AOSegFileLock, LW_EXCLUSIVE);
+
+		aoentry = AORelGetOrCreateHashEntry(relation->rd_id);
+		Assert(aoentry);
+		aoentry->xid = GetTopTransactionId();
+
+		LWLockRelease(AOSegFileLock);
+	}
+
 	/*
 	 * increment relation ref count while scanning relation
 	 *
