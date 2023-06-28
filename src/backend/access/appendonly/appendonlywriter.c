@@ -778,6 +778,57 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	return;
 }
 
+void
+UpdateSegnoAfterCompactionDrop(Oid relid, List *compactedSegmentFileList)
+{
+	TransactionId CurrentXid = GetTopTransactionId();
+	AORelHashEntryData *aoentry;
+	Relation	aosegrel;
+	bool	   *awaiting_drop = NULL;
+	int			i;
+
+	Assert(Gp_role != GP_ROLE_EXECUTE);
+	if (Gp_role == GP_ROLE_UTILITY)
+	{
+		return;
+	}
+
+	if (compactedSegmentFileList == NIL)
+	{
+		return;
+	}
+
+	aosegrel = relation_open(relid, AccessShareLock);
+	awaiting_drop = get_awaiting_drop_status_from_segments(aosegrel);
+	relation_close(aosegrel, AccessShareLock);
+
+	acquire_lightweight_lock();
+
+	aoentry = AORelGetOrCreateHashEntry(relid);
+	Assert(aoentry);
+	aoentry->txns_using_rel++;
+
+	for (i = 0; i < MAX_AOREL_CONCURRENCY; i++)
+	{
+		AOSegfileStatus *segfilestat = &aoentry->relsegfiles[i];
+
+		if (list_member_int(compactedSegmentFileList, i) && awaiting_drop[i])
+		{
+			ereportif(Debug_appendonly_print_segfile_choice, LOG,
+					  (errmsg("Update segno %d after drop "
+							  "relation \"%s\" (%d)", i,
+							  get_rel_name(relid), relid)));
+
+			appendOnlyInsertXact = true;
+			segfilestat->xid = CurrentXid;
+			segfilestat->state = COMPACTED_DROP_SKIPPED;
+		}
+	}
+
+	release_lightweight_lock();
+	return;
+}
+
 /*
  * SetSegnoForCompaction
  *

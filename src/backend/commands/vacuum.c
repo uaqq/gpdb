@@ -985,6 +985,9 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 								NIL,	/* insert segno */
 								compactNowList,
 								AOVAC_DROP);
+
+			UpdateSegnoAfterCompactionDrop(relid, compactNowList);
+
 			PopActiveSnapshot();
 			if (Gp_role != GP_ROLE_EXECUTE)
 				CommitTransactionCommand();
