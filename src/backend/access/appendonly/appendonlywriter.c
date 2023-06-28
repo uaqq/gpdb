@@ -29,7 +29,6 @@
 #include "libpq-fe.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
-//#include "storage/procarray.h"
 #include "utils/builtins.h"
 #include "utils/faultinjector.h"
 #include "utils/guc.h"
@@ -735,7 +734,7 @@ DeregisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 }
 
 void
-RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive)
+RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
 	AORelHashEntryData *aoentry;
