@@ -806,7 +806,6 @@ UpdateSegnoAfterCompactionDrop(Oid relid, List *compactedSegmentFileList)
 
 	aoentry = AORelGetOrCreateHashEntry(relid);
 	Assert(aoentry);
-	aoentry->txns_using_rel++;
 
 	for (i = 0; i < MAX_AOREL_CONCURRENCY; i++)
 	{
@@ -819,8 +818,6 @@ UpdateSegnoAfterCompactionDrop(Oid relid, List *compactedSegmentFileList)
 							  "relation \"%s\" (%d)", i,
 							  get_rel_name(relid), relid)));
 
-			appendOnlyInsertXact = true;
-			segfilestat->xid = CurrentXid;
 			segfilestat->state = COMPACTED_DROP_SKIPPED;
 		}
 	}

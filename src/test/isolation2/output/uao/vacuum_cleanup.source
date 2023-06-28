@@ -224,7 +224,7 @@ VACUUM
 0U: select * from show_aoseg('vacuum_concurrent_test_ao_@orientation@') order by segno;
  segno | tupcount | modcount | formatversion | state 
 -------+----------+----------+---------------+-------
- 1     | 22       | 2        | 3             | 2     
+ 1     | 0        | 2        | 3             | 1     
  2     | 11       | 1        | 3             | 1     
  3     | 0        | 1        | 3             | 1     
 (3 rows)
