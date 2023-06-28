@@ -466,6 +466,19 @@ aocs_beginscan_internal(Relation relation,
 	int			nvp;
 	int			i;
 
+	if (Gp_role == GP_ROLE_DISPATCH)
+	{
+		AORelHashEntryData *aoentry;
+
+		LWLockAcquire(AOSegFileLock, LW_EXCLUSIVE);
+
+		aoentry = AORelGetOrCreateHashEntry(relation->rd_id);
+		Assert(aoentry);
+		aoentry->xid = GetTopTransactionId();
+
+		LWLockRelease(AOSegFileLock);
+	}
+
 	if (!relationTupleDesc)
 		relationTupleDesc = relation->rd_att;
 

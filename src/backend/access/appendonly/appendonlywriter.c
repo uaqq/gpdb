@@ -272,6 +272,7 @@ AORelCreateHashEntry(Oid relid)
 
 	Assert(aoHashEntry->relid == relid);
 	aoHashEntry->txns_using_rel = 0;
+	aoHashEntry->xid = InvalidTransactionId;
 
 	/*
 	 * Initialize all segfile array to zero
@@ -433,7 +434,7 @@ AORelGetHashEntry(Oid relid)
  * The AOSegFileLock will still be acquired when this function returns, expect
  * if it errors out.
  */
-static AORelHashEntryData *
+AORelHashEntryData *
 AORelGetOrCreateHashEntry(Oid relid)
 {
 
@@ -738,8 +739,6 @@ List *
 RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool exclusive)
 {
 	TransactionId CurrentXid = GetTopTransactionId();
-	TransactionId cutoff_xid = GetOldestXmin(NULL, true);
-	Snapshot snapshot = GetActiveSnapshot();
 	AORelHashEntryData *aoentry;
 	int			i;
 
@@ -766,7 +765,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList, bool e
 
 		if (list_member_int(compactedSegmentFileList, i))
 		{
-			if (!exclusive && (TransactionIdPrecedes(segfilestat->latestWriteXid, cutoff_xid) || TransactionIdPrecedes(cutoff_xid, snapshot->xmin)))
+			if (!exclusive && aoentry->xid != InvalidTransactionId)
 			{
 				ereportif(Debug_appendonly_print_segfile_choice, LOG,
 						(errmsg("Skip segno %d for drop "

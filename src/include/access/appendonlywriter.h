@@ -191,6 +191,7 @@ typedef struct AORelHashEntryData
 {
 	Oid			relid;
 	int			txns_using_rel;
+	TransactionId xid;
 	AOSegfileStatus relsegfiles[MAX_AOREL_CONCURRENCY];
 
 } AORelHashEntryData;
@@ -226,6 +227,7 @@ extern void UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									Snapshot appendOnlyMetaDataSnapshot, List *segmentNumList,
 									int64 modcount_added);
 extern bool AORelRemoveHashEntry(Oid relid);
+extern AORelHashEntryData *AORelGetOrCreateHashEntry(Oid relid);
 extern void AtCommit_AppendOnly(void);
 extern void AtAbort_AppendOnly(void);
 extern void AtEOXact_AppendOnly(void);
