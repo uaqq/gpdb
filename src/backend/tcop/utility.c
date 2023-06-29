@@ -63,8 +63,10 @@
 #include "postmaster/bgwriter.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteRemove.h"
+#include "rewrite/rewriteHandler.h"
 #include "storage/fd.h"
 #include "tcop/pquery.h"
+#include "tcop/tcopprot.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/guc.h"
@@ -552,21 +554,32 @@ standard_ProcessUtility(Node *parsetree,
 
 			/*
 			 * Portal (cursor) manipulation
+			 */
+		case T_DeclareCursorStmt:
+			{
+				DeclareCursorStmt *stmt = (DeclareCursorStmt *) parsetree;
+
+				PerformCursorOpen(stmt, params, queryString, isTopLevel);
+			}
+			break;
+			/*
+			 * Portal (cursor) manipulation
 			 *
 			 * Note: DECLARE CURSOR is processed mostly as a SELECT, and
 			 * therefore what we will get here is a PlannedStmt not a bare
 			 * DeclareCursorStmt.
 			 */
-		case T_PlannedStmt:
-			{
-				PlannedStmt *stmt = (PlannedStmt *) parsetree;
 
-				if (stmt->utilityStmt == NULL ||
-					!IsA(stmt->utilityStmt, DeclareCursorStmt))
-					elog(ERROR, "non-DECLARE CURSOR PlannedStmt passed to ProcessUtility");
-				PerformCursorOpen(stmt, params, queryString, isTopLevel);
-			}
-			break;
+		// case T_PlannedStmt:
+		// 	{
+		// 		PlannedStmt *stmt = (PlannedStmt *) parsetree;
+
+		// 		if (stmt->utilityStmt == NULL ||
+		// 			!IsA(stmt->utilityStmt, DeclareCursorStmt))
+		// 			elog(ERROR, "non-DECLARE CURSOR PlannedStmt passed to ProcessUtility");
+		// 		PerformCursorOpen(stmt, params, queryString, isTopLevel);
+		// 	}
+		// 	break;
 
 		case T_ClosePortalStmt:
 			{

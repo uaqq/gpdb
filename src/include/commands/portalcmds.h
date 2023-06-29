@@ -17,8 +17,7 @@
 #include "nodes/parsenodes.h"
 #include "utils/portal.h"
 
-
-extern void PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
+extern void PerformCursorOpen(DeclareCursorStmt *stmt, ParamListInfo params,
 				  const char *queryString, bool isTopLevel);
 
 extern void PerformPortalFetch(FetchStmt *stmt, DestReceiver *dest,

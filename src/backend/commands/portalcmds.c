@@ -32,7 +32,9 @@
 #include "executor/tstoreReceiver.h"
 #include "miscadmin.h"
 #include "port/atomics.h"
+#include "rewrite/rewriteHandler.h"
 #include "tcop/pquery.h"
+#include "tcop/tcopprot.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
@@ -54,15 +56,14 @@ extern int gp_max_parallel_cursors;
  * utilityStmt field is set.
  */
 void
-PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
+PerformCursorOpen(DeclareCursorStmt *cstmt, ParamListInfo params,
 				  const char *queryString, bool isTopLevel)
 {
-	DeclareCursorStmt *cstmt = (DeclareCursorStmt *) stmt->utilityStmt;
+	Query	   *query = castNode(Query, cstmt->query);
+	List	   *rewritten;
+	PlannedStmt *plan;
 	Portal		portal;
 	MemoryContext oldContext;
-
-	if (cstmt == NULL || !IsA(cstmt, DeclareCursorStmt))
-		elog(ERROR, "PerformCursorOpen called for non-cursor query");
 
 	/*
 	 * Disallow empty-string cursor name (conflicts with protocol-level
@@ -86,6 +87,35 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 				 errmsg("cannot create a cursor WITH HOLD within security-restricted operation")));
 
 	/*
+	 * Parse analysis was done already, but we still have to run the rule
+	 * rewriter.  We do not do AcquireRewriteLocks: we assume the query either
+	 * came straight from the parser, or suitable locks were acquired by
+	 * plancache.c.
+	 *
+	 * Because the rewriter and planner tend to scribble on the input, we make
+	 * a preliminary copy of the source querytree.  This prevents problems in
+	 * the case that the DECLARE CURSOR is in a portal or plpgsql function and
+	 * is executed repeatedly.  (See also the same hack in EXPLAIN and
+	 * PREPARE.)  XXX FIXME someday.
+	 */
+	rewritten = QueryRewrite((Query *) copyObject(query));
+
+	/* SELECT should never rewrite to more or less than one query */
+	if (list_length(rewritten) != 1)
+		elog(ERROR, "non-SELECT statement in DECLARE CURSOR");
+
+	query = linitial_node(Query, rewritten);
+
+	if (query->commandType != CMD_SELECT)
+		elog(ERROR, "non-SELECT statement in DECLARE CURSOR");
+
+	/* Also try to make any cursor declared with DECLARE CURSOR updatable. */
+	cstmt->options |= CURSOR_OPT_UPDATABLE;
+
+	/* Plan the query, applying the specified options */
+	plan = pg_plan_query(query, cstmt->options, params);
+
+	/*
 	 * Allow using the SCROLL keyword even though we don't support its
 	 * functionality (backward scrolling). Silently accept it and instead
 	 * of reporting an error like before, override it to NO SCROLL.
@@ -105,10 +135,10 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 	
 	Assert(!(cstmt->options & CURSOR_OPT_SCROLL && cstmt->options & CURSOR_OPT_NO_SCROLL));
 
-	if (cstmt->options & CURSOR_OPT_PARALLEL_RETRIEVE)
-	{
-		get_extension_oid("gp_parallel_retrieve_cursor", false);
-	}
+	// if (cstmt->options & CURSOR_OPT_PARALLEL_RETRIEVE)
+	// {
+	// 	get_extension_oid("gp_parallel_retrieve_cursor", false);
+	// }
 
 	/*
 	 * Create a portal and copy the plan and queryString into its memory.
@@ -117,8 +147,7 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 
 	oldContext = MemoryContextSwitchTo(PortalGetHeapMemory(portal));
 
-	stmt = copyObject(stmt);
-	stmt->utilityStmt = NULL;	/* make it look like plain SELECT */
+	plan = copyObject(plan);
 
 	queryString = pstrdup(queryString);
 
@@ -127,7 +156,7 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 					  queryString,
 					  T_DeclareCursorStmt,
 					  "SELECT", /* cursor's query is always a SELECT */
-					  list_make1(stmt),
+					  list_make1(plan),
 					  NULL);
 
 	portal->is_extended_query = true; /* cursors run in extended query mode */
