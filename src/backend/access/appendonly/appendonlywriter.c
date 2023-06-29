@@ -778,7 +778,7 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	return;
 }
 
-List *
+void
 UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 {
 	AORelHashEntryData *aoentry;
@@ -789,12 +789,12 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 	Assert(Gp_role != GP_ROLE_EXECUTE);
 	if (Gp_role == GP_ROLE_UTILITY)
 	{
-		return compactedSegmentFileList;
+		return;
 	}
 
 	if (compactedSegmentFileList == NIL)
 	{
-		return compactedSegmentFileList;
+		return;
 	}
 
 	aosegrel = relation_open(relid, AccessShareLock);
@@ -818,13 +818,12 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 							  get_rel_name(relid), relid)));
 
 			segfilestat->state = DROP_USE;
-			compactedSegmentFileList = list_delete_int(compactedSegmentFileList, i);
 		}
 	}
 
 	release_lightweight_lock();
 	pfree(awaiting_drop);
-	return compactedSegmentFileList;
+	return;
 }
 
 /*
