@@ -778,6 +778,54 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 	return;
 }
 
+List *
+UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
+{
+	AORelHashEntryData *aoentry;
+	Relation	aosegrel;
+	bool	   *awaiting_drop = NULL;
+	int			i;
+
+	Assert(Gp_role != GP_ROLE_EXECUTE);
+	if (Gp_role == GP_ROLE_UTILITY)
+	{
+		return compactedSegmentFileList;
+	}
+
+	if (compactedSegmentFileList == NIL)
+	{
+		return compactedSegmentFileList;
+	}
+
+	aosegrel = relation_open(relid, AccessShareLock);
+	awaiting_drop = get_awaiting_drop_status_from_segments(aosegrel);
+	relation_close(aosegrel, AccessShareLock);
+
+	acquire_lightweight_lock();
+
+	aoentry = AORelGetOrCreateHashEntry(relid);
+	Assert(aoentry);
+
+	for (i = 0; i < MAX_AOREL_CONCURRENCY; i++)
+	{
+		AOSegfileStatus *segfilestat = &aoentry->relsegfiles[i];
+
+		if (list_member_int(compactedSegmentFileList, i) && !awaiting_drop[i])
+		{
+			ereportif(Debug_appendonly_print_segfile_choice, LOG,
+					  (errmsg("Update segno %d "
+							  "relation \"%s\" (%d)", i,
+							  get_rel_name(relid), relid)));
+
+			segfilestat->state = DROP_USE;
+			compactedSegmentFileList = list_delete_int(compactedSegmentFileList, i);
+		}
+	}
+
+	release_lightweight_lock();
+	return compactedSegmentFileList;
+}
+
 /*
  * SetSegnoForCompaction
  *
