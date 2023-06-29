@@ -823,6 +823,7 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 	}
 
 	release_lightweight_lock();
+	pfree(awaiting_drop);
 	return compactedSegmentFileList;
 }
 
