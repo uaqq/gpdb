@@ -779,11 +779,10 @@ RegisterSegnoForCompactionDrop(Oid relid, List *compactedSegmentFileList)
 }
 
 void
-UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
+UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList,
+	bool *awaiting_drop)
 {
 	AORelHashEntryData *aoentry;
-	Relation	aosegrel;
-	bool	   *awaiting_drop = NULL;
 	int			i;
 
 	Assert(Gp_role != GP_ROLE_EXECUTE);
@@ -797,10 +796,6 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 		return;
 	}
 
-	aosegrel = relation_open(relid, AccessShareLock);
-	awaiting_drop = get_awaiting_drop_status_from_segments(aosegrel);
-	relation_close(aosegrel, AccessShareLock);
-
 	acquire_lightweight_lock();
 
 	aoentry = AORelGetOrCreateHashEntry(relid);
@@ -813,7 +808,7 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 		if (list_member_int(compactedSegmentFileList, i) && !awaiting_drop[i])
 		{
 			ereportif(Debug_appendonly_print_segfile_choice, LOG,
-					  (errmsg("Update segno %d "
+					  (errmsg("Update segno %d after compaction "
 							  "relation \"%s\" (%d)", i,
 							  get_rel_name(relid), relid)));
 
@@ -822,7 +817,6 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList)
 	}
 
 	release_lightweight_lock();
-	pfree(awaiting_drop);
 	return;
 }
 

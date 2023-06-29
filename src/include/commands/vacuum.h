@@ -14,6 +14,7 @@
 #ifndef VACUUM_H
 #define VACUUM_H
 
+#include "access/appendonlywriter.h"
 #include "access/htup.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_type.h"
@@ -160,6 +161,8 @@ typedef struct VPgClassStats
 	BlockNumber rel_pages;
 	double		rel_tuples;
 	BlockNumber relallvisible;
+	bool awaiting_drop[MAX_AOREL_CONCURRENCY];
+	bool awaiting_drop_filled;
 } VPgClassStats;
 
 /* GUC parameters */

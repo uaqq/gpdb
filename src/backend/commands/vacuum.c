@@ -117,6 +117,9 @@ static MemoryContext vac_context = NULL;
 
 static BufferAccessStrategy vac_strategy;
 
+static bool awaiting_drop[MAX_AOREL_CONCURRENCY];
+static bool awaiting_drop_filled = false;
+
 /* non-export function prototypes */
 static List *get_rel_oids(Oid relid, VacuumStmt *vacstmt, int stmttype);
 static void vac_truncate_clog(TransactionId frozenXID,
@@ -141,7 +144,7 @@ vacuum_rel_ao_phase(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE lm
 					AOVacuumPhase phase);
 
 static void
-vacuum_combine_stats(VacuumStatsContext *stats_context,
+vacuum_combine_stats(VacuumStmt *vacstmt, VacuumStatsContext *stats_context,
 					CdbPgResults* cdb_pgresults);
 
 static void vacuum_appendonly_index(Relation indexRelation, Relation aoRelation,
@@ -891,7 +894,6 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 									list_make1_int(insertSegNo),
 									compactNowList,
 									AOVAC_COMPACT);
-				UpdateSegnoAfterCompaction(relid, compactNowList);
 				PopActiveSnapshot();
 				if (Gp_role != GP_ROLE_EXECUTE)
 					CommitTransactionCommand();
@@ -1670,6 +1672,9 @@ vac_send_relstats_to_qd(Relation relation,
 	stats.rel_pages = num_pages;
 	stats.rel_tuples = num_tuples;
 	stats.relallvisible = num_all_visible_pages;
+	*stats.awaiting_drop = *awaiting_drop;
+	stats.awaiting_drop_filled = awaiting_drop_filled;
+	awaiting_drop_filled = false;
 	pq_sendint(&buf, sizeof(VPgClassStats), sizeof(int));
 	pq_sendbytes(&buf, (char *) &stats, sizeof(VPgClassStats));
 	pq_endmessage(&buf);
@@ -2468,6 +2473,14 @@ vacuum_rel(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE lmode,
 	else
 	{
 		lazy_vacuum_rel(onerel, vacstmt, vac_strategy);
+		if (Gp_role == GP_ROLE_EXECUTE)
+		{
+			for (int i = 0; i < MAX_AOREL_CONCURRENCY; i++)
+			{
+				awaiting_drop[i] = list_member_int(vacstmt->appendonly_compaction_segno, i);
+			}
+			awaiting_drop_filled = true;
+		}
 	}
 
 	/* Roll back any GUC changes executed by index functions */
@@ -2986,7 +2999,7 @@ dispatchVacuum(VacuumStmt *vacstmt, VacuumStatsContext *ctx)
 								GetAssignedOidsForDispatch(),
 								&cdb_pgresults);
 
-	vacuum_combine_stats(ctx, &cdb_pgresults);
+	vacuum_combine_stats(vacstmt, ctx, &cdb_pgresults);
 
 	cdbdisp_clearCdbPgResults(&cdb_pgresults);
 }
@@ -2999,7 +3012,8 @@ dispatchVacuum(VacuumStmt *vacstmt, VacuumStatsContext *ctx)
  * Note that the mirrorResults is ignored by this function.
  */
 static void
-vacuum_combine_stats(VacuumStatsContext *stats_context, CdbPgResults* cdb_pgresults)
+vacuum_combine_stats(VacuumStmt *vacstmt, VacuumStatsContext *stats_context,
+	CdbPgResults* cdb_pgresults)
 {
 	int result_no;
 
@@ -3036,6 +3050,14 @@ vacuum_combine_stats(VacuumStatsContext *stats_context, CdbPgResults* cdb_pgresu
 		 * number of rel_tuples and rel_pages.
 		 */
 		pgclass_stats = (VPgClassStats *) pgresult->extras;
+
+		if (pgclass_stats->awaiting_drop_filled)
+		{
+			UpdateSegnoAfterCompaction(pgclass_stats->relid,
+									   vacstmt->appendonly_compaction_segno,
+									   pgclass_stats->awaiting_drop);
+		}
+
 		foreach (lc, stats_context->updated_stats)
 		{
 			VPgClassStats *tmp_stats = (VPgClassStats *) lfirst(lc);

@@ -545,9 +545,8 @@ AOCSCollectDeadSegments(Relation aorel,
  */
 void
 AOCSCompact(Relation aorel,
-			List *compaction_segno,
-			int insert_segno,
-			bool isFull)
+			VacuumStmt *vacstmt,
+			int insert_segno)
 {
 	const char *relname;
 	int			total_segfiles;
@@ -583,7 +582,7 @@ AOCSCompact(Relation aorel,
 	for (i = 0; i < total_segfiles; i++)
 	{
 		segno = segfile_array[i]->segno;
-		if (!list_member_int(compaction_segno, segno))
+		if (!list_member_int(vacstmt->appendonly_compaction_segno, segno))
 		{
 			continue;
 		}
@@ -629,11 +628,16 @@ AOCSCompact(Relation aorel,
 				 segno);
 
 		if (AppendOnlyCompaction_ShouldCompact(aorel,
-											   fsinfo->segno, fsinfo->total_tupcount, isFull,
+											   fsinfo->segno, fsinfo->total_tupcount,
+											   (vacstmt->options & VACOPT_FULL),
 											   appendOnlyMetaDataSnapshot))
 		{
 			AOCSSegmentFileFullCompaction(aorel, insertDesc, fsinfo,
 										  appendOnlyMetaDataSnapshot);
+		}
+		else
+		{
+			vacstmt->appendonly_compaction_segno = list_delete_int(vacstmt->appendonly_compaction_segno, fsinfo->segno);
 		}
 
 		pfree(fsinfo);

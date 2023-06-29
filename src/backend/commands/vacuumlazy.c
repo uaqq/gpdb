@@ -586,16 +586,12 @@ ao_vacuum_rel_compact(Relation onerel, VacuumStmt *vacstmt)
 			"Vacuum compaction phase %s", RelationGetRelationName(onerel));
 		if (RelationIsAoRows(onerel))
 		{
-			AppendOnlyCompact(onerel,
-								vacstmt->appendonly_compaction_segno,
-								insert_segno, (vacstmt->options & VACOPT_FULL));
+			AppendOnlyCompact(onerel, vacstmt, insert_segno);
 		}
 		else
 		{
 			Assert(RelationIsAoCols(onerel));
-			AOCSCompact(onerel,
-						vacstmt->appendonly_compaction_segno,
-						insert_segno, (vacstmt->options & VACOPT_FULL));
+			AOCSCompact(onerel, vacstmt, insert_segno);
 		}
 	}
 }

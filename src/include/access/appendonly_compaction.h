@@ -18,6 +18,7 @@
 #include "utils/rel.h"
 #include "access/memtup.h"
 #include "executor/tuptable.h"
+#include "nodes/parsenodes.h"
 
 #define APPENDONLY_COMPACTION_SEGNO_INVALID (-1)
 
@@ -25,9 +26,8 @@ extern void AppendOptimizedDropDeadSegments(Relation aorel, Bitmapset *segnos);
 extern Bitmapset *AppendOnlyCollectDeadSegments(Relation aorel,
 				  List *compaction_segno);
 extern void AppendOnlyCompact(Relation aorel,
-				  List *compaction_segno_list,
-				  int insert_segno,
-				  bool isFull);
+				  VacuumStmt *vacstmt,
+				  int insert_segno);
 extern bool AppendOnlyCompaction_ShouldCompact(
 								   Relation aoRelation,
 								   int segno,
