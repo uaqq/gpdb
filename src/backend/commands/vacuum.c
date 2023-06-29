@@ -130,7 +130,7 @@ static bool vacuum_rel(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE
 		   bool for_wraparound);
 static void scan_index(Relation indrel, Relation aorel, bool check_stats, int elevel);
 static bool appendonly_tid_reaped(ItemPointer itemptr, void *state);
-static void dispatchVacuum(VacuumStmt *vacstmt, VacuumStatsContext *ctx);
+static void dispatchVacuum(Relation onerel, VacuumStmt *vacstmt, VacuumStatsContext *ctx);
 static void vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 						 List *relations, BufferAccessStrategy bstrategy,
 						 bool do_toast,
@@ -144,8 +144,8 @@ vacuum_rel_ao_phase(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE lm
 					AOVacuumPhase phase);
 
 static void
-vacuum_combine_stats(VacuumStmt *vacstmt, VacuumStatsContext *stats_context,
-					CdbPgResults* cdb_pgresults);
+vacuum_combine_stats(Relation onerel, VacuumStmt *vacstmt,
+					VacuumStatsContext *stats_context, CdbPgResults* cdb_pgresults);
 
 static void vacuum_appendonly_index(Relation indexRelation, Relation aoRelation,
 									Bitmapset *dead_segs, int elevel);
@@ -2480,6 +2480,7 @@ vacuum_rel(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE lmode,
 				awaiting_drop[i] = list_member_int(vacstmt->appendonly_compaction_segno, i);
 			}
 			awaiting_drop_filled = true;
+			vac_send_relstats_to_qd(onerel, 0, 0.0, 0);
 		}
 	}
 
@@ -2564,7 +2565,7 @@ vacuum_rel(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE lmode,
 				save_userid,
 				save_sec_context | SECURITY_RESTRICTED_OPERATION);
 
-		dispatchVacuum(vacstmt, &stats_context);
+		dispatchVacuum(onerel, vacstmt, &stats_context);
 		vac_update_relstats_from_list(stats_context.updated_stats);
 
 		/* Restore userid and security context */
@@ -2978,7 +2979,7 @@ vacuum_delay_point(void)
  * Dispatch a Vacuum command.
  */
 static void
-dispatchVacuum(VacuumStmt *vacstmt, VacuumStatsContext *ctx)
+dispatchVacuum(Relation onerel, VacuumStmt *vacstmt, VacuumStatsContext *ctx)
 {
 	CdbPgResults cdb_pgresults;
 
@@ -2999,7 +3000,7 @@ dispatchVacuum(VacuumStmt *vacstmt, VacuumStatsContext *ctx)
 								GetAssignedOidsForDispatch(),
 								&cdb_pgresults);
 
-	vacuum_combine_stats(vacstmt, ctx, &cdb_pgresults);
+	vacuum_combine_stats(onerel, vacstmt, ctx, &cdb_pgresults);
 
 	cdbdisp_clearCdbPgResults(&cdb_pgresults);
 }
@@ -3012,7 +3013,7 @@ dispatchVacuum(VacuumStmt *vacstmt, VacuumStatsContext *ctx)
  * Note that the mirrorResults is ignored by this function.
  */
 static void
-vacuum_combine_stats(VacuumStmt *vacstmt, VacuumStatsContext *stats_context,
+vacuum_combine_stats(Relation onerel, VacuumStmt *vacstmt, VacuumStatsContext *stats_context,
 	CdbPgResults* cdb_pgresults)
 {
 	int result_no;
@@ -3053,9 +3054,10 @@ vacuum_combine_stats(VacuumStmt *vacstmt, VacuumStatsContext *stats_context,
 
 		if (pgclass_stats->awaiting_drop_filled)
 		{
-			UpdateSegnoAfterCompaction(pgclass_stats->relid,
+			UpdateSegnoAfterCompaction(RelationGetRelid(onerel),
 									   vacstmt->appendonly_compaction_segno,
 									   pgclass_stats->awaiting_drop);
+			continue;
 		}
 
 		foreach (lc, stats_context->updated_stats)
