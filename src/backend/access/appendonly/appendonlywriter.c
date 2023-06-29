@@ -812,7 +812,7 @@ UpdateSegnoAfterCompaction(Oid relid, List *compactedSegmentFileList,
 							  "relation \"%s\" (%d)", i,
 							  get_rel_name(relid), relid)));
 
-			segfilestat->state = DROP_USE;
+			segfilestat->state = AVAILABLE;
 		}
 	}
 

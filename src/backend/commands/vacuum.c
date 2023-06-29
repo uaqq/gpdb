@@ -2480,7 +2480,6 @@ vacuum_rel(Relation onerel, Oid relid, VacuumStmt *vacstmt, LOCKMODE lmode,
 				awaiting_drop[i] = list_member_int(vacstmt->appendonly_compaction_segno, i);
 			}
 			awaiting_drop_filled = true;
-			vac_send_relstats_to_qd(onerel, 0, 0.0, 0);
 		}
 	}
 
@@ -3057,7 +3056,6 @@ vacuum_combine_stats(Relation onerel, VacuumStmt *vacstmt, VacuumStatsContext *s
 			UpdateSegnoAfterCompaction(RelationGetRelid(onerel),
 									   vacstmt->appendonly_compaction_segno,
 									   pgclass_stats->awaiting_drop);
-			continue;
 		}
 
 		foreach (lc, stats_context->updated_stats)
