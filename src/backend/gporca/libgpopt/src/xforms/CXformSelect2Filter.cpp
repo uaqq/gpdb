@@ -90,9 +90,11 @@ CXformSelect2Filter::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 	pexprRelational->AddRef();
 	pexprScalar->AddRef();
 
+	BOOL fake = CLogicalSelect::PopConvert(pexpr->Pop())->Fake();
 	// assemble physical operator
-	CExpression *pexprFilter = GPOS_NEW(mp) CExpression(
-		mp, GPOS_NEW(mp) CPhysicalFilter(mp), pexprRelational, pexprScalar);
+	CExpression *pexprFilter =
+		GPOS_NEW(mp) CExpression(mp, GPOS_NEW(mp) CPhysicalFilter(mp, fake),
+								 pexprRelational, pexprScalar);
 
 	// add alternative to results
 	pxfres->Add(pexprFilter);

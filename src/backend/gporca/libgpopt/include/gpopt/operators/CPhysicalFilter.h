@@ -31,9 +31,13 @@ private:
 	// private copy ctor
 	CPhysicalFilter(const CPhysicalFilter &);
 
+	BOOL m_fake;
+
 public:
 	// ctor
 	explicit CPhysicalFilter(CMemoryPool *mp);
+
+	explicit CPhysicalFilter(CMemoryPool *mp, BOOL fake);
 
 	// dtor
 	virtual ~CPhysicalFilter();
@@ -49,6 +53,12 @@ public:
 	SzId() const
 	{
 		return "CPhysicalFilter";
+	}
+
+	BOOL
+	Fake() const
+	{
+		return m_fake;
 	}
 
 	// match function

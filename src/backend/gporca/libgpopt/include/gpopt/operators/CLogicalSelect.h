@@ -42,12 +42,17 @@ private:
 	// table descriptor
 	CTableDescriptor *m_ptabdesc;
 
+	BOOL m_fake;
+
 public:
 	// ctor
 	explicit CLogicalSelect(CMemoryPool *mp);
 
 	// ctor
 	CLogicalSelect(CMemoryPool *mp, CTableDescriptor *ptabdesc);
+
+	// ctor
+	CLogicalSelect(CMemoryPool *mp, BOOL fake);
 
 	// dtor
 	virtual ~CLogicalSelect();
@@ -70,6 +75,12 @@ public:
 	Ptabdesc() const
 	{
 		return m_ptabdesc;
+	}
+
+	BOOL
+	Fake() const
+	{
+		return m_fake;
 	}
 
 	//-------------------------------------------------------------------------------------

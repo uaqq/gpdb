@@ -32,7 +32,19 @@ using namespace gpopt;
 //		Ctor
 //
 //---------------------------------------------------------------------------
-CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp) : CPhysical(mp)
+CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp) : CPhysical(mp), m_fake(false)
+{
+	// when Filter includes outer references, correlated execution has to be enforced,
+	// in this case, we create two child optimization requests to guarantee correct evaluation of parameters
+	// (1) Broadcast
+	// (2) Singleton
+
+	SetDistrRequests(2 /*ulDistrReqs*/);
+}
+
+
+CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp, BOOL fake)
+	: CPhysical(mp), m_fake(fake)
 {
 	// when Filter includes outer references, correlated execution has to be enforced,
 	// in this case, we create two child optimization requests to guarantee correct evaluation of parameters
@@ -127,17 +139,17 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pdsRequired;
 	}
 
-	if (CDistributionSpec::EdtNonSingleton == pdsRequired->Edt() &&
-		!CDistributionSpecNonSingleton::PdsConvert(pdsRequired)
-			 ->FAllowReplicated())
+	CDistributionSpec *pds =
+		CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
+
+	if (CDistributionSpec::EdtAny == pds->Edt() && Fake())
 	{
-		// this situation arises when we have Filter instead inlined CTE,
-		// in this case, we need to push down non-singleton with not allowed replicated through Filter
+		pds->Release();
 		pdsRequired->AddRef();
 		return pdsRequired;
 	}
 
-	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
+	return pds;
 }
 
 
