@@ -62,6 +62,7 @@
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
+#include "catalog/storage.h"
 
 
 /*----------
@@ -131,6 +132,7 @@ typedef struct
 
 	uint32		num_backend_writes; /* counts user backend buffer writes */
 	uint32		num_backend_fsync;	/* counts user backend fsync calls */
+	dsm_segment	*pending_deletes_seg;
 
 	int			num_requests;	/* current # of requests */
 	int			max_requests;	/* allocated array size */
@@ -333,6 +335,24 @@ CheckpointerMain(void)
 	 * sleeping.
 	 */
 	ProcGlobal->checkpointerLatch = &MyProc->procLatch;
+
+	if (!CheckpointerShmem->pending_deletes_seg)
+	{
+		int DELFILENODE_DEF_CNT = 50;
+		
+		/* TODO: check lifecycle of all of this. What if checkpointer dies? */		
+		CheckpointerShmem->pending_deletes_seg = dsm_create(PENDING_DELETES_BYTES(DELFILENODE_DEF_CNT), 0);
+		dsm_pin_segment(CheckpointerShmem->pending_deletes_seg);
+
+		/* TODO: use ilist.h to store this. Possibly use dsa_create(). */
+		/* TODO: add lock for read-write protection */
+		PENDING_DELETES *pending = dsm_segment_address(CheckpointerShmem->pending_deletes_seg);
+		memset(pending, 0, PENDING_DELETES_BYTES(DELFILENODE_DEF_CNT));
+		pending->ndelrels = DELFILENODE_DEF_CNT;
+		ProcGlobal->pending_deletes_handle = dsm_segment_handle(CheckpointerShmem->pending_deletes_seg);
+
+		elog(LOG, "pending_deletes_seg initialized");
+	}
 
 	/*
 	 * Loop forever

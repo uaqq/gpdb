@@ -358,6 +358,7 @@ typedef struct PROC_HDR
 
     /* Counter for assigning serial numbers to processes */
     int         mppLocalProcessCounter;
+	dsm_handle	pending_deletes_handle; /* TODO: lock read-write of this */
 } PROC_HDR;
 
 extern PGDLLIMPORT PROC_HDR *ProcGlobal;

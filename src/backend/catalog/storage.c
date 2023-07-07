@@ -66,6 +66,133 @@ typedef struct PendingRelDelete
 
 static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
 
+/* TODO: move all of this somewhere */
+static PENDING_DELETES *pendingDeletesRedo = NULL;
+static void remove_delrelnode(RelFileNodePendingDelete *relnode, PENDING_DELETES *pending)
+{
+	if (relnode->node.relNode == 0)
+		return;
+
+	for (int i = 0; i < pending->ndelrels; i++)
+	{
+		RelFileNodePendingDelete *arr_relnode = &pending->delrels[i];
+
+		if (memcmp(relnode, arr_relnode, sizeof(*relnode)) == 0)
+		{
+			elog(LOG, "%d removed from position %d", arr_relnode->node.relNode, i);
+			memset(arr_relnode, 0, sizeof(*arr_relnode));
+			break;
+		}
+	}
+}
+
+void remove_delrelnode_from_shmem(RelFileNodePendingDelete *relnode)
+{
+	elog(LOG, "Trying to remove delrelnode from shmem: %d %d", relnode->node.relNode, relnode->smgr_which);
+	if (!ProcGlobal->pending_deletes_handle)
+		return;
+	
+	dsm_segment *seg = dsm_attach(ProcGlobal->pending_deletes_handle);
+	PENDING_DELETES *pending = dsm_segment_address(seg);
+
+	remove_delrelnode(relnode, pending);
+
+	dsm_detach(seg);
+}
+
+void remove_delrelnode_from_global(RelFileNodePendingDelete *relnode)
+{
+	elog(LOG, "Trying to remove delrelnode from global: %d %d", relnode->node.relNode, relnode->smgr_which);
+	
+	if (!pendingDeletesRedo)
+		return;
+
+	remove_delrelnode(relnode, pendingDeletesRedo);
+}
+
+static void add_delrelnode(RelFileNodePendingDelete *relnode, PENDING_DELETES *pending)
+{
+	if (relnode->node.relNode == 0)
+		return;
+		
+	/* we want to replace if exist */
+	remove_delrelnode(relnode, pending);
+
+	for (int i = 0; i < pending->ndelrels; i++)
+	{
+		RelFileNodePendingDelete *arr_relnode = &pending->delrels[i];
+
+		if (arr_relnode->node.relNode == 0)
+		{
+			memcpy(arr_relnode, relnode, sizeof(*relnode));
+			elog(LOG, "%d added to position %d", arr_relnode->node.relNode, i);
+			return;
+		}
+	}
+
+	elog(ERROR, "add_delrelnode() overflow");
+}
+
+void add_delrelnode_to_shmem(RelFileNodePendingDelete *relnode)
+{
+	elog(LOG, "Trying to add delrelnode to shmem: %d %d", relnode->node.relNode, relnode->smgr_which);
+	if (!ProcGlobal->pending_deletes_handle)
+		return;
+	
+	dsm_segment *seg = dsm_attach(ProcGlobal->pending_deletes_handle);
+	PENDING_DELETES *pending = dsm_segment_address(seg);
+
+	add_delrelnode(relnode, pending);
+
+	/* TODO: Not detach such often ? */
+	dsm_detach(seg);
+}
+
+void add_delrelnode_to_global(RelFileNodePendingDelete *relnode)
+{
+	elog(LOG, "Trying to add delrelnode to global: %d %d", relnode->node.relNode, relnode->smgr_which);
+	
+	if (!pendingDeletesRedo)
+	{
+		int DELFILENODE_DEF_CNT = 50;
+		pendingDeletesRedo = MemoryContextAllocZero(TopMemoryContext, PENDING_DELETES_BYTES(DELFILENODE_DEF_CNT));
+		pendingDeletesRedo->ndelrels = DELFILENODE_DEF_CNT;
+	}
+
+	add_delrelnode(relnode, pendingDeletesRedo);
+}
+
+PENDING_DELETES* get_delrelnode_global_slim_copy()
+{
+	elog(LOG, "get_delrelnode_global_slim_copy.");
+	
+	if (!pendingDeletesRedo)
+		return NULL;
+	
+	int pending_cnt = 0;
+	PENDING_DELETES *copy;
+
+	for(int i = 0; i < pendingDeletesRedo->ndelrels; i++)
+		if (pendingDeletesRedo->delrels[i].node.relNode != 0)
+			pending_cnt++;
+
+	elog(LOG, "get_delrelnode_global_slim_copy. pending count = %d", pending_cnt);
+	if (pending_cnt == 0)
+		return NULL;
+
+	copy = palloc0(PENDING_DELETES_BYTES(pending_cnt));
+	for(int i = 0; i < pendingDeletesRedo->ndelrels; i++)
+	{
+		if (pendingDeletesRedo->delrels[i].node.relNode == 0)
+			continue;
+		memcpy(&copy->delrels[copy->ndelrels], &pendingDeletesRedo->delrels[i], sizeof(RelFileNodePendingDelete));
+		elog(LOG, "get_delrelnode_global_slim_copy. copy = %d", copy->delrels[copy->ndelrels].node.relNode);
+		copy->ndelrels++;
+	}
+
+	return copy;
+}
+
 /*
  * RelationCreateStorage
  *		Create physical storage for a relation.
@@ -120,6 +247,7 @@ RelationCreateStorage(RelFileNode rnode, char relpersistence, SMgrImpl smgr_whic
 	pending->relnode.smgr_which = smgr_which;
 	pending->next = pendingDeletes;
 	pendingDeletes = pending;
+	add_delrelnode_to_shmem(&pending->relnode);
 
 	return srel;
 }
@@ -164,6 +292,7 @@ RelationDropStorage(Relation rel)
 		RelationIsAppendOptimized(rel) ? SMGR_AO : SMGR_MD;
 	pending->next = pendingDeletes;
 	pendingDeletes = pending;
+	add_delrelnode_to_shmem(&pending->relnode);
 
 	/*
 	 * NOTE: if the relation was created in this transaction, it will now be
@@ -214,6 +343,7 @@ RelationPreserveStorage(RelFileNode rnode, bool atCommit)
 				prev->next = next;
 			else
 				pendingDeletes = next;
+			remove_delrelnode_from_shmem(&pending->relnode);
 			pfree(pending);
 			/* prev does not change */
 		}
@@ -480,6 +610,7 @@ smgrDoPendingDeletes(bool isCommit)
 				srels[nrels++] = srel;
 			}
 			/* must explicitly free the list entry */
+			remove_delrelnode_from_shmem(&pending->relnode);
 			pfree(pending);
 			/* prev does not change */
 		}
@@ -580,6 +711,7 @@ PostPrepare_smgr(void)
 		next = pending->next;
 		pendingDeletes = next;
 		/* must explicitly free the list entry */
+		remove_delrelnode_from_shmem(&pending->relnode);
 		pfree(pending);
 	}
 }
@@ -631,6 +763,9 @@ smgr_redo(XLogReaderState *record)
 
 		reln = smgropen(xlrec->rnode, InvalidBackendId, xlrec->impl);
 		smgrcreate(reln, xlrec->forkNum, true);
+
+		RelFileNodePendingDelete relnode = {xlrec->rnode, xlrec->impl, false};
+		add_delrelnode_to_global(&relnode);
 	}
 	else if (info == XLOG_SMGR_TRUNCATE)
 	{

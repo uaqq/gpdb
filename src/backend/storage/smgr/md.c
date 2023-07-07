@@ -30,6 +30,7 @@
 #include "access/aomd.h"
 #include "access/htup_details.h"
 #include "catalog/catalog.h"
+#include "catalog/storage.h"
 #include "miscadmin.h"
 #include "access/xlogutils.h"
 #include "access/xlog.h"
@@ -1113,6 +1114,7 @@ DropRelationFiles(RelFileNodePendingDelete *delrels, int ndelrels, bool isRedo)
 
 			for (fork = 0; fork <= MAX_FORKNUM; fork++)
 				XLogDropRelation(delrels[i].node, fork);
+			remove_delrelnode_from_global(&delrels[i]);
 		}
 		srels[i] = srel;
 	}

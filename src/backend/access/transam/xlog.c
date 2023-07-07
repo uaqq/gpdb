@@ -39,6 +39,7 @@
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
+#include "catalog/storage.h"
 #include "commands/progress.h"
 #include "commands/tablespace.h"
 #include "common/controldata_utils.h"
@@ -69,6 +70,7 @@
 #include "storage/smgr.h"
 #include "storage/spin.h"
 #include "storage/sync.h"
+#include "storage/md.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
@@ -6283,6 +6285,11 @@ XLogProcessCheckpointRecord(XLogReaderState *rec)
 		 * is incorrect.
 		 */
 	}
+	if (ckptExtended.pendingDeletes)
+	{
+		for (int i = 0; i < ckptExtended.pendingDeletes->ndelrels; i++)
+			add_delrelnode_to_global(&ckptExtended.pendingDeletes->delrels[i]);
+	}
 }
 
 DBState
@@ -6533,6 +6540,8 @@ StartupXLOG(void)
 	XLogPageReadPrivate private;
 	bool		fast_promoted = false;
 	struct stat st;
+
+	elog(LOG, "StartupXLOG");
 
 	/*
 	 * We should have an aux process resource owner to use, and we should not
@@ -7726,6 +7735,10 @@ StartupXLOG(void)
 					(errmsg("redo is not required")));
 		}
 	}
+
+	PENDING_DELETES *pending_copy = get_delrelnode_global_slim_copy();
+	if (pending_copy)
+		DropRelationFiles(pending_copy->delrels, pending_copy->ndelrels, true);
 
 	/*
 	 * Kill WAL receiver, if it's still running, before we continue to write
@@ -9509,6 +9522,14 @@ CreateCheckPoint(int flags)
 
 	/* Greenplum checkpoints have extra info */
 	XLogRegisterData((char *) dtxCheckPointInfo, dtxCheckPointInfoSize);
+
+	if (ProcGlobal->pending_deletes_handle)
+	{
+		/* TODO: Can seg be NULL here? */
+		dsm_segment *seg = dsm_find_mapping(ProcGlobal->pending_deletes_handle);
+		PENDING_DELETES *pending = dsm_segment_address(seg);
+		XLogRegisterData((char *) pending, PENDING_DELETES_BYTES(pending->ndelrels));
+	}
 
 	recptr = XLogInsert(RM_XLOG_ID,
 						shutdown ? XLOG_CHECKPOINT_SHUTDOWN :

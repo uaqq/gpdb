@@ -275,6 +275,8 @@ typedef struct CheckpointExtendedRecord
 {
 	struct TMGXACT_CHECKPOINT *dtxCheckpoint;
 	uint32				dtxCheckpointLen;
+	struct PENDING_DELETES *pendingDeletes;
+	uint32				pendingDeletesLen;
 } CheckpointExtendedRecord;
 
 /*

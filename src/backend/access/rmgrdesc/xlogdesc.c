@@ -18,6 +18,7 @@
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "catalog/pg_control.h"
+#include "catalog/storage.h"
 #include "utils/guc.h"
 #include "utils/timestamp.h"
 
@@ -47,6 +48,9 @@ UnpackCheckPointRecord(XLogReaderState *record, CheckpointExtendedRecord *ckptEx
 	char *current_record_ptr;
 	int remainderLen;
 
+	ckptExtended->pendingDeletes = NULL;
+	ckptExtended->pendingDeletesLen = 0;
+
 	if (XLogRecGetDataLen(record) == sizeof(CheckPoint))
 	{
 		/* Special (for bootstrap, xlog switch, maybe others) */
@@ -66,7 +70,14 @@ UnpackCheckPointRecord(XLogReaderState *record, CheckpointExtendedRecord *ckptEx
 	ckptExtended->dtxCheckpointLen =
 		TMGXACT_CHECKPOINT_BYTES((ckptExtended->dtxCheckpoint)->committedCount);
 
-	Assert(remainderLen == ckptExtended->dtxCheckpointLen);
+	if (remainderLen == ckptExtended->dtxCheckpointLen)
+		return;
+	
+	current_record_ptr += ckptExtended->dtxCheckpointLen;
+	ckptExtended->pendingDeletes = (PENDING_DELETES *)current_record_ptr;
+	ckptExtended->pendingDeletesLen = PENDING_DELETES_BYTES(ckptExtended->pendingDeletes->ndelrels);
+
+	Assert(remainderLen == ckptExtended->dtxCheckpointLen + ckptExtended->pendingDeletesLen);
 }
 
 void
@@ -116,6 +127,18 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 							 XLogRecGetDataLen(record),
 							 ckptExtended.dtxCheckpoint->committedCount,
 							 ckptExtended.dtxCheckpointLen);
+		}
+		if (ckptExtended.pendingDeletesLen > 0)
+		{
+			appendStringInfo(buf, "; PENDING_DEL:");
+			
+			for (int i = 0; i < ckptExtended.pendingDeletes->ndelrels; i++)
+			{
+				RelFileNodePendingDelete *arr_relnode = &ckptExtended.pendingDeletes->delrels[i];
+
+				if (arr_relnode->node.relNode != 0)
+					appendStringInfo(buf, " (%d %d)", arr_relnode->node.relNode, arr_relnode->smgr_which);
+			}
 		}
 	}
 	else if (info == XLOG_NEXTOID)

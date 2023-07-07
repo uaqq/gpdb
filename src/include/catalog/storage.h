@@ -19,6 +19,28 @@
 #include "storage/smgr.h"
 #include "utils/relcache.h"
 
+/* TODO: find a better place for this (or no?) */
+typedef struct PENDING_DELETES
+{
+	/*
+	 * TODO: We should add enum with custom record type and use it here and
+	 * inside TMGXACT_CHECKPOINT.
+	 * This enum should be respected inside UnpackCheckPointRecord().
+	 */	
+	int ndelrels;
+	RelFileNodePendingDelete delrels[1];
+} PENDING_DELETES;
+
+#define PENDING_DELETES_BYTES(ndelrels) \
+	(offsetof(PENDING_DELETES, delrels) + sizeof(RelFileNodePendingDelete) * (ndelrels))
+
+void add_delrelnode_to_shmem(RelFileNodePendingDelete *relnode);
+void add_delrelnode_to_global(RelFileNodePendingDelete *relnode);
+void remove_delrelnode_from_shmem(RelFileNodePendingDelete *relnode);
+void remove_delrelnode_from_global(RelFileNodePendingDelete *relnode);
+PENDING_DELETES* get_delrelnode_global_slim_copy();
+
+
 extern SMgrRelation RelationCreateStorage(RelFileNode rnode,
 										  char relpersistence,
 										  SMgrImpl smgr_which);
