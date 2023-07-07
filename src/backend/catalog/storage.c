@@ -154,7 +154,6 @@ void add_delrelnode_to_global(RelFileNodePendingDelete *relnode)
 	
 	if (!pendingDeletesRedo)
 	{
-		int DELFILENODE_DEF_CNT = 50;
 		pendingDeletesRedo = MemoryContextAllocZero(TopMemoryContext, PENDING_DELETES_BYTES(DELFILENODE_DEF_CNT));
 		pendingDeletesRedo->ndelrels = DELFILENODE_DEF_CNT;
 	}

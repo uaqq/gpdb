@@ -34,6 +34,8 @@ typedef struct PENDING_DELETES
 #define PENDING_DELETES_BYTES(ndelrels) \
 	(offsetof(PENDING_DELETES, delrels) + sizeof(RelFileNodePendingDelete) * (ndelrels))
 
+#define DELFILENODE_DEF_CNT 50
+
 void add_delrelnode_to_shmem(RelFileNodePendingDelete *relnode);
 void add_delrelnode_to_global(RelFileNodePendingDelete *relnode);
 void remove_delrelnode_from_shmem(RelFileNodePendingDelete *relnode);

@@ -338,8 +338,6 @@ CheckpointerMain(void)
 
 	if (!CheckpointerShmem->pending_deletes_seg)
 	{
-		int DELFILENODE_DEF_CNT = 50;
-		
 		/* TODO: check lifecycle of all of this. What if checkpointer dies? */		
 		CheckpointerShmem->pending_deletes_seg = dsm_create(PENDING_DELETES_BYTES(DELFILENODE_DEF_CNT), 0);
 		dsm_pin_segment(CheckpointerShmem->pending_deletes_seg);
