@@ -131,41 +131,59 @@ gpos_init(struct gpos_init_params *params)
 {
 	CWorker::abort_requested_by_system = params->abort_requested;
 
-	if (GPOS_OK != gpos::CMemoryPoolManager::Init())
+	GPOS_TRY
 	{
-		return;
-	}
-
-	if (GPOS_OK != gpos::CWorkerPoolManager::Init())
-	{
-		CMemoryPoolManager::Shutdown();
-		return;
-	}
-
-	if (GPOS_OK != gpos::CMessageRepository::Init())
-	{
-		CWorkerPoolManager::Shutdown();
-		CMemoryPoolManager::Shutdown();
-		return;
-	}
-
-	if (GPOS_OK != gpos::CCacheFactory::Init())
-	{
-		return;
-	}
+		CMemoryPoolManager::Init();
+		CWorkerPoolManager::Init();
+		CMessageRepository::Init();
+		CCacheFactory::Init();
 
 #ifdef GPOS_FPSIMULATOR
-	if (GPOS_OK != gpos::CFSimulator::Init())
-	{
-		CMessageRepository::Shutdown();
-		CWorkerPoolManager::Shutdown();
-		CMemoryPoolManager::Shutdown();
-	}
+		CFSimulator::Init();
 #endif	// GPOS_FPSIMULATOR
 
 #ifdef GPOS_DEBUG_COUNTERS
-	CDebugCounter::Init();
+		CDebugCounter::Init();
+#endif	// GPOS_DEBUG_COUNTERS
+	}
+	GPOS_CATCH_EX(ex)
+	{
+#ifdef GPOS_DEBUG_COUNTERS
+		CDebugCounter::Shutdown();
 #endif
+
+#ifdef GPOS_FPSIMULATOR
+#ifdef GPOS_DEBUG
+		if (NULL != CFSimulator::FSim())
+		{
+			CFSimulator::Shutdown();
+		}
+#endif	// GPOS_DEBUG
+#endif	// GPOS_FPSIMULATOR
+
+		if (NULL != CMessageRepository::GetMessageRepository())
+		{
+			CMessageRepository::Shutdown();
+		}
+
+		if (NULL != CWorkerPoolManager::WorkerPoolManager())
+		{
+			CWorkerPoolManager::Shutdown();
+		}
+
+		if (NULL != CCacheFactory::GetFactory())
+		{
+			CCacheFactory::Shutdown();
+		}
+
+		if (NULL != CMemoryPoolManager::GetMemoryPoolMgr())
+		{
+			CMemoryPoolManager::Shutdown();
+		}
+
+		GPOS_RETHROW(ex);
+	}
+	GPOS_CATCH_END;
 }
 
 //---------------------------------------------------------------------------

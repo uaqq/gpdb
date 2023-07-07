@@ -103,7 +103,7 @@ CMessageRepository::LookupMessage(CException exc, ELocale locale)
 //		Initialize global instance of message repository
 //
 //---------------------------------------------------------------------------
-GPOS_RESULT
+void
 CMessageRepository::Init()
 {
 	GPOS_ASSERT(NULL == m_repository);
@@ -119,8 +119,6 @@ CMessageRepository::Init()
 
 	// detach safety
 	(void) amp.Detach();
-
-	return GPOS_OK;
 }
 
 

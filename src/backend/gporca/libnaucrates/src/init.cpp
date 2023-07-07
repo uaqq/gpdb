@@ -138,7 +138,7 @@ gpdxl_init()
 	}
 
 	// add standard exception messages
-	(void) EresExceptionInit(pmpDXL);
+	EresExceptionInit(pmpDXL);
 }
 
 

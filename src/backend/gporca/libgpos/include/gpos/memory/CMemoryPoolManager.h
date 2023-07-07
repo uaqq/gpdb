@@ -102,7 +102,7 @@ protected:
 
 	// Initialize global memory pool manager using given types
 	template <typename ManagerType, typename PoolType>
-	static GPOS_RESULT
+	static void
 	SetupGlobalMemoryPoolManager()
 	{
 		// raw allocation of memory for internal memory pools
@@ -125,7 +125,6 @@ protected:
 			GPOS_RETHROW(ex);
 		}
 		GPOS_CATCH_END;
-		return GPOS_OK;
 	}
 
 public:
@@ -189,7 +188,7 @@ public:
 	virtual ULONG UserSizeOfAlloc(const void *ptr);
 
 	// initialize global instance
-	static GPOS_RESULT Init();
+	static void Init();
 
 	// global accessor
 	static CMemoryPoolManager *

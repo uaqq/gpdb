@@ -131,7 +131,7 @@ CFSimulator::NewStack(ULONG major, ULONG minor)
 //		Initialize global instance
 //
 //---------------------------------------------------------------------------
-GPOS_RESULT
+void
 CFSimulator::Init()
 {
 	CAutoMemoryPool amp;
@@ -141,8 +141,6 @@ CFSimulator::Init()
 
 	// detach safety
 	(void) amp.Detach();
-
-	return GPOS_OK;
 }
 
 

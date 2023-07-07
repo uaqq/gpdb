@@ -46,16 +46,26 @@ gpopt_init()
 		mp = amp.Pmp();
 
 		// add standard exception messages
-		(void) gpopt::EresExceptionInit(mp);
+		gpopt::EresExceptionInit(mp);
 
 		// detach safety
 		(void) amp.Detach();
 	}
 
-	if (GPOS_OK != gpopt::CXformFactory::Init())
+	GPOS_TRY
 	{
-		return;
+		CXformFactory::Init();
 	}
+	GPOS_CATCH_EX(ex)
+	{
+		if (NULL != CXformFactory::Pxff())
+		{
+			CXformFactory::Shutdown();
+		}
+
+		GPOS_RETHROW(ex);
+	}
+	GPOS_CATCH_END;
 }
 
 //---------------------------------------------------------------------------
