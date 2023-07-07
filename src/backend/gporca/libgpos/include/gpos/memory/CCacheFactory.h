@@ -68,7 +68,7 @@ public:
 	static GPOS_RESULT Init();
 
 	// destroy global instance
-	void Shutdown();
+	static void Shutdown();
 
 	// global accessor
 	inline static CCacheFactory *
@@ -84,10 +84,10 @@ public:
 				typename CCache<T, K>::HashFuncPtr hash_func,
 				typename CCache<T, K>::EqualFuncPtr equal_func)
 	{
-		GPOS_ASSERT(NULL != GetFactory() &&
+		GPOS_ASSERT(NULL != m_factory &&
 					"Cache factory has not been initialized");
 
-		CMemoryPool *mp = GetFactory()->Pmp();
+		CMemoryPool *mp = m_factory->Pmp();
 		CCache<T, K> *cache = GPOS_NEW(mp)
 			CCache<T, K>(mp, unique, cache_quota, CCACHE_GCLOCK_INIT_COUNTER,
 						 hash_func, equal_func);

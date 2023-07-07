@@ -115,7 +115,7 @@ CMessageRepository::Init()
 	repository->InitDirectory(mp);
 	repository->LoadStandardMessages();
 
-	CMessageRepository::m_repository = repository;
+	m_repository = repository;
 
 	// detach safety
 	(void) amp.Detach();
@@ -153,8 +153,9 @@ CMessageRepository::GetMessageRepository()
 void
 CMessageRepository::Shutdown()
 {
-	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
-	CMessageRepository::m_repository = NULL;
+	GPOS_ASSERT(NULL != m_repository);
+	CMemoryPoolManager::Destroy(m_repository->m_mp);
+	m_repository = NULL;
 }
 
 

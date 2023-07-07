@@ -158,11 +158,11 @@ CFSimulator::Init()
 void
 CFSimulator::Shutdown()
 {
-	CMemoryPool *mp = m_mp;
-	GPOS_DELETE(CFSimulator::m_fsim);
-	CFSimulator::m_fsim = NULL;
+	CMemoryPool *mp = m_fsim->m_mp;
+	GPOS_DELETE(m_fsim);
+	m_fsim = NULL;
 
-	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(mp);
+	CMemoryPoolManager::Destroy(mp);
 }
 #endif	// GPOS_DEBUG
 

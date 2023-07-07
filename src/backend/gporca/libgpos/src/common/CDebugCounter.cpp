@@ -78,7 +78,7 @@ CDebugCounter::Shutdown()
 
 		GPOS_DELETE(m_instance);
 		m_instance = NULL;
-		CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(mp);
+		CMemoryPoolManager::Destroy(mp);
 	}
 }
 

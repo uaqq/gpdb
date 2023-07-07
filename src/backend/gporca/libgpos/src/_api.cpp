@@ -138,14 +138,14 @@ gpos_init(struct gpos_init_params *params)
 
 	if (GPOS_OK != gpos::CWorkerPoolManager::Init())
 	{
-		CMemoryPoolManager::GetMemoryPoolMgr()->Shutdown();
+		CMemoryPoolManager::Shutdown();
 		return;
 	}
 
 	if (GPOS_OK != gpos::CMessageRepository::Init())
 	{
-		CWorkerPoolManager::WorkerPoolManager()->Shutdown();
-		CMemoryPoolManager::GetMemoryPoolMgr()->Shutdown();
+		CWorkerPoolManager::Shutdown();
+		CMemoryPoolManager::Shutdown();
 		return;
 	}
 
@@ -157,9 +157,9 @@ gpos_init(struct gpos_init_params *params)
 #ifdef GPOS_FPSIMULATOR
 	if (GPOS_OK != gpos::CFSimulator::Init())
 	{
-		CMessageRepository::GetMessageRepository()->Shutdown();
-		CWorkerPoolManager::WorkerPoolManager()->Shutdown();
-		CMemoryPoolManager::GetMemoryPoolMgr()->Shutdown();
+		CMessageRepository::Shutdown();
+		CWorkerPoolManager::Shutdown();
+		CMemoryPoolManager::Shutdown();
 	}
 #endif	// GPOS_FPSIMULATOR
 
@@ -287,12 +287,12 @@ gpos_terminate()
 #endif
 #ifdef GPOS_DEBUG
 #ifdef GPOS_FPSIMULATOR
-	CFSimulator::FSim()->Shutdown();
+	CFSimulator::Shutdown();
 #endif	// GPOS_FPSIMULATOR
-	CMessageRepository::GetMessageRepository()->Shutdown();
-	CWorkerPoolManager::WorkerPoolManager()->Shutdown();
-	CCacheFactory::GetFactory()->Shutdown();
-	CMemoryPoolManager::GetMemoryPoolMgr()->Shutdown();
+	CMessageRepository::Shutdown();
+	CWorkerPoolManager::Shutdown();
+	CCacheFactory::Shutdown();
+	CMemoryPoolManager::Shutdown();
 #endif	// GPOS_DEBUG
 }
 

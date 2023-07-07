@@ -72,8 +72,7 @@ CMemoryPoolTracker::NewImpl(const ULONG bytes, const CHAR *file,
 	GPOS_ASSERT(bytes <= gpos::ulong_max);
 	GPOS_ASSERT_IMP(
 		(NULL != CMemoryPoolManager::GetMemoryPoolMgr()) &&
-			(this ==
-			 CMemoryPoolManager::GetMemoryPoolMgr()->GetGlobalMemoryPool()),
+			(this == CMemoryPoolManager::GetGlobalMemoryPool()),
 		CMemoryPoolManager::GetMemoryPoolMgr()->IsGlobalNewAllowed() &&
 			"Use of new operator without target memory pool is prohibited, use New(...) instead");
 
