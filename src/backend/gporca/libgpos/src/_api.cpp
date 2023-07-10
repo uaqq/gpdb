@@ -303,15 +303,35 @@ gpos_terminate()
 #ifdef GPOS_DEBUG_COUNTERS
 	CDebugCounter::Shutdown();
 #endif
-#ifdef GPOS_DEBUG
+
 #ifdef GPOS_FPSIMULATOR
-	CFSimulator::Shutdown();
-#endif	// GPOS_FPSIMULATOR
-	CMessageRepository::Shutdown();
-	CWorkerPoolManager::Shutdown();
-	CCacheFactory::Shutdown();
-	CMemoryPoolManager::Shutdown();
+#ifdef GPOS_DEBUG
+	if (NULL != CFSimulator::FSim())
+	{
+		CFSimulator::Shutdown();
+	}
 #endif	// GPOS_DEBUG
+#endif	// GPOS_FPSIMULATOR
+
+	if (NULL != CMessageRepository::GetMessageRepository())
+	{
+		CMessageRepository::Shutdown();
+	}
+
+	if (NULL != CWorkerPoolManager::WorkerPoolManager())
+	{
+		CWorkerPoolManager::Shutdown();
+	}
+
+	if (NULL != CCacheFactory::GetFactory())
+	{
+		CCacheFactory::Shutdown();
+	}
+
+	if (NULL != CMemoryPoolManager::GetMemoryPoolMgr())
+	{
+		CMemoryPoolManager::Shutdown();
+	}
 }
 
 // EOF

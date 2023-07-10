@@ -245,10 +245,20 @@ InitGPOPT()
 {
 	GPOS_TRY
 	{
-		return CGPOptimizer::InitGPOPT();
+		CGPOptimizer::InitGPOPT();
 	}
 	GPOS_CATCH_EX(ex)
 	{
+		GPOS_TRY
+		{
+			CGPOptimizer::TerminateGPOPT();
+		}
+		GPOS_CATCH_EX(ex)
+		{
+			
+		}
+		GPOS_CATCH_END;
+
 		if (GPOS_MATCH_EX(ex, gpdxl::ExmaGPDB, gpdxl::ExmiGPDBError))
 		{
 			PG_RE_THROW();
@@ -272,7 +282,7 @@ TerminateGPOPT()
 {
 	GPOS_TRY
 	{
-		return CGPOptimizer::TerminateGPOPT();
+		CGPOptimizer::TerminateGPOPT();
 	}
 	GPOS_CATCH_EX(ex)
 	{
