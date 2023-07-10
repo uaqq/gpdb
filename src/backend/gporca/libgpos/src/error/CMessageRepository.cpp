@@ -152,8 +152,15 @@ void
 CMessageRepository::Shutdown()
 {
 	GPOS_ASSERT(NULL != m_repository);
-	CMemoryPoolManager::Destroy(m_repository->m_mp);
+
+	CMemoryPool *mp = m_repository->m_mp;
+
+	// destroy message repository
+	GPOS_DELETE(m_repository);
 	m_repository = NULL;
+
+	// release allocated memory pool
+	CMemoryPoolManager::Destroy(mp);
 }
 
 
