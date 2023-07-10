@@ -211,6 +211,12 @@ extern "C" {
 PlannedStmt *
 GPOPTOptimizedPlan(Query *query, bool *had_unexpected_failure)
 {
+	if (OptimizerMemoryContext == NULL)
+	{
+		elog(WARNING, "ORCA is not initialized!");
+		return NULL;
+	}
+
 	return CGPOptimizer::GPOPTOptimizedPlan(query, had_unexpected_failure);
 }
 }
@@ -249,6 +255,11 @@ InitGPOPT()
 	}
 	GPOS_CATCH_EX(ex)
 	{
+		if (GPOS_MATCH_EX(ex, gpdxl::ExmaGPDB, gpdxl::ExmiGPDBError))
+		{
+			PG_RE_THROW();
+		}
+
 		GPOS_TRY
 		{
 			CGPOptimizer::TerminateGPOPT();
@@ -259,11 +270,6 @@ InitGPOPT()
 			errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
 		}
 		GPOS_CATCH_END;
-
-		if (GPOS_MATCH_EX(ex, gpdxl::ExmaGPDB, gpdxl::ExmiGPDBError))
-		{
-			PG_RE_THROW();
-		}
 
 		errstart(WARNING, ex.Filename(), ex.Line(), NULL, TEXTDOMAIN);
 		errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
@@ -299,6 +305,12 @@ TerminateGPOPT()
 		errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
 	}
 	GPOS_CATCH_END;
+
+	if (OptimizerMemoryContext != NULL)
+	{
+		MemoryContextDelete(OptimizerMemoryContext);
+		OptimizerMemoryContext == NULL;
+	}
 }
 }
 
