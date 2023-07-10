@@ -85,11 +85,7 @@ gpopt_terminate()
 		CMDCache::Shutdown();
 	}
 
-	if (NULL != mp)
-	{
-		CMemoryPoolManager::Destroy(mp);
-		mp = NULL;
-	}
+	CMemoryPoolManager::Destroy(mp);
 
 	if (NULL != CXformFactory::Pxff())
 	{

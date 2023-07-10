@@ -255,7 +255,6 @@ InitGPOPT()
 		}
 		GPOS_CATCH_EX(ex)
 		{
-			
 		}
 		GPOS_CATCH_END;
 
