@@ -1412,10 +1412,9 @@ ShutdownPostgres(int code, Datum arg)
 #ifdef USE_ORCA
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
-		TerminateGPOPT();
-
 		if (OptimizerMemoryContext != NULL)
 		{
+			TerminateGPOPT();
 			MemoryContextDelete(OptimizerMemoryContext);
 			OptimizerMemoryContext = NULL;
 		}
