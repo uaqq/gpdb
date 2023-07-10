@@ -273,6 +273,12 @@ InitGPOPT()
 
 		errstart(WARNING, ex.Filename(), ex.Line(), NULL, TEXTDOMAIN);
 		errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
+
+		if (OptimizerMemoryContext != NULL)
+		{
+			MemoryContextDelete(OptimizerMemoryContext);
+			OptimizerMemoryContext = NULL;
+		}
 	}
 	GPOS_CATCH_END;
 }
@@ -305,12 +311,6 @@ TerminateGPOPT()
 		errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
 	}
 	GPOS_CATCH_END;
-
-	if (OptimizerMemoryContext != NULL)
-	{
-		MemoryContextDelete(OptimizerMemoryContext);
-		OptimizerMemoryContext == NULL;
-	}
 }
 }
 

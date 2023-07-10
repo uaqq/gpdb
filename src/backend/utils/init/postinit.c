@@ -1413,6 +1413,12 @@ ShutdownPostgres(int code, Datum arg)
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		TerminateGPOPT();
+
+		if (OptimizerMemoryContext != NULL)
+		{
+			MemoryContextDelete(OptimizerMemoryContext);
+			OptimizerMemoryContext = NULL;
+		}
 	}
 #endif
 
