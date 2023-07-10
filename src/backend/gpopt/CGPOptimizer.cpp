@@ -255,6 +255,8 @@ InitGPOPT()
 		}
 		GPOS_CATCH_EX(ex)
 		{
+			errstart(WARNING, ex.Filename(), ex.Line(), NULL, TEXTDOMAIN);
+			errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
 		}
 		GPOS_CATCH_END;
 
@@ -262,6 +264,9 @@ InitGPOPT()
 		{
 			PG_RE_THROW();
 		}
+
+		errstart(WARNING, ex.Filename(), ex.Line(), NULL, TEXTDOMAIN);
+		errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
 	}
 	GPOS_CATCH_END;
 }
@@ -289,6 +294,9 @@ TerminateGPOPT()
 		{
 			PG_RE_THROW();
 		}
+
+		errstart(WARNING, ex.Filename(), ex.Line(), NULL, TEXTDOMAIN);
+		errfinish(errcode(ERRCODE_INTERNAL_ERROR), errprintstack(true));
 	}
 	GPOS_CATCH_END;
 }
