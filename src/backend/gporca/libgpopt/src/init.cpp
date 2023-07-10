@@ -80,11 +80,21 @@ void
 gpopt_terminate()
 {
 #ifdef GPOS_DEBUG
-	CMDCache::Shutdown();
+	if (NULL != CMDCache::Pcache())
+	{
+		CMDCache::Shutdown();
+	}
 
-	CMemoryPoolManager::Destroy(mp);
+	if (NULL != mp)
+	{
+		CMemoryPoolManager::Destroy(mp);
+		mp = NULL;
+	}
 
-	CXformFactory::Shutdown();
+	if (NULL != CXformFactory::Pxff())
+	{
+		CXformFactory::Shutdown();
+	}
 #endif	// GPOS_DEBUG
 }
 
