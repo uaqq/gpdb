@@ -71,7 +71,7 @@ void gpos_init(struct gpos_init_params *params);
 int gpos_exec(gpos_exec_params *params);
 
 /* shutdown GPOS memory pool, worker pool and message repository */
-void gpos_terminate(void);
+void gpos_terminate(bool shutdown);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

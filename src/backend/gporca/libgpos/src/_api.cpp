@@ -257,11 +257,20 @@ gpos_exec(gpos_exec_params *params)
 //
 //---------------------------------------------------------------------------
 void
-gpos_terminate()
+gpos_terminate(bool shutdown)
 {
 #ifdef GPOS_DEBUG_COUNTERS
 	CDebugCounter::Shutdown();
 #endif
+
+#ifdef GPOS_DEBUG
+	shutdown = true;
+#endif	// GPOS_DEBUG
+
+	if (!shutdown)
+	{
+		return;
+	}
 
 #ifdef GPOS_FPSIMULATOR
 	if (NULL != CFSimulator::FSim())

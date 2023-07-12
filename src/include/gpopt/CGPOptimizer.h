@@ -39,7 +39,7 @@ public:
 	// gpopt initialize and terminate
 	static void InitGPOPT();
 
-	static void TerminateGPOPT();
+	static void TerminateGPOPT(bool shutdown);
 };
 
 extern "C" {

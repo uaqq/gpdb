@@ -98,7 +98,7 @@ static void process_settings(Oid databaseid, Oid roleid);
 
 #ifdef USE_ORCA
 extern void InitGPOPT();
-extern void TerminateGPOPT();
+extern void TerminateGPOPT(bool shutdown);
 #endif
 
 
@@ -1414,7 +1414,7 @@ ShutdownPostgres(int code, Datum arg)
 	{
 		if (OptimizerMemoryContext != NULL)
 		{
-			TerminateGPOPT();
+			TerminateGPOPT(false);
 			MemoryContextDelete(OptimizerMemoryContext);
 			OptimizerMemoryContext = NULL;
 		}

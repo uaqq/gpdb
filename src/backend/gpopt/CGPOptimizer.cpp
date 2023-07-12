@@ -192,11 +192,11 @@ CGPOptimizer::InitGPOPT()
 //
 //---------------------------------------------------------------------------
 void
-CGPOptimizer::TerminateGPOPT()
+CGPOptimizer::TerminateGPOPT(bool shutdown)
 {
 	gpopt_terminate();
 	gpdxl_terminate();
-	gpos_terminate();
+	gpos_terminate(shutdown);
 }
 
 //---------------------------------------------------------------------------
@@ -262,7 +262,7 @@ InitGPOPT()
 
 		GPOS_TRY
 		{
-			CGPOptimizer::TerminateGPOPT();
+			CGPOptimizer::TerminateGPOPT(true);
 		}
 		GPOS_CATCH_EX(ex)
 		{
@@ -298,7 +298,7 @@ TerminateGPOPT()
 {
 	GPOS_TRY
 	{
-		CGPOptimizer::TerminateGPOPT();
+		CGPOptimizer::TerminateGPOPT(false);
 	}
 	GPOS_CATCH_EX(ex)
 	{
