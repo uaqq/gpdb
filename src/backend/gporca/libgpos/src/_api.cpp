@@ -264,12 +264,10 @@ gpos_terminate()
 #endif
 
 #ifdef GPOS_FPSIMULATOR
-#ifdef GPOS_DEBUG
 	if (NULL != CFSimulator::FSim())
 	{
 		CFSimulator::FSim()->Shutdown();
 	}
-#endif	// GPOS_DEBUG
 #endif	// GPOS_FPSIMULATOR
 
 	if (NULL != CMessageRepository::GetMessageRepository())
