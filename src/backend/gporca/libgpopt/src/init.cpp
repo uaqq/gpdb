@@ -52,20 +52,7 @@ gpopt_init()
 		(void) amp.Detach();
 	}
 
-	GPOS_TRY
-	{
-		CXformFactory::Init();
-	}
-	GPOS_CATCH_EX(ex)
-	{
-		if (NULL != CXformFactory::Pxff())
-		{
-			CXformFactory::Pxff()->Shutdown();
-		}
-
-		GPOS_RETHROW(ex);
-	}
-	GPOS_CATCH_END;
+	CXformFactory::Init();
 }
 
 //---------------------------------------------------------------------------
