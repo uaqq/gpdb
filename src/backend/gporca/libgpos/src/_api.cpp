@@ -142,7 +142,7 @@ gpos_init(struct gpos_init_params *params)
 
 #ifdef GPOS_DEBUG_COUNTERS
 	CDebugCounter::Init();
-#endif	// GPOS_DEBUG_COUNTERS
+#endif
 }
 
 //---------------------------------------------------------------------------
