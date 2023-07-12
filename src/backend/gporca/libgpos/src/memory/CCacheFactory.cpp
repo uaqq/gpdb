@@ -63,7 +63,8 @@ CCacheFactory::Init()
 	GPOS_ASSERT(NULL == m_factory && "Cache factory was already initialized");
 
 	// create cache factory memory pool
-	CMemoryPool *mp = CMemoryPoolManager::CreateMemoryPool();
+	CMemoryPool *mp =
+		CMemoryPoolManager::GetMemoryPoolMgr()->CreateMemoryPool();
 	GPOS_TRY
 	{
 		// create cache factory instance
@@ -72,7 +73,7 @@ CCacheFactory::Init()
 	GPOS_CATCH_EX(ex)
 	{
 		// destroy memory pool if global instance was not created
-		CMemoryPoolManager::Destroy(mp);
+		CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(mp);
 
 		m_factory = NULL;
 
@@ -104,6 +105,6 @@ CCacheFactory::Shutdown()
 	GPOS_DELETE(factory);
 
 	// release allocated memory pool
-	CMemoryPoolManager::Destroy(mp);
+	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(mp);
 }
 // EOF

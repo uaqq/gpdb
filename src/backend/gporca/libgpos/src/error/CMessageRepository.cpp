@@ -151,16 +151,8 @@ CMessageRepository::GetMessageRepository()
 void
 CMessageRepository::Shutdown()
 {
-	GPOS_ASSERT(NULL != m_repository);
-
-	CMemoryPool *mp = m_repository->m_mp;
-
-	// destroy message repository
-	GPOS_DELETE(m_repository);
-	m_repository = NULL;
-
-	// release allocated memory pool
-	CMemoryPoolManager::Destroy(mp);
+	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
+	CMessageRepository::m_repository = NULL;
 }
 
 

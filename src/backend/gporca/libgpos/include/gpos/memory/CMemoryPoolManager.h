@@ -69,7 +69,7 @@ private:
 	CMemoryPoolManager(const CMemoryPoolManager &);
 
 	// clean-up memory pools
-	static void Cleanup();
+	void Cleanup();
 
 	// destroy a memory pool at shutdown
 	static void DestroyMemoryPoolAtShutdown(CMemoryPool *mp);
@@ -129,10 +129,10 @@ protected:
 
 public:
 	// create new memory pool
-	static CMemoryPool *CreateMemoryPool();
+	CMemoryPool *CreateMemoryPool();
 
 	// release memory pool
-	static void Destroy(CMemoryPool *);
+	void Destroy(CMemoryPool *);
 
 #ifdef GPOS_DEBUG
 	// print internal contents of allocated memory pools
@@ -143,14 +143,13 @@ public:
 #endif	// GPOS_DEBUG
 
 	// delete memory pools and release manager
-	static void Shutdown();
+	void Shutdown();
 
 	// accessor of memory pool used in global new allocations
-	static CMemoryPool *
+	CMemoryPool *
 	GetGlobalMemoryPool()
 	{
-		GPOS_ASSERT(NULL != m_memory_pool_mgr);
-		return m_memory_pool_mgr->m_global_memory_pool;
+		return m_global_memory_pool;
 	}
 
 	virtual ~CMemoryPoolManager()

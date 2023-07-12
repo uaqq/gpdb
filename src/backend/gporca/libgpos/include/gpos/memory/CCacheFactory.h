@@ -68,7 +68,7 @@ public:
 	static void Init();
 
 	// destroy global instance
-	static void Shutdown();
+	void Shutdown();
 
 	// global accessor
 	inline static CCacheFactory *

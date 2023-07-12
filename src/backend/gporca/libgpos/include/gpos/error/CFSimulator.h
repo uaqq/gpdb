@@ -177,7 +177,7 @@ public:
 
 #ifdef GPOS_DEBUG
 	// destroy simulator
-	static void Shutdown();
+	void Shutdown();
 #endif	// GPOS_DEBUG
 
 	// accessor for global instance

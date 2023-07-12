@@ -267,29 +267,29 @@ gpos_terminate()
 #ifdef GPOS_DEBUG
 	if (NULL != CFSimulator::FSim())
 	{
-		CFSimulator::Shutdown();
+		CFSimulator::FSim()->Shutdown();
 	}
 #endif	// GPOS_DEBUG
 #endif	// GPOS_FPSIMULATOR
 
 	if (NULL != CMessageRepository::GetMessageRepository())
 	{
-		CMessageRepository::Shutdown();
+		CMessageRepository::GetMessageRepository()->Shutdown();
 	}
 
 	if (NULL != CWorkerPoolManager::WorkerPoolManager())
 	{
-		CWorkerPoolManager::Shutdown();
+		CWorkerPoolManager::WorkerPoolManager()->Shutdown();
 	}
 
 	if (NULL != CCacheFactory::GetFactory())
 	{
-		CCacheFactory::Shutdown();
+		CCacheFactory::GetFactory()->Shutdown();
 	}
 
 	if (NULL != CMemoryPoolManager::GetMemoryPoolMgr())
 	{
-		CMemoryPoolManager::Shutdown();
+		CMemoryPoolManager::GetMemoryPoolMgr()->Shutdown();
 	}
 }
 

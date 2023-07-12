@@ -60,7 +60,7 @@ gpopt_init()
 	{
 		if (NULL != CXformFactory::Pxff())
 		{
-			CXformFactory::Shutdown();
+			CXformFactory::Pxff()->Shutdown();
 		}
 
 		GPOS_RETHROW(ex);
@@ -85,11 +85,11 @@ gpopt_terminate()
 		CMDCache::Shutdown();
 	}
 
-	CMemoryPoolManager::Destroy(mp);
+	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(mp);
 
 	if (NULL != CXformFactory::Pxff())
 	{
-		CXformFactory::Shutdown();
+		CXformFactory::Pxff()->Shutdown();
 	}
 #endif	// GPOS_DEBUG
 }

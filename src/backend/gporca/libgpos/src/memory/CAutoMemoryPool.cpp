@@ -42,7 +42,7 @@ using namespace gpos;
 CAutoMemoryPool::CAutoMemoryPool(ELeakCheck leak_check_type)
 	: m_leak_check_type(leak_check_type)
 {
-	m_mp = CMemoryPoolManager::CreateMemoryPool();
+	m_mp = CMemoryPoolManager::GetMemoryPoolMgr()->CreateMemoryPool();
 }
 
 
@@ -105,7 +105,7 @@ CAutoMemoryPool::~CAutoMemoryPool()
 		}
 
 		// release pool
-		CMemoryPoolManager::Destroy(m_mp);
+		CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
 	}
 	GPOS_CATCH_EX(ex)
 	{
@@ -113,7 +113,7 @@ CAutoMemoryPool::~CAutoMemoryPool()
 			GPOS_MATCH_EX(ex, CException::ExmaSystem, CException::ExmiAssert));
 
 		// release pool
-		CMemoryPoolManager::Destroy(m_mp);
+		CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
 
 		GPOS_RETHROW(ex);
 	}
@@ -122,7 +122,7 @@ CAutoMemoryPool::~CAutoMemoryPool()
 #else  // GPOS_DEBUG
 
 	// hand in pool and return
-	CMemoryPoolManager::Destroy(m_mp);
+	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
 
 #endif	// GPOS_DEBUG
 }

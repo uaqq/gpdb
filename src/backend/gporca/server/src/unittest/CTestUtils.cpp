@@ -163,7 +163,7 @@ CTestUtils::DestroyMDProvider()
 	CRefCount::SafeRelease(m_pmdpf);
 
 	// release local memory pool
-	CMemoryPoolManager::Destroy(m_mp);
+	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
 }
 
 
