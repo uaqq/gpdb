@@ -839,12 +839,10 @@ SetSegnoForCompaction(Relation rel,
 	 */
 	if (!compactedSegmentFileList)
 	{
-		bool	   *awaiting_drop;
 		int64	   *total_tupcount;
 
-		total_tupcount = GetTotalTupleCountFromSegments(rel, 0, &awaiting_drop);
+		total_tupcount = GetTotalTupleCountFromSegments(rel, 0, NULL);
 		segzero_tupcount = total_tupcount[0];
-		pfree(awaiting_drop);
 		pfree(total_tupcount);
 	}
 
@@ -1356,7 +1354,8 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 	heap_close(aosegrel, AccessShareLock);
 
 	/* Allocate result array to be returned. */
-	*awaiting_drop = palloc0(sizeof(bool) * MAX_AOREL_CONCURRENCY);
+	if (awaiting_drop != NULL)
+		*awaiting_drop = palloc0(sizeof(bool) * MAX_AOREL_CONCURRENCY);
 	total_tupcount = palloc0(sizeof(int64) * MAX_AOREL_CONCURRENCY);
 
 	/*
@@ -1415,7 +1414,7 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 
 					total_tupcount[segno] += tupcount;
 
-					if (qe_state == AOSEG_STATE_AWAITING_DROP)
+					if (awaiting_drop != NULL && qe_state == AOSEG_STATE_AWAITING_DROP)
 					{
 						*awaiting_drop[segno] = true;
 						elogif(Debug_appendonly_print_segfile_choice, LOG,
