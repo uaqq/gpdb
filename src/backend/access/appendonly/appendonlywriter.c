@@ -1407,7 +1407,6 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 					tupcount = DatumGetInt64(DirectFunctionCall1(int8in, CStringGetDatum(value)));
 					value = PQgetvalue(pgresult, j, 1);
 					segno = pg_atoi(value, sizeof(int32), 0);
-
 					total_tupcount[segno] += tupcount;
 
 					if (awaiting_drop != NULL)
