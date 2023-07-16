@@ -1590,9 +1590,8 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									Snapshot appendOnlyMetaDataSnapshot,
 									List *segmentNumList,
 									int64 modcount_added,
-									bool update_awaiting_drop)
+									List *appendonly_compaction_segno)
 {
-	AORelHashEntryData *aoentry;
 	ListCell   *l;
 	bool	   *awaiting_drop;
 	int64	   *total_tupcount;
@@ -1603,10 +1602,6 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 	/* Give -1 for segno, so that we'll have all segfile tupcount. */
 	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1, &awaiting_drop);
 
-	acquire_lightweight_lock();
-
-	aoentry = AORelGetOrCreateHashEntry(RelationGetRelid(parentrel));
-	Assert(aoentry);
 	/*
 	 * We are interested in only the segfiles that were told to be updated.
 	 */
@@ -1668,20 +1663,38 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 			UpdateMasterAosegTotals(parentrel, qe_segno,
 									tupcount_diff, modcount_added);
 		}
-
-		if (update_awaiting_drop && !awaiting_drop[qe_segno])
-		{
-			ereportif(Debug_appendonly_print_segfile_choice, LOG,
-					  (errmsg("Update segno %d after compaction "
-							  "relation \"%s\" (%d)", qe_segno,
-							  get_rel_name(RelationGetRelid(parentrel)),
-							  RelationGetRelid(parentrel))));
-
-			aoentry->relsegfiles[qe_segno].state = DROP_USE;
-		}
 	}
 
-	release_lightweight_lock();
+	if (appendonly_compaction_segno != NULL)
+	{
+		AORelHashEntryData *aoentry;
+
+		acquire_lightweight_lock();
+
+		aoentry = AORelGetOrCreateHashEntry(RelationGetRelid(parentrel));
+		Assert(aoentry);
+
+		foreach(l, appendonly_compaction_segno)
+		{
+			int			qe_segno = lfirst_int(l);
+
+			Assert(qe_segno >= 0);
+
+			if (!awaiting_drop[qe_segno])
+			{
+				ereportif(Debug_appendonly_print_segfile_choice, LOG,
+						(errmsg("Update segno %d after compaction "
+								"relation \"%s\" (%d)", qe_segno,
+								get_rel_name(RelationGetRelid(parentrel)),
+								RelationGetRelid(parentrel))));
+
+				aoentry->relsegfiles[qe_segno].state = DROP_USE;
+			}
+		}
+
+		release_lightweight_lock();
+	}
+
 	pfree(awaiting_drop);
 	pfree(total_tupcount);
 }
