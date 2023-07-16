@@ -1392,7 +1392,6 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 				{
 					char	   *value;
 					int64		tupcount;
-					int			qe_state;
 					int			segno;
 
 					/* We don't expect NULL, but sanity check. */
@@ -1411,6 +1410,8 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 
 					if (awaiting_drop != NULL)
 					{
+						int			qe_state;
+
 						if (PQgetisnull(pgresult, j, 2) == 1)
 							elog(ERROR, "unexpected NULL in state in results[%d]: %s",
 								i, sqlstmt.data);
