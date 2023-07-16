@@ -1590,7 +1590,8 @@ void
 UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									Snapshot appendOnlyMetaDataSnapshot,
 									List *segmentNumList,
-									int64 modcount_added)
+									int64 modcount_added,
+									bool update_awaiting_drop)
 {
 	AORelHashEntryData *aoentry;
 	ListCell   *l;
@@ -1669,7 +1670,7 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									tupcount_diff, modcount_added);
 		}
 
-		if (!awaiting_drop[qe_segno])
+		if (update_awaiting_drop && !awaiting_drop[qe_segno])
 		{
 			ereportif(Debug_appendonly_print_segfile_choice, LOG,
 					  (errmsg("Update segno %d after compaction "
