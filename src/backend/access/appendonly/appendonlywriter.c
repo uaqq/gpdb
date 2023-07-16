@@ -1600,7 +1600,8 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 	Assert(Gp_role == GP_ROLE_DISPATCH);
 
 	/* Give -1 for segno, so that we'll have all segfile tupcount. */
-	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1, &awaiting_drop);
+	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1,
+		appendonly_compaction_segno != NULL ? &awaiting_drop: NULL);
 
 	/*
 	 * We are interested in only the segfiles that were told to be updated.
@@ -1693,9 +1694,9 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 		}
 
 		release_lightweight_lock();
+		pfree(awaiting_drop);
 	}
 
-	pfree(awaiting_drop);
 	pfree(total_tupcount);
 }
 
