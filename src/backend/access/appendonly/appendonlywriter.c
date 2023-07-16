@@ -1346,7 +1346,8 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 	 * assemble our query string
 	 */
 	initStringInfo(&sqlstmt);
-	appendStringInfo(&sqlstmt, "SELECT tupcount, segno, state FROM %s.%s",
+	appendStringInfo(&sqlstmt, "SELECT tupcount,%s state FROM %s.%s",
+					 awaiting_drop != NULL ? " segno," : "",
 					 get_namespace_name(RelationGetNamespace(aosegrel)),
 					 RelationGetRelationName(aosegrel));
 	if (segno >= 0)
@@ -1401,28 +1402,35 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 					if (PQgetisnull(pgresult, j, 1) == 1)
 						elog(ERROR, "unexpected NULL in segno in results[%d]: %s",
 							 i, sqlstmt.data);
-					if (PQgetisnull(pgresult, j, 2) == 1)
-						elog(ERROR, "unexpected NULL in state in results[%d]: %s",
-							 i, sqlstmt.data);
 
 					value = PQgetvalue(pgresult, j, 0);
 					tupcount = DatumGetInt64(DirectFunctionCall1(int8in, CStringGetDatum(value)));
 					value = PQgetvalue(pgresult, j, 1);
 					segno = pg_atoi(value, sizeof(int32), 0);
-					value = PQgetvalue(pgresult, j, 2);
-					qe_state = pg_atoi(value, sizeof(int32), 0);
 
 					total_tupcount[segno] += tupcount;
 
-					if (awaiting_drop != NULL && qe_state == AOSEG_STATE_AWAITING_DROP)
+					if (awaiting_drop != NULL)
 					{
-						*awaiting_drop[segno] = true;
-						elogif(Debug_appendonly_print_segfile_choice, LOG,
-							   "Found awaiting drop segment file: "
-							   "relation %s (%d), segno = %d",
-							   RelationGetRelationName(parentrel),
-							   RelationGetRelid(parentrel),
-							   segno);
+						if (PQgetisnull(pgresult, j, 2) == 1)
+							elog(ERROR, "unexpected NULL in state in results[%d]: %s",
+								i, sqlstmt.data);
+
+						value = PQgetvalue(pgresult, j, 2);
+						qe_state = pg_atoi(value, sizeof(int32), 0);
+
+						ValidateAppendonlySegmentDataBeforeStorage(segno);
+
+						if (qe_state == AOSEG_STATE_AWAITING_DROP)
+						{
+							*awaiting_drop[segno] = true;
+							elogif(Debug_appendonly_print_segfile_choice, LOG,
+								"Found awaiting drop segment file: "
+								"relation %s (%d), segno = %d",
+								RelationGetRelationName(parentrel),
+								RelationGetRelid(parentrel),
+								segno);
+						}
 					}
 				}
 			}
