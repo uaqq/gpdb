@@ -1346,8 +1346,8 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 	 * assemble our query string
 	 */
 	initStringInfo(&sqlstmt);
-	appendStringInfo(&sqlstmt, "SELECT tupcount,%s state FROM %s.%s",
-					 awaiting_drop != NULL ? " segno," : "",
+	appendStringInfo(&sqlstmt, "SELECT tupcount, segno%s FROM %s.%s",
+					 awaiting_drop != NULL ? ", state" : "",
 					 get_namespace_name(RelationGetNamespace(aosegrel)),
 					 RelationGetRelationName(aosegrel));
 	if (segno >= 0)
