@@ -1599,15 +1599,17 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									List *appendonly_compaction_segno)
 {
 	ListCell   *l;
-	bool	   awaiting_drop[MAX_AOREL_CONCURRENCY] = {0};
+	bool	   *awaiting_drop = NULL;
 	int64	   *total_tupcount;
 
 	Assert(RelationIsAppendOptimized(parentrel));
 	Assert(Gp_role == GP_ROLE_DISPATCH);
 
+	if (appendonly_compaction_segno != NIL)
+		awaiting_drop = palloc0(sizeof(bool) * MAX_AOREL_CONCURRENCY);
+
 	/* Give -1 for segno, so that we'll have all segfile tupcount. */
-	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1,
-		appendonly_compaction_segno != NIL ? awaiting_drop: NULL);
+	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1, awaiting_drop);
 
 	/*
 	 * We are interested in only the segfiles that were told to be updated.
@@ -1700,6 +1702,7 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 		}
 
 		release_lightweight_lock();
+		pfree(awaiting_drop);
 	}
 
 	pfree(total_tupcount);
