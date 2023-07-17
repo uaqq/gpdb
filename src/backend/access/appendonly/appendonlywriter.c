@@ -64,7 +64,7 @@ static AORelHashEntry AORelLookupHashEntry(Oid relid);
 static bool AORelCreateHashEntry(Oid relid);
 static bool *get_awaiting_drop_status_from_segments(Relation parentrel);
 static int64 *GetTotalTupleCountFromSegments(Relation parentrel, int segno,
-											 bool **awaiting_drop);
+											 bool *awaiting_drop);
 
 static void
 acquire_lightweight_lock() {
@@ -1326,7 +1326,7 @@ assignPerRelSegno(List *all_relids)
 static int64 *
 GetTotalTupleCountFromSegments(Relation parentrel,
 							   int segno,
-							   bool **awaiting_drop)
+							   bool *awaiting_drop)
 {
 	StringInfoData sqlstmt;
 	Relation	aosegrel;
@@ -1355,8 +1355,6 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 	heap_close(aosegrel, AccessShareLock);
 
 	/* Allocate result array to be returned. */
-	if (awaiting_drop != NULL)
-		*awaiting_drop = palloc0(sizeof(bool) * MAX_AOREL_CONCURRENCY);
 	total_tupcount = palloc0(sizeof(int64) * MAX_AOREL_CONCURRENCY);
 
 	/*
@@ -1423,7 +1421,7 @@ GetTotalTupleCountFromSegments(Relation parentrel,
 
 						if (qe_state == AOSEG_STATE_AWAITING_DROP)
 						{
-							*awaiting_drop[segno] = true;
+							awaiting_drop[segno] = true;
 							elogif(Debug_appendonly_print_segfile_choice, LOG,
 								"Found awaiting drop segment file: "
 								"relation %s (%d), segno = %d",
@@ -1601,7 +1599,7 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 									List *appendonly_compaction_segno)
 {
 	ListCell   *l;
-	bool	   *awaiting_drop;
+	bool	   awaiting_drop[MAX_AOREL_CONCURRENCY] = {0};
 	int64	   *total_tupcount;
 
 	Assert(RelationIsAppendOptimized(parentrel));
@@ -1609,7 +1607,7 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 
 	/* Give -1 for segno, so that we'll have all segfile tupcount. */
 	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1,
-		appendonly_compaction_segno != NULL ? &awaiting_drop: NULL);
+		appendonly_compaction_segno != NULL ? awaiting_drop: NULL);
 
 	/*
 	 * We are interested in only the segfiles that were told to be updated.
@@ -1702,7 +1700,6 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 		}
 
 		release_lightweight_lock();
-		pfree(awaiting_drop);
 	}
 
 	pfree(total_tupcount);
