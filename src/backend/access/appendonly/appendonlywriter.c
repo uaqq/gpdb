@@ -1607,7 +1607,7 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 
 	/* Give -1 for segno, so that we'll have all segfile tupcount. */
 	total_tupcount = GetTotalTupleCountFromSegments(parentrel, -1,
-		appendonly_compaction_segno != NULL ? awaiting_drop: NULL);
+		appendonly_compaction_segno != NIL ? awaiting_drop: NULL);
 
 	/*
 	 * We are interested in only the segfiles that were told to be updated.
@@ -1672,7 +1672,7 @@ UpdateMasterAosegTotalsFromSegments(Relation parentrel,
 		}
 	}
 
-	if (appendonly_compaction_segno != NULL)
+	if (appendonly_compaction_segno != NIL)
 	{
 		AORelHashEntryData *aoentry;
 
