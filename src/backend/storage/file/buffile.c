@@ -1000,16 +1000,32 @@ BufFilePledgeSequential(BufFile *buffile)
 
 #define BUFFILE_ZSTD_COMPRESSION_LEVEL 1
 
+typedef struct {
+	ResourceOwner oldOwner;
+	ResourceOwner newOwner;
+} ResourceOwnerContext;
+
 void *
 customAlloc(void* opaque, size_t size)
 {
-	return gp_malloc(size);
+	ResourceOwnerContext *resContext = (ResourceOwnerContext*)opaque; 
+	CurrentResourceOwner = resContext->newOwner;
+
+	void *mem = gp_malloc(size);
+
+	CurrentResourceOwner = resContext->oldOwner;
+	return mem;
 }
 
 void
 customFree(void* opaque, void* address)
 {
+	ResourceOwnerContext *resContext = (ResourceOwnerContext*)opaque; 
+	CurrentResourceOwner = resContext->newOwner;
+
 	gp_free(address);
+
+	CurrentResourceOwner = resContext->oldOwner;
 }
 
 /*
@@ -1027,9 +1043,11 @@ BufFileStartCompression(BufFile *file)
 	ResourceOwner oldowner;
 	size_t ret;
 	ZSTD_customMem customMem;
+	ResourceOwnerContext resContext;
 
 	customMem.customAlloc = customAlloc;
 	customMem.customFree = customFree;
+	customMem.opaque = &resContext;
 
 	/*
 	 * When working with compressed files, we rely on libzstd's buffer,
@@ -1052,6 +1070,9 @@ BufFileStartCompression(BufFile *file)
 	 * called immediately after opening the file, this wouldn't be
 	 * necessary, but better safe than sorry.
 	 */
+	resContext.oldOwner = CurrentResourceOwner;
+	resContext.newOwner = file->resowner;
+
 	oldowner = CurrentResourceOwner;
 	CurrentResourceOwner = file->resowner;
 
@@ -1116,9 +1137,11 @@ BufFileEndCompression(BufFile *file)
 	size_t		ret;
 	int			wrote;
 	ZSTD_customMem customMem;
+	ResourceOwnerContext resContext;
 
 	customMem.customAlloc = customAlloc;
 	customMem.customFree = customFree;
+	customMem.opaque = &resContext;
 
 	Assert(file->state == BFS_COMPRESSED_WRITING);
 
