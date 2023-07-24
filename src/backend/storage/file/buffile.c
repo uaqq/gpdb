@@ -1001,19 +1001,19 @@ BufFilePledgeSequential(BufFile *buffile)
 #define BUFFILE_ZSTD_COMPRESSION_LEVEL 1
 
 typedef struct {
-	ResourceOwner oldOwner;
-	ResourceOwner newOwner;
+	ResourceOwner owner;
 } ResourceOwnerContext;
 
 void *
 customAlloc(void* opaque, size_t size)
 {
 	ResourceOwnerContext *resContext = (ResourceOwnerContext*)opaque; 
-	CurrentResourceOwner = resContext->newOwner;
+	ResourceOwner oldowner = CurrentResourceOwner;
+	CurrentResourceOwner = resContext->owner;
 
-	void *mem = gp_malloc(size);
+	void *mem = MemoryContextAlloc(TopMemoryContext, size);
 
-	CurrentResourceOwner = resContext->oldOwner;
+	CurrentResourceOwner = oldowner;
 	return mem;
 }
 
@@ -1021,11 +1021,12 @@ void
 customFree(void* opaque, void* address)
 {
 	ResourceOwnerContext *resContext = (ResourceOwnerContext*)opaque; 
-	CurrentResourceOwner = resContext->newOwner;
+	ResourceOwner oldowner = CurrentResourceOwner;
+	CurrentResourceOwner = resContext->owner;
 
-	gp_free(address);
+	pfree(address);
 
-	CurrentResourceOwner = resContext->oldOwner;
+	CurrentResourceOwner = oldowner;
 }
 
 /*
@@ -1070,8 +1071,7 @@ BufFileStartCompression(BufFile *file)
 	 * called immediately after opening the file, this wouldn't be
 	 * necessary, but better safe than sorry.
 	 */
-	resContext.oldOwner = CurrentResourceOwner;
-	resContext.newOwner = file->resowner;
+	resContext.owner = file->resowner;
 
 	oldowner = CurrentResourceOwner;
 	CurrentResourceOwner = file->resowner;
