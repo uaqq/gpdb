@@ -6288,7 +6288,7 @@ XLogProcessCheckpointRecord(XLogReaderState *rec)
 	if (ckptExtended.pendingDeletes)
 	{
 		for (int i = 0; i < ckptExtended.pendingDeletes->ndelrels; i++)
-			add_delrelnode_to_global(&ckptExtended.pendingDeletes->delrels[i]);
+			add_delrelnode_to_global(&ckptExtended.pendingDeletes->delrels[i].pnode, ckptExtended.pendingDeletes->delrels[i].xid);
 	}
 }
 
@@ -7738,7 +7738,10 @@ StartupXLOG(void)
 
 	PENDING_DELETES *pending_copy = get_delrelnode_global_slim_copy();
 	if (pending_copy)
-		DropRelationFiles(pending_copy->delrels, pending_copy->ndelrels, true);
+	{
+		for (int i = 0; i < pending_copy->ndelrels; i++)
+			DropRelationFiles(&pending_copy->delrels[i].pnode, 1, true);
+	}
 
 	/*
 	 * Kill WAL receiver, if it's still running, before we continue to write

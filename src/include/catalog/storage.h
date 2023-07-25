@@ -20,6 +20,11 @@
 #include "utils/relcache.h"
 
 /* TODO: find a better place for this (or no?) */
+typedef struct RelFileNodePendingDeleteExt
+{
+	RelFileNodePendingDelete pnode;
+	TransactionId xid;
+} RelFileNodePendingDeleteExt;
 typedef struct PENDING_DELETES
 {
 	/*
@@ -28,20 +33,20 @@ typedef struct PENDING_DELETES
 	 * This enum should be respected inside UnpackCheckPointRecord().
 	 */	
 	int ndelrels;
-	RelFileNodePendingDelete delrels[1];
+	RelFileNodePendingDeleteExt delrels[1];
 } PENDING_DELETES;
 
 #define PENDING_DELETES_BYTES(ndelrels) \
-	(offsetof(PENDING_DELETES, delrels) + sizeof(RelFileNodePendingDelete) * (ndelrels))
+	(offsetof(PENDING_DELETES, delrels) + sizeof(RelFileNodePendingDeleteExt) * (ndelrels))
 
 #define DELFILENODE_DEF_CNT 50
 
-void add_delrelnode_to_shmem(RelFileNodePendingDelete *relnode);
-void add_delrelnode_to_global(RelFileNodePendingDelete *relnode);
+void add_delrelnode_to_shmem(RelFileNodePendingDelete *relnode, TransactionId xid);
+void add_delrelnode_to_global(RelFileNodePendingDelete *relnode, TransactionId xid);
 void remove_delrelnode_from_shmem(RelFileNodePendingDelete *relnode);
 void remove_delrelnode_from_global(RelFileNodePendingDelete *relnode);
+void remove_delrelnode_from_global_by_xid(TransactionId xid);
 PENDING_DELETES* get_delrelnode_global_slim_copy();
-
 
 extern SMgrRelation RelationCreateStorage(RelFileNode rnode,
 										  char relpersistence,

@@ -134,10 +134,10 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 			
 			for (int i = 0; i < ckptExtended.pendingDeletes->ndelrels; i++)
 			{
-				RelFileNodePendingDelete *arr_relnode = &ckptExtended.pendingDeletes->delrels[i];
+				RelFileNodePendingDeleteExt *relnode_ext = &ckptExtended.pendingDeletes->delrels[i];
 
-				if (arr_relnode->node.relNode != 0)
-					appendStringInfo(buf, " (%d %d)", arr_relnode->node.relNode, arr_relnode->smgr_which);
+				if (relnode_ext->pnode.node.relNode != 0)
+					appendStringInfo(buf, " (%d %d %d)", relnode_ext->pnode.node.relNode, relnode_ext->pnode.smgr_which, relnode_ext->xid);
 			}
 		}
 	}
