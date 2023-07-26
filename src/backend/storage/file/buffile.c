@@ -996,7 +996,6 @@ BufFilePledgeSequential(BufFile *buffile)
 /*
  * The rest of the code is only needed when compression support is compiled in.
  */
-#define HAVE_LIBZSTD
 #ifdef HAVE_LIBZSTD
 
 #define BUFFILE_ZSTD_COMPRESSION_LEVEL 1
@@ -1064,7 +1063,7 @@ BufFileStartCompression(BufFile *file)
 	CurrentResourceOwner = file->resowner;
 
 	file->zstd_context = zstd_alloc_context();
-	file->zstd_context->cctx = ZSTD_createCStream_advanced(customMem); //
+	file->zstd_context->cctx = ZSTD_createCStream_advanced(customMem);
 	if (!file->zstd_context->cctx)
 		elog(ERROR, "out of memory");
 	ret = ZSTD_initCStream(file->zstd_context->cctx, BUFFILE_ZSTD_COMPRESSION_LEVEL);
