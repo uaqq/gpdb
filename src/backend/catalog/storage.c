@@ -310,7 +310,7 @@ RelationDropStorage(Relation rel)
 		RelationIsAppendOptimized(rel) ? SMGR_AO : SMGR_MD;
 	pending->next = pendingDeletes;
 	pendingDeletes = pending;
-	add_delrelnode_to_shmem(&pending->relnode, GetCurrentTransactionId());
+	//add_delrelnode_to_shmem(&pending->relnode, GetCurrentTransactionId());
 
 	/*
 	 * NOTE: if the relation was created in this transaction, it will now be
