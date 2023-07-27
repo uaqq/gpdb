@@ -1001,20 +1001,13 @@ BufFilePledgeSequential(BufFile *buffile)
 #define BUFFILE_ZSTD_COMPRESSION_LEVEL 1
 
 void *
-customAlloc(void* opaque, size_t size)
+customAlloc(void *opaque, size_t size)
 {
-	ResourceOwner newowner = (ResourceOwner*)opaque; 
-	ResourceOwner oldowner = CurrentResourceOwner;
-	CurrentResourceOwner = newowner;
-
-	void *mem = MemoryContextAlloc(TopMemoryContext, size);
-
-	CurrentResourceOwner = oldowner;
-	return mem;
+	return MemoryContextAlloc(TopMemoryContext, size);
 }
 
 void
-customFree(void* opaque, void* address)
+customFree(void *opaque, void *address)
 {
 	pfree(address);
 }
@@ -1126,7 +1119,6 @@ BufFileEndCompression(BufFile *file)
 
 	customMem.customAlloc = customAlloc;
 	customMem.customFree = customFree;
-	customMem.opaque = file->resowner;
 
 	Assert(file->state == BFS_COMPRESSED_WRITING);
 
