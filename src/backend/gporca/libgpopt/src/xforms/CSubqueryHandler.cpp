@@ -1934,6 +1934,7 @@ CSubqueryHandler::FRemoveExistentialSubquery(
 		// for existential subqueries, any column produced by inner expression
 		// can be used to check for empty answers; we use first column for that
 		CColRef *colref = pexprInner->DeriveOutputColumns()->PcrFirst();
+		colref->MarkAsUsed();
 
 		if (COperator::EopScalarSubqueryExists == op_id)
 		{
