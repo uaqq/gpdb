@@ -145,6 +145,9 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	if (CDistributionSpec::EdtAny == pds->Edt() && Fake())
 	{
 		pds->Release();
+
+		// this situation arises when we have Filter instead inlined CTE,
+		// in this case, we need to push down required distribution through Filter
 		pdsRequired->AddRef();
 		return pdsRequired;
 	}
