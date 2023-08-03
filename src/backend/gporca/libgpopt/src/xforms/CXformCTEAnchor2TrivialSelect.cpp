@@ -100,8 +100,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	CExpression *pexprChild = (*pexpr)[0];
 	pexprChild->AddRef();
 
-	if (COperator::EopLogicalCTEAnchor == pexpr->Pop()->Eopid() &&
-		COperator::EopLogicalLeftOuterCorrelatedApply !=
+	if (COperator::EopLogicalLeftOuterCorrelatedApply !=
 			pexprChild->Pop()->Eopid())
 	{
 		pxfres->Add(pexprChild);
