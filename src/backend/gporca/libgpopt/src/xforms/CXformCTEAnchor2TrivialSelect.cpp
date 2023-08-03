@@ -101,8 +101,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	pexprChild->AddRef();
 	BOOL fake = true;
 
-	if (COperator::EopLogicalCTEAnchor != pexpr->Pop()->Eopid() ||
-		COperator::EopLogicalLeftOuterCorrelatedApply ==
+	if (COperator::EopLogicalLeftOuterCorrelatedApply ==
 			pexprChild->Pop()->Eopid())
 	{
 		fake = false;
