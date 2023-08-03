@@ -102,7 +102,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	BOOL fake = true;
 
 	if (COperator::EopLogicalLeftOuterCorrelatedApply ==
-			pexprChild->Pop()->Eopid())
+		pexprChild->Pop()->Eopid())
 	{
 		fake = false;
 	}
