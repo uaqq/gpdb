@@ -101,7 +101,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	pexprChild->AddRef();
 
 	if (COperator::EopLogicalLeftOuterCorrelatedApply !=
-			pexprChild->Pop()->Eopid())
+		pexprChild->Pop()->Eopid())
 	{
 		pxfres->Add(pexprChild);
 		return;
