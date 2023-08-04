@@ -94,24 +94,11 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 		return;
 	}
 
-	CMemoryPool *mp = pxfctxt->Pmp();
-
 	// child of CTE anchor
 	CExpression *pexprChild = (*pexpr)[0];
 	pexprChild->AddRef();
 
-	if (COperator::EopLogicalLeftOuterCorrelatedApply !=
-		pexprChild->Pop()->Eopid())
-	{
-		pxfres->Add(pexprChild);
-		return;
-	}
-
-	CExpression *pexprSelect = GPOS_NEW(mp)
-		CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp), pexprChild,
-					CUtils::PexprScalarConstBool(mp, true /*fValue*/));
-
-	pxfres->Add(pexprSelect);
+	pxfres->Add(pexprChild);
 }
 
 // EOF
