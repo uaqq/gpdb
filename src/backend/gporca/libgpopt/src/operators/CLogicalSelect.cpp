@@ -30,19 +30,19 @@ using namespace gpopt;
 //
 //---------------------------------------------------------------------------
 CLogicalSelect::CLogicalSelect(CMemoryPool *mp)
-	: CLogicalUnary(mp), m_ptabdesc(NULL), m_fake(false)
+	: CLogicalUnary(mp), m_ptabdesc(NULL), m_trivial(false)
 {
 	m_phmPexprPartPred = GPOS_NEW(mp) ExprPredToExprPredPartMap(mp);
 }
 
 CLogicalSelect::CLogicalSelect(CMemoryPool *mp, CTableDescriptor *ptabdesc)
-	: CLogicalUnary(mp), m_ptabdesc(ptabdesc), m_fake(false)
+	: CLogicalUnary(mp), m_ptabdesc(ptabdesc), m_trivial(false)
 {
 	m_phmPexprPartPred = GPOS_NEW(mp) ExprPredToExprPredPartMap(mp);
 }
 
 CLogicalSelect::CLogicalSelect(CMemoryPool *mp, BOOL fake)
-	: CLogicalUnary(mp), m_ptabdesc(NULL), m_fake(fake)
+	: CLogicalUnary(mp), m_ptabdesc(NULL), m_trivial(fake)
 {
 	m_phmPexprPartPred = GPOS_NEW(mp) ExprPredToExprPredPartMap(mp);
 }

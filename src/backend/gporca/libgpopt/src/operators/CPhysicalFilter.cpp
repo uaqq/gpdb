@@ -32,7 +32,8 @@ using namespace gpopt;
 //		Ctor
 //
 //---------------------------------------------------------------------------
-CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp) : CPhysical(mp), m_fake(false)
+CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp)
+	: CPhysical(mp), m_trivial(false)
 {
 	// when Filter includes outer references, correlated execution has to be enforced,
 	// in this case, we create two child optimization requests to guarantee correct evaluation of parameters
@@ -44,7 +45,7 @@ CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp) : CPhysical(mp), m_fake(false)
 
 
 CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp, BOOL fake)
-	: CPhysical(mp), m_fake(fake)
+	: CPhysical(mp), m_trivial(fake)
 {
 	// when Filter includes outer references, correlated execution has to be enforced,
 	// in this case, we create two child optimization requests to guarantee correct evaluation of parameters
@@ -142,7 +143,7 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 	CDistributionSpec *pds =
 		CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
 
-	if (CDistributionSpec::EdtAny == pds->Edt() && Fake())
+	if (CDistributionSpec::EdtAny == pds->Edt() && FTrivial())
 	{
 		pds->Release();
 

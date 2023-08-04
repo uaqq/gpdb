@@ -31,7 +31,7 @@ private:
 	// private copy ctor
 	CPhysicalFilter(const CPhysicalFilter &);
 
-	BOOL m_fake;
+	BOOL m_trivial;
 
 public:
 	// ctor
@@ -56,9 +56,9 @@ public:
 	}
 
 	BOOL
-	Fake() const
+	FTrivial() const
 	{
-		return m_fake;
+		return m_trivial;
 	}
 
 	// match function

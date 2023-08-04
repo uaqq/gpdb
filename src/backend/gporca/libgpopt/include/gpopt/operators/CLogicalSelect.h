@@ -42,7 +42,7 @@ private:
 	// table descriptor
 	CTableDescriptor *m_ptabdesc;
 
-	BOOL m_fake;
+	BOOL m_trivial;
 
 public:
 	// ctor
@@ -78,9 +78,9 @@ public:
 	}
 
 	BOOL
-	Fake() const
+	FTrivial() const
 	{
-		return m_fake;
+		return m_trivial;
 	}
 
 	//-------------------------------------------------------------------------------------
