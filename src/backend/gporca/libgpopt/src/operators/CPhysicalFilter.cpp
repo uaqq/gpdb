@@ -44,18 +44,6 @@ CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp)
 }
 
 
-CPhysicalFilter::CPhysicalFilter(CMemoryPool *mp, BOOL fake)
-	: CPhysical(mp), m_trivial(fake)
-{
-	// when Filter includes outer references, correlated execution has to be enforced,
-	// in this case, we create two child optimization requests to guarantee correct evaluation of parameters
-	// (1) Broadcast
-	// (2) Singleton
-
-	SetDistrRequests(2 /*ulDistrReqs*/);
-}
-
-
 //---------------------------------------------------------------------------
 //	@function:
 //		CPhysicalFilter::~CPhysicalFilter

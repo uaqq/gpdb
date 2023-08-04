@@ -37,8 +37,6 @@ public:
 	// ctor
 	explicit CPhysicalFilter(CMemoryPool *mp);
 
-	explicit CPhysicalFilter(CMemoryPool *mp, BOOL fake);
-
 	// dtor
 	virtual ~CPhysicalFilter();
 
@@ -59,6 +57,12 @@ public:
 	FTrivial() const
 	{
 		return m_trivial;
+	}
+
+	void
+	MarkTrivial()
+	{
+		m_trivial = true;
 	}
 
 	// match function

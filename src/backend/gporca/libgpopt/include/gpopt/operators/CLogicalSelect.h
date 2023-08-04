@@ -51,9 +51,6 @@ public:
 	// ctor
 	CLogicalSelect(CMemoryPool *mp, CTableDescriptor *ptabdesc);
 
-	// ctor
-	CLogicalSelect(CMemoryPool *mp, BOOL fake);
-
 	// dtor
 	virtual ~CLogicalSelect();
 
@@ -81,6 +78,12 @@ public:
 	FTrivial() const
 	{
 		return m_trivial;
+	}
+
+	void
+	MarkTrivial()
+	{
+		m_trivial = true;
 	}
 
 	//-------------------------------------------------------------------------------------

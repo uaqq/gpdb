@@ -100,8 +100,10 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	CExpression *pexprChild = (*pexpr)[0];
 	pexprChild->AddRef();
 
+	CLogicalSelect *plgselect = GPOS_NEW(mp) CLogicalSelect(mp);
+	plgselect->MarkTrivial();
 	CExpression *pexprSelect = GPOS_NEW(mp)
-		CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp, true), pexprChild,
+		CExpression(mp, plgselect, pexprChild,
 					CUtils::PexprScalarConstBool(mp, true /*fValue*/));
 
 	pxfres->Add(pexprSelect);
