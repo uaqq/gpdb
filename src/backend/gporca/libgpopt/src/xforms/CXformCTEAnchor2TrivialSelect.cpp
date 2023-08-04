@@ -99,16 +99,9 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 	// child of CTE anchor
 	CExpression *pexprChild = (*pexpr)[0];
 	pexprChild->AddRef();
-	BOOL fake = true;
-
-	if (COperator::EopLogicalLeftOuterCorrelatedApply ==
-		pexprChild->Pop()->Eopid())
-	{
-		fake = false;
-	}
 
 	CExpression *pexprSelect = GPOS_NEW(mp)
-		CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp, fake), pexprChild,
+		CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp, true), pexprChild,
 					CUtils::PexprScalarConstBool(mp, true /*fValue*/));
 
 	pxfres->Add(pexprSelect);
