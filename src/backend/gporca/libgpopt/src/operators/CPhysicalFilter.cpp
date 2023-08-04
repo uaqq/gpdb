@@ -128,20 +128,15 @@ CPhysicalFilter::PdsRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
 		return pdsRequired;
 	}
 
-	CDistributionSpec *pds =
-		CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
-
-	if (CDistributionSpec::EdtAny == pds->Edt() && FTrivial())
+	if (FTrivial())
 	{
-		pds->Release();
-
 		// this situation arises when we have Filter instead inlined CTE,
 		// in this case, we need to push down required distribution through Filter
 		pdsRequired->AddRef();
 		return pdsRequired;
 	}
 
-	return pds;
+	return CPhysical::PdsUnary(mp, exprhdl, pdsRequired, child_index, ulOptReq);
 }
 
 
