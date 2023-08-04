@@ -72,7 +72,11 @@ CXformCTEAnchor2TrivialSelect::Exfp(CExpressionHandle &exprhdl) const
 //
 //---------------------------------------------------------------------------
 void
-CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
+CXformCTEAnchor2TrivialSelect::Transform(CXformContext *
+#ifdef GPOS_DEBUG
+											 pxfctxt
+#endif
+										 ,
 										 CXformResult *pxfres,
 										 CExpression *pexpr) const
 {
