@@ -70,6 +70,7 @@
 #include "utils/session_state.h"
 #include "cdb/cdbendpoint.h"
 #include "replication/gp_replication.h"
+#include "catalog/orphaned_files_mgr.h"
 
 /* GUCs */
 int			shared_memory_type = DEFAULT_SHARED_MEMORY_TYPE;
@@ -226,6 +227,8 @@ CreateSharedMemoryAndSemaphores(int port)
 
 		/* size of parallel cursor count */
 		size = add_size(size, ParallelCursorCountSize());
+
+		size = add_size(size, OrphanedFilesShmemSize());
 
 		elog(DEBUG3, "invoking IpcMemoryCreate(size=%zu)", size);
 
@@ -396,6 +399,8 @@ CreateSharedMemoryAndSemaphores(int port)
 	
 	if (Gp_role == GP_ROLE_DISPATCH)
 		ParallelCursorCountInit();
+
+	OrphanedFilesShmemInit();
 
 	/*
 	 * Now give loadable modules a chance to set up their shmem allocations

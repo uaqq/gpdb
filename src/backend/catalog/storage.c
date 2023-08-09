@@ -28,6 +28,7 @@
 #include "access/xlogutils.h"
 #include "catalog/storage.h"
 #include "catalog/storage_xlog.h"
+#include "catalog/orphaned_files_mgr.h"
 #include "common/relpath.h"
 #include "commands/dbcommands.h"
 #include "storage/freespace.h"
@@ -120,6 +121,7 @@ RelationCreateStorage(RelFileNode rnode, char relpersistence, SMgrImpl smgr_whic
 	pending->relnode.smgr_which = smgr_which;
 	pending->next = pendingDeletes;
 	pendingDeletes = pending;
+	OrphanedFilesShmemAdd(&pending->relnode, GetCurrentTransactionId());
 
 	return srel;
 }
@@ -223,6 +225,8 @@ RelationPreserveStorage(RelFileNode rnode, bool atCommit)
 			prev = pending;
 		}
 	}
+
+	OrphanedFilesShmemRemove();
 }
 
 /*
@@ -494,6 +498,8 @@ smgrDoPendingDeletes(bool isCommit)
 
 		pfree(srels);
 	}
+
+	OrphanedFilesShmemRemove();
 }
 
 /*
@@ -582,6 +588,8 @@ PostPrepare_smgr(void)
 		/* must explicitly free the list entry */
 		pfree(pending);
 	}
+
+	OrphanedFilesShmemRemove();
 }
 
 /*
