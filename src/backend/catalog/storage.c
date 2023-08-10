@@ -28,12 +28,12 @@
 #include "access/xlogutils.h"
 #include "catalog/storage.h"
 #include "catalog/storage_xlog.h"
-#include "catalog/orphaned_files_mgr.h"
 #include "common/relpath.h"
 #include "commands/dbcommands.h"
 #include "storage/freespace.h"
 #include "storage/proc.h"
 #include "storage/smgr.h"
+#include "utils/dsa.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
@@ -63,9 +63,227 @@ typedef struct PendingRelDelete
 	bool		atCommit;		/* T=delete at commit; F=delete at abort */
 	int			nestLevel;		/* xact nesting level of request */
 	struct PendingRelDelete *next;	/* linked-list link */
+	dsa_pointer shmem_ptr;
 } PendingRelDelete;
 
+typedef struct PendingDeleteListNode
+{
+	PendingRelXactDelete pd;
+	dsa_pointer next;
+	dsa_pointer prev;
+} PendingDeleteListNode;
+
+typedef struct PendingDeleteShmemStruct
+{
+	dsa_pointer pd_head;
+	char dsa_mem[FLEXIBLE_ARRAY_MEMBER];
+} PendingDeleteShmemStruct;
+
 static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
+
+static PendingDeleteShmemStruct *PendingDeleteShmem = NULL;
+
+Size
+PendingDeleteShmemSize(void)
+{
+	Size		size;
+
+	size = offsetof(PendingDeleteShmemStruct, dsa_mem);
+	size = add_size(size, dsa_minimum_size());
+
+	return size;
+}
+
+void
+PendingDeleteShmemInit(void)
+{
+	Size		size = PendingDeleteShmemSize();
+	bool		found;
+
+	PendingDeleteShmem = (PendingDeleteShmemStruct *)
+		ShmemInitStruct("Pending Delete",
+						size,
+						&found);
+
+	if (!found)
+	{
+		dsa_area *dsa = dsa_create_in_place(
+			PendingDeleteShmem->dsa_mem,
+			dsa_minimum_size(),
+			LWTRANCHE_ORPHANED_FILES_DSA,
+			NULL
+		);
+		dsa_pin(dsa);
+		PendingDeleteShmem->pd_head = InvalidDsaPointer;
+		elog(LOG, "dsa main: %p", dsa);
+
+		//on_shmem_exit(apw_detach_shmem, 0);
+	}
+}
+
+static void print_shmem(dsa_area *dsa)
+{
+	dsa_pointer pdl_node_dsa = PendingDeleteShmem->pd_head;
+
+	while (pdl_node_dsa != InvalidDsaPointer)
+	{
+		PendingDeleteListNode *pdl_node = dsa_get_address(dsa, pdl_node_dsa);
+
+		elog(NOTICE, "Shmem contains: (%d, %d)", pdl_node->pd.relnode.node.relNode, pdl_node->pd.xid);
+		pdl_node_dsa = pdl_node->next;
+	}
+}
+
+static void PendingDeleteShmemAddNode(dsa_pointer cur, dsa_area *dsa)
+{
+	dsa_pointer head = PendingDeleteShmem->pd_head;
+	PendingDeleteListNode *cur_node = dsa_get_address(dsa, cur);
+	
+	cur_node->next = head;
+	cur_node->prev = InvalidDsaPointer;
+	if (head != InvalidDsaPointer)
+	{
+		PendingDeleteListNode *head_node = dsa_get_address(dsa, head);
+
+		head_node->prev = cur;
+	}
+	PendingDeleteShmem->pd_head = cur;
+
+	elog(NOTICE, "%d added to shmem.", cur_node->pd.relnode.node.relNode);
+}
+
+static void PendingDeleteShmemRemoveNode(dsa_pointer cur, dsa_area *dsa)
+{
+	dsa_pointer head = PendingDeleteShmem->pd_head;
+	PendingDeleteListNode *cur_node = dsa_get_address(dsa, cur);
+
+	if (cur_node->next != InvalidDsaPointer)
+	{
+		PendingDeleteListNode *next_node = dsa_get_address(dsa, cur_node->next);
+
+		next_node->prev = cur_node->prev;
+	}
+
+	if (cur_node->prev != InvalidDsaPointer)
+	{
+		PendingDeleteListNode *prev_node = dsa_get_address(dsa, cur_node->prev);
+
+		prev_node->next = cur_node->next;
+	}
+
+	if (cur == head)
+		PendingDeleteShmem->pd_head = cur_node->next;
+
+	elog(NOTICE, "%d removed from shmem.", cur_node->pd.relnode.node.relNode);
+	
+	dsa_free(dsa, cur);
+}
+
+static dsa_pointer PendingDeleteShmemAdd(RelFileNodePendingDelete *relnode, TransactionId xid)
+{
+	dsa_pointer pdl_node_dsa;
+	PendingDeleteListNode *pdl_node;
+	dsa_area *dsa;
+
+	elog(NOTICE, "Trying to add (%d, %d) to shmem.", relnode->node.relNode, xid);
+
+	if (xid == InvalidTransactionId || !IsUnderPostmaster)
+		return InvalidDsaPointer;
+
+	dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+
+	pdl_node_dsa = dsa_allocate(dsa, sizeof(PendingDeleteListNode));
+	pdl_node = dsa_get_address(dsa, pdl_node_dsa);
+
+	memcpy(&pdl_node->pd.relnode, relnode, sizeof(*relnode));
+	pdl_node->pd.xid = xid;
+
+	PendingDeleteShmemAddNode(pdl_node_dsa, dsa);
+
+	print_shmem(dsa);
+
+	dsa_detach(dsa);
+
+	return pdl_node_dsa;
+}
+
+static void PendingDeleteShmemRemove(dsa_pointer node_ptr)
+{
+	dsa_area *dsa;
+
+	elog(NOTICE, "Trying to remove all from shmem.");
+
+	if (node_ptr == InvalidDsaPointer)
+		return;
+
+	dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+	PendingDeleteShmemRemoveNode(node_ptr, dsa);
+
+	print_shmem(dsa);
+
+	dsa_detach(dsa);
+}
+
+static char* PendingDeleteXLogShmemDump(Size *count, Size *size)
+{
+	dsa_pointer pdl_node_dsa = PendingDeleteShmem->pd_head;
+	dsa_area *dsa;
+	StringInfoData buf;
+
+	*count = 0;
+	*size = 0;
+
+	if (pdl_node_dsa == InvalidDsaPointer)
+		return NULL;
+
+	initStringInfo(&buf);
+	dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+
+	while (pdl_node_dsa != InvalidDsaPointer)
+	{
+		PendingDeleteListNode *pdl_node = dsa_get_address(dsa, pdl_node_dsa);
+
+		appendBinaryStringInfo(&buf, (char*)&pdl_node->pd, sizeof(pdl_node->pd));
+		(*count)++;
+		(*size) += sizeof(pdl_node->pd);
+
+		pdl_node_dsa = pdl_node->next;
+	}
+
+	dsa_detach(dsa);
+
+	return buf.data;
+}
+
+void PendingDeleteXLogInsert(void)
+{
+	XLogRecPtr recptr;
+	Size count;
+	Size size;
+	char *data = PendingDeleteXLogShmemDump(&count, &size);
+
+	if (!data)
+		return;
+	
+	XLogBeginInsert();
+	XLogRegisterData((char*)&count, sizeof(count));
+	XLogRegisterData(data, size);
+	recptr = XLogInsert(RM_XLOG_ID, XLOG_PENDING_DELETE);
+	XLogFlush(recptr);
+
+	pfree(data);
+}
+/*
+PendingRelXactDeleteArray* PendingDeleteXLogUnpack(XLogReaderState *record)
+{
+	PendingRelXactDeleteArray *array = (PendingRelXactDeleteArray*)XLogRecGetData(record);
+
+	Assert(array->count > 0);
+	Assert(XLogRecGetDataLen(record) == sizeof(Size) + sizeof(PendingRelXactDelete) * array->count);
+
+	return array;
+}
+*/
 
 /*
  * RelationCreateStorage
@@ -120,8 +338,8 @@ RelationCreateStorage(RelFileNode rnode, char relpersistence, SMgrImpl smgr_whic
 	pending->nestLevel = GetCurrentTransactionNestLevel();
 	pending->relnode.smgr_which = smgr_which;
 	pending->next = pendingDeletes;
+	pending->shmem_ptr = PendingDeleteShmemAdd(&pending->relnode, GetCurrentTransactionId());
 	pendingDeletes = pending;
-	OrphanedFilesShmemAdd(&pending->relnode, GetCurrentTransactionId());
 
 	return srel;
 }
@@ -165,6 +383,7 @@ RelationDropStorage(Relation rel)
 	pending->relnode.smgr_which =
 		RelationIsAppendOptimized(rel) ? SMGR_AO : SMGR_MD;
 	pending->next = pendingDeletes;
+	pending->shmem_ptr = InvalidDsaPointer;
 	pendingDeletes = pending;
 
 	/*
@@ -216,6 +435,7 @@ RelationPreserveStorage(RelFileNode rnode, bool atCommit)
 				prev->next = next;
 			else
 				pendingDeletes = next;
+			PendingDeleteShmemRemove(pending->shmem_ptr);
 			pfree(pending);
 			/* prev does not change */
 		}
@@ -225,8 +445,6 @@ RelationPreserveStorage(RelFileNode rnode, bool atCommit)
 			prev = pending;
 		}
 	}
-
-	OrphanedFilesShmemRemove();
 }
 
 /*
@@ -483,6 +701,7 @@ smgrDoPendingDeletes(bool isCommit)
 
 				srels[nrels++] = srel;
 			}
+			PendingDeleteShmemRemove(pending->shmem_ptr);
 			/* must explicitly free the list entry */
 			pfree(pending);
 			/* prev does not change */
@@ -498,8 +717,6 @@ smgrDoPendingDeletes(bool isCommit)
 
 		pfree(srels);
 	}
-
-	OrphanedFilesShmemRemove();
 }
 
 /*
@@ -585,11 +802,10 @@ PostPrepare_smgr(void)
 	{
 		next = pending->next;
 		pendingDeletes = next;
+		PendingDeleteShmemRemove(pending->shmem_ptr);
 		/* must explicitly free the list entry */
 		pfree(pending);
 	}
-
-	OrphanedFilesShmemRemove();
 }
 
 /*

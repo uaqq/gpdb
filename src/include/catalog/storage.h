@@ -19,6 +19,22 @@
 #include "storage/smgr.h"
 #include "utils/relcache.h"
 
+typedef struct PendingRelXactDelete
+{
+	RelFileNodePendingDelete relnode;
+	TransactionId xid;
+} PendingRelXactDelete;
+
+typedef struct PendingRelXactDeleteArray
+{
+	Size count;
+	PendingRelXactDelete array[FLEXIBLE_ARRAY_MEMBER];
+} PendingRelXactDeleteArray;
+
+extern Size PendingDeleteShmemSize(void);
+extern void PendingDeleteShmemInit(void);
+extern void PendingDeleteXLogInsert(void);
+
 extern SMgrRelation RelationCreateStorage(RelFileNode rnode,
 										  char relpersistence,
 										  SMgrImpl smgr_which);

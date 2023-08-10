@@ -90,6 +90,7 @@
 #include "utils/resscheduler.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "catalog/storage.h"
 
 extern uint32 bootstrap_data_checksum_version;
 
@@ -9641,6 +9642,9 @@ CreateCheckPoint(int flags)
 									 CheckpointStats.ckpt_segs_removed,
 									 CheckpointStats.ckpt_segs_recycled);
 
+	if (LocalXLogInsertAllowed)
+		PendingDeleteXLogInsert();
+
 	LWLockRelease(CheckpointLock);
 }
 
@@ -10932,6 +10936,10 @@ xlog_redo(XLogReaderState *record)
 
 		/* Keep track of full_page_writes */
 		lastFullPageWrites = fpw;
+	}
+	else if (info == XLOG_PENDING_DELETE)
+	{
+
 	}
 }
 

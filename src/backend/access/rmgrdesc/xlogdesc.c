@@ -23,6 +23,7 @@
 
 #include "access/twophase_xlog.h"
 #include "cdb/cdbpublic.h"
+#include "catalog/storage.h"
 
 /*
  * GUC support
@@ -215,6 +216,12 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 						 (uint32) xlrec.overwritten_lsn,
 						 timestamptz_to_str(xlrec.overwrite_time));
 	}
+	else if (info == XLOG_PENDING_DELETE)
+	{
+		PendingRelXactDeleteArray *xlrec = (PendingRelXactDeleteArray*) rec;
+
+		appendStringInfo(buf, "Pending delete count: %ld", xlrec->count);
+	}
 }
 
 const char *
@@ -268,6 +275,9 @@ xlog_identify(uint8 info)
 			break;
 		case XLOG_FPI_FOR_HINT:
 			id = "FPI_FOR_HINT";
+			break;
+		case XLOG_PENDING_DELETE:
+			id = "PENDING_DELETE";
 			break;
 	}
 
