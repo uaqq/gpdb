@@ -79,9 +79,16 @@ typedef struct PendingDeleteShmemStruct
 	char dsa_mem[FLEXIBLE_ARRAY_MEMBER];
 } PendingDeleteShmemStruct;
 
+typedef struct PendingDeleteHtabNode
+{
+	TransactionId xid;
+	List *relnode_list;
+} PendingDeleteHtabNode;
+
 static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
 
-static PendingDeleteShmemStruct *PendingDeleteShmem = NULL;
+static HTAB *pendingDeleteRedo = NULL; /* hash tab of redo pending deletes */
+static PendingDeleteShmemStruct *PendingDeleteShmem = NULL; /* shared pending deletes state  */
 
 Size
 PendingDeleteShmemSize(void)
@@ -211,7 +218,7 @@ static void PendingDeleteShmemRemove(dsa_pointer node_ptr)
 {
 	dsa_area *dsa;
 
-	elog(NOTICE, "Trying to remove all from shmem.");
+	elog(NOTICE, "Trying to remove node from shmem.");
 
 	if (node_ptr == InvalidDsaPointer)
 		return;
@@ -273,17 +280,57 @@ void PendingDeleteXLogInsert(void)
 
 	pfree(data);
 }
-/*
-PendingRelXactDeleteArray* PendingDeleteXLogUnpack(XLogReaderState *record)
+
+static void
+PendingDeleteRedoAdd(PendingRelXactDelete *pd)
 {
-	PendingRelXactDeleteArray *array = (PendingRelXactDeleteArray*)XLogRecGetData(record);
+	PendingDeleteHtabNode *l_node;
+	bool found;
+	RelFileNodePendingDelete *relnode;
 
-	Assert(array->count > 0);
-	Assert(XLogRecGetDataLen(record) == sizeof(Size) + sizeof(PendingRelXactDelete) * array->count);
+	elog(LOG, "Trying to add (%d, %d) during redo.", pd->relnode.node.relNode, pd->xid);
 
-	return array;
+	if (!pendingDeleteRedo)
+	{
+		HASHCTL ctl;
+		
+		memset(&ctl, 0, sizeof(ctl));
+		
+		ctl.keysize = sizeof(TransactionId);
+		ctl.entrysize = sizeof(PendingDeleteHtabNode);
+
+		pendingDeleteRedo = hash_create("Pending Delete Data", 0, &ctl, HASH_ELEM);
+	}
+
+	l_node = (PendingDeleteHtabNode *) hash_search(pendingDeleteRedo, &pd->xid, HASH_ENTER, &found);
+	if (!found)
+	{
+		l_node->xid = pd->xid;
+		l_node->relnode_list = NIL;
+	}
+
+	relnode = palloc(sizeof(*relnode));
+	memcpy(relnode, &pd->relnode, sizeof(*relnode));
+	l_node->relnode_list = lappend(l_node->relnode_list, relnode);
 }
-*/
+
+void PendingDeleteRedo(XLogReaderState *record)
+{
+	PendingRelXactDeleteArray *xact_array = (PendingRelXactDeleteArray*)XLogRecGetData(record);
+
+	Assert(xact_array->count > 0);
+	Assert(XLogRecGetDataLen(record) == sizeof(Size) + sizeof(PendingRelXactDelete) * xact_array->count);
+
+	for (Size i = 0; i < xact_array->count; i++)
+		PendingDeleteRedoAdd(&xact_array->array[i]);
+}
+
+void
+PendingDeleteRedoRemove(TransactionId xid)
+{
+
+}
+
 
 /*
  * RelationCreateStorage
@@ -855,6 +902,9 @@ smgr_redo(XLogReaderState *record)
 
 		reln = smgropen(xlrec->rnode, InvalidBackendId, xlrec->impl);
 		smgrcreate(reln, xlrec->forkNum, true);
+
+		PendingRelXactDelete pd = {{xlrec->rnode, xlrec->impl, false}, XLogRecGetXid(record)};
+		PendingDeleteRedoAdd(&pd);
 	}
 	else if (info == XLOG_SMGR_TRUNCATE)
 	{

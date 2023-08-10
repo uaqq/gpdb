@@ -7239,6 +7239,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		/* Make sure files supposed to be dropped are dropped */
 		DropRelationFiles(parsed->xnodes, parsed->nrels, true);
 	}
+	PendingDeleteRedoRemove(xid);
 
 	if (parsed->ndeldbs > 0)
 	{
@@ -7366,6 +7367,7 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 
 		DropRelationFiles(parsed->xnodes, parsed->nrels, true);
 	}
+	PendingDeleteRedoRemove(xid);
 
 	if (parsed->ndeldbs > 0)
 	{

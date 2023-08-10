@@ -34,6 +34,8 @@ typedef struct PendingRelXactDeleteArray
 extern Size PendingDeleteShmemSize(void);
 extern void PendingDeleteShmemInit(void);
 extern void PendingDeleteXLogInsert(void);
+extern void PendingDeleteRedo(XLogReaderState *record);
+extern void PendingDeleteRedoRemove(TransactionId xid);
 
 extern SMgrRelation RelationCreateStorage(RelFileNode rnode,
 										  char relpersistence,

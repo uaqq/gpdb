@@ -10939,7 +10939,7 @@ xlog_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_PENDING_DELETE)
 	{
-
+		 PendingDeleteRedo(record);
 	}
 }
 
