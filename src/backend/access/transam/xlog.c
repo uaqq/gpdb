@@ -7728,6 +7728,8 @@ StartupXLOG(void)
 		}
 	}
 
+	PendingDeleteRedoDropFiles();
+
 	/*
 	 * Kill WAL receiver, if it's still running, before we continue to write
 	 * the startup checkpoint and aborted-contrecord records. It will trump
@@ -10939,7 +10941,7 @@ xlog_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_PENDING_DELETE)
 	{
-		 PendingDeleteRedo(record);
+		PendingDeleteRedoRecord(record);
 	}
 }
 
