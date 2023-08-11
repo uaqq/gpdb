@@ -8124,6 +8124,8 @@ StartupXLOG(void)
 	 */
 	if (fast_promoted)
 		RequestCheckpoint(CHECKPOINT_FORCE);
+
+	*shmCleanupBackends = true;
 }
 
 /*
