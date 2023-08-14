@@ -90,6 +90,7 @@ static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
 
 static HTAB *pendingDeleteRedo = NULL; /* hash tab of redo pending deletes */
 static PendingDeleteShmemStruct *PendingDeleteShmem = NULL; /* shared pending deletes state  */
+static dsa_area *dsa_local = NULL;
 
 Size
 PendingDeleteShmemSize(void)
@@ -204,24 +205,30 @@ static dsa_pointer PendingDeleteShmemAdd(RelFileNodePendingDelete *relnode, Tran
 {
 	dsa_pointer pdl_node_dsa;
 	PendingDeleteListNode *pdl_node;
-	dsa_area *dsa;
 
 	elog(NOTICE, "Trying to add pending delete rel %d to shmem (xid: %d).", relnode->node.relNode, xid);
 
 	if (xid == InvalidTransactionId || !IsUnderPostmaster)
 		return InvalidDsaPointer;
 
-	dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
-
-	pdl_node_dsa = dsa_allocate(dsa, sizeof(PendingDeleteListNode));
-	pdl_node = dsa_get_address(dsa, pdl_node_dsa);
+	if (!dsa_local)
+	{
+		MemoryContext oldcxt;
+		oldcxt = MemoryContextSwitchTo(TopMemoryContext);
+		dsa_local = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+		dsa_pin_mapping(dsa_local);
+		MemoryContextSwitchTo(oldcxt);
+		elog(NOTICE, "DSA initialized (add)");
+	}
+	pdl_node_dsa = dsa_allocate(dsa_local, sizeof(PendingDeleteListNode));
+	pdl_node = dsa_get_address(dsa_local, pdl_node_dsa);
 
 	memcpy(&pdl_node->pd.relnode, relnode, sizeof(*relnode));
 	pdl_node->pd.xid = xid;
 
-	PendingDeleteShmemAddNode(pdl_node_dsa, dsa);
+	PendingDeleteShmemAddNode(pdl_node_dsa, dsa_local);
 
-	dsa_detach(dsa);
+	//dsa_detach(dsa);
 
 	return pdl_node_dsa;
 }
@@ -231,17 +238,25 @@ remove pending delete node from shmem
 */
 static void PendingDeleteShmemRemove(dsa_pointer node_ptr)
 {
-	dsa_area *dsa;
+	//dsa_area *dsa;
 
 	elog(NOTICE, "Trying to remove pending delete rel from shmem.");
 
-	if (node_ptr == InvalidDsaPointer)
+	if (node_ptr == InvalidDsaPointer || !IsUnderPostmaster)
 		return;
 
-	dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
-	PendingDeleteShmemRemoveNode(node_ptr, dsa);
+	if (!dsa_local)
+	{
+		MemoryContext oldcxt;
+		oldcxt = MemoryContextSwitchTo(TopMemoryContext);
+		dsa_local = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+		dsa_pin_mapping(dsa_local);
+		MemoryContextSwitchTo(oldcxt);
+		elog(NOTICE, "DSA initialized (remove)");
+	}
+	PendingDeleteShmemRemoveNode(node_ptr, dsa_local);
 
-	dsa_detach(dsa);
+	//dsa_detach(dsa);
 }
 
 /*
@@ -251,7 +266,7 @@ the format is suitable for XLog record data
 static char* PendingDeleteXLogShmemDump(Size *count, Size *size)
 {
 	dsa_pointer pdl_node_dsa = PendingDeleteShmem->pd_head;
-	dsa_area *dsa;
+	//dsa_area *dsa;
 	StringInfoData buf;
 
 	elog(LOG, "Serializing pending deletes to XLog record.");
@@ -259,15 +274,15 @@ static char* PendingDeleteXLogShmemDump(Size *count, Size *size)
 	*count = 0;
 	*size = 0;
 
-	if (pdl_node_dsa == InvalidDsaPointer)
+	if (pdl_node_dsa == InvalidDsaPointer || !dsa_local)
 		return NULL;
 
 	initStringInfo(&buf);
-	dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+	//dsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
 
 	while (pdl_node_dsa != InvalidDsaPointer)
 	{
-		PendingDeleteListNode *pdl_node = dsa_get_address(dsa, pdl_node_dsa);
+		PendingDeleteListNode *pdl_node = dsa_get_address(dsa_local, pdl_node_dsa);
 
 		appendBinaryStringInfo(&buf, (char*)&pdl_node->pd, sizeof(pdl_node->pd));
 		(*count)++;
@@ -276,9 +291,9 @@ static char* PendingDeleteXLogShmemDump(Size *count, Size *size)
 		pdl_node_dsa = pdl_node->next;
 	}
 
-	dsa_detach(dsa);
+	//dsa_detach(dsa);
 
-	elog(LOG, "Pending deletes serialized. Count: %d.", *count);
+	elog(LOG, "Pending deletes serialized. Count: %ul.", *count);
 
 	return buf.data;
 }
