@@ -744,6 +744,19 @@ execute_sql_string(const char *sql, const char *filename)
 										GetActiveSnapshot(), NULL,
 										dest, NULL, GP_INSTRUMENT_OPTS);
 
+				if (gp_enable_gpperfmon
+					&& Gp_role == GP_ROLE_DISPATCH
+					&& log_min_messages < DEBUG4)
+				{
+					Assert(qdesc->sourceText);
+					gpmon_qlog_query_submit(qdesc->gpmon_pkt);
+					gpmon_qlog_query_text(qdesc->gpmon_pkt,
+							qdesc->sourceText,
+							application_name,
+							NULL,
+							NULL);
+				}
+
 				ExecutorStart(qdesc, 0);
 				ExecutorRun(qdesc, ForwardScanDirection, 0);
 				ExecutorFinish(qdesc);
