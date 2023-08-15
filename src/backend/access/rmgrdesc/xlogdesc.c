@@ -220,7 +220,7 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 	{
 		PendingRelXactDeleteArray *xlrec = (PendingRelXactDeleteArray*) rec;
 
-		appendStringInfo(buf, "Pending delete count: %ld", xlrec->count);
+		appendStringInfo(buf, "Relations to delete: %ld", xlrec->count);
 	}
 }
 

@@ -27,7 +27,7 @@ typedef struct PendingRelXactDelete
 
 typedef struct PendingRelXactDeleteArray
 {
-	Size count;
+	size_t count;
 	PendingRelXactDelete array[FLEXIBLE_ARRAY_MEMBER];
 } PendingRelXactDeleteArray;
 
