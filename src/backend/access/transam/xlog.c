@@ -9644,10 +9644,10 @@ CreateCheckPoint(int flags)
 									 CheckpointStats.ckpt_segs_removed,
 									 CheckpointStats.ckpt_segs_recycled);
 
-	if (LocalXLogInsertAllowed)
-		PendingDeleteXLogInsert();
-
 	LWLockRelease(CheckpointLock);
+
+	if (!shutdown)
+		PendingDeleteXLogInsert();
 }
 
 /*
