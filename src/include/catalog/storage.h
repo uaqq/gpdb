@@ -19,6 +19,14 @@
 #include "storage/smgr.h"
 #include "utils/relcache.h"
 
+/*----------------------------------------------------------------------------------------------*/
+/*--------------------------------------------STORE---------------------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
+extern Size PendingDeleteShmemSize(void);
+extern void PendingDeleteShmemInit(void);
+/*----------------------------------------------------------------------------------------------*/
+/*--------------------------------------------WRITE---------------------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
 typedef struct PendingRelXactDelete
 {
 	RelFileNodePendingDelete relnode;
@@ -31,12 +39,16 @@ typedef struct PendingRelXactDeleteArray
 	PendingRelXactDelete array[FLEXIBLE_ARRAY_MEMBER];
 } PendingRelXactDeleteArray;
 
-extern Size PendingDeleteShmemSize(void);
-extern void PendingDeleteShmemInit(void);
-extern void PendingDeleteXLogInsert(void);
+extern XLogRecPtr PendingDeleteXLogInsert(void);
+/*----------------------------------------------------------------------------------------------*/
+/*--------------------------------------------READ/REPLAY---------------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
 extern void PendingDeleteRedoRecord(XLogReaderState *record);
 extern void PendingDeleteRedoRemove(TransactionId xid);
 extern void PendingDeleteRedoDropFiles(void);
+/*----------------------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
 
 extern SMgrRelation RelationCreateStorage(RelFileNode rnode,
 										  char relpersistence,
