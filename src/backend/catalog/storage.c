@@ -83,7 +83,7 @@ typedef struct PendingDeleteListNode
 	PendingRelXactDelete xrelnode;
 	dsa_pointer next;
 	dsa_pointer prev;
-}	PendingDeleteListNode;
+}			PendingDeleteListNode;
 
 /* A struct to track pending deletes. Placed in static shared memory area. */
 typedef struct PendingDeleteShmemStruct
@@ -93,13 +93,13 @@ typedef struct PendingDeleteShmemStruct
 	char		dsa_mem[FLEXIBLE_ARRAY_MEMBER]; /* a minimal memory area which
 												 * can be used for dsa
 												 * initialization */
-}	PendingDeleteShmemStruct;
+}			PendingDeleteShmemStruct;
 
-static PendingDeleteShmemStruct *PendingDeleteShmem = NULL;		/* shared pending delete
+static PendingDeleteShmemStruct *PendingDeleteShmem = NULL;	/* shared pending delete
 																 * state  */
 
-static dsa_area *pendingDeleteDsa = NULL;		/* ptr to DSA area attached by
-												 * current process */
+static dsa_area *pendingDeleteDsa = NULL;	/* ptr to DSA area attached by
+											 * current process */
 
 /*
  * Calculate size for pending delete shmem.
@@ -263,7 +263,7 @@ PendingDeleteAttachDsa(void)
  * Return dsa ptr of newly created node. This ptr can be used for fast remove.
  */
 static dsa_pointer
-PendingDeleteShmemAdd(RelFileNodePendingDelete * relnode, TransactionId xid)
+PendingDeleteShmemAdd(RelFileNodePendingDelete *relnode, TransactionId xid)
 {
 	dsa_pointer pdl_node_dsa;
 	PendingDeleteListNode *pdl_node;
@@ -392,7 +392,7 @@ typedef struct PendingDeleteHtabNode
 {
 	TransactionId xid;
 	List	   *relnode_list;	/* list of RelFileNodePendingDelete */
-}	PendingDeleteHtabNode;
+}			PendingDeleteHtabNode;
 
 
 static HTAB *pendingDeleteRedo = NULL;	/* HTAB for storing pending deletes
@@ -402,7 +402,7 @@ static HTAB *pendingDeleteRedo = NULL;	/* HTAB for storing pending deletes
  * Add pending delete node during processing of redo records.
  */
 static void
-PendingDeleteRedoAdd(PendingRelXactDelete * pd)
+PendingDeleteRedoAdd(PendingRelXactDelete *pd)
 {
 	PendingDeleteHtabNode *h_node;
 	bool		found;
