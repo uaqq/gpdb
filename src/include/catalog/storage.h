@@ -24,6 +24,7 @@
 /*----------------------------------------------------------------------------------------------*/
 extern Size PendingDeleteShmemSize(void);
 extern void PendingDeleteShmemInit(void);
+
 /*----------------------------------------------------------------------------------------------*/
 /*--------------------------------------------WRITE---------------------------------------------*/
 /*----------------------------------------------------------------------------------------------*/
@@ -31,21 +32,23 @@ typedef struct PendingRelXactDelete
 {
 	RelFileNodePendingDelete relnode;
 	TransactionId xid;
-} PendingRelXactDelete;
+}	PendingRelXactDelete;
 
 typedef struct PendingRelXactDeleteArray
 {
-	size_t count;
+	size_t		count;
 	PendingRelXactDelete array[FLEXIBLE_ARRAY_MEMBER];
-} PendingRelXactDeleteArray;
+}	PendingRelXactDeleteArray;
 
 extern XLogRecPtr PendingDeleteXLogInsert(void);
+
 /*----------------------------------------------------------------------------------------------*/
 /*--------------------------------------------READ/REPLAY---------------------------------------*/
 /*----------------------------------------------------------------------------------------------*/
 extern void PendingDeleteRedoRecord(XLogReaderState *record);
 extern void PendingDeleteRedoRemove(TransactionId xid);
 extern void PendingDeleteRedoDropFiles(void);
+
 /*----------------------------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------------------------*/

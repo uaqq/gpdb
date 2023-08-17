@@ -65,7 +65,7 @@ typedef struct PendingRelDelete
 	bool		atCommit;		/* T=delete at commit; F=delete at abort */
 	int			nestLevel;		/* xact nesting level of request */
 	struct PendingRelDelete *next;	/* linked-list link */
-	dsa_pointer shmem_ptr; /* ptr to shared pending delete list */
+dsa_pointer shmem_ptr;		/* ptr to shared pending delete list */
 } PendingRelDelete;
 
 static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
@@ -83,21 +83,27 @@ typedef struct PendingDeleteListNode
 	PendingRelXactDelete xrelnode;
 	dsa_pointer next;
 	dsa_pointer prev;
-} PendingDeleteListNode;
+}	PendingDeleteListNode;
 
 /*
 A struct to track pending deletes. Placed in static shared memory area.
 */
 typedef struct PendingDeleteShmemStruct
 {
-	dsa_pointer pdl_head; /* ptr to list head of PendingDeleteListNode */
-	size_t pdl_count; /* count of PendingDeleteListNode nodes */
-	char dsa_mem[FLEXIBLE_ARRAY_MEMBER]; /* a minimal memory area which can be used fo dsa initialization; real size should be calculated at runtime */
-} PendingDeleteShmemStruct;
+	dsa_pointer pdl_head;		/* ptr to list head of PendingDeleteListNode */
+	size_t		pdl_count;		/* count of PendingDeleteListNode nodes */
+	char		dsa_mem[FLEXIBLE_ARRAY_MEMBER]; /* a minimal memory area which
+												 * can be used fo dsa
+												 * initialization; real size
+												 * should be calculated at
+												 * runtime */
+}	PendingDeleteShmemStruct;
 
-static PendingDeleteShmemStruct *PendingDeleteShmem = NULL; /* shared pending delete state  */
+static PendingDeleteShmemStruct *PendingDeleteShmem = NULL;		/* shared pending delete
+																 * state  */
 
-static dsa_area *pendingDeleteDsa = NULL; /* ptr to DSA area attached by current process */
+static dsa_area *pendingDeleteDsa = NULL;		/* ptr to DSA area attached by
+												 * current process */
 
 /*
 Calculate size for pending delete shmem.
@@ -131,21 +137,30 @@ PendingDeleteShmemInit(void)
 
 	if (!found)
 	{
-		dsa_area *dsa = dsa_create_in_place(
-			PendingDeleteShmem->dsa_mem,
-			dsa_minimum_size(),
-			LWTRANCHE_PENDING_DELETE_DSA,
-			NULL
+		dsa_area   *dsa = dsa_create_in_place(
+											  PendingDeleteShmem->dsa_mem,
+											  dsa_minimum_size(),
+											  LWTRANCHE_PENDING_DELETE_DSA,
+											  NULL
 		);
+
 		dsa_pin(dsa);
-		/* we can't allocate memory segments inside postmaster, so list will be initialized at runtime */
+
+		/*
+		 * we can't allocate memory segments inside postmaster, so list will
+		 * be initialized at runtime
+		 */
 		PendingDeleteShmem->pdl_head = InvalidDsaPointer;
 		PendingDeleteShmem->pdl_count = 0;
 		elog(LOG, "Pending delete shared memory initialized.");
 
 		/* optional, but kep it clean */
-		on_shmem_exit(dsa_on_shmem_exit_release_in_place, (Datum)PendingDeleteShmem->dsa_mem);
-		/* we don't need dsa pointer at postmaster, all future dsa calls will be in backends */
+		on_shmem_exit(dsa_on_shmem_exit_release_in_place, (Datum) PendingDeleteShmem->dsa_mem);
+
+		/*
+		 * we don't need dsa pointer at postmaster, all future dsa calls will
+		 * be in backends
+		 */
 		dsa_detach(dsa);
 	}
 }
@@ -155,12 +170,13 @@ Prepend shared list with new pending delete node.
 dsa - a ptr tu currently attached dsa area
 cur - ptr to already allocated node
 */
-static void PendingDeleteShmemLinkNode(dsa_area *dsa, dsa_pointer cur)
+static void
+PendingDeleteShmemLinkNode(dsa_area *dsa, dsa_pointer cur)
 {
 	dsa_pointer head;
 	PendingDeleteListNode *cur_node;
 
-	cur_node = (PendingDeleteListNode*)dsa_get_address(dsa, cur);
+	cur_node = (PendingDeleteListNode *) dsa_get_address(dsa, cur);
 
 	LWLockAcquire(PendingDeleteLock, LW_EXCLUSIVE);
 
@@ -169,7 +185,7 @@ static void PendingDeleteShmemLinkNode(dsa_area *dsa, dsa_pointer cur)
 	cur_node->prev = InvalidDsaPointer;
 	if (DsaPointerIsValid(head))
 	{
-		PendingDeleteListNode *head_node = (PendingDeleteListNode*)dsa_get_address(dsa, head);
+		PendingDeleteListNode *head_node = (PendingDeleteListNode *) dsa_get_address(dsa, head);
 
 		head_node->prev = cur;
 	}
@@ -186,11 +202,12 @@ Remove pending delete node from shared list
 dsa - a ptr tu currently attached dsa area
 cur - ptr to node which is already linked to list
 */
-static void PendingDeleteShmemUnlinkNode(dsa_area *dsa, dsa_pointer cur)
+static void
+PendingDeleteShmemUnlinkNode(dsa_area *dsa, dsa_pointer cur)
 {
 	dsa_pointer head;
 	PendingDeleteListNode *cur_node;
-	
+
 	cur_node = dsa_get_address(dsa, cur);
 
 	LWLockAcquire(PendingDeleteLock, LW_EXCLUSIVE);
@@ -215,7 +232,7 @@ static void PendingDeleteShmemUnlinkNode(dsa_area *dsa, dsa_pointer cur)
 		PendingDeleteShmem->pdl_head = cur_node->next;
 
 	PendingDeleteShmem->pdl_count--;
-	
+
 	LWLockRelease(PendingDeleteLock);
 
 	elog(NOTICE, "Pending delete rel removed from shmem.");
@@ -224,16 +241,18 @@ static void PendingDeleteShmemUnlinkNode(dsa_area *dsa, dsa_pointer cur)
 /*
 Attach dsa once per process.
 */
-static void PendingDeleteAttachDsa(void)
+static void
+PendingDeleteAttachDsa(void)
 {
 	MemoryContext oldcxt;
-	
+
 	if (pendingDeleteDsa)
 		return;
 
 	/*
-	Keep the DSA area ptr in TopMemoryContext to avoid excessive attach/detach at every add/remove
-	*/
+	 * Keep the DSA area ptr in TopMemoryContext to avoid excessive
+	 * attach/detach at every add/remove
+	 */
 	oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 	pendingDeleteDsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
 	/* pin mappings, so they can survive res owner life end */
@@ -247,7 +266,8 @@ static void PendingDeleteAttachDsa(void)
 Add pending delete node to shmem.
 Return dsa ptr of newly created node. This ptr can be used for fast remove.
 */
-static dsa_pointer PendingDeleteShmemAdd(RelFileNodePendingDelete *relnode, TransactionId xid)
+static dsa_pointer
+PendingDeleteShmemAdd(RelFileNodePendingDelete * relnode, TransactionId xid)
 {
 	dsa_pointer pdl_node_dsa;
 	PendingDeleteListNode *pdl_node;
@@ -274,7 +294,8 @@ static dsa_pointer PendingDeleteShmemAdd(RelFileNodePendingDelete *relnode, Tran
 Fast remove pending delete node from shmem.
 node_ptr is a ptr to already added node.
 */
-static void PendingDeleteShmemRemove(dsa_pointer node_ptr)
+static void
+PendingDeleteShmemRemove(dsa_pointer node_ptr)
 {
 	elog(NOTICE, "Trying to remove pending delete rel from shmem.");
 
@@ -296,7 +317,8 @@ static void PendingDeleteShmemRemove(dsa_pointer node_ptr)
 Dump all pending delete nodes to char array.
 Return NULL if there no nodes.
 */
-static PendingRelXactDeleteArray* PendingDeleteXLogShmemDump(Size *size)
+static PendingRelXactDeleteArray *
+PendingDeleteXLogShmemDump(Size *size)
 {
 	dsa_pointer pdl_node_dsa;
 	PendingRelXactDeleteArray *xrelnode_array;
@@ -304,7 +326,7 @@ static PendingRelXactDeleteArray* PendingDeleteXLogShmemDump(Size *size)
 	elog(LOG, "Serializing pending deletes to array.");
 
 	PendingDeleteAttachDsa();
-	
+
 	LWLockAcquire(PendingDeleteLock, LW_EXCLUSIVE);
 
 	pdl_node_dsa = PendingDeleteShmem->pdl_head;
@@ -341,17 +363,18 @@ static PendingRelXactDeleteArray* PendingDeleteXLogShmemDump(Size *size)
 /*
 Insert XLOG_PENDING_DELETE record to XLog.
 */
-XLogRecPtr PendingDeleteXLogInsert(void)
+XLogRecPtr
+PendingDeleteXLogInsert(void)
 {
-	XLogRecPtr recptr;
-	Size size;
+	XLogRecPtr	recptr;
+	Size		size;
 	PendingRelXactDeleteArray *xrelnode_array = PendingDeleteXLogShmemDump(&size);
 
 	if (!xrelnode_array)
 		return InvalidXLogRecPtr;
 
 	XLogBeginInsert();
-	XLogRegisterData((char*)xrelnode_array, size);
+	XLogRegisterData((char *) xrelnode_array, size);
 	recptr = XLogInsert(RM_XLOG_ID, XLOG_PENDING_DELETE);
 	XLogFlush(recptr);
 
@@ -372,30 +395,31 @@ HTAB entry for pending deletes for the given xid.
 typedef struct PendingDeleteHtabNode
 {
 	TransactionId xid;
-	List *relnode_list; /* list of RelFileNodePendingDelete */
-} PendingDeleteHtabNode;
+	List	   *relnode_list;	/* list of RelFileNodePendingDelete */
+}	PendingDeleteHtabNode;
 
 
-static HTAB *pendingDeleteRedo = NULL; /* HTAB for storing pending deletes during redo */
+static HTAB *pendingDeleteRedo = NULL;	/* HTAB for storing pending deletes
+										 * during redo */
 
 /*
 Add pending delete node during processing of redo records.
 */
 static void
-PendingDeleteRedoAdd(PendingRelXactDelete *pd)
+PendingDeleteRedoAdd(PendingRelXactDelete * pd)
 {
 	PendingDeleteHtabNode *h_node;
-	bool found;
+	bool		found;
 	RelFileNodePendingDelete *relnode;
 
 	elog(LOG, "Trying to add pending delete rel %d during redo (xid: %d).", pd->relnode.node.relNode, pd->xid);
 
 	if (!pendingDeleteRedo)
 	{
-		HASHCTL ctl;
-		
+		HASHCTL		ctl;
+
 		memset(&ctl, 0, sizeof(ctl));
-		
+
 		ctl.keysize = sizeof(TransactionId);
 		ctl.entrysize = sizeof(PendingDeleteHtabNode);
 
@@ -424,13 +448,14 @@ PendingDeleteRedoAdd(PendingRelXactDelete *pd)
 Replay XLOG_PENDING_DELETE XLog record.
 Remember all pending delete nodes for possible drop.
 */
-void PendingDeleteRedoRecord(XLogReaderState *record)
+void
+PendingDeleteRedoRecord(XLogReaderState *record)
 {
-	PendingRelXactDeleteArray *xrelnode_array = (PendingRelXactDeleteArray*)XLogRecGetData(record);
+	PendingRelXactDeleteArray *xrelnode_array = (PendingRelXactDeleteArray *) XLogRecGetData(record);
 
 	Assert(xrelnode_array->count > 0);
 	Assert(XLogRecGetDataLen(record) ==
-		(sizeof(xrelnode_array->count) + sizeof(PendingRelXactDelete) * xrelnode_array->count));
+		   (sizeof(xrelnode_array->count) + sizeof(PendingRelXactDelete) * xrelnode_array->count));
 
 	elog(LOG, "Processing pending delete redo record");
 
@@ -456,7 +481,10 @@ PendingDeleteRedoRemove(TransactionId xid)
 	if (!h_node)
 		return;
 
-	/* Free the whole list and remove entry from htab. Rels for the given xid will not be dropped. */
+	/*
+	 * Free the whole list and remove entry from htab. Rels for the given xid
+	 * will not be dropped.
+	 */
 	list_free_deep(h_node->relnode_list);
 	(void) hash_search(pendingDeleteRedo, &xid, HASH_REMOVE, NULL);
 
@@ -478,15 +506,15 @@ PendingDeleteRedoDropFiles(void)
 	hash_seq_init(&seq_status, pendingDeleteRedo);
 	while ((h_node = (PendingDeleteHtabNode *) hash_seq_search(&seq_status)) != NULL)
 	{
-		ListCell *cell;
-		int i;
-		int count = list_length(h_node->relnode_list);
+		ListCell   *cell;
+		int			i;
+		int			count = list_length(h_node->relnode_list);
 		RelFileNodePendingDelete *relnode_array = palloc(sizeof(*relnode_array) * count);
 
 		/* copy rels from list to array, we use one batch per one xid to drop */
 		foreach_with_count(cell, h_node->relnode_list, i)
 		{
-			RelFileNodePendingDelete *relnode = (RelFileNodePendingDelete*)lfirst(cell);
+			RelFileNodePendingDelete *relnode = (RelFileNodePendingDelete *) lfirst(cell);
 
 			memcpy(&relnode_array[i], relnode, sizeof(*relnode_array));
 		}
