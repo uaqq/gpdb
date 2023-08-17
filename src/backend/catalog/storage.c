@@ -85,18 +85,14 @@ typedef struct PendingDeleteListNode
 	dsa_pointer prev;
 }	PendingDeleteListNode;
 
-/*
-A struct to track pending deletes. Placed in static shared memory area.
-*/
+/* A struct to track pending deletes. Placed in static shared memory area. */
 typedef struct PendingDeleteShmemStruct
 {
 	dsa_pointer pdl_head;		/* ptr to list head of PendingDeleteListNode */
 	size_t		pdl_count;		/* count of PendingDeleteListNode nodes */
 	char		dsa_mem[FLEXIBLE_ARRAY_MEMBER]; /* a minimal memory area which
-												 * can be used fo dsa
-												 * initialization; real size
-												 * should be calculated at
-												 * runtime */
+												 * can be used for dsa
+												 * initialization */
 }	PendingDeleteShmemStruct;
 
 static PendingDeleteShmemStruct *PendingDeleteShmem = NULL;		/* shared pending delete
@@ -106,9 +102,9 @@ static dsa_area *pendingDeleteDsa = NULL;		/* ptr to DSA area attached by
 												 * current process */
 
 /*
-Calculate size for pending delete shmem.
-The flexible array member should fit DSA.
-*/
+ * Calculate size for pending delete shmem.
+ * The flexible array member should fit DSA.
+ */
 Size
 PendingDeleteShmemSize(void)
 {
@@ -122,8 +118,8 @@ PendingDeleteShmemSize(void)
 }
 
 /*
-Initialize pending delete shmem struct.
-*/
+ * Initialize pending delete shmem struct.
+ */
 void
 PendingDeleteShmemInit(void)
 {
@@ -166,10 +162,10 @@ PendingDeleteShmemInit(void)
 }
 
 /*
-Prepend shared list with new pending delete node.
-dsa - a ptr tu currently attached dsa area
-cur - ptr to already allocated node
-*/
+ * Prepend shared list with new pending delete node.
+ * dsa - a ptr tu currently attached dsa area
+ * cur - ptr to already allocated node
+ */
 static void
 PendingDeleteShmemLinkNode(dsa_area *dsa, dsa_pointer cur)
 {
@@ -198,10 +194,10 @@ PendingDeleteShmemLinkNode(dsa_area *dsa, dsa_pointer cur)
 }
 
 /*
-Remove pending delete node from shared list
-dsa - a ptr tu currently attached dsa area
-cur - ptr to node which is already linked to list
-*/
+ * Remove pending delete node from shared list
+ * dsa - a ptr tu currently attached dsa area
+ * cur - ptr to node which is already linked to list
+ */
 static void
 PendingDeleteShmemUnlinkNode(dsa_area *dsa, dsa_pointer cur)
 {
@@ -239,8 +235,8 @@ PendingDeleteShmemUnlinkNode(dsa_area *dsa, dsa_pointer cur)
 }
 
 /*
-Attach dsa once per process.
-*/
+ * Attach dsa once per process.
+ */
 static void
 PendingDeleteAttachDsa(void)
 {
@@ -263,9 +259,9 @@ PendingDeleteAttachDsa(void)
 }
 
 /*
-Add pending delete node to shmem.
-Return dsa ptr of newly created node. This ptr can be used for fast remove.
-*/
+ * Add pending delete node to shmem.
+ * Return dsa ptr of newly created node. This ptr can be used for fast remove.
+ */
 static dsa_pointer
 PendingDeleteShmemAdd(RelFileNodePendingDelete * relnode, TransactionId xid)
 {
@@ -291,9 +287,9 @@ PendingDeleteShmemAdd(RelFileNodePendingDelete * relnode, TransactionId xid)
 }
 
 /*
-Fast remove pending delete node from shmem.
-node_ptr is a ptr to already added node.
-*/
+ * Fast remove pending delete node from shmem.
+ * node_ptr is a ptr to already added node.
+ */
 static void
 PendingDeleteShmemRemove(dsa_pointer node_ptr)
 {
@@ -314,9 +310,9 @@ PendingDeleteShmemRemove(dsa_pointer node_ptr)
 /*----------------------------------------------------------------------------------------------*/
 
 /*
-Dump all pending delete nodes to char array.
-Return NULL if there no nodes.
-*/
+ * Dump all pending delete nodes to char array.
+ * Return NULL if there no nodes.
+ */
 static PendingRelXactDeleteArray *
 PendingDeleteXLogShmemDump(Size *size)
 {
@@ -361,8 +357,8 @@ PendingDeleteXLogShmemDump(Size *size)
 }
 
 /*
-Insert XLOG_PENDING_DELETE record to XLog.
-*/
+ * Insert XLOG_PENDING_DELETE record to XLog.
+ */
 XLogRecPtr
 PendingDeleteXLogInsert(void)
 {
@@ -390,8 +386,8 @@ PendingDeleteXLogInsert(void)
 /*----------------------------------------------------------------------------------------------*/
 
 /*
-HTAB entry for pending deletes for the given xid.
-*/
+ * HTAB entry for pending deletes for the given xid.
+ */
 typedef struct PendingDeleteHtabNode
 {
 	TransactionId xid;
@@ -403,8 +399,8 @@ static HTAB *pendingDeleteRedo = NULL;	/* HTAB for storing pending deletes
 										 * during redo */
 
 /*
-Add pending delete node during processing of redo records.
-*/
+ * Add pending delete node during processing of redo records.
+ */
 static void
 PendingDeleteRedoAdd(PendingRelXactDelete * pd)
 {
@@ -445,9 +441,9 @@ PendingDeleteRedoAdd(PendingRelXactDelete * pd)
 }
 
 /*
-Replay XLOG_PENDING_DELETE XLog record.
-Remember all pending delete nodes for possible drop.
-*/
+ * Replay XLOG_PENDING_DELETE XLog record.
+ * Remember all pending delete nodes for possible drop.
+ */
 void
 PendingDeleteRedoRecord(XLogReaderState *record)
 {
@@ -464,8 +460,8 @@ PendingDeleteRedoRecord(XLogReaderState *record)
 }
 
 /*
-Remove pending delete nodes from redo list.
-*/
+ * Remove pending delete nodes from redo list.
+ */
 void
 PendingDeleteRedoRemove(TransactionId xid)
 {
@@ -492,8 +488,8 @@ PendingDeleteRedoRemove(TransactionId xid)
 }
 
 /*
-Drop all orphaned pending delete nodes.
-*/
+ * Drop all orphaned pending delete nodes.
+ */
 void
 PendingDeleteRedoDropFiles(void)
 {
