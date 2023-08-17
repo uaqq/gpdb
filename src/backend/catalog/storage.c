@@ -134,7 +134,7 @@ PendingDeleteShmemInit(void)
 		dsa_area *dsa = dsa_create_in_place(
 			PendingDeleteShmem->dsa_mem,
 			dsa_minimum_size(),
-			LWTRANCHE_ORPHANED_FILES_DSA,
+			LWTRANCHE_PENDING_DELETE_DSA,
 			NULL
 		);
 		dsa_pin(dsa);
