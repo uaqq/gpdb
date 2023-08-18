@@ -75,9 +75,9 @@ static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
 /*----------------------------------------------------------------------------------------------*/
 
 /*
-Shared pending delete list node.
-Doubly linked list provides O(1) remove.
-*/
+ * Shared pending delete list node.
+ * Doubly linked list provides O(1) remove.
+ */
 typedef struct PendingDeleteListNode
 {
 	PendingRelXactDelete xrelnode;
@@ -154,8 +154,7 @@ PendingDeleteShmemInit(void)
 		on_shmem_exit(dsa_on_shmem_exit_release_in_place, (Datum) PendingDeleteShmem->dsa_mem);
 
 		/*
-		 * we don't need dsa pointer at postmaster, all future dsa calls will
-		 * be in backends
+		 * we don't need dsa ptr here, all future dsa calls will be in backends
 		 */
 		dsa_detach(dsa);
 	}
@@ -323,7 +322,7 @@ PendingDeleteXLogShmemDump(Size *size)
 
 	PendingDeleteAttachDsa();
 
-	LWLockAcquire(PendingDeleteLock, LW_EXCLUSIVE);
+	LWLockAcquire(PendingDeleteLock, LW_SHARED);
 
 	pdl_node_dsa = PendingDeleteShmem->pdl_head;
 
