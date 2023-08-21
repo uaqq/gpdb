@@ -1906,6 +1906,9 @@ shareinput_walker(Node *node, ShareInputContext *ctx)
 		{
 			HashJoin   *hj = (HashJoin *) node;
 
+			/* For HashJoin it should be always on */
+			Assert(hj->join.prefetch_inner);
+
 			hj->join.plan.lefttree = save_righttree;
 			hj->join.plan.righttree = save_lefttree;
 		}
