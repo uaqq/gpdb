@@ -1154,8 +1154,15 @@ get_object_address_rv(ObjectType objtype, RangeVar *rel, List *object,
 					  Relation *relp, LOCKMODE lockmode,
 					  bool missing_ok)
 {
+	// the rel name is passed only for alter trigger/materialized view/index (see gram.y)
+	// and object is a list, but for trigger it's a list with a trigger name, while for
+	// last cases it's an NULL (passed by value), so mutations performed on NULL object
+	// here doesn't change stmt->object of caller.
 	if (rel)
 	{
+		if (object != NULL)
+			object = list_copy(object);
+
 		object = lcons(makeString(rel->relname), object);
 		if (rel->schemaname)
 			object = lcons(makeString(rel->schemaname), object);
