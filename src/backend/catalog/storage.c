@@ -323,6 +323,7 @@ PendingDeleteXLogShmemDump(Size *size)
 
 	PendingDeleteAttachDsa();
 
+	/* for now, this function can't be called concurrently, so we can use LW_EXCLUSIVE, but keep the code strict */
 	LWLockAcquire(PendingDeleteLock, LW_SHARED);
 
 	pdl_node_dsa = PendingDeleteShmem->pdl_head;

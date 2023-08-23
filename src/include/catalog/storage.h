@@ -18,6 +18,8 @@
 #include "storage/relfilenode.h"
 #include "storage/smgr.h"
 #include "utils/relcache.h"
+#include "access/xlogdefs.h"
+#include "access/xlogreader.h"
 
 /*----------------------------------------------------------------------------------------------*/
 /*--------------------------------------------STORE---------------------------------------------*/
