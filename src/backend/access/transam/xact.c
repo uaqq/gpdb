@@ -7239,6 +7239,8 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		/* Make sure files supposed to be dropped are dropped */
 		DropRelationFiles(parsed->xnodes, parsed->nrels, true);
 	}
+
+	/* If there were some rels created in current xact, remove them from pending delete list */
 	PendingDeleteRedoRemove(xid);
 
 	if (parsed->ndeldbs > 0)
@@ -7366,8 +7368,10 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 		XLogFlush(lsn);
 
 		DropRelationFiles(parsed->xnodes, parsed->nrels, true);
+
+		/* drop events are not logged, so it's safe to call this inside condition */
+		PendingDeleteRedoRemove(xid);
 	}
-	PendingDeleteRedoRemove(xid);
 
 	if (parsed->ndeldbs > 0)
 	{

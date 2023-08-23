@@ -140,8 +140,6 @@ PendingDeleteShmemInit(void)
 											  NULL
 		);
 
-		dsa_pin(dsa);
-
 		/*
 		 * we can't allocate memory segments inside postmaster, so list will
 		 * be initialized at runtime
@@ -150,7 +148,7 @@ PendingDeleteShmemInit(void)
 		PendingDeleteShmem->pdl_count = 0;
 		elog(LOG, "Pending delete shared memory initialized.");
 
-		/* optional, but kep it clean */
+		/* segments will be released by dsm_postmaster_shutdown(), but keep it clean anyway */
 		on_shmem_exit(dsa_on_shmem_exit_release_in_place, (Datum) PendingDeleteShmem->dsa_mem);
 
 		/*
@@ -250,9 +248,12 @@ PendingDeleteAttachDsa(void)
 	 */
 	oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 	pendingDeleteDsa = dsa_attach_in_place(PendingDeleteShmem->dsa_mem, NULL);
+	MemoryContextSwitchTo(oldcxt);
+
 	/* pin mappings, so they can survive res owner life end */
 	dsa_pin_mapping(pendingDeleteDsa);
-	MemoryContextSwitchTo(oldcxt);
+	/* disconnect from dsa on shmem exit */
+	on_shmem_exit(dsa_on_shmem_exit_release_in_place, (Datum) PendingDeleteShmem->dsa_mem);
 
 	elog(NOTICE, "Pending delete DSA attached");
 }
@@ -460,6 +461,7 @@ PendingDeleteRedoRecord(XLogReaderState *record)
 
 /*
  * Remove pending delete nodes from redo list.
+ * Remove all nodes at once for the given xact.
  */
 void
 PendingDeleteRedoRemove(TransactionId xid)
@@ -471,17 +473,15 @@ PendingDeleteRedoRemove(TransactionId xid)
 	if (xid == InvalidTransactionId)
 		return;
 
-	h_node = (PendingDeleteHtabNode *) hash_search(pendingDeleteRedo, &xid, HASH_FIND, NULL);
+	h_node = (PendingDeleteHtabNode *) hash_search(pendingDeleteRedo, &xid, HASH_REMOVE, NULL);
 
 	if (!h_node)
 		return;
 
 	/*
-	 * Free the whole list and remove entry from htab. Rels for the given xid
-	 * will not be dropped.
+	 * Free the whole list. Rels for the given xid are not pending anymore.
 	 */
 	list_free_deep(h_node->relnode_list);
-	(void) hash_search(pendingDeleteRedo, &xid, HASH_REMOVE, NULL);
 
 	elog(LOG, "Pending delete rels removed during redo (xid: %d).", xid);
 }
@@ -496,6 +496,9 @@ PendingDeleteRedoDropFiles(void)
 	PendingDeleteHtabNode *h_node;
 
 	elog(LOG, "Trying to drop pending delete rels.");
+
+	if (hash_get_num_entries(pendingDeleteRedo) == 0)
+		return;
 
 	/* iterate over whole htab */
 	hash_seq_init(&seq_status, pendingDeleteRedo);
@@ -552,6 +555,7 @@ RelationCreateStorage(RelFileNode rnode, char relpersistence, SMgrImpl smgr_whic
 	SMgrRelation srel;
 	BackendId	backend;
 	bool		needs_wal;
+	TransactionId xid = InvalidTransactionId;
 
 	switch (relpersistence)
 	{
@@ -576,7 +580,10 @@ RelationCreateStorage(RelFileNode rnode, char relpersistence, SMgrImpl smgr_whic
 	smgrcreate(srel, MAIN_FORKNUM, false);
 
 	if (needs_wal)
+	{
+		xid = GetCurrentTransactionId();
 		log_smgrcreate(&srel->smgr_rnode.node, MAIN_FORKNUM, smgr_which);
+	}
 
 	/* Add the relation to the list of stuff to delete at abort */
 	pending = (PendingRelDelete *)
@@ -587,7 +594,7 @@ RelationCreateStorage(RelFileNode rnode, char relpersistence, SMgrImpl smgr_whic
 	pending->nestLevel = GetCurrentTransactionNestLevel();
 	pending->relnode.smgr_which = smgr_which;
 	pending->next = pendingDeletes;
-	pending->shmem_ptr = PendingDeleteShmemAdd(&pending->relnode, GetCurrentTransactionId());
+	pending->shmem_ptr = PendingDeleteShmemAdd(&pending->relnode, xid);
 	pendingDeletes = pending;
 
 	return srel;
@@ -632,6 +639,7 @@ RelationDropStorage(Relation rel)
 	pending->relnode.smgr_which =
 		RelationIsAppendOptimized(rel) ? SMGR_AO : SMGR_MD;
 	pending->next = pendingDeletes;
+	/* drop operation can't produce orphaned pending delete node */
 	pending->shmem_ptr = InvalidDsaPointer;
 	pendingDeletes = pending;
 
@@ -1101,11 +1109,11 @@ smgr_redo(XLogReaderState *record)
 	{
 		xl_smgr_create *xlrec = (xl_smgr_create *) XLogRecGetData(record);
 		SMgrRelation reln;
+		PendingRelXactDelete pd = {{xlrec->rnode, xlrec->impl, false}, XLogRecGetXid(record)};
 
 		reln = smgropen(xlrec->rnode, InvalidBackendId, xlrec->impl);
 		smgrcreate(reln, xlrec->forkNum, true);
 
-		PendingRelXactDelete pd = {{xlrec->rnode, xlrec->impl, false}, XLogRecGetXid(record)};
 		PendingDeleteRedoAdd(&pd);
 	}
 	else if (info == XLOG_SMGR_TRUNCATE)
