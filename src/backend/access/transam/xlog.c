@@ -7618,6 +7618,11 @@ StartupXLOG(void)
 					}
 				}
 
+				/* drop all orphaned files from base during recovery */
+				if (record->xl_rmid == RM_XLOG_ID &&
+					(record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN)
+					PendingDeleteRedoDropFiles();
+
 				/*
 				 * If rm_redo called XLogRequestWalReceiverReply, then we wake
 				 * up the receiver so that it notices the updated
@@ -8059,7 +8064,11 @@ StartupXLOG(void)
 								  CHECKPOINT_WAIT);
 		}
 		else
+		{
 			CreateCheckPoint(CHECKPOINT_END_OF_RECOVERY | CHECKPOINT_IMMEDIATE);
+			/* drop all orphaned files from base after recovery */
+			PendingDeleteRedoDropFiles();
+		}
 	}
 
 	if (ArchiveRecoveryRequested)
@@ -10943,6 +10952,10 @@ xlog_redo(XLogReaderState *record)
 
 		/* Keep track of full_page_writes */
 		lastFullPageWrites = fpw;
+	}
+	else if (info == XLOG_PENDING_DELETE)
+	{
+		PendingDeleteRedoRecord(record);
 	}
 }
 
