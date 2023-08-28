@@ -96,6 +96,7 @@ CXformSelect2Filter::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 
 	if (CLogicalSelect::PopConvert(pexpr->Pop())->FTrivial())
 	{
+		// mark CTE inlined by trivial select
 		CPhysicalFilter::PopConvert(pexprFilter->Pop())->MarkTrivial();
 	}
 	// add alternative to results

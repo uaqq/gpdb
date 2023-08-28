@@ -104,6 +104,7 @@ CXformCTEAnchor2TrivialSelect::Transform(CXformContext *pxfctxt,
 		CExpression(mp, GPOS_NEW(mp) CLogicalSelect(mp), pexprChild,
 					CUtils::PexprScalarConstBool(mp, true /*fValue*/));
 
+	// mark CTE inlined by trivial select
 	CLogicalSelect::PopConvert(pexprSelect->Pop())->MarkTrivial();
 	pxfres->Add(pexprSelect);
 }

@@ -42,6 +42,7 @@ private:
 	// table descriptor
 	CTableDescriptor *m_ptabdesc;
 
+	// CTE inlined by trivial select
 	BOOL m_trivial;
 
 public:
@@ -74,12 +75,14 @@ public:
 		return m_ptabdesc;
 	}
 
+	// return CTE inlined by trivial select
 	BOOL
 	FTrivial() const
 	{
 		return m_trivial;
 	}
 
+	// mark CTE inlined by trivial select
 	void
 	MarkTrivial()
 	{
