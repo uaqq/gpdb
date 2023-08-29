@@ -1048,6 +1048,7 @@ WITH updated AS (
 select count(*) from rank_tbl where rank in (select rank from updated);
 
 -- shared scan over values
+set optimizer = off;
 --start_ignore
 drop table if exists d;
 --end_ignore
@@ -1058,4 +1059,5 @@ with cte as (
     select count(*) c1 from (values (1,2),(3,4)) v
 ) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
 
+reset optimizer;
 drop table d;
