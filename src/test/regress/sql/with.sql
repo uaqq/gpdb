@@ -1052,14 +1052,10 @@ select count(*) from rank_tbl where rank in (select rank from updated);
 drop table if exists d;
 --end_ignore
 create table d (c1 int, c2 int) distributed by (c1);
-set gp_cte_sharing = on;
-set optimizer = off;
 
 explain (costs off)
 with cte as (
     select count(*) c1 from (values (1,2),(3,4)) v
 ) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
 
-reset optimizer;
-reset gp_cte_sharing;
 drop table d;
