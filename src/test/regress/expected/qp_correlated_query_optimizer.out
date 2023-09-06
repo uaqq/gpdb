@@ -4084,18 +4084,18 @@ SELECT id FROM offers WHERE EXISTS (
                      Output: offers.id, offers.product
          SubPlan 1  (slice0)
            ->  Result
-                 Output: contacts.contact
+                 Output: contacts.id
                  Filter: ((offers.product = 0) OR (contacts.id = offers.id))
                  ->  Materialize
-                       Output: contacts.contact, contacts.id
+                       Output: contacts.id
                        ->  Gather Motion 3:1  (slice2; segments: 3)
-                             Output: contacts.contact, contacts.id
+                             Output: contacts.id
                              ->  Sequence
-                                   Output: contacts.contact, contacts.id
+                                   Output: contacts.id
                                    ->  Partition Selector for contacts (dynamic scan id: 1)
                                          Partitions selected: 1 (out of 1)
                                    ->  Dynamic Seq Scan on qp_correlated_query.contacts (dynamic scan id: 1)
-                                         Output: contacts.contact, contacts.id
+                                         Output: contacts.id
  Optimizer: Pivotal Optimizer (GPORCA)
  Settings: optimizer=on
 (25 rows)

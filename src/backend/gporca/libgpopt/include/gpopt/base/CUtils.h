@@ -1121,7 +1121,6 @@ CUtils::PexprLogicalApply(CMemoryPool *mp, CExpression *pexprLeft,
 	}
 
 	CColRefArray *colref_array = GPOS_NEW(mp) CColRefArray(mp);
-	const_cast<CColRef *>(pcrInner)->MarkAsUsed();
 	colref_array->Append(const_cast<CColRef *>(pcrInner));
 	return GPOS_NEW(mp)
 		CExpression(mp, GPOS_NEW(mp) T(mp, colref_array, eopidOriginSubq),
