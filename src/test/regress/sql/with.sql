@@ -1047,16 +1047,23 @@ WITH updated AS (
 )
 select count(*) from rank_tbl where rank in (select rank from updated);
 
--- shared scan over values
+-- Test shared scan over values with singleQE join
 set optimizer = off;
 --start_ignore
 drop table if exists d;
 --end_ignore
 create table d (c1 int, c2 int) distributed by (c1);
 
+insert into d (values (2,0),(2,0));
+
 explain (costs off)
 with cte as (
     select count(*) c1 from (values (1,2),(3,4)) v
+) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
+
+-- Test join prefetch_inner in the case of bottleneck join
+with cte as (
+    select count(*) c1 from d
 ) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
 
 reset optimizer;

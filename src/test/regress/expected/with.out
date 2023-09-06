@@ -2207,17 +2207,18 @@ select count(*) from rank_tbl where rank in (select rank from updated);
      9
 (1 row)
 
--- shared scan over values
+-- Test shared scan over values with singleQE join
 set optimizer = off;
 --start_ignore
 drop table if exists d;
 --end_ignore
 create table d (c1 int, c2 int) distributed by (c1);
+insert into d (values (2,0),(2,0));
 explain (costs off)
 with cte as (
     select count(*) c1 from (values (1,2),(3,4)) v
 ) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
-                                    QUERY PLAN
+                                    QUERY PLAN                                    
 ----------------------------------------------------------------------------------
  Hash Join
    Hash Cond: (b.c1 = share0_ref1.c1)
@@ -2239,6 +2240,15 @@ with cte as (
                            ->  Values Scan on "*VALUES*"
  Optimizer: Postgres query optimizer
 (19 rows)
+
+-- Test join prefetch_inner in the case of bottleneck join
+with cte as (
+    select count(*) c1 from d
+) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
+ c1 | c2 
+----+----
+  2 |  0
+(1 row)
 
 reset optimizer;
 drop table d;
