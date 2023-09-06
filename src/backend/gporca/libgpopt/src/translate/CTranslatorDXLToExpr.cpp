@@ -1440,6 +1440,7 @@ CTranslatorDXLToExpr::PexprLogicalDelete(const CDXLNode *dxlnode)
 		CColRef *colref = (*colref_array)[ul];
 		
 		colref->MarkAsUnknown();
+		colref->MarkAsUnused();
 	}
 
 	return GPOS_NEW(m_mp) CExpression(
