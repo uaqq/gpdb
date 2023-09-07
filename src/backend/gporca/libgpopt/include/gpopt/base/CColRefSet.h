@@ -84,7 +84,10 @@ public:
 	CColRef *PcrAny() const;
 
 	// return first member
-	CColRef *PcrFirst(BOOL used = false) const;
+	CColRef *PcrFirst() const;
+
+	// return first member
+	CColRef *PcrFirstUsed() const;
 
 	// include column
 	void Include(const CColRef *colref);

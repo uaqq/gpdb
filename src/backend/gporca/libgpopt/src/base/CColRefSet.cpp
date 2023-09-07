@@ -114,7 +114,28 @@ CColRefSet::PcrAny() const
 //
 //---------------------------------------------------------------------------
 CColRef *
-CColRefSet::PcrFirst(BOOL used) const
+CColRefSet::PcrFirst() const
+{
+	CColRefSetIter crsi(*this);
+	if (crsi.Advance())
+	{
+		return crsi.Pcr();
+	}
+
+	GPOS_ASSERT(0 == Size());
+	return NULL;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CColRefSet::PcrFirstUsed
+//
+//	@doc:
+//		Return first used member
+//
+//---------------------------------------------------------------------------
+CColRef *
+CColRefSet::PcrFirstUsed() const
 {
 	CColRef *colref = NULL;
 	CColRefSetIter crsi(*this);
@@ -122,7 +143,7 @@ CColRefSet::PcrFirst(BOOL used) const
 	{
 		CColRef *pcr = crsi.Pcr();
 
-		if (!used || CColRef::EUsed == pcr->GetUsage())
+		if (CColRef::EUsed == pcr->GetUsage())
 		{
 			return pcr;
 		}
