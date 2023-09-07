@@ -137,7 +137,6 @@ CColRefSet::PcrFirst() const
 CColRef *
 CColRefSet::PcrFirstUsed() const
 {
-	CColRef *colref = NULL;
 	CColRefSetIter crsi(*this);
 	while (crsi.Advance())
 	{
@@ -147,20 +146,9 @@ CColRefSet::PcrFirstUsed() const
 		{
 			return pcr;
 		}
-
-		if (NULL == colref)
-		{
-			colref = pcr;
-		}
 	}
 
-	if (NULL != colref)
-	{
-		return colref;
-	}
-
-	GPOS_ASSERT(0 == Size());
-	return NULL;
+	return PcrFirst();
 }
 
 //---------------------------------------------------------------------------
