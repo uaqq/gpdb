@@ -86,7 +86,7 @@ public:
 	// return first member
 	CColRef *PcrFirst() const;
 
-	// return first member
+	// return first used member
 	CColRef *PcrFirstUsed() const;
 
 	// include column
