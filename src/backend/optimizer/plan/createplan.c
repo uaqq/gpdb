@@ -782,6 +782,17 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
 	if (partition_selector_created)
 		((Join *) plan)->prefetch_inner = true;
 
+	/* CDB: if the join's locus is bottleneck which means the
+	 * join gang only contains one process, so there is no
+	 * risk for motion deadlock.
+	 */
+	if (CdbPathLocus_IsBottleneck(best_path->path.locus) && !IsA(plan,HashJoin))
+	{
+		((Join *) plan)->prefetch_inner = false;
+		((Join *) plan)->prefetch_joinqual = false;
+		((Join *) plan)->prefetch_qual = false;
+	}
+
 	plan->flow = cdbpathtoplan_create_flow(root,
 			best_path->path.locus,
 			best_path->path.parent ? best_path->path.parent->relids
@@ -3285,17 +3296,6 @@ create_nestloop_plan(PlannerInfo *root,
 	if (prefetch)
 		join_plan->join.prefetch_inner = true;
 
-	/* CDB: if the join's locus is bottleneck which means the
-	 * join gang only contains one process, so there is no
-	 * risk for motion deadlock.
-	 */
-	if (CdbPathLocus_IsBottleneck(best_path->path.locus))
-	{
-		((Join *) join_plan)->prefetch_inner = false;
-		((Join *) join_plan)->prefetch_joinqual = false;
-		((Join *) join_plan)->prefetch_qual = false;
-	}
-
 	return join_plan;
 }
 
@@ -3753,6 +3753,27 @@ create_hashjoin_plan(PlannerInfo *root,
 							  outer_plan,
 							  (Plan *) hash_plan,
 							  best_path->jpath.jointype);
+
+/*
+	 * MPP-4635.  best_path->jpath.outerjoinpath may be NULL.
+	 * From the comment, it is adaptive nestloop join may cause this.
+	 */
+	/*
+	 * MPP-4165: we need to descend left-first if *either* of the
+	 * subplans have any motion.
+	 */
+	/*
+	 * MPP-3300: unify motion-deadlock prevention for all join types.
+	 * This allows us to undo the MPP-989 changes in nodeHashjoin.c
+	 * (allowing us to check the outer for rows before building the
+	 * hash-table).
+	 */
+	if (best_path->jpath.outerjoinpath == NULL ||
+		best_path->jpath.outerjoinpath->motionHazard ||
+		best_path->jpath.innerjoinpath->motionHazard)
+	{
+		join_plan->join.prefetch_inner = true;
+	}
 
 	copy_path_costsize(root, &join_plan->join.plan, &best_path->jpath.path);
 
@@ -4990,7 +5011,7 @@ make_hashjoin(List *tlist,
 	node->hashqualclauses = hashqualclauses;
 	node->join.jointype = jointype;
 	node->join.joinqual = joinclauses;
-	node->join.prefetch_inner = true;
+
 	return node;
 }
 

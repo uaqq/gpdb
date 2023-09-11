@@ -2543,6 +2543,8 @@ join_dqa_coplan(PlannerInfo *root, MppGroupContext *ctx, Plan *outer, int dqa_in
 			outer = add_motion_to_dqa_child(outer, root, &motion_added_outer);
 			inner = add_motion_to_dqa_child(inner, root, &motion_added_inner);
 
+			bool prefetch_inner = motion_added_outer || motion_added_inner;
+
 			if (motion_added_outer || motion_added_inner)
 			{
 				ctx->current_pathkeys = NULL;
@@ -2597,6 +2599,7 @@ join_dqa_coplan(PlannerInfo *root, MppGroupContext *ctx, Plan *outer, int dqa_in
 											   joinclause,	/* hashqualclauses */
 											   outer, (Plan *) hash_plan,
 											   JOIN_INNER);
+			((Join *) join_plan)->prefetch_inner = prefetch_inner;
 		}
 		else
 		{
