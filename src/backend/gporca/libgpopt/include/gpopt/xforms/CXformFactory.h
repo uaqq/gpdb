@@ -114,7 +114,7 @@ public:
 	static void Init();
 
 	// destroy global factory instance
-	void Shutdown();
+	static void Shutdown();
 
 };	// class CXformFactory
 

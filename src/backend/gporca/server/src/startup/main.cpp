@@ -243,7 +243,7 @@ ConfigureTests()
 
 #ifdef GPOS_DEBUG
 	// reset xforms factory to exercise xforms ctors and dtors
-	CXformFactory::Pxff()->Shutdown();
+	CXformFactory::Shutdown();
 	CXformFactory::Init();
 #endif	// GPOS_DEBUG
 }

@@ -107,8 +107,7 @@ CMessageRepository::Init()
 {
 	GPOS_ASSERT(NULL == m_repository);
 
-	CMemoryPool *mp =
-		CMemoryPoolManager::GetMemoryPoolMgr()->CreateMemoryPool();
+	CMemoryPool *mp = CMemoryPoolManager::CreateMemoryPool();
 
 	m_repository = GPOS_NEW(mp) CMessageRepository(mp);
 	m_repository->InitDirectory(mp);
@@ -145,8 +144,9 @@ CMessageRepository::GetMessageRepository()
 void
 CMessageRepository::Shutdown()
 {
-	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(m_mp);
-	CMessageRepository::m_repository = NULL;
+	GPOS_ASSERT(NULL != m_repository);
+	CMemoryPoolManager::Destroy(m_repository->m_mp);
+	m_repository = NULL;
 }
 
 

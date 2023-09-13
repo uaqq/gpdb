@@ -264,12 +264,12 @@ gpos_terminate()
 #endif
 #ifdef GPOS_DEBUG
 #ifdef GPOS_FPSIMULATOR
-	CFSimulator::FSim()->Shutdown();
+	CFSimulator::Shutdown();
 #endif	// GPOS_FPSIMULATOR
-	CMessageRepository::GetMessageRepository()->Shutdown();
-	CWorkerPoolManager::WorkerPoolManager()->Shutdown();
-	CCacheFactory::GetFactory()->Shutdown();
-	CMemoryPoolManager::GetMemoryPoolMgr()->Shutdown();
+	CMessageRepository::Shutdown();
+	CWorkerPoolManager::Shutdown();
+	CCacheFactory::Shutdown();
+	CMemoryPoolManager::Shutdown();
 #endif	// GPOS_DEBUG
 }
 

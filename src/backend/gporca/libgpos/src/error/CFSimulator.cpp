@@ -133,8 +133,7 @@ CFSimulator::NewStack(ULONG major, ULONG minor)
 void
 CFSimulator::Init()
 {
-	CMemoryPool *mp =
-		CMemoryPoolManager::GetMemoryPoolMgr()->CreateMemoryPool();
+	CMemoryPool *mp = CMemoryPoolManager::CreateMemoryPool();
 
 	m_fsim = GPOS_NEW(mp) CFSimulator(mp, GPOS_FSIM_RESOLUTION);
 }
@@ -152,11 +151,12 @@ CFSimulator::Init()
 void
 CFSimulator::Shutdown()
 {
-	CMemoryPool *mp = m_mp;
-	GPOS_DELETE(CFSimulator::m_fsim);
-	CFSimulator::m_fsim = NULL;
+	GPOS_ASSERT(NULL != m_fsim);
+	CMemoryPool *mp = m_fsim->m_mp;
+	GPOS_DELETE(m_fsim);
+	m_fsim = NULL;
 
-	CMemoryPoolManager::GetMemoryPoolMgr()->Destroy(mp);
+	CMemoryPoolManager::Destroy(mp);
 }
 #endif	// GPOS_DEBUG
 
