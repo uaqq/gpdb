@@ -129,53 +129,6 @@ extern char *output_files[];
  */
 #define MULTIXACT_FORMATCHANGE_CAT_VER 301809211
 
-/*
- * Extra information stored for each Append-only table.
- * This is used to transfer the information from the auxiliary
- * AO table to the new cluster.
- */
-
-/* To hold contents of pg_visimap_<oid> */
-typedef struct
-{
-	int			segno;
-	int64		first_row_no;
-	char	   *visimap;		/* text representation of the "bit varying" field */
-} AOVisiMapInfo;
-
-typedef struct
-{
-	int			segno;
-	int			columngroup_no;
-	int64		first_row_no;
-	char	   *minipage;		/* text representation of the "bit varying" field */
-} AOBlkDir;
-
-/* To hold contents of pg_aoseg_<oid> */
-typedef struct
-{
-	int			segno;
-	int64		eof;
-	int64		tupcount;
-	int64		varblockcount;
-	int64		eofuncompressed;
-	int64		modcount;
-	int16		version;
-	int16		state;
-} AOSegInfo;
-
-/* To hold contents of pf_aocsseg_<oid> */
-typedef struct
-{
-	int         segno;
-	int64		tupcount;
-	int64		varblockcount;
-	char       *vpinfo;
-	int64		modcount;
-	int16		state;
-	int16		version;
-} AOCSSegInfo;
-
 typedef struct
 {
 	int16		attlen;
@@ -212,15 +165,6 @@ typedef struct
 	bool		tblsp_alloc;
 
 	RelType		reltype;
-
-	/* Extra information for append-only tables */
-	AOSegInfo  *aosegments;
-	AOCSSegInfo *aocssegments;
-	int			naosegments;
-	AOVisiMapInfo *aovisimaps;
-	int			naovisimaps;
-	AOBlkDir   *aoblkdirs;
-	int			naoblkdirs;
 
 	/* Extra information for heap tables */
 	AttInfo	   *atts;
@@ -526,6 +470,8 @@ extern void appendConnStrVal(PQExpBuffer buf, const char *str);
 extern void appendPsqlMetaConnect(PQExpBuffer buf, const char *dbname);
 int			get_user_info(char **user_name_p);
 void		check_ok(void);
+void		parallel_check_ok(const char *check_name);
+void		start_parallel_check(const char *check_name);
 void
 report_status(eLogType type, const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
@@ -545,7 +491,8 @@ unsigned int str2uint(const char *str);
 void		pg_putenv(const char *var, const char *val);
 void 		gp_fatal_log(const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
-
+void 		parallel_gp_fatal_log(const char *check_name, const char *fmt,...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
 
 /* version.c */
 #if 0
@@ -564,7 +511,6 @@ void old_9_3_check_for_line_data_type_usage(ClusterInfo *cluster);
 #endif
 /* version_old_8_3.c */
 
-void		old_8_3_check_for_name_data_type_usage(ClusterInfo *cluster);
 void		old_8_3_check_for_tsquery_usage(ClusterInfo *cluster);
 void		old_8_3_check_ltree_usage(ClusterInfo *cluster);
 void		old_8_3_rebuild_tsvector_tables(ClusterInfo *cluster, bool check_mode);

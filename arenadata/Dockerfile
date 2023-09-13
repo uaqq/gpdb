@@ -3,6 +3,12 @@ FROM centos:centos7 as base
 ARG sigar=https://downloads.adsw.io/ADB/6.22.0_arenadata38/centos/7/community/x86_64/sigar-1.6.5-1056.git2932df5.el7.x86_64.rpm
 ARG sigar_headers=http://downloads.adsw.io/ADB/6.22.0_arenadata38/centos/7/community/x86_64/sigar-headers-1.6.5-1056.git2932df5.el7.x86_64.rpm
 
+# Reinstall glibc-common. This is necessary to get langpacks in docker
+# because docker images don't contain them.
+RUN sed -i 's/\(override_install_langs*\)/# \1/' /etc/yum.conf && \
+    yum -y reinstall glibc-common && \
+	yum clean all
+
 # Install some basic utilities and build tools
 RUN yum makecache && yum update -y ca-certificates && \
     rpm --import https://mirror.yandex.ru/centos/RPM-GPG-KEY-CentOS-7 && \
@@ -21,6 +27,7 @@ RUN yum makecache && \
     yum -y install openssl-devel pam-devel readline-devel snappy-devel libuv-devel && \
     yum -y install apache-ivy libicu perl-ExtUtils-Embed perl-Env perl-JSON && \
     yum -y install perl-IPC-Run perl-Test-Base libxslt-devel && \
+    yum -y install libzstd-static && \
     # The last python 2.7 pip
     pip install --ignore-installed "pip<21.0" && \
     pip install psi pytest==3.10.1 && \
@@ -54,6 +61,13 @@ RUN yum -y install centos-release-scl && \
 
 RUN rpm -i $sigar && rpm -i $sigar_headers
 
+# Install pg_bsd_indent used by pgindent utility.
+# Remove sources (with artifacts) and archive.
+RUN wget https://ftp.postgresql.org/pub/dev/pg_bsd_indent-1.3.tar.gz && \
+    tar -xf pg_bsd_indent-1.3.tar.gz && \
+    make install -C pg_bsd_indent && \
+    rm -r pg_bsd_indent*
+
 WORKDIR /home/gpadmin
 
 FROM base as build
@@ -77,6 +91,10 @@ RUN rm -rf gpdb_src/.git/
 FROM base as test
 COPY --from=code /home/gpadmin/gpdb_src gpdb_src
 COPY --from=build /home/gpadmin/bin_gpdb /home/gpadmin/bin_gpdb
+
+# Install entab used by pgindent utility.
+# This should be done using gpdb sources.
+RUN make -C gpdb_src/src/tools/entab install clean
 
 # Volume for tests output
 VOLUME /home/gpadmin/gpdb_src/src/test

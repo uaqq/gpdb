@@ -41,6 +41,8 @@ try:
     import getopt, math, StringIO, stat, subprocess, signal
     from gppylib.gpparseopts import OptParser
     from gppylib.util import ssh_utils
+    from gppylib.commands import unix
+    from gppylib.commands.base import *
 except ImportError, e:
     sys.exit('Error: unable to import module: ' + str(e))
 
@@ -51,6 +53,8 @@ if GPHOME is None:
 USER = os.getenv('USER')
 if USER is None or USER is ' ':
     sys.exit('Please set USER environment variable')
+
+_SCP_ENABLED = True
 
 
 def usage(exitarg):
@@ -81,9 +85,9 @@ def strcmd(cmd):
     return reduce(lambda x, y: x + ' ' + y, map(lambda x: x.find(' ') > 0 and "'" + x + "'" or x, cmd))
 
 
-def gpssh(cmd):
+def gpssh(cmd, verbose):
     c = ['%s/bin/gpssh' % GPHOME]
-    if GV.opt['-V']:
+    if verbose:
         c.append('-v')
     if GV.opt['-f']:
         c.append('-f')
@@ -120,7 +124,45 @@ def gpscp(src, dst):
     p = subprocess.Popen(c, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out = p.stdout.read(-1)
     rc = p.wait()
-    return not rc, out
+    if rc:
+        sys.exit('[Error] command failed: gpscp {0} =:{1} with output: {2}'.format(src, dst, out))
+
+
+def run_cmd(cmd, peer):
+    """
+    To create subprocess on specified host with given command
+    """
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc.x_cmd = cmd
+    proc.x_peer = peer
+    return proc
+
+
+def gpsync(src, dst):
+    """
+    It copies files either to or from a remote host, or locally on the current host.
+    rsync options:
+    -a: archive mode, copy all attributes of the original files
+    -c : copy files based on checksum, it will override default behaviour of rsync
+         to skip transferring files with same modification time and size
+    -e: to specify ssh options
+    -P : print information showing the progress of the transfer
+    """
+    proc = []
+    for peer in GV.opt['-h']:
+        cmd = 'rsync -P -a -c -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=no" {0} {1}:{2}' \
+            .format(src, unix.canonicalize(peer), dst)
+        if GV.opt['-v']:
+            print('[Info] {0}' .format(cmd))
+        proc.append(run_cmd(cmd, peer))
+
+    for p in proc:
+        for line in p.stdout.readlines():
+            print('[Out {0}] {1}' .format(p.x_peer, line))
+        rc = p.wait()
+        if rc:
+            sys.exit('[Error] command failed for host:{0} cmd:{1} with status:{2} error: "{3}"'
+                     .format(p.x_peer, p.x_cmd, rc, p.stderr.read()))
 
 
 def getPlatform():
@@ -132,26 +174,27 @@ def getPlatform():
 
 
 def getMemory():
-    if getPlatform() == 'linux':
-        ok, out = run("sh -c 'cat /proc/meminfo | grep MemTotal'")
-        if not ok:
-            return 0
+    platform = getPlatform()
+
+    if platform == 'linux':
+        rc, out = run("sh -c 'cat /proc/meminfo | grep MemTotal'")
+        if rc != 0:
+            return None
         word_list = out.strip().split(' ')
         val = int(word_list[len(word_list) - 2])
         factor = word_list[len(word_list) - 1]
         if factor == 'kB':
-            return val * 1024
-        return 0
+            return val * 1024 if val else None
 
-    if getPlatform() == 'darwin':
-        ok, out = run("/usr/sbin/sysctl hw.physmem")
-        if not ok:
-            return 0
+    if platform == 'darwin':
+        rc, out = run("/usr/sbin/sysctl hw.physmem")
+        if rc != 0:
+            return None
         word_list = out.strip().split(' ')
         val = int(word_list[1])
-        return val
+        return val if val else None
 
-    return 0
+    return None
 
 
 def parseMemorySize(line):
@@ -262,7 +305,12 @@ def parseCommandLine():
         usage('Error: maximum size for -B parameter is 1MB')
 
     if GV.opt['-S'] == 0:
-        GV.opt['-S'] = 2 * getMemory() / len(GV.opt['-d'])
+        system_mem_size = getMemory()
+        if system_mem_size is not None:
+            GV.opt['-S'] = 2 * system_mem_size / len(GV.opt['-d'])
+        else:
+            sys.exit('[Error] could not get system memory size. Instead, you can use the -S option to provide the file size value')
+
     else:
         GV.opt['-S'] /= len(GV.opt['-d'])
 
@@ -327,13 +375,13 @@ def runTeardown():
     for d in GV.opt['-d']:
         dirs = '%s %s/gpcheckperf_$USER' % (dirs, d)
     try:
-        gpssh('rm -rf ' + dirs)
+        gpssh('rm -rf ' + dirs, GV.opt['-V'])
     except:
         pass
 
     try:
         if GV.opt['--net']:
-            gpssh(killall(GV.opt['--netserver']))
+            gpssh(killall(GV.opt['--netserver']), GV.opt['-V'])
     except:
         pass
 
@@ -350,7 +398,7 @@ def runSetup():
         # check python reachable
         if GV.opt['-v']:
             print '[Info] verify python interpreter exists'
-        (ok, out) = gpssh('python -c print')
+        (ok, out) = gpssh('python -c print', GV.opt['-V'])
         if not ok:
             if not GV.opt['-v']:
                 print out
@@ -365,7 +413,7 @@ def runSetup():
             dirs = '%s %s/gpcheckperf_$USER' % (dirs, d)
 
         cmd = 'rm -rf %s ; mkdir -p %s' % (dirs, dirs)
-        (ok, out) = gpssh(cmd)
+        (ok, out) = gpssh(cmd, GV.opt['-V'])
         if not ok:
             print 'failed gpssh: %s' % out
             sys.exit("[Error] unable to make gpcheckperf directory. \n"
@@ -380,7 +428,7 @@ def copyExecOver(fname):
     # copy to this dir
     d = GV.opt['-d'][0]
     target = '%s/gpcheckperf_$USER/%s' % (d, fname)
-    path = '%s/lib/%s' % (sys.path[0], fname)
+    path = '%s/lib/%s' % (os.path.dirname(__file__), fname)
 
     if not os.path.isfile(path):
         print "binary file not found: %s" % path
@@ -398,12 +446,13 @@ def copyExecOver(fname):
     if not os.access(path, os.X_OK):
         sys.exit('[Exit] file not executable: ' + path)
 
-    (ok, out) = gpscp(path, '=:%s' % target)
-    if not ok:
-        sys.exit('[Error] command failed: gpscp %s =:%s with output: %s' % (path, target, out))
+    if _SCP_ENABLED:
+        gpscp(path, '=:{0}' .format(target))
+    else:
+        gpsync(path, '{0}'.format(target))
 
     # chmod +x file
-    (ok, out) = gpssh('chmod a+rx %s' % target)
+    (ok, out) = gpssh('chmod a+rx %s' % target, GV.opt['-V'])
     if not ok:
         sys.exit('[Error] command failed: chmod a+rx %s with output: %s' % (target, out))
 
@@ -453,7 +502,7 @@ def runDiskWriteTest(multidd):
         cmd = cmd + (' -B %d' % GV.opt['-B'])
     if GV.opt['-S']:
         cmd = cmd + (' -S %d' % GV.opt['-S'])
-    (ok, out) = gpssh(cmd)
+    (ok, out) = gpssh(cmd, GV.opt['-V'])
     if not ok:
         sys.exit('[Error] command failed: %s with output: %s' % (cmd, out))
     return parseMultiDDResult(out)
@@ -472,7 +521,7 @@ def runDiskReadTest(multidd):
         cmd = cmd + (' -B %d' % GV.opt['-B'])
     if GV.opt['-S']:
         cmd = cmd + (' -S %d' % GV.opt['-S'])
-    (ok, out) = gpssh(cmd)
+    (ok, out) = gpssh(cmd, GV.opt['-V'])
     if not ok:
         sys.exit('[Error] command failed: %s with output: %s' % (cmd, out))
     return parseMultiDDResult(out)
@@ -485,7 +534,7 @@ def runStreamTest():
     print '--------------------'
 
     cmd = copyExecOver('stream')
-    (ok, out) = gpssh(cmd)
+    (ok, out) = gpssh(cmd, GV.opt['-V'])
     if not ok:
         sys.exit('[Error] command failed: %s with output: %s' % (cmd, out))
     out = StringIO.StringIO(out)
@@ -507,9 +556,9 @@ def startNetServer():
     for i in xrange(5):
         if i > 0:
             print '[Warning] retrying with port %d' % port
-        (ok, out) = gpssh(killall(GV.opt['--netserver']))
+        (ok, out) = gpssh(killall(GV.opt['--netserver']), GV.opt['-V'])
 
-        (ok, out) = gpssh('%s -p %d > /dev/null 2>&1' % (rmtPath, port))
+        (ok, out) = gpssh('%s -p %d > /dev/null 2>&1' % (rmtPath, port), GV.opt['-V'])
         if ok:
             return port
 
@@ -736,13 +785,22 @@ def get_host_map(hostlist):
         uniqhosts =
             uniqhosts['apollo1'] = 'sdw1-1'
             uniqhosts['apollo2'] = 'sdw2-1'
-
     '''
     seglist = dict()  # segment list
     uniqhosts = dict()  # unique host list
 
-    # get list of hostnames
-    rc, out = gpssh('hostname')
+    '''
+     Get hostnames using non-verbose mode since verbose output makes parsing difficult with extra lines as show:
+        $gpssh -v -h sdw2 hostname
+        [WARN] Reference default values as $MASTER_DATA_DIRECTORY/gpssh.conf could not be found
+        Using delaybeforesend 0.05 and prompt_validation_timeout 1.0
+        [Reset ...]
+        [INFO] login sdw2
+        [sdw2] sdw2
+        [INFO] completed successfully
+        [Cleanup...]
+    '''
+    rc, out = gpssh('hostname', False)
     if not rc:
         raise Exception('Encountered error running hostname')
 
@@ -783,7 +841,7 @@ def runNetPerfTestMatrix():
     '''
     (netperf, hostlist, netserver_port) = setupNetPerfTest()
     if not netperf:
-        return None
+        return None, None
 
     # dict() of seglist[segname] = hostname, uniqhosts[hostname] = 1 segment name
     seglist, uniqhosts = get_host_map(hostlist)
@@ -932,50 +990,83 @@ def printResult(title, result):
     print
 
 
-try:
-    parseCommandLine()
-    runSetup()
-    diskWriteResult = diskReadResult = streamResult = netResult = None
-    tornDown = False
+def getHostList():
+    """
+    To get the list of hosts involved in gpcheckperf operation and passed with
+    -f or -h flog
+    :return: returns a list of hosts
+    """
+    hostlist = ssh_utils.HostList()
+    for h in GV.opt['-h']:
+        hostlist.add(h)
+    if GV.opt['-f']:
+        hostlist.parseFile(GV.opt['-f'])
+
     try:
-        if GV.opt['-r'].find('d') >= 0:
-            multidd = copyExecOver('multidd')
-            diskWriteResult = runDiskWriteTest(multidd)
-            diskReadResult = runDiskReadTest(multidd)
+        hostlist.checkSSH()
+    except ssh_utils.SSHError, e:
+        sys.exit('[Error] {0}' .format(str(e)))
 
-        if GV.opt['-r'].find('s') >= 0:
-            streamResult = runStreamTest()
+    GV.opt['-h'] = hostlist.filterMultiHomedHosts()
+    if len(GV.opt['-h']) == 0:
+        usage('Error: missing hosts in -h and/or -f arguments')
+    return GV.opt['-h']
 
-        if GV.opt['--net'] == 'netperf':
-            netResult = runNetPerfTest()
-        elif GV.opt['--net'] == 'parallel':
-            netResult = runNetPerfTestParallel()
-        elif GV.opt['--net'] == 'matrix':
-            netResult, seglist = runNetPerfTestMatrix()
 
-        runTeardown()
+def main():
 
-    finally:
-        print
-        print '===================='
-        print '==  RESULT %s' % datetime.datetime.now().isoformat()
-        print '===================='
+    try:
+        parseCommandLine()
+        runSetup()
+        diskWriteResult = diskReadResult = streamResult = netResult = None
+        tornDown = False
+        try:
+            global _SCP_ENABLED
+            # check if scp executable binary is present on the master and all specified host
+            _SCP_ENABLED = unix.isScpEnabled(getHostList() + [unix.getLocalHostname()])
 
-        if diskWriteResult:
-            printResult('disk write', diskWriteResult)
+            if GV.opt['-r'].find('d') >= 0:
+                print('[Warning] Using %d bytes for disk performance test. This might take some time' % (GV.opt['-S'] * len(GV.opt['-d'])))
+                multidd = copyExecOver('multidd')
+                diskWriteResult = runDiskWriteTest(multidd)
+                diskReadResult = runDiskReadTest(multidd)
 
-        if diskReadResult:
-            printResult('disk read', diskReadResult)
+            if GV.opt['-r'].find('s') >= 0:
+                streamResult = runStreamTest()
 
-        if streamResult:
-            printResult('stream', streamResult)
+            if GV.opt['--net'] == 'netperf':
+                netResult = runNetPerfTest()
+            elif GV.opt['--net'] == 'parallel':
+                netResult = runNetPerfTestParallel()
+            elif GV.opt['--net'] == 'matrix':
+                netResult, seglist = runNetPerfTestMatrix()
 
-        if netResult and GV.opt['--net'] == 'matrix':
-            printMatrixResult(netResult, seglist)
-        elif netResult and GV.opt['--net']:
-            printNetResult(netResult)
+            runTeardown()
 
-        runTeardown()
+        finally:
+            print
+            print '===================='
+            print '==  RESULT %s' % datetime.datetime.now().isoformat()
+            print '===================='
 
-except KeyboardInterrupt:
-    print '[Abort] Keyboard Interrupt ...'
+            if diskWriteResult:
+                printResult('disk write', diskWriteResult)
+
+            if diskReadResult:
+                printResult('disk read', diskReadResult)
+
+            if streamResult:
+                printResult('stream', streamResult)
+
+            if netResult and GV.opt['--net'] == 'matrix':
+                printMatrixResult(netResult, seglist)
+            elif netResult and GV.opt['--net']:
+                printNetResult(netResult)
+
+            runTeardown()
+
+    except KeyboardInterrupt:
+        print('[Abort] Keyboard Interrupt ...')
+
+if __name__ == '__main__':
+     main()

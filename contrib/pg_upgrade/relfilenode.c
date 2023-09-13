@@ -44,8 +44,12 @@ transfer_all_new_tablespaces(DbInfoArr *old_db_arr, DbInfoArr *new_db_arr,
 	 * tablespace path, which matches all tablespaces.  In parallel mode, we
 	 * pass the default tablespace and all user-created tablespaces and let
 	 * those operations happen in parallel.
+	 *
+	 * GPDB: Disable pg_upgrade's broken parallel tablespace transfer to make the rest
+	 * of the parallelism from the --jobs flag usable now to get a performance
+	 * boost.
 	 */
-	if (user_opts.jobs <= 1)
+	if (true) /* (user_opts.jobs <= 1) */
 		parallel_transfer_all_new_dbs(old_db_arr, new_db_arr, old_pgdata,
 									  new_pgdata, NULL);
 	else
@@ -219,6 +223,8 @@ transfer_relfile_segment(int segno, FileNameMap *map, const char *type_suffix)
 	const char *msg;
 	char		old_file[MAXPGPATH * 3];
 	char		new_file[MAXPGPATH * 3];
+	char		new_file_fsm[MAXPGPATH * 3];
+	char		new_file_vm[MAXPGPATH * 3];
 	int			fd;
 	char		extent_suffix[65];
 	bool is_ao_or_aocs = (map->type == AO || map->type == AOCS);
@@ -246,6 +252,20 @@ transfer_relfile_segment(int segno, FileNameMap *map, const char *type_suffix)
 				 map->new_relfilenode,
 				 type_suffix,
 				 extent_suffix);
+		snprintf(new_file_fsm, sizeof(new_file_fsm), "%s%s/%u/%u%s%s",
+				map->new_tablespace,
+				map->new_tablespace_suffix,
+				map->new_db_oid,
+				map->new_relfilenode,
+				"_fsm",
+				extent_suffix);
+		snprintf(new_file_vm, sizeof(new_file_vm), "%s%s/%u/%u%s%s",
+				map->new_tablespace,
+				map->new_tablespace_suffix,
+				map->new_db_oid,
+				map->new_relfilenode,
+				"_vm",
+				extent_suffix);
 
 		/* Is it an extent, fsm, or vm file?
 		 */
@@ -286,6 +306,29 @@ transfer_relfile_segment(int segno, FileNameMap *map, const char *type_suffix)
 		}
 
 	unlink(new_file);
+
+	/*
+	 * Because gpupgrade needs to copy MDD to segments in order to bootstrap
+	 * upgrade segments, coordinator's relfilenodes, _fsm, _vm files will end up
+	 * on segments. Normally this is ok since the files will end up being
+	 * overwritten. However, there is an edge case where there can be data in a
+	 * table on coordinator, but no data on the segment. Examples of such tables
+	 * where this can occur are pg_ao(cs)seg tables. If this edge case happens,
+	 * The new segment's table will end up with old segment's relfilenode and new
+	 * coordinator's _fsm and _vm file. The _fsm and _vm files don't get
+	 * overwritten because they aren't supposed to exist on the segment.
+	 * Attempting to run VACUUM on this table after upgrade completes will
+	 * result in a similar error below.
+	 *
+	 * ERROR:  could not read block 0 in file "base/16394/16393": read only 0 of 32768 bytes
+	 *
+	 * To prevent this failure, delete any _fsm or _vm files that should not exist
+	 */
+	if (type_suffix[0] == '\0')
+	{
+		unlink(new_file_fsm);
+		unlink(new_file_vm);
+	}
 
 	/* Copying files might take some time, so give feedback. */
 	pg_log(PG_STATUS, "%s", old_file);

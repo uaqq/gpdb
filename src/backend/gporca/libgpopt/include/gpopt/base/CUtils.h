@@ -1022,14 +1022,19 @@ public:
 
 	static BOOL FScalarConstBoolNull(CExpression *pexpr);
 
+	static BOOL FScalarConstOrBinaryCoercible(CExpression *pexpr);
+
 	// hash set from CTE ids
 	typedef CHashSet<ULONG, gpos::HashValue<ULONG>, gpos::Equals<ULONG>,
 					 CleanupDelete<ULONG> >
 		UlongCteIdHashSet;
+	typedef CHashSetIter<ULONG, HashValue<ULONG>, gpos::Equals<ULONG>,
+						 CleanupDelete<ULONG> >
+		UlongCteIdHashSetIter;
 
 	static void CollectConsumersAndProducers(CMemoryPool *mp,
 											 CExpression *pexpr,
-											 ULongPtrArray *cteConsumers,
+											 UlongCteIdHashSet *cteConsumers,
 											 UlongCteIdHashSet *cteProducerSet);
 
 	static BOOL hasUnpairedCTEConsumer(CMemoryPool *mp, CExpression *pexpr);

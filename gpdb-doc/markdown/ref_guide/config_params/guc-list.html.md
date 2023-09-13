@@ -568,6 +568,14 @@ The local content id if a segment.
 |-----------|-------|-------------------|
 |integer| |read only|
 
+## <a id="gp_count_host_segments_using_address"></a>gp_count_host_segments_using_address
+
+Beginning in version 6.21.0, the Resource Groups implementation was changed to calculate segment memory using `gp_segment_configuration.hostname` instead of `gp_segment_configuration.address`. This implementation can result in a lower memory limit value compared to the earlier code, for deployments where each host uses multiple IP addresses.  In some cases, this change in behavior could lead to Out Of Memory errors when upgrading from an earlier version. Version 6.23.4 introduces a configuration parameter, `gp_count_host_segments_using_address`, that can be enabled to calculate of segment memory using `gp_segment_configuration.address` if Out Of Memory errors are encountered after an upgrade. This parameter is disabled by default. This parameter will not be provided in Greenplum Version 7 because resource group memory calculation will no longer be dependent on the segments per host value.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|boolean|off|master, system, restart|
+
 ## <a id="gp_create_table_random_default_distribution"></a>gp\_create\_table\_random\_default\_distribution 
 
 Controls table creation when a Greenplum Database table is created with a CREATE TABLE or CREATE TABLE AS command that does not contain a DISTRIBUTED BY clause.
@@ -662,11 +670,11 @@ gpconfig -s 'gp_default_storage_options'
 
 |Value Range|Default|Set Classifications<sup>1</sup>|
 |-----------|-------|---------------------|
-|`appendoptimized`= `TRUE` or `FALSE`<br/><br/>`blocksize`= integer between 8192 and 2097152<br/><br/>`checksum`= `TRUE` or `FALSE`<br/><br/>`compresstype`= `ZLIB` or `ZSTD` or `QUICKLZ`<sup>2</sup> or `RLE`\_`TYPE` or `NONE`<br/><br/>`compresslevel`= integer between 0 and 19<br/><br/>`orientation`= `ROW` \| `COLUMN`|`appendoptimized`=`FALSE`<br/><br/>`blocksize`=`32768`<br/><br/>`checksum`=`TRUE`<br/><br/>`compresstype`=`none`<br/><br/>`compresslevel`=`0`<br/><br/>`orientation`=`ROW`|master, session, reload|
+|`appendoptimized`= `TRUE` or `FALSE`<br/><br/>`blocksize`= integer between 8192 and 2097152<br/><br/>`checksum`= `TRUE` or `FALSE`<br/><br/>`compresstype`= `ZLIB` or `ZSTD` or `QUICKLZ` or `RLE`\_`TYPE` or `NONE`<br/><br/>`compresslevel`= integer between 0 and 19<br/><br/>`orientation`= `ROW` \| `COLUMN`|`appendoptimized`=`FALSE`<br/><br/>`blocksize`=`32768`<br/><br/>`checksum`=`TRUE`<br/><br/>`compresstype`=`none`<br/><br/>`compresslevel`=`0`<br/><br/>`orientation`=`ROW`|master, session, reload|
 
 > **Note** <sup>1</sup>The set classification when the parameter is set at the system level with the `gpconfig` utility.
 
-> **Note** <sup>2</sup>QuickLZ compression is available only in the commercial release of VMware Greenplum.
+> **Note** QuickLZ compression is available only in the commercial release of VMware Greenplum. Support for the QuickLZ compression algorithm is deprecated and will be removed in the next major release of VMware Greenplum.
 
 ## <a id="gp_dispatch_keepalives_count"></a>gp\_dispatch\_keepalives\_count 
 
@@ -740,7 +748,7 @@ Controls availability of the `EXCHANGE DEFAULT PARTITION` clause for `ALTER TABL
 
 If the value is `on`, Greenplum Database returns a warning stating that exchanging the default partition might result in incorrect results due to invalid data in the default partition.
 
-**Warning:** Before you exchange the default partition, you must ensure the data in the table to be exchanged, the new default partition, is valid for the default partition. For example, the data in the new default partition must not contain data that would be valid in other leaf child partitions of the partitioned table. Otherwise, queries against the partitioned table with the exchanged default partition that are run by GPORCA might return incorrect results.
+> **Caution** Before you exchange the default partition, you must ensure the data in the table to be exchanged, the new default partition, is valid for the default partition. For example, the data in the new default partition must not contain data that would be valid in other leaf child partitions of the partitioned table. Otherwise, queries against the partitioned table with the exchanged default partition that are run by GPORCA might return incorrect results.
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
@@ -1326,6 +1334,25 @@ This parameter can be set for a session. The parameter cannot be set within a tr
 |-----------|-------|-------------------|
 |Boolean|false|local, session, reload|
 
+## <a id="gp_resource_group_bypass_catalog_query"></a>gp_resource_group_bypass_catalog_query
+
+> **Note** 
+>The `gp_resource_group_bypass_catalog_query` server configuration parameter is enforced only when resource group-based resource management is active.
+
+The default value for this configuration parameter is `false`, Greenplum Database's resource group scheduler enforces resource group limits on catalog queries. Note that when `false` and the database has reached the maximum amount of concurrent transactions, the scheduler can block queries that exclusively read from system catalogs.
+
+When set to `true` Greenplum Database's resource group scheduler bypasses all queries that fulfill both of the following criteria:
+
+- They read exclusively from system catalogs
+- They contain in their query text `pg_catalog` schema tables only
+
+>**Note**
+>If a query contains a mix of `pg_catalog` and any other schema tables the scheduler will **not** bypass the query.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|Boolean|false|local, session, reload|
+
 ## <a id="gp_resource_group_cpu_ceiling_enforcement"></a>gp\_resource\_group\_cpu\_ceiling\_enforcement 
 
 Enables the Ceiling Enforcement mode when assigning CPU resources by Percentage. When deactivated, the Elastic mode will be used.
@@ -1344,6 +1371,17 @@ Identifies the maximum percentage of system CPU resources to allocate to resourc
 |-----------|-------|-------------------|
 |0.1 - 1.0|0.9|local, system, restart|
 
+## <a id="gp_resource_group_cpu_priority"></a>gp_resource_group_cpu_priority
+
+Sets the CPU priority for Greenplum processes relative to non-Greenplum processes when resource groups are enabled. For example, setting this parameter to `10` sets the ratio of allotted CPU resources for Greenplum processes to non-Greenplum processes to 10:1. 
+
+> **Note** 
+> This ratio calculation applies only when the machine's CPU usage is at 100%.
+
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|1 - 50|10|local, system, restart|
 
 ## <a id="gp_resource_group_enable_recalculate_query_mem"></a>gp\_resource\_group\_enable\_recalculate\_query\_mem
 
@@ -1452,14 +1490,6 @@ The default value is `false`.
 |-----------|-------|-------------------|
 |Boolean|false|read only|
 
-## <a id="gp_role"></a>gp\_role 
-
-The role of this server process is set to *dispatch* for the master and *execute* for a segment.
-
-|Value Range|Default|Set Classifications|
-|-----------|-------|-------------------|
-|dispatch<br/><br/>execute<br/><br/>utility| |read only|
-
 ## <a id="gp_safefswritesize"></a>gp\_safefswritesize 
 
 Specifies a minimum size for safe write operations to append-optimized tables in a non-mature file system. When a number of bytes greater than zero is specified, the append-optimized writer adds padding data up to that number in order to prevent data corruption due to file system errors. Each non-mature file system has a known safe write size that must be specified here when using Greenplum Database with that type of file system. This is commonly set to a multiple of the extent size of the file system; for example, Linux ext3 is 4096 bytes, so a value of 32768 is commonly used.
@@ -1507,6 +1537,14 @@ A system assigned ID number for a client session. Starts counting from 1 when th
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
 |1-*n*|14|read only|
+
+## <a id="gp_session_role"></a>gp_session_role
+
+The role of this server process is set to *dispatch* for the master and *execute* for a segment.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|dispatch<br/><br/>execute<br/><br/>utility| |read only|
 
 ## <a id="gp_set_proc_affinity"></a>gp\_set\_proc\_affinity 
 
@@ -1684,7 +1722,7 @@ Greenplum Database uses checksums to prevent loading data that has been corrupte
 
 By default, when a checksum verify error occurs when reading a heap data page, Greenplum Database generates an error and prevents the page from being loaded into managed memory. When `ignore_checksum_failure` is set to on and a checksum verify failure occurs, Greenplum Database generates a warning, and allows the page to be read into managed memory. If the page is then updated it is saved to disk and replicated to the mirror. If the page header is corrupt an error is reported even if this option is enabled.
 
-**Warning:** Setting `ignore_checksum_failure` to on may propagate or hide data corruption or lead to other serious problems. However, if a checksum failure has already been detected and the page header is uncorrupted, setting `ignore_checksum_failure` to on may allow you to bypass the error and recover undamaged tuples that may still be present in the table.
+> **Caution** Setting `ignore_checksum_failure` to on may propagate or hide data corruption or lead to other serious problems. However, if a checksum failure has already been detected and the page header is uncorrupted, setting `ignore_checksum_failure` to on may allow you to bypass the error and recover undamaged tuples that may still be present in the table.
 
 The default setting is off, and it can only be changed by a superuser.
 
@@ -2222,6 +2260,17 @@ The parameter can be set for a database system, an individual database, or a ses
 |-----------|-------|-------------------|
 |Boolean|true|master, session, reload|
 
+## <a id="optimizer_discard_redistribute_hashjoin"></a>optimizer\_discard\_redistribute\_hashjoin
+
+When GPORCA is enabled \(the default\), this parameter specifies whether the Query Optimizer should eliminate plans that include a HashJoin operator with a Redistribute Motion child. Eliminating such plans can improve performance in cases where the data being joined exhibits high skewness in the join keys.
+
+The default setting is `off`, GPORCA considers all plan alternatives, including those with a Redistribute Motion child, in the HashJoin operator. If you observe performance issues with queries that use a HashJoin with highly skewed data, you may want to consider setting `optimizer_discard_redistribute_hashjoin` to `on` to instruct GPORCA to discard such plans.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|Boolean|off|master, session, reload|
+
+
 ## <a id="optimizer_enable_associativity"></a>optimizer\_enable\_associativity 
 
 When GPORCA is enabled \(the default\), this parameter controls whether the join associativity transform is enabled during query optimization. The transform analyzes join orders. For the default value `off`, only the GPORCA dynamic programming algorithm for analyzing join orders is enabled. The join associativity transform largely duplicates the functionality of the newer dynamic programming algorithm.
@@ -2470,6 +2519,16 @@ The parameter can be set for a database system, an individual database, or a ses
 |-----------|-------|-------------------|
 |boolean|off|master, session, reload|
 
+## <a id="optimizer_penalize_broadcast_threshold"></a>optimizer_penalize_skew_broadcast_threshold
+
+When GPORCA is enabled (the default), during query optimization GPORCA penalizes the cost of plans that attempt to broadcast more than the value specified by `optimizer_penalize_broadcast_threshold`. For example, if this parameter is set to 100K rows (the default), any broadcast of more than 100K rows is heavily penalized. 
+
+When this parameter is set to `0`, GPORCA sets this broadcast threshold to unlimited and never penalizes a broadcast motion.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|integer >= 0|100K rows|master, session, reload|
+
 ## <a id="optimizer_penalize_skew"></a>optimizer\_penalize\_skew 
 
 When GPORCA is enabled \(the default\), this parameter allows GPORCA to penalize the local cost of a HashJoin with a skewed Redistribute Motion as child to favor a Broadcast Motion during query optimization. The default value is `true`.
@@ -2605,7 +2664,7 @@ If [pljava\_classpath\_insecure](#pljava_classpath_insecure) is `false`, setting
 
 Controls whether the server configuration parameter [pljava\_classpath](#pljava_classpath) can be set by a user without Greenplum Database superuser privileges. When `true`, `pljava_classpath` can be set by a regular user. Otherwise, [pljava\_classpath](#pljava_classpath) can be set only by a database superuser. The default is `false`.
 
-**Warning:** Enabling this parameter exposes a security risk by giving non-administrator database users the ability to run unauthorized Java methods.
+> **Caution** Enabling this parameter exposes a security risk by giving non-administrator database users the ability to run unauthorized Java methods.
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
@@ -3152,7 +3211,7 @@ The value `false` deactivates SSL certificate authentication. These SSL exceptio
 
 You can set the value to `false` to deactivate authentication when testing the communication between the Greenplum Database external table and the `gpfdist` utility that is serving the external data.
 
-**Warning:** Deactivating SSL certificate authentication exposes a security risk by not validating the `gpfdists` SSL certificate.
+> **Caution** Deactivating SSL certificate authentication exposes a security risk by not validating the `gpfdists` SSL certificate.
 
 For information about the `gpfdists` protocol, see [gpfdists:// Protocol](../../admin_guide/external/g-gpfdists-protocol.html). For information about running the `gpfdist` utility, see [gpfdist](../../utility_guide/ref/gpfdist.html).
 

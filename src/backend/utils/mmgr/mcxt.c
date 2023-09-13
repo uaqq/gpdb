@@ -54,6 +54,13 @@
 /* Maximum allowed length of the name of a context including the parent names prepended */
 #define MAX_CONTEXT_NAME_SIZE 200
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+#include "utils/palloc_memory_debug_undef.h"
+#include "utils/hsearch.h"
+
+HTAB *chunks_htable = NULL;
+#endif
+
 /*****************************************************************************
  *	  GLOBAL MEMORY															 *
  *****************************************************************************/
@@ -82,6 +89,8 @@ MemoryContext OptimizerMemoryContext = NULL;
 
 /* This is a transient link to the active portal's memory context: */
 MemoryContext PortalContext = NULL;
+
+static void MemoryContextCallResetCallbacks(MemoryContext context);
 
 /*
  * You should not do memory allocations within a critical section, because
@@ -157,7 +166,9 @@ MemoryContextInit(void)
 	 * require it to contain at least 8K at all times. This is the only case
 	 * where retained memory in a context is *essential* --- we want to be
 	 * sure ErrorContext still has some memory even if we've run out
-	 * elsewhere!
+	 * elsewhere! Also, allow allocations in ErrorContext within a critical
+	 * section. Otherwise a PANIC will cause an assertion failure in the error
+	 * reporting code, before printing out the real cause of the failure.
 	 *
 	 * This should be the last step in this function, as elog.c assumes memory
 	 * management works once ErrorContext is non-null.
@@ -191,6 +202,7 @@ MemoryContextReset(MemoryContext context)
 	/* Nothing to do if no pallocs since startup or last reset */
 	if (!context->isReset)
 	{
+		MemoryContextCallResetCallbacks(context);
 		(*context->methods.reset) (context);
 		context->isReset = true;
 		VALGRIND_DESTROY_MEMPOOL(context);
@@ -242,6 +254,14 @@ MemoryContextDeleteImpl(MemoryContext context, const char* sfile, const char *fu
 	MemoryContextDeleteChildren(context);
 
 	/*
+	 * It's not entirely clear whether 'tis better to do this before or after
+	 * delinking the context; but an error in a callback will likely result in
+	 * leaking the whole context (if it's not a root context) if we do it
+	 * after, so let's do it before.
+	 */
+	MemoryContextCallResetCallbacks(context);
+
+	/*
 	 * We delink the context from its parent before deleting it, so that if
 	 * there's an error we won't have deleted/busted contexts still attached
 	 * to the context tree.  Better a leak than a crash.
@@ -286,6 +306,56 @@ MemoryContextResetAndDeleteChildren(MemoryContext context)
 
 	MemoryContextDeleteChildren(context);
 	MemoryContextReset(context);
+}
+
+/*
+ * MemoryContextRegisterResetCallback
+ *		Register a function to be called before next context reset/delete.
+ *		Such callbacks will be called in reverse order of registration.
+ *
+ * The caller is responsible for allocating a MemoryContextCallback struct
+ * to hold the info about this callback request, and for filling in the
+ * "func" and "arg" fields in the struct to show what function to call with
+ * what argument.  Typically the callback struct should be allocated within
+ * the specified context, since that means it will automatically be freed
+ * when no longer needed.
+ *
+ * There is no API for deregistering a callback once registered.  If you
+ * want it to not do anything anymore, adjust the state pointed to by its
+ * "arg" to indicate that.
+ */
+void
+MemoryContextRegisterResetCallback(MemoryContext context,
+								   MemoryContextCallback *cb)
+{
+	AssertArg(MemoryContextIsValid(context));
+
+	/* Push onto head so this will be called before older registrants. */
+	cb->next = context->reset_cbs;
+	context->reset_cbs = cb;
+	/* Mark the context as non-reset (it probably is already). */
+	context->isReset = false;
+}
+
+/*
+ * MemoryContextCallResetCallbacks
+ *		Internal function to call all registered callbacks for context.
+ */
+static void
+MemoryContextCallResetCallbacks(MemoryContext context)
+{
+	MemoryContextCallback *cb;
+
+	/*
+	 * We pop each callback from the list before calling.  That way, if an
+	 * error occurs inside the callback, we won't try to call it a second time
+	 * in the likely event that we reset or delete the context later.
+	 */
+	while ((cb = context->reset_cbs) != NULL)
+	{
+		context->reset_cbs = cb->next;
+		(*cb->func) (cb->arg);
+	}
 }
 
 /*
@@ -685,6 +755,11 @@ MemoryContextName(MemoryContext context, MemoryContext relativeTo,
     return cbp;
 }                               /* MemoryContextName */
 
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+#include "../backend/utils/mmgr/mcxt_memory_debug.c"
+#endif
+
 /*
  * MemoryContext_LogContextStats
  *		Logs memory consumption details of a given context.
@@ -703,6 +778,10 @@ MemoryContext_LogContextStats(uint64 siblingCount, uint64 allAllocated,
 	write_stderr("context: " UINT64_FORMAT ", " UINT64_FORMAT ", " UINT64_FORMAT ", " UINT64_FORMAT ", " UINT64_FORMAT ", %s\n", \
 	siblingCount, (allAllocated - allFreed), curAvailable, \
 	allAllocated, allFreed, contextName);
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+	MemoryContext_printTopListOfChunks();
+#endif
 }
 
 
@@ -770,10 +849,45 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 
 	for (child = topContext->firstchild; child != NULL; child = child->nextchild)
 	{
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		HTAB *prev_chunk_htable = NULL;
+		HTAB *temp_chunks_htable = NULL;
+		bool is_need_to_print_logs;
+#endif
+
 		/* Get name and ancestry of this MemoryContext */
 		name = MemoryContextName(child, rootContext, nameBuffer, nameBufferSize);
 
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		/*
+		   At this case we will get stats of next child,
+		   but after that, we will print stats of previous child.
+		   We must to save chunks_htable to other variable (prev_chunk_htable)
+		   to get correct stats of next child.
+		 */
+		is_need_to_print_logs = (child->firstchild != NULL ||
+		                         strcmp(name, prevChildName) != 0);
+		if (is_need_to_print_logs)
+		{
+			prev_chunk_htable = chunks_htable;
+			chunks_htable = NULL;
+		}
+#endif
+
 		(*child->methods.stats)(child, &nBlocks, &nChunks, &currentAvailable, &allAllocated, &allFreed, &maxHeld);
+
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+		/*
+		   Save current chunk_htable to temp_chunk_htab, restore
+		   prev_chunk_htable to chunk_htable, print logs and restore
+		   current chunk_htable from temp_chunk_htab.
+		 */
+		if (is_need_to_print_logs)
+		{
+			temp_chunks_htable = chunks_htable;
+			chunks_htable = prev_chunk_htable;
+		}
+#endif
 
 		if (child->firstchild == NULL)
 		{
@@ -801,6 +915,9 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 					 */
 
 					MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+					chunks_htable = temp_chunks_htable;
+#endif
 				}
 
 				cumBlocks = nBlocks;
@@ -829,6 +946,9 @@ MemoryContextStats_recur(MemoryContext topContext, MemoryContext rootContext,
 				 */
 
 				MemoryContext_LogContextStats(siblingCount, cumAllAllocated, cumAllFreed, cumCurAvailable, prevChildName);
+#ifdef EXTRA_DYNAMIC_MEMORY_DEBUG
+				chunks_htable = temp_chunks_htable;
+#endif
 			}
 
 			MemoryContextStats_recur(child, rootContext, name, nameBuffer, nameBufferSize, nBlocks,

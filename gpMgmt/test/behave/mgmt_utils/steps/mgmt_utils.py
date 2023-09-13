@@ -27,7 +27,7 @@ from os import path
 
 from gppylib.gparray import GpArray, ROLE_PRIMARY, ROLE_MIRROR
 from gppylib.commands.gp import SegmentStart, GpStandbyStart, MasterStop
-from gppylib.commands import gp
+from gppylib.commands import gp, unix
 from gppylib.commands.pg import PgBaseBackup
 from gppylib.commands.unix import findCmdInPath, Scp
 from gppylib.operations.startSegments import MIRROR_MODE_MIRRORLESS
@@ -41,7 +41,7 @@ from test.behave_utils.gpexpand_dml import TestDML
 from gppylib.commands.base import Command, REMOTE
 from gppylib import pgconf
 
-
+default_locale = None
 master_data_dir = os.environ.get('MASTER_DATA_DIRECTORY')
 if master_data_dir is None:
     raise Exception('Please set MASTER_DATA_DIRECTORY in environment')
@@ -165,6 +165,18 @@ def impl(context, dbname, psql_cmd):
 
     if context.ret_code != 0:
         raise Exception('%s' % context.error_message)
+
+@given('the user runs sql "{query}" in "{db}" on primary segment with content {contentids}')
+@when('the user runs sql "{query}" in "{db}" on primary segment with content {contentids}')
+@then('the user runs sql "{query}" in "{db}" on primary segment with content {contentids}')
+def impl(context, query, db, contentids):
+    content_ids = [int(i) for i in contentids.split(',')]
+
+    for content in content_ids:
+        host, port = get_primary_segment_host_port_for_content(content)
+        psql_cmd = "PGDATABASE=\'%s\' PGOPTIONS=\'-c gp_session_role=utility\' psql -h %s -p %s -c \"%s\"; " % (
+            db, host, port, query)
+        Command(name='Running Remote command: %s' % psql_cmd, cmdStr=psql_cmd).run(validateAfter=True)
 
 
 @given('the user connects to "{dbname}" with named connection "{cname}"')
@@ -357,7 +369,7 @@ def impl(context, env_var):
     if env_var in os.environ:
         del os.environ[env_var]
 
-@then('{env_var} environment variable should be restored')
+@then('"{env_var}" environment variable should be restored')
 def impl(context, env_var):
     if not hasattr(context, 'orig_env'):
         raise Exception('%s can not be reset' % env_var)
@@ -365,7 +377,10 @@ def impl(context, env_var):
     if env_var not in context.orig_env:
         raise Exception('%s can not be reset.' % env_var)
 
-    os.environ[env_var] = context.orig_env[env_var]
+    if context.orig_env[env_var] is None:
+        del os.environ[env_var]
+    else:
+        os.environ[env_var] = context.orig_env[env_var]
 
     del context.orig_env[env_var]
 
@@ -443,9 +458,9 @@ def impl(context, logdir):
                 context.recovery_lines = fp.readlines()
             for line in context.recovery_lines:
                 recovery_type, dbid, progress = line.strip().split(':', 2)
-                progress_pattern = re.compile(get_recovery_progress_pattern())
+                progress_pattern = re.compile(get_recovery_progress_pattern(recovery_type))
                 # TODO: assert progress line in the actual hosts bb/rewind progress file
-                if re.search(progress_pattern, progress) and dbid.isdigit() and recovery_type in ['full', 'incremental']:
+                if re.search(progress_pattern, progress) and dbid.isdigit() and recovery_type in ['full', 'differential', 'incremental']:
                     return
                 else:
                     raise Exception('File present but incorrect format line "{}"'.format(line))
@@ -483,7 +498,12 @@ def impl(context, logdir):
         seg_dbid = seg.getSegmentDbId()
         if seg_dbid in all_progress_lines_by_dbid:
             recovery_type, line_from_combined_progress_file = all_progress_lines_by_dbid[seg_dbid]
-            process_name = 'pg_basebackup' if recovery_type == 'full' else 'pg_rewind'
+            if recovery_type == "full":
+                process_name = 'pg_basebackup'
+            elif recovery_type == "differential":
+                process_name = 'rsync'
+            else:
+                process_name = 'pg_rewind'
             seg_progress_file = '{}/{}.*.dbid{}.out'.format(log_dir, process_name, seg_dbid)
             check_cmd_str = 'grep "{}" {}'.format(line_from_combined_progress_file, seg_progress_file)
             check_cmd = Command(name='check line in segment progress file',
@@ -638,6 +658,15 @@ def impl(context, process_name):
     command = "ps ux | grep bin/%s | awk '{print $2}' | xargs kill -2" % (process_name)
     run_async_command(context, command)
 
+
+@given('the user asynchronously sets up to end {process_name} process with SIGHUP')
+@when('the user asynchronously sets up to end {process_name} process with SIGHUP')
+@then('the user asynchronously sets up to end {process_name} process with SIGHUP')
+def impl(context, process_name):
+    command = "ps ux | grep bin/%s | awk '{print $2}' | xargs kill -9" % (process_name)
+    run_async_command(context, command)
+
+
 @when('the user asynchronously sets up to end gpcreateseg process when it starts')
 def impl(context):
     # We keep trying to find the gpcreateseg process using ps,grep
@@ -788,6 +817,7 @@ def impl(context, command, out_msg):
 @when('{command} should print "{out_msg}" to stdout')
 @then('{command} should print "{out_msg}" to stdout')
 @then('{command} should print a "{out_msg}" warning')
+@when('{command} should print a "{out_msg}" warning')
 def impl(context, command, out_msg):
     check_stdout_msg(context, out_msg)
 
@@ -1248,16 +1278,22 @@ def get_open_port():
     return port
 
 
-@given('"{path}" has its permissions set to "{perm}"')
-def impl(context, path, perm):
+@given('"{path}" has its permissions set to "{perm}" on {host}')
+def impl(context, path, perm, host):
     path = os.path.expandvars(path)
     if not os.path.exists(path):
         raise Exception('Path does not exist! "%s"' % path)
-    old_permissions = os.stat(path).st_mode  # keep it as a number that has a meaningful representation in octal
+    cmd_str = "stat -c '%a' {0}".format(path)
+    cmd = Command("change permission", cmdStr=cmd_str, ctxt=REMOTE, remoteHost=host)
+    cmd.run(validateAfter=True)
+    old_permissions = cmd.get_stdout().strip()
     test_permissions = int(perm, 8)          # accept string input with octal semantics and convert to a raw number
-    os.chmod(path, test_permissions)
+    cmd_str = "sudo chmod {0} {1}".format(test_permissions, path)
+    cmd = Command("change permission", cmdStr=cmd_str, ctxt=REMOTE, remoteHost=host)
+    cmd.run(validateAfter=True)
     context.path_for_which_to_restore_the_permissions = path
     context.permissions_to_restore_path_to = old_permissions
+    context.host_to_restore_path_to = host
 
 
 @then('rely on environment.py to restore path permissions')
@@ -1392,12 +1428,15 @@ def stop_segments_immediate(context, where_clause):
 @when('user can start transactions')
 @then('user can start transactions')
 def impl(context):
-    wait_for_unblocked_transactions(context)
+    wait_for_unblocked_transactions(context, 600)
 
 
 @given('the environment variable "{var}" is set to "{val}"')
 def impl(context, var, val):
-    context.env_var = os.environ.get(var)
+    if not hasattr(context, 'orig_env'):
+        context.orig_env = dict()
+
+    context.orig_env[var] = os.environ.get(var)
     os.environ[var] = val
 
 
@@ -1501,6 +1540,7 @@ def impl(context, content_ids, expected_status):
 
 
 @given('the cluster configuration has no segments where "{filter}"')
+@when('the cluster configuration has no segments where "{filter}"')
 def impl(context, filter):
     SLEEP_PERIOD = 5
     MAX_DURATION = 300
@@ -1534,7 +1574,9 @@ def impl(context, when):
     context.saved_array[when] = GpArray.initFromCatalog(dbconn.DbURL())
 
 
+@given('we run a sample background script to generate a pid on "{seg}" segment')
 @when('we run a sample background script to generate a pid on "{seg}" segment')
+@then('we run a sample background script to generate a pid on "{seg}" segment')
 def impl(context, seg):
     if seg == "primary":
         if not hasattr(context, 'pseg_hostname'):
@@ -1544,6 +1586,8 @@ def impl(context, seg):
         if not hasattr(context, 'standby_host'):
             raise Exception("Standby host is not saved in the context")
         hostname = context.standby_host
+    elif seg == "master":
+        hostname = get_master_hostname()[0][0]
 
     filename = os.path.join(os.getcwd(), './test/behave/mgmt_utils/steps/data/pid_background_script.py')
 
@@ -1555,11 +1599,11 @@ def impl(context, seg):
     cmd.run(validateAfter=True)
 
     cmd = Command(name="Run Bg process to save pid",
-                  cmdStr='sh -c "python /tmp/pid_background_script.py" &>/dev/null &', remoteHost=hostname, ctxt=REMOTE)
+                  cmdStr='sh -c "python /tmp/pid_background_script.py /tmp/bgpid" &>/dev/null &', remoteHost=hostname, ctxt=REMOTE)
     cmd.run(validateAfter=True)
 
-    cmd = Command(name="get bg pid", cmdStr="ps ux | grep pid_background_script.py | grep -v grep | awk '{print \$2}'",
-                  remoteHost=hostname, ctxt=REMOTE)
+    cmd = Command(name="get Bg process PID",
+                  cmdStr='sleep 1; until [ -f /tmp/bgpid ]; do sleep 1; done; cat /tmp/bgpid', remoteHost=hostname, ctxt=REMOTE)
     cmd.run(validateAfter=True)
     context.bg_pid = cmd.get_stdout()
     if not context.bg_pid:
@@ -1578,6 +1622,8 @@ def impl(context, seg):
         if not hasattr(context, 'standby_host'):
             raise Exception("Standby host is not saved in the context")
         hostname = context.standby_host
+    elif seg == "master":
+        hostname = get_master_hostname()[0][0]
 
     cmd = Command(name="get bg pid", cmdStr="ps ux | grep pid_background_script.py | grep -v grep | awk '{print \$2}'",
                   remoteHost=hostname, ctxt=REMOTE)
@@ -1585,6 +1631,24 @@ def impl(context, seg):
     pids = cmd.get_stdout().splitlines()
     for pid in pids:
         cmd = Command(name="killbg pid", cmdStr='kill -9 %s' % pid, remoteHost=hostname, ctxt=REMOTE)
+        cmd.run(validateAfter=True)
+
+    cmd = Command(name="remove pid", cmdStr='rm -rf /tmp/bgpid', remoteHost=hostname, ctxt=REMOTE)
+    cmd.run(validateAfter=True)
+
+
+@when('{process} is killed on mirror with content {contentids}')
+@then('{process} is killed on mirror with content {contentids}')
+def impl(context, process, contentids):
+    segments = GpArray.initFromCatalog(dbconn.DbURL()).getDbList()
+    content_ids = [int(i) for i in contentids.split(',')]
+    hosts = set()
+    for seg in segments:
+        if seg.content in content_ids and seg.role == 'm':
+            hosts.add(seg.getSegmentHostName())
+
+    for host in hosts:
+        cmd = Command(name="kill process {}".format(process), cmdStr="pkill -9 {}".format(process), remoteHost=host, ctxt=REMOTE)
         cmd.run(validateAfter=True)
 
 
@@ -2195,6 +2259,22 @@ def impl(context, table, dbname, segid):
     # Yes, the below line is ugly.  It looks much uglier when done with separate strings, given the multiple levels of escaping required.
     remote_cmd = """
 ssh %s "source %s; export PGUSER=%s; export PGPORT=%s; export PGOPTIONS=\\\"-c gp_session_role=utility\\\"; psql -d %s -c \\\"SET allow_system_table_mods=true; DELETE FROM pg_attribute where attrelid=\'%s\'::regclass::oid;\\\""
+""" % (host, source_file, user, port, dbname, table)
+    run_command(context, remote_cmd.strip())
+
+@when('a table "{table}" in database "{dbname}" has its relnatts inflated on segment with content id "{segid}"')
+def impl(context, table, dbname, segid):
+    local_cmd = 'psql %s -t -c "SELECT port,hostname FROM gp_segment_configuration WHERE content=%s and role=\'p\';"' % (
+        dbname, segid)
+    run_command(context, local_cmd)
+    port, host = context.stdout_message.split("|")
+    port = port.strip()
+    host = host.strip()
+    user = os.environ.get('USER')
+    source_file = os.path.join(os.environ.get('GPHOME'), 'greenplum_path.sh')
+    # Yes, the below line is ugly.  It looks much uglier when done with separate strings, given the multiple levels of escaping required.
+    remote_cmd = """
+ssh %s "source %s; export PGUSER=%s; export PGPORT=%s; export PGOPTIONS=\\\"-c gp_session_role=utility\\\"; psql -d %s -c \\\"SET allow_system_table_mods=true; UPDATE pg_class SET relnatts=relnatts + 2 WHERE relname=\'%s\';\\\""
 """ % (host, source_file, user, port, dbname, table)
     run_command(context, remote_cmd.strip())
 
@@ -3222,6 +3302,21 @@ def impl(context, num_of_segments):
             "%s\ndump of gp_segment_configuration: %s" %
             (context.start_data_segments, end_data_segments, rows))
 
+@when('verify that {table_name} catalog table is present on new segments')
+@then('verify that {table_name} catalog table is present on new segments')
+def impl(context, table_name):
+    dbname = 'gptest'
+    with closing(dbconn.connect(dbconn.DbURL(dbname=dbname), unsetSearchPath=False)) as conn:
+        query = """SELECT count(*) from gp_segment_configuration where -1 < content and role='p'"""
+        no_of_segments = dbconn.execSQLForSingleton(conn, query)
+
+        query = """select count(distinct(gp_segment_id)) from gp_dist_random('%s')""" % table_name
+        no_segments_table_present = dbconn.execSQLForSingleton(conn, query)
+
+    if no_of_segments != no_segments_table_present:
+        raise Exception("Table %s is not present on newly expanded segments" % table_name)
+
+
 @given('the cluster is setup for an expansion on hosts "{hostnames}"')
 def impl(context, hostnames):
     hosts = hostnames.split(",")
@@ -3521,7 +3616,7 @@ def impl(context, table1, table2, dbname):
 
 def _get_row_count_per_segment(table, dbname):
     with dbconn.connect(dbconn.DbURL(dbname=dbname), unsetSearchPath=False) as conn:
-        query = "SELECT gp_segment_id,COUNT(i) FROM %s GROUP BY gp_segment_id ORDER BY gp_segment_id;" % table
+        query = "SELECT gp_segment_id,COUNT(*) FROM %s GROUP BY gp_segment_id ORDER BY gp_segment_id;" % table
         cursor = dbconn.execSQL(conn, query)
         rows = cursor.fetchall()
         return [row[1] for row in rows] # indices are the gp segment id's, so no need to store them explicitly
@@ -3880,6 +3975,26 @@ def impl(context, segment, contentid):
     context.asyncproc = asyncproc
 
 
+@then('verify replication slot {slot} is available on all the segments')
+@when('verify replication slot {slot} is available on all the segments')
+@given('verify replication slot {slot} is available on all the segments')
+def impl(context, slot):
+    gparray = GpArray.initFromCatalog(dbconn.DbURL())
+    segments = gparray.getDbList()
+    dbname = "template1"
+    query = "SELECT count(*) FROM pg_catalog.pg_replication_slots WHERE slot_name = '{}'".format(slot)
+
+    for seg in segments:
+        if seg.isSegmentPrimary(current_role=True):
+            host = seg.getSegmentHostName()
+            port = seg.getSegmentPort()
+            with closing(dbconn.connect(dbconn.DbURL(dbname=dbname, port=port, hostname=host),
+                                        utility=True, unsetSearchPath=False)) as conn:
+                result = dbconn.execSQLForSingleton(conn, query)
+                if result == 0:
+                    raise Exception("Slot does not exist for host:{}, port:{}".format(host, port))
+
+
 @given('gp_stat_replication table has pg_basebackup entry for content {contentid}')
 @when('gp_stat_replication table has pg_basebackup entry for content {contentid}')
 @then('gp_stat_replication table has pg_basebackup entry for content {contentid}')
@@ -3921,7 +4036,8 @@ def impl(context, contentids):
 
     if not no_basebackup:
         raise Exception("pg_basebackup entry was found for contents %s in gp_stat_replication after %d retries" % (contentids, retries))
-    
+
+
 @given('backup /etc/hosts file and update hostname entry for localhost')
 def impl(context):
      # Backup current /etc/hosts file
@@ -3935,6 +4051,18 @@ def impl(context):
      cmd = Command(name='update hostlist with new hostname', cmdStr="sudo sed 's/%s/%s__1 %s/g' </etc/hosts >> /tmp/hosts; sudo cp -f /tmp/hosts /etc/hosts;rm /tmp/hosts"
                                                         %(hostname, hostname, hostname))
      cmd.run(validateAfter=True)
+
+
+@given('update /etc/hosts file with address for the localhost')
+def impt(context):
+    hostname = context.hostname
+    # Backup current /etc/hosts file
+    cmd = Command(name='backup the hosts file', cmdStr='sudo cp /etc/hosts /tmp/hosts_orig')
+    cmd.run(validateAfter=True)
+    # Update the address
+    cmdStr = "echo \"127.0.0.1 {}\" | sudo tee -a /etc/hosts".format(hostname)
+    cmd = Command(name="update /etc/hosts file with hostname entry", cmdStr=cmdStr)
+    cmd.run(validateAfter=True)
 
 @given('update hostlist file with updated host-address')
 def impl(context):
@@ -3991,7 +4119,97 @@ def impl(context):
      cmd.run(validateAfter=True)
 
 @then('restore /etc/hosts file and cleanup hostlist file')
+@when('restore /etc/hosts file and cleanup hostlist file')
 def impl(context):
-    cmd =  "sudo mv -f /tmp/hosts_orig /etc/hosts; rm -f /tmp/clusterConfigFile-1; rm -f /tmp/hostfile--1"
+    cmd = "sudo mv -f /tmp/hosts_orig /etc/hosts; rm -f /tmp/clusterConfigFile-1; rm -f /tmp/hostfile--1"
     context.execute_steps(u'''Then the user runs command "%s"''' % cmd)
 
+@given('create a gpcheckperf input host file')
+def impl(context):
+     cmd = Command(name='create input host file', cmdStr='echo sdw1 > /tmp/hostfile1;echo cdw >> /tmp/hostfile1;')
+     cmd.run(validateAfter=True)
+
+
+@given('running postgres processes are saved in context')
+@when('running postgres processes are saved in context')
+@then('running postgres processes are saved in context')
+def impl(context):
+
+    # Store the pids in a dictionary where key will be the hostname and the
+    # value will be the pids of all the postgres processes running on that host
+    host_to_pid_map = dict()
+    segs = GpArray.initFromCatalog(dbconn.DbURL()).getDbList()
+    for seg in segs:
+        pids = gp.get_postgres_segment_processes(seg.datadir, seg.hostname)
+        if seg.hostname not in host_to_pid_map:
+            host_to_pid_map[seg.hostname] = pids
+        else:
+            host_to_pid_map[seg.hostname].extend(pids)
+
+    context.host_to_pid_map = host_to_pid_map
+
+
+@given('verify no postgres process is running on all hosts')
+@when('verify no postgres process is running on all hosts')
+@then('verify no postgres process is running on all hosts')
+def impl(context):
+    host_to_pid_map = context.host_to_pid_map
+
+    for host in host_to_pid_map:
+        for pid in host_to_pid_map[host]:
+            if unix.check_pid_on_remotehost(pid, host):
+                raise Exception("Postgres process {0} not killed on {1}.".format(pid, host))
+
+
+@then( 'verify if the gprecoverseg.lock directory is present in master_data_directory')
+def impl(context):
+    gprecoverseg_lock_file = "%s/gprecoverseg.lock" % gp.get_masterdatadir()
+    if not os.path.exists(gprecoverseg_lock_file):
+        raise Exception('gprecoverseg.lock directory does not exist')
+    else:
+        return
+
+@then('the database segments are in execute mode')
+def impl(context):
+    # Get primary up segments details except coordinator/standby
+    # A mirror segment always returns same error message if segment is in execute mode and utility mode
+    # So not checking for mirror segments if in execute mode
+    with closing(dbconn.connect(dbconn.DbURL(), unsetSearchPath=False)) as conn:
+        sql = "SELECT dbid, hostname, port  FROM gp_segment_configuration WHERE content > -1 and status = 'u' and role = 'p'"
+        rows = dbconn.execSQL(conn, sql).fetchall()
+
+        if len(rows) <= 0:
+            raise Exception("Found no entries in gp_segment_configuration table")
+    # Check for each primary segment
+    for row in rows:
+        dbid = row[0]
+        hostname = row[1].strip()
+        portnum = row[2]
+        cmd = "psql -d template1 -p {0} -h {1} -c \";\"".format(portnum, hostname)
+        run_command(context, cmd)
+        # If node is in execute mode, psql shoud return 2 and the print one of the following error message:
+        # For a primary segment: "psql: error: FATAL:  connections to primary segments are not allowed"
+        if context.ret_code == 2 and \
+            "FATAL:  connections to primary segments are not allowed"  in context.error_message:
+            continue
+        else:
+            raise Exception("segment process not running in execute mode for DBID:{0}".format(dbid))
+
+@given('"LC_ALL" is different from English')
+def step_impl(context):
+	default_locale = os.environ.get('LC_ALL')
+
+	try:
+		os.system('sudo localedef -i ru_RU -f UTF-8 ru_RU.UTF-8 > /dev/null')
+	except FileNotFoundError:
+		raise Exception("Failed to generate Russian locale")
+
+	os.environ['LC_ALL'] = 'ru_RU.utf8'
+
+@then('gpstop should not print "Failed to kill processes for segment"')
+def impl(context):
+	check_string_not_present_stdout(context, 'Failed to kill processes for segment')
+	if default_locale is not None:
+		os.environ['LC_ALL'] = default_locale
+	else:
+		del os.environ['LC_ALL']
