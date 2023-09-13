@@ -786,7 +786,7 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
 	 * join gang only contains one process, so there is no
 	 * risk for motion deadlock.
 	 */
-	if (CdbPathLocus_IsBottleneck(best_path->path.locus) && !IsA(plan,HashJoin))
+	if (CdbPathLocus_IsBottleneck(best_path->path.locus) && !IsA(plan, HashJoin))
 	{
 		((Join *) plan)->prefetch_inner = false;
 		((Join *) plan)->prefetch_joinqual = false;
@@ -3754,7 +3754,7 @@ create_hashjoin_plan(PlannerInfo *root,
 							  (Plan *) hash_plan,
 							  best_path->jpath.jointype);
 
-/*
+	/*
 	 * MPP-4635.  best_path->jpath.outerjoinpath may be NULL.
 	 * From the comment, it is adaptive nestloop join may cause this.
 	 */
