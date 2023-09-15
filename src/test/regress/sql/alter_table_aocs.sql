@@ -489,6 +489,39 @@ DROP TABLE aocs_alter_add_col_reorganize;
 
 RESET gp_add_column_inherits_table_setting;
 
+-- test case: alter AOCS table add partition, the preference of the storage setting is: the encoding clause > table setting > gp_default_storage_options
+SET gp_add_partition_inherits_table_setting = on;
+
+CREATE TABLE aocs_alter_add_part(a int, b int) WITH (appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536) DISTRIBUTED BY (a) PARTITION BY RANGE (b)
+  (PARTITION "10" START (1) INCLUSIVE END (10) EXCLUSIVE,
+   PARTITION "20" START (11) INCLUSIVE END (20) EXCLUSIVE);
+SET gp_default_storage_options = 'appendonly=true, orientation=column, compresstype=zlib, compresslevel=2';
+-- use statement encoding
+ALTER TABLE aocs_alter_add_part ADD PARTITION "30" START (20) INCLUSIVE END (30) EXCLUSIVE WITH (appendonly=true, orientation=column, compresstype=zlib, compresslevel=3, blocksize=16384);
+-- use table setting
+ALTER TABLE aocs_alter_add_part ADD PARTITION "40" START (30) INCLUSIVE END (40) EXCLUSIVE;
+RESET gp_default_storage_options;
+-- use table setting
+ALTER TABLE aocs_alter_add_part ADD PARTITION "50" START (40) INCLUSIVE END (50) EXCLUSIVE;
+\d+ aocs_alter_add_part*
+DROP TABLE aocs_alter_add_part;
+
+CREATE TABLE aocs_alter_add_part_no_compress(a int, b int) WITH (appendonly=true, orientation=column) DISTRIBUTED BY (a) PARTITION BY RANGE (b)
+  (PARTITION "10" START (1) INCLUSIVE END (10) EXCLUSIVE,
+   PARTITION "20" START (11) INCLUSIVE END (20) EXCLUSIVE);
+SET gp_default_storage_options ='appendonly=true, orientation=column, compresstype=zlib, compresslevel=2, blocksize=8192';
+-- use statement encoding
+ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "30" START (20) INCLUSIVE END (30) EXCLUSIVE WITH (appendonly=true, orientation=column, compresstype=rle_type, compresslevel=3, blocksize=16384);
+-- use gp_default_storage_options
+ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "40" START (30) INCLUSIVE END (40) EXCLUSIVE;
+RESET gp_default_storage_options;
+-- use default value
+ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "50" START (40) INCLUSIVE END (50) EXCLUSIVE;
+\d+ aocs_alter_add_part_no_compress*
+DROP TABLE aocs_alter_add_part_no_compress;
+
+RESET gp_add_partition_inherits_table_setting;
+
 --
 -- Test case: validate pg_aocsseg consistency after alter table
 -- add column with rollback.
