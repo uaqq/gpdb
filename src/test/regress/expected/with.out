@@ -2208,47 +2208,66 @@ select count(*) from rank_tbl where rank in (select rank from updated);
 (1 row)
 
 -- Test shared scan over values with singleQE join
-set optimizer = off;
+SET optimizer = off;
 --start_ignore
-drop table if exists d;
+DROP TABLE IF EXISTS d;
 --end_ignore
-create table d (c1 int, c2 int) distributed by (c1);
-insert into d (values (2,0),(2,0));
-explain (costs off)
-with cte as (
-    select count(*) c1 from (values (1,2),(3,4)) v
-) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Hash Join
-   Hash Cond: (b.c1 = share0_ref1.c1)
-   ->  Subquery Scan on b
-         ->  Limit
-               ->  Gather Motion 3:1  (slice2; segments: 3)
-                     ->  Limit
-                           ->  Hash Join
-                                 Hash Cond: (d.c1 = share0_ref2.c1)
-                                 ->  Seq Scan on d
-                                 ->  Hash
-                                       ->  Redistribute Motion 1:3  (slice1)
-                                             Hash Key: share0_ref2.c1
-                                             ->  Shared Scan (share slice:id 1:0)
-   ->  Hash
-         ->  Shared Scan (share slice:id 0:0)
-               ->  Materialize
-                     ->  Aggregate
-                           ->  Values Scan on "*VALUES*"
- Optimizer: Postgres query optimizer
-(19 rows)
-
+CREATE TABLE d (c1 int, c2 int) DISTRIBUTED BY (c1);
+INSERT INTO d (VALUES ( 2, 0 ),( 2 , 0 ));
+EXPLAIN (CONSTS OFF)
+WITH cte AS (
+	SELECT count(*) c1 FROM (VALUES ( 1, 2 ),( 3, 4 )) v
+)
+SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
+ERROR:  unrecognized EXPLAIN option "consts"
 -- Test join prefetch_inner in the case of bottleneck join
-with cte as (
-    select count(*) c1 from d
-) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
+WITH cte AS (
+	SELECT count(*) c1 FROM d
+) SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
  c1 | c2 
 ----+----
   2 |  0
 (1 row)
 
-reset optimizer;
-drop table d;
+-- the reading part of shared scan must be in the slice 0, otherwise the test becomes useless
+EXPLAIN (COSTS OFF) WITH cte AS (
+	SELECT c1 FROM d LIMIT 2
+)
+SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (share0_ref2.c1 = b.c1)
+   ->  Shared Scan (share slice:id 0:0)
+   ->  Hash
+         ->  Subquery Scan on b
+               ->  Limit
+                     ->  Gather Motion 3:1  (slice3; segments: 3)
+                           ->  Limit
+                                 ->  Hash Join
+                                       Hash Cond: (d.c1 = share0_ref1.c1)
+                                       ->  Seq Scan on d
+                                       ->  Hash
+                                             ->  Redistribute Motion 1:3  (slice2)
+                                                   Hash Key: share0_ref1.c1
+                                                   ->  Shared Scan (share slice:id 2:0)
+                                                         ->  Materialize
+                                                               ->  Limit
+                                                                     ->  Gather Motion 3:1  (slice1; segments: 3)
+                                                                           ->  Limit
+                                                                                 ->  Seq Scan on d d_1
+ Optimizer: Postgres query optimizer
+(21 rows)
+
+WITH cte AS (
+	SELECT c1 FROM d LIMIT 2
+)
+SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
+ c1 | c2 
+----+----
+  2 |  0
+  2 |  0
+(2 rows)
+
+RESET optimizer;
+DROP TABLE d;

@@ -1048,23 +1048,35 @@ WITH updated AS (
 select count(*) from rank_tbl where rank in (select rank from updated);
 
 -- Test shared scan over values with singleQE join
-set optimizer = off;
+SET optimizer = off;
 --start_ignore
-drop table if exists d;
+DROP TABLE IF EXISTS d;
 --end_ignore
-create table d (c1 int, c2 int) distributed by (c1);
+CREATE TABLE d (c1 int, c2 int) DISTRIBUTED BY (c1);
 
-insert into d (values (2,0),(2,0));
+INSERT INTO d (VALUES ( 2, 0 ),( 2 , 0 ));
 
-explain (costs off)
-with cte as (
-    select count(*) c1 from (values (1,2),(3,4)) v
-) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
+EXPLAIN (CONSTS OFF)
+WITH cte AS (
+	SELECT count(*) c1 FROM (VALUES ( 1, 2 ),( 3, 4 )) v
+)
+SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
 
 -- Test join prefetch_inner in the case of bottleneck join
-with cte as (
-    select count(*) c1 from d
-) select * from cte a join (select * from d join cte using(c1) limit 1) b using(c1);
+WITH cte AS (
+	SELECT count(*) c1 FROM d
+) SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
 
-reset optimizer;
-drop table d;
+-- the reading part of shared scan must be in the slice 0, otherwise the test becomes useless
+EXPLAIN (COSTS OFF) WITH cte AS (
+	SELECT c1 FROM d LIMIT 2
+)
+SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
+
+WITH cte AS (
+	SELECT c1 FROM d LIMIT 2
+)
+SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (c1);
+
+RESET optimizer;
+DROP TABLE d;
