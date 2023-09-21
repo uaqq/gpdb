@@ -148,7 +148,14 @@ CColRefSet::PcrFirstUsed() const
 		}
 	}
 
-	return PcrFirst();
+	CColRef *pcr = PcrFirst();
+
+	if (NULL != pcr)
+	{
+		pcr->MarkAsUsed();
+	}
+
+	return pcr;
 }
 
 //---------------------------------------------------------------------------
