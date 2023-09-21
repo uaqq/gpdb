@@ -1047,6 +1047,7 @@ WITH updated AS (
 )
 select count(*) from rank_tbl where rank in (select rank from updated);
 
+
 -- Test shared scan over values with singleQE join
 SET optimizer = off;
 --start_ignore
@@ -1080,3 +1081,22 @@ SELECT * FROM cte a JOIN (SELECT * FROM d JOIN cte USING (c1) LIMIT 1) b USING (
 
 RESET optimizer;
 DROP TABLE d;
+
+-- Test that the planner can build a plan with non-select CTE sharing.
+--start_ignore
+DROP TABLE IF EXISTS t1;
+--end_ignore
+CREATE TABLE t1 (c1 int, c2 int) DISTRIBUTED RANDOMLY;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+WITH cte1 AS (
+	INSERT INTO t1 VALUES ( 1, 2 ) RETURNING *
+)
+SELECT * FROM cte1 a JOIN cte1 b USING (c1);
+
+WITH cte1 AS (
+	INSERT INTO t1 VALUES ( 1, 2 ) RETURNING *
+)
+SELECT * FROM cte1 a JOIN cte1 b USING (c1);
+
+DROP TABLE t1;
