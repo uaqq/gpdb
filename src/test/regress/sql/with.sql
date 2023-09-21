@@ -1057,7 +1057,7 @@ CREATE TABLE d (c1 int, c2 int) DISTRIBUTED BY (c1);
 
 INSERT INTO d (VALUES ( 2, 0 ),( 2 , 0 ));
 
-EXPLAIN (CONSTS OFF)
+EXPLAIN (COSTS OFF)
 WITH cte AS (
 	SELECT count(*) c1 FROM (VALUES ( 1, 2 ),( 3, 4 )) v
 )

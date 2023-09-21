@@ -2136,7 +2136,7 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 		subplan = share_prepared_plan(cteroot, cteplaninfo->shared_plan);
 		subroot = cteplaninfo->subroot;
 
-		if(subplan->flow->locustype == CdbLocusType_General)
+		if (subplan->flow->locustype == CdbLocusType_General)
 		{
 			subplan->flow->locustype = CdbLocusType_SingleQE;
 			subplan->flow->flotype = FLOW_SINGLETON;
