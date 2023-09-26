@@ -16166,14 +16166,6 @@ ATPExecPartAdd(AlteredTableInfo *tab,
 	}
 	pelem = (PartitionElem *) pc->arg1;
 
-	if (gp_add_partition_inherits_table_setting && !pelem->storeAttr)
-	{
-		AlterPartitionCmd *storenode = makeNode(AlterPartitionCmd);
-		storenode->arg1 = (Node *)reloptions_list(RelationGetRelid(rel));
-		storenode->location = -1;
-		pelem->storeAttr = (Node *)storenode;
-	}
-
 	locPid =
 			wack_pid_relname(pid,
 							 &pNode,

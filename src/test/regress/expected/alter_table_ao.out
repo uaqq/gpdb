@@ -829,7 +829,7 @@ Check constraints:
     "ao_alter_add_part_1_prt_40_check" CHECK (b >= 30 AND b < 40)
 Inherits: ao_alter_add_part
 Distributed by: (a)
-Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=4, blocksize=65536
+Options: appendonly=true, blocksize=65536, compresslevel=4, checksum=true, compresstype=zstd, orientation=row
 
         Append-Only Table "public.ao_alter_add_part_1_prt_50"
  Column |  Type   | Modifiers | Storage | Stats target | Description 
@@ -844,7 +844,7 @@ Check constraints:
     "ao_alter_add_part_1_prt_50_check" CHECK (b >= 40 AND b < 50)
 Inherits: ao_alter_add_part
 Distributed by: (a)
-Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=4, blocksize=65536
+Options: appendonly=true, blocksize=65536, compresslevel=4, checksum=true, compresstype=zstd, orientation=row
 
 DROP TABLE ao_alter_add_part;
 CREATE TABLE ao_alter_add_part_no_compress(a int, b int) WITH (appendonly=true, orientation=row) DISTRIBUTED BY (a) PARTITION BY RANGE (b)
@@ -932,22 +932,22 @@ Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=3, b
 --------+---------+-----------+---------+--------------+-------------
  a      | integer |           | plain   |              | 
  b      | integer |           | plain   |              | 
-Compression Type: zlib
-Compression Level: 2
-Block Size: 8192
+Compression Type: none
+Compression Level: 0
+Block Size: 32768
 Checksum: t
 Check constraints:
     "ao_alter_add_part_no_compress_1_prt_40_check" CHECK (b >= 30 AND b < 40)
 Inherits: ao_alter_add_part_no_compress
 Distributed by: (a)
-Options: appendonly=true, orientation=row, blocksize=8192, compresslevel=2
+Options: appendonly=true, blocksize=32768, compresslevel=0, checksum=true, compresstype=none, orientation=row
 
   Append-Only Table "public.ao_alter_add_part_no_compress_1_prt_50"
  Column |  Type   | Modifiers | Storage | Stats target | Description 
 --------+---------+-----------+---------+--------------+-------------
  a      | integer |           | plain   |              | 
  b      | integer |           | plain   |              | 
-Compression Type: None
+Compression Type: none
 Compression Level: 0
 Block Size: 32768
 Checksum: t
@@ -955,7 +955,7 @@ Check constraints:
     "ao_alter_add_part_no_compress_1_prt_50_check" CHECK (b >= 40 AND b < 50)
 Inherits: ao_alter_add_part_no_compress
 Distributed by: (a)
-Options: appendonly=true, orientation=row
+Options: appendonly=true, blocksize=32768, compresslevel=0, checksum=true, compresstype=none, orientation=row
 
 DROP TABLE ao_alter_add_part_no_compress;
 RESET gp_add_partition_inherits_table_setting;
