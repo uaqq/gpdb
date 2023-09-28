@@ -1066,7 +1066,7 @@
         <dxl:SortingColumnList/>
         <dxl:HashJoin JoinType="Inner">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="862.251790" Rows="100.000000" Width="16"/>
+            <dxl:Cost StartupCost="0" TotalCost="862.251790" Rows="300.000000" Width="16"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="0" Alias="a">

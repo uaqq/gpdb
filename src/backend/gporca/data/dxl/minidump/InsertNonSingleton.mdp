@@ -351,7 +351,7 @@ EXPLAIN INSERT INTO snackbox SELECT a FROM (SELECT c FROM hottoast LIMIT 3) hott
             <dxl:SortingColumnList/>
             <dxl:HashJoin JoinType="Inner">
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="862.000437" Rows="1.000000" Width="4"/>
+                <dxl:Cost StartupCost="0" TotalCost="862.000437" Rows="3.000000" Width="4"/>
               </dxl:Properties>
               <dxl:ProjList>
                 <dxl:ProjElem ColId="8" Alias="a">
