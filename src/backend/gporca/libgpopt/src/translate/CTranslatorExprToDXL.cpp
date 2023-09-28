@@ -461,10 +461,10 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 	// are no longer needed
 	CDXLNode *pdxlnNew = NULL;
 
+	pexpr->SetMotionInputsForChilds();
+
 	CDXLNode *dxlnode = (this->*pf)(pexpr, colref_array, pdrgpdsBaseTables,
 									pulNonGatherMotions, pfDML);
-
-	pexpr->SetMotionInputsForChilds();
 
 	if (!fRemap ||
 		EdxlopPhysicalDML == dxlnode->GetOperator()->GetDXLOperator())
@@ -4435,13 +4435,12 @@ CTranslatorExprToDXL::PdxlnMotion(CExpression *pexprMotion,
 
 	// extract components
 	CExpression *pexprChild = (*pexprMotion)[0];
+	pexprChild->SetMotionInputs(inputSegmentInfo);
 
 	// translate relational child expression
 	CDXLNode *child_dxlnode = CreateDXLNode(
 		pexprChild, colref_array, pdrgpdsBaseTables, pulNonGatherMotions, pfDML,
 		true /*fRemap*/, false /*fRoot*/);
-
-	pexprChild->SetMotionInputs(inputSegmentInfo);
 
 	// construct a motion node
 	CDXLPhysicalMotion *motion = NULL;
