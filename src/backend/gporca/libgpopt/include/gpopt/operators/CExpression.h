@@ -226,31 +226,7 @@ public:
 	}
 
 	void
-	SetMotionInputsForChilds()
-	{
-		COperator *pop = Pop();
-
-		if (pop->FPhysical())
-		{
-			COperator::EOperatorId op_id = pop->Eopid();
-
-			if (COperator::EopPhysicalMotionGather != op_id &&
-				COperator::EopPhysicalMotionBroadcast != op_id &&
-				COperator::EopPhysicalMotionHashDistribute != op_id &&
-				COperator::EopPhysicalMotionRandom != op_id &&
-				COperator::EopPhysicalMotionRoutedDistribute != op_id)
-			{
-				const ULONG arity = Arity();
-
-				for (ULONG ul = 0; ul < arity; ul++)
-				{
-					CExpression *pexprChild = (*m_pdrgpexpr)[ul];
-
-					pexprChild->m_motionInputSegments = m_motionInputSegments;
-				}
-			}
-		}
-	}
+	SetMotionInputsForChilds();
 
 	IntPtrArray *
 	GetMotionInputs() const
