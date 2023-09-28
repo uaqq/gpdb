@@ -439,13 +439,7 @@ CExpression::SetMotionInputsForChilds()
 
 	if (pop->FPhysical())
 	{
-		COperator::EOperatorId op_id = pop->Eopid();
-
-		if (COperator::EopPhysicalMotionGather != op_id &&
-			COperator::EopPhysicalMotionBroadcast != op_id &&
-			COperator::EopPhysicalMotionHashDistribute != op_id &&
-			COperator::EopPhysicalMotionRandom != op_id &&
-			COperator::EopPhysicalMotionRoutedDistribute != op_id)
+		if (!CUtils::FPhysicalMotion(pop))
 		{
 			const ULONG arity = Arity();
 
