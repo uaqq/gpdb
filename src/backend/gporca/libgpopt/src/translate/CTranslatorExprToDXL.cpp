@@ -3993,6 +3993,7 @@ CTranslatorExprToDXL::PdxlnNLJoin(CExpression *pexprInnerNLJ,
 	CExpression *pexprInnerChild = (*pexprInnerNLJ)[1];
 	CExpression *pexprScalar = (*pexprInnerNLJ)[2];
 
+
 #ifdef GPOS_DEBUG
 	GPOS_ASSERT_IMP(
 		COperator::EopPhysicalInnerIndexNLJoin != pop->Eopid() &&
