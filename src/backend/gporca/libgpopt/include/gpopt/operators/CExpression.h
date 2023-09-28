@@ -225,8 +225,7 @@ public:
 		m_motionInputSegments = motionInputSegments;
 	}
 
-	void
-	SetMotionInputsForChilds();
+	void SetMotionInputsForChilds();
 
 	IntPtrArray *
 	GetMotionInputs() const

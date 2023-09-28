@@ -437,18 +437,15 @@ CExpression::SetMotionInputsForChilds()
 {
 	COperator *pop = Pop();
 
-	if (pop->FPhysical())
+	if (pop->FPhysical() && !CUtils::FPhysicalMotion(pop))
 	{
-		if (!CUtils::FPhysicalMotion(pop))
+		const ULONG arity = Arity();
+
+		for (ULONG ul = 0; ul < arity; ul++)
 		{
-			const ULONG arity = Arity();
+			CExpression *pexprChild = (*m_pdrgpexpr)[ul];
 
-			for (ULONG ul = 0; ul < arity; ul++)
-			{
-				CExpression *pexprChild = (*m_pdrgpexpr)[ul];
-
-				pexprChild->m_motionInputSegments = m_motionInputSegments;
-			}
+			pexprChild->m_motionInputSegments = m_motionInputSegments;
 		}
 	}
 }
