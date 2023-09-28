@@ -1999,7 +1999,6 @@ CTranslatorExprToDXL::PdxlnAssert(CExpression *pexprAssert,
 	// extract components
 	CExpression *pexprRelational = (*pexprAssert)[0];
 	CExpression *pexprScalar = (*pexprAssert)[1];
-
 	CPhysicalAssert *popAssert =
 		CPhysicalAssert::PopConvert(pexprAssert->Pop());
 
@@ -2050,7 +2049,6 @@ CTranslatorExprToDXL::PdxlnCTEProducer(
 
 	// extract components
 	CExpression *pexprRelational = (*pexprCTEProducer)[0];
-
 	CPhysicalCTEProducer *popCTEProducer =
 		CPhysicalCTEProducer::PopConvert(pexprCTEProducer->Pop());
 
@@ -5835,7 +5833,6 @@ CTranslatorExprToDXL::PdxlnCTAS(CExpression *pexpr,
 	GPOS_ASSERT(CLogicalDML::EdmlInsert == popDML->Edmlop());
 
 	CExpression *pexprChild = (*pexpr)[0];
-
 	CTableDescriptor *ptabdesc = popDML->Ptabdesc();
 	CColRefArray *pdrgpcrSource = popDML->PdrgpcrSource();
 	CMDRelationCtasGPDB *pmdrel =
