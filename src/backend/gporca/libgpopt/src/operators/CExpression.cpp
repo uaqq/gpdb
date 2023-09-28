@@ -435,9 +435,7 @@ CExpression::AssertValidPropDerivation(const CDrvdProp::EPropType ept)
 void
 CExpression::SetMotionInputsForChilds()
 {
-	COperator *pop = Pop();
-
-	if (pop->FPhysical() && !CUtils::FPhysicalMotion(pop))
+	if (!CUtils::FPhysicalMotion(Pop()))
 	{
 		const ULONG arity = Arity();
 
