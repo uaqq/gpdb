@@ -464,6 +464,8 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 	CDXLNode *dxlnode = (this->*pf)(pexpr, colref_array, pdrgpdsBaseTables,
 									pulNonGatherMotions, pfDML);
 
+	pexpr->SetMotionInputsForChilds();
+
 	if (!fRemap ||
 		EdxlopPhysicalDML == dxlnode->GetOperator()->GetDXLOperator())
 	{
@@ -1200,14 +1202,12 @@ CTranslatorExprToDXL::PdxlnDynamicBitmapTableScan(
 	CDXLNode *filter_dxlnode = PdxlnFilter(pdxlnCond);
 
 	CExpression *pexprRecheckCond = (*pexprScan)[0];
-	pexprRecheckCond->SetMotionInputs(pexprScan->GetMotionInputs());
 	CDXLNode *pdxlnRecheckCond = PdxlnScalar(pexprRecheckCond);
 	CDXLNode *pdxlnRecheckCondFilter = GPOS_NEW(m_mp)
 		CDXLNode(m_mp, GPOS_NEW(m_mp) CDXLScalarRecheckCondFilter(m_mp));
 	pdxlnRecheckCondFilter->AddChild(pdxlnRecheckCond);
 
 	// translate bitmap access path
-	(*pexprScan)[1]->SetMotionInputs(pexprScan->GetMotionInputs());
 	CDXLNode *pdxlnBitmapAccessPath = PdxlnScalar((*pexprScan)[1]);
 
 	// build projection list
@@ -1707,9 +1707,6 @@ CTranslatorExprToDXL::PdxlnFromFilter(CExpression *pexprFilter,
 	CExpression *pexprRelational = (*pexprFilter)[0];
 	CExpression *pexprScalar = (*pexprFilter)[1];
 
-	pexprRelational->SetMotionInputs(pexprFilter->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexprFilter->GetMotionInputs());
-
 	if (CTranslatorExprToDXLUtils::FDirectDispatchableFilter(pexprFilter))
 
 	{
@@ -1872,9 +1869,6 @@ CTranslatorExprToDXL::PdxlnResultFromFilter(
 	CExpression *pexprScalar = (*pexprFilter)[1];
 	CColRefSet *pcrsOutput = pexprFilter->Prpp()->PcrsRequired();
 
-	pexprRelational->SetMotionInputs(pexprFilter->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexprFilter->GetMotionInputs());
-
 	if (COperator::EopPhysicalPartitionSelector ==
 		pexprRelational->Pop()->Eopid())
 	{
@@ -2006,9 +2000,6 @@ CTranslatorExprToDXL::PdxlnAssert(CExpression *pexprAssert,
 	CExpression *pexprRelational = (*pexprAssert)[0];
 	CExpression *pexprScalar = (*pexprAssert)[1];
 
-	pexprRelational->SetMotionInputs(pexprAssert->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexprAssert->GetMotionInputs());
-
 	CPhysicalAssert *popAssert =
 		CPhysicalAssert::PopConvert(pexprAssert->Pop());
 
@@ -2059,7 +2050,6 @@ CTranslatorExprToDXL::PdxlnCTEProducer(
 
 	// extract components
 	CExpression *pexprRelational = (*pexprCTEProducer)[0];
-	pexprRelational->SetMotionInputs(pexprCTEProducer->GetMotionInputs());
 
 	CPhysicalCTEProducer *popCTEProducer =
 		CPhysicalCTEProducer::PopConvert(pexprCTEProducer->Pop());
@@ -2221,7 +2211,6 @@ CTranslatorExprToDXL::PdxlnAppend(CExpression *pexprUnionAll,
 			pdrgpcrInput->CreateReducedArray(reqd_col_positions);
 
 		CExpression *pexprChild = (*pexprUnionAll)[ul];
-		pexprChild->SetMotionInputs(pexprUnionAll->GetMotionInputs());
 		CDXLNode *child_dxlnode = CreateDXLNode(
 			pexprChild, requiredInput, pdrgpdsBaseTables, pulNonGatherMotions,
 			pfDML, false /*fRemap*/, false /*fRoot*/);
@@ -2500,9 +2489,6 @@ CTranslatorExprToDXL::PdxlnComputeScalar(
 	CExpression *pexprRelational = (*pexprComputeScalar)[0];
 	CExpression *pexprProjList = (*pexprComputeScalar)[1];
 
-	pexprRelational->SetMotionInputs(pexprComputeScalar->GetMotionInputs());
-	pexprProjList->SetMotionInputs(pexprComputeScalar->GetMotionInputs());
-
 	// translate relational child expression
 	CDXLNode *child_dxlnode = CreateDXLNode(
 		pexprRelational, NULL /* colref_array */, pdrgpdsBaseTables,
@@ -2695,9 +2681,6 @@ CTranslatorExprToDXL::PdxlnAggregate(CExpression *pexprAgg,
 	CExpression *pexprChild = (*pexprAgg)[0];
 	CExpression *pexprProjList = (*pexprAgg)[1];
 
-	pexprChild->SetMotionInputs(pexprAgg->GetMotionInputs());
-	pexprProjList->SetMotionInputs(pexprAgg->GetMotionInputs());
-
 	// translate relational child expression
 	CDXLNode *child_dxlnode =
 		CreateDXLNode(pexprChild,
@@ -2817,8 +2800,6 @@ CTranslatorExprToDXL::PdxlnSort(CExpression *pexprSort,
 	CPhysicalSort *popSort = CPhysicalSort::PopConvert(pexprSort->Pop());
 	CExpression *pexprChild = (*pexprSort)[0];
 
-	pexprChild->SetMotionInputs(pexprSort->GetMotionInputs());
-
 	// translate relational child expression
 	CDXLNode *child_dxlnode = CreateDXLNode(
 		pexprChild, colref_array, pdrgpdsBaseTables, pulNonGatherMotions, pfDML,
@@ -2888,8 +2869,6 @@ CTranslatorExprToDXL::PdxlnLimit(CExpression *pexprLimit,
 	CExpression *pexprChild = (*pexprLimit)[0];
 	CExpression *pexprOffset = (*pexprLimit)[1];
 	CExpression *pexprCount = (*pexprLimit)[2];
-
-	pexprChild->SetMotionInputs(pexprLimit->GetMotionInputs());
 
 	// bypass translation of limit if it does not have row count and offset
 	CPhysicalLimit *popLimit = CPhysicalLimit::PopConvert(pexprLimit->Pop());
@@ -3213,9 +3192,6 @@ CTranslatorExprToDXL::PdxlnQuantifiedSubplan(
 	CExpression *pexprInner = (*pexprCorrelatedNLJoin)[1];
 	CExpression *pexprScalar = (*pexprCorrelatedNLJoin)[2];
 
-	pexprInner->SetMotionInputs(pexprCorrelatedNLJoin->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexprCorrelatedNLJoin->GetMotionInputs());
-
 	// translate inner child
 	CDXLNode *pdxlnInnerChild = CreateDXLNode(
 		pexprInner, NULL /*colref_array*/, pdrgpdsBaseTables,
@@ -3453,8 +3429,6 @@ CTranslatorExprToDXL::PdxlnExistentialSubplan(
 	// translate inner child
 	CExpression *pexprInner = (*pexprCorrelatedNLJoin)[1];
 
-	pexprInner->SetMotionInputs(pexprCorrelatedNLJoin->GetMotionInputs());
-
 	CDXLNode *pdxlnInnerChild = CreateDXLNode(
 		pexprInner, NULL /*colref_array*/, pdrgpdsBaseTables,
 		pulNonGatherMotions, pfDML, false /*fRemap*/, false /*fRoot*/);
@@ -3595,10 +3569,6 @@ CTranslatorExprToDXL::PdxlnCorrelatedNLJoin(
 	CExpression *pexprOuterChild = (*pexpr)[0];
 	CExpression *pexprInnerChild = (*pexpr)[1];
 	CExpression *pexprScalar = (*pexpr)[2];
-
-	pexprOuterChild->SetMotionInputs(pexpr->GetMotionInputs());
-	pexprInnerChild->SetMotionInputs(pexpr->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexpr->GetMotionInputs());
 
 	// outer references in the inner child
 	CDXLColRefArray *dxl_colref_array = GPOS_NEW(m_mp) CDXLColRefArray(m_mp);
@@ -4025,10 +3995,6 @@ CTranslatorExprToDXL::PdxlnNLJoin(CExpression *pexprInnerNLJ,
 	CExpression *pexprInnerChild = (*pexprInnerNLJ)[1];
 	CExpression *pexprScalar = (*pexprInnerNLJ)[2];
 
-	pexprOuterChild->SetMotionInputs(pexprInnerNLJ->GetMotionInputs());
-	pexprInnerChild->SetMotionInputs(pexprInnerNLJ->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexprInnerNLJ->GetMotionInputs());
-
 #ifdef GPOS_DEBUG
 	GPOS_ASSERT_IMP(
 		COperator::EopPhysicalInnerIndexNLJoin != pop->Eopid() &&
@@ -4166,10 +4132,6 @@ CTranslatorExprToDXL::PdxlnMergeJoin(CExpression *pexprMJ,
 	CExpression *pexprOuterChild = (*pexprMJ)[0];
 	CExpression *pexprInnerChild = (*pexprMJ)[1];
 	CExpression *pexprScalar = (*pexprMJ)[2];
-
-	pexprOuterChild->SetMotionInputs(pexprMJ->GetMotionInputs());
-	pexprInnerChild->SetMotionInputs(pexprMJ->GetMotionInputs());
-	pexprScalar->SetMotionInputs(pexprMJ->GetMotionInputs());
 
 	EdxlJoinType join_type = EdxljtSentinel;
 	switch (pop->Eopid())
@@ -4336,9 +4298,6 @@ CTranslatorExprToDXL::PdxlnHashJoin(CExpression *pexprHJ,
 	CExpression *pexprOuterChild = (*pexprHJ)[0];
 	CExpression *pexprInnerChild = (*pexprHJ)[1];
 	CExpression *pexprScalar = (*pexprHJ)[2];
-
-	pexprOuterChild->SetMotionInputs(pexprHJ->GetMotionInputs());
-	pexprInnerChild->SetMotionInputs(pexprHJ->GetMotionInputs());
 
 	EdxlJoinType join_type = EdxljtHashJoin(popHJ);
 	GPOS_ASSERT(popHJ->PdrgpexprOuterKeys()->Size() ==
@@ -4624,7 +4583,6 @@ CTranslatorExprToDXL::PdxlnMaterialize(
 
 	// extract components
 	CExpression *pexprChild = (*pexprSpool)[0];
-	pexprChild->SetMotionInputs(pexprSpool->GetMotionInputs());
 
 	// translate relational child expression
 	CDXLNode *child_dxlnode = CreateDXLNode(
@@ -4695,7 +4653,6 @@ CTranslatorExprToDXL::PdxlnSequence(CExpression *pexprSequence,
 	for (ULONG ul = 0; ul < arity; ul++)
 	{
 		CExpression *pexprChild = (*pexprSequence)[ul];
-		pexprChild->SetMotionInputs(pexprSequence->GetMotionInputs());
 
 		CColRefArray *pdrgpcrChildOutput = NULL;
 		if (ul == arity - 1)
@@ -4805,7 +4762,6 @@ CTranslatorExprToDXL::PdxlnPartitionSelectorDML(
 	GPOS_ASSERT(1 == pexpr->Arity());
 
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
 	CPhysicalPartitionSelectorDML *popSelector =
 		CPhysicalPartitionSelectorDML::PopConvert(pexpr->Pop());
 
@@ -5021,7 +4977,6 @@ CTranslatorExprToDXL::PdxlnPartitionSelectorExpand(
 	GPOS_ASSERT(1 == pexpr->Arity());
 
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
 
 	GPOS_ASSERT_IMP(
 		NULL != pexprScalarCond,
@@ -5139,7 +5094,6 @@ CTranslatorExprToDXL::PdxlnPartitionSelectorFilter(
 #endif
 
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
 
 	GPOS_ASSERT_IMP(
 		NULL != pexprScalarCond,
@@ -5802,7 +5756,6 @@ CTranslatorExprToDXL::PdxlnDML(CExpression *pexpr,
 	EdxlDmlType dxl_dml_type = Edxldmloptype(popDML->Edmlop());
 
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
 	CTableDescriptor *ptabdesc = popDML->Ptabdesc();
 	CColRefArray *pdrgpcrSource = popDML->PdrgpcrSource();
 
@@ -5882,7 +5835,6 @@ CTranslatorExprToDXL::PdxlnCTAS(CExpression *pexpr,
 	GPOS_ASSERT(CLogicalDML::EdmlInsert == popDML->Edmlop());
 
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
 
 	CTableDescriptor *ptabdesc = popDML->Ptabdesc();
 	CColRefArray *pdrgpcrSource = popDML->PdrgpcrSource();
@@ -6083,9 +6035,6 @@ CTranslatorExprToDXL::PdxlnSplit(CExpression *pexpr,
 	CExpression *pexprChild = (*pexpr)[0];
 	CExpression *pexprProjList = (*pexpr)[1];
 
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
-	pexprProjList->SetMotionInputs(pexpr->GetMotionInputs());
-
 	CColRef *pcrAction = popSplit->PcrAction();
 	GPOS_ASSERT(NULL != pcrAction);
 	action_colid = pcrAction->Id();
@@ -6168,7 +6117,6 @@ CTranslatorExprToDXL::PdxlnRowTrigger(CExpression *pexpr,
 		CPhysicalRowTrigger::PopConvert(pexpr->Pop());
 
 	CExpression *pexprChild = (*pexpr)[0];
-	pexprChild->SetMotionInputs(pexpr->GetMotionInputs());
 
 	IMDId *rel_mdid = popRowTrigger->GetRelMdId();
 	rel_mdid->AddRef();
@@ -7226,8 +7174,6 @@ CTranslatorExprToDXL::PdxlnWindow(CExpression *pexprSeqPrj,
 
 	// extract physical properties
 	CDXLPhysicalProperties *dxl_properties = GetProperties(pexprSeqPrj);
-
-	(*pexprSeqPrj)[0]->SetMotionInputs(pexprSeqPrj->GetMotionInputs());
 
 	// translate relational child
 	CDXLNode *child_dxlnode = CreateDXLNode(
