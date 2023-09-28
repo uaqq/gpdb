@@ -1213,72 +1213,33 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	char       *skip_outer_msg = NULL;
 	int			motion_recv;
 	int			motion_snd;
-	float		scaleFactor = 1.0; /* we will divide planner estimates by this factor to produce
-									  per-segment estimates */
-	Slice		*parentSlice = NULL;
+
+	/*
+	 * We will divide planner estimates by this factor to produce per-segment
+	 * estimates. In those cases when a command is executed on a single
+	 * segment, save_currentSlice->gangSize will equal 0, so we use
+	 * scaleFactor == 1 instead. save_currentSlice can be null if we use
+	 * utility mode.
+	 */
+	float		scaleFactor = (save_currentSlice && save_currentSlice->gangSize) ?
+	(float) save_currentSlice->gangSize :
+	1.0;
 
 	/* Remember who called us. */
 	parentplanstate = es->parentPlanState;
 	es->parentPlanState = planstate;
 
-	if (Gp_role == GP_ROLE_DISPATCH)
+	if (nodeTag(plan) == T_ModifyTable && CdbPathLocus_IsReplicated(*(plan->flow)))
 	{
-		/*
-		 * Estimates will have to be scaled down to be per-segment (except in a
-		 * few cases).
-		 */
-		if ((plan->directDispatch).isDirectDispatch)
-		{
-			scaleFactor = 1.0;
-		}
-		else if (plan->flow != NULL && CdbPathLocus_IsBottleneck(*(plan->flow)))
-		{
-			/*
-			 * Data is unified in one place (singleQE or QD), or executed on a
-			 * single segment.  We scale up estimates to make it global.  We
-			 * will later amend this for Motion nodes.
-			 */
-			scaleFactor = 1.0;
-		}
-		else if (plan->flow != NULL && CdbPathLocus_IsSegmentGeneral(*(plan->flow)))
-		{
-			/* Replicated table has full data on every segment */
-			scaleFactor = 1.0;
-		}
-		else if (plan->flow != NULL && es->pstmt->planGen == PLANGEN_PLANNER)
-		{
-			/*
-			 * The plan node is executed on multiple nodes, so scale down the
-			 * number of rows seen by each segment
-			 */
-			scaleFactor = CdbPathLocus_NumSegments(*(plan->flow));
-		}
-		else
-		{
-			/*
-			 * The plan node is executed on multiple nodes, so scale down the
-			 * number of rows seen by each segment
-			 */
-			scaleFactor = getgpsegmentCount();
-		}
+		Assert(es->pstmt->planGen == PLANGEN_PLANNER);	/* T_ModifyTable can be
+														 * produce by planner
+														 * only */
+		scaleFactor = 1.0;
 	}
-
-	/*
-	 * If this is a Motion node, we're descending into a new slice.
-	 */
-	if (IsA(plan, Motion))
+	if (plan->flow != NULL && CdbPathLocus_IsSegmentGeneral(*(plan->flow)))
 	{
-		Motion	   *pMotion = (Motion *) plan;
-		SliceTable *sliceTable = planstate->state->es_sliceTable;
-
-		if (sliceTable)
-		{
-			es->currentSlice = (Slice *) list_nth(sliceTable->slices,
-												  pMotion->motionID);
-			parentSlice = es->currentSlice->parentIndex == -1 ? NULL :
-						  (Slice *) list_nth(sliceTable->slices,
-											 es->currentSlice->parentIndex);
-		}
+		/* Replicated table has full data on every segment */
+		scaleFactor = 1.0;
 	}
 
 	switch (nodeTag(plan))
@@ -1466,80 +1427,77 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_Motion:
 			{
-				Motion		*pMotion = (Motion *) plan;
+				Motion	   *pMotion = (Motion *) plan;
+				SliceTable *sliceTable = planstate->state->es_sliceTable;
+
+				/* Descending into a new slice. */
+				if (sliceTable)
+				{
+					es->currentSlice = (Slice *) list_nth(sliceTable->slices,
+														  pMotion->motionID);
+				}
 
 				Assert(plan->lefttree);
 				Assert(plan->lefttree->flow);
 
+				/* Size of the child slice's gang */
 				motion_snd = es->currentSlice->gangSize;
-				motion_recv = (parentSlice == NULL ? 1 : parentSlice->gangSize);
 
-				/* scale the number of rows by the number of segments sending data */
-				scaleFactor = motion_snd;
+				/*
+				 * Size of the current slice's gang
+				 * (save_currentSlice->gangSize)
+				 */
+				motion_recv = scaleFactor;
 
 				switch (pMotion->motionType)
 				{
 					case MOTIONTYPE_HASH:
 						sname = "Redistribute Motion";
+
+						/*
+						 * scale the number of rows by the number of segments
+						 * sending data
+						 */
+						scaleFactor = motion_snd;
 						break;
 					case MOTIONTYPE_FIXED:
 						if (pMotion->isBroadcast)
 						{
 							sname = "Broadcast Motion";
+
+							/*
+							 * Scale the number of rows by the number of
+							 * segments receiving data, because they were
+							 * multiplied by this number at the planning
+							 * stage. We don't use segments count because the
+							 * number of receivers can be less if we are
+							 * expanding a cluster.
+							 */
+							scaleFactor = motion_recv;
 						}
 						else if (plan->lefttree->flow->locustype == CdbLocusType_Replicated)
 						{
 							sname = "Explicit Gather Motion";
-							scaleFactor = 1;
-							motion_recv = 1;
+							Assert(scaleFactor == 1);
 						}
 						else
 						{
 							sname = "Gather Motion";
-							scaleFactor = 1;
-							motion_recv = 1;
+							Assert(scaleFactor == 1);
 						}
 						break;
 					case MOTIONTYPE_EXPLICIT:
 						sname = "Explicit Redistribute Motion";
-						motion_recv = getgpsegmentCount();
+
+						/*
+						 * scale the number of rows by the number of segments
+						 * sending data
+						 */
+						scaleFactor = motion_snd;
 						break;
 					default:
 						sname = "???";
 						break;
-				}
-
-				if (es->pstmt->planGen == PLANGEN_PLANNER)
-				{
-					Slice	   *slice = es->currentSlice;
-
-					if (slice->directDispatch.isDirectDispatch)
-					{
-						/* Special handling on direct dispatch */
-						motion_snd = list_length(slice->directDispatch.contentIds);
-					}
-					else if (plan->lefttree->flow->flotype == FLOW_SINGLETON)
-					{
-						/* For SINGLETON we always display sender size as 1 */
-						motion_snd = 1;
-					}
-					else
-					{
-						/* Otherwise find out sender size from outer plan */
-						motion_snd = plan->lefttree->flow->numsegments;
-					}
-
-					if (pMotion->motionType == MOTIONTYPE_FIXED &&
-						!pMotion->isBroadcast)
-					{
-						/* In Gather Motion always display receiver size as 1 */
-						motion_recv = 1;
-					}
-					else
-					{
-						/* Otherwise find out receiver size from plan */
-						motion_recv = plan->flow->numsegments;
-					}
 				}
 
 				pname = psprintf("%s %d:%d", sname, motion_snd, motion_recv);
@@ -1850,7 +1808,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		{
 			ExplainPropertyFloat("Startup Cost", plan->startup_cost, 2, es);
 			ExplainPropertyFloat("Total Cost", plan->total_cost, 2, es);
-			ExplainPropertyFloat("Plan Rows", plan->plan_rows, 0, es);
+			ExplainPropertyFloat("Plan Rows", ceil(plan->plan_rows / scaleFactor), 0, es);
 			ExplainPropertyInteger("Plan Width", plan->plan_width, es);
 		}
 	}
