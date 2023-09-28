@@ -461,10 +461,10 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 	// are no longer needed
 	CDXLNode *pdxlnNew = NULL;
 
+	pexpr->SetMotionInputsForChilds();
+
 	CDXLNode *dxlnode = (this->*pf)(pexpr, colref_array, pdrgpdsBaseTables,
 									pulNonGatherMotions, pfDML);
-
-	pexpr->SetMotionInputsForChilds();
 
 	if (!fRemap ||
 		EdxlopPhysicalDML == dxlnode->GetOperator()->GetDXLOperator())

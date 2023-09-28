@@ -432,6 +432,20 @@ CExpression::AssertValidPropDerivation(const CDrvdProp::EPropType ept)
 #endif	// GPOS_DEBUG
 
 
+void
+CExpression::SetMotionInputsForChilds()
+{
+	const ULONG arity = Arity();
+
+	for (ULONG ul = 0; ul < arity; ul++)
+	{
+		CExpression *pexprChild = (*m_pdrgpexpr)[ul];
+
+		pexprChild->m_motionInputSegments = m_motionInputSegments;
+	}
+}
+
+
 //---------------------------------------------------------------------------
 //	@function:
 //		CExpression::Ept
