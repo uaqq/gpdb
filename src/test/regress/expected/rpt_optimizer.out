@@ -18,11 +18,11 @@ select * FROM ( SELECT 'COL1' TBLNM FROM cte1) A LEFT JOIN cte2 C ON A.TBLNM=C.T
    ->  Shared Scan (share slice:id 0:0)  (cost=0.00..431.00 rows=1 width=1)
          ->  Materialize  (cost=0.00..431.00 rows=1 width=1)
                ->  Gather Motion 1:1  (slice1; segments: 1)  (cost=0.00..431.00 rows=1 width=16)
-                     ->  WindowAgg  (cost=0.00..431.00 rows=1 width=16)
+                     ->  WindowAgg  (cost=0.00..431.00 rows=3 width=16)
                            Partition By: with_test1.i
-                           ->  Sort  (cost=0.00..431.00 rows=1 width=10)
+                           ->  Sort  (cost=0.00..431.00 rows=3 width=10)
                                  Sort Key: with_test1.i
-                                 ->  Seq Scan on with_test1  (cost=0.00..431.00 rows=1 width=10)
+                                 ->  Seq Scan on with_test1  (cost=0.00..431.00 rows=3 width=10)
    ->  Hash Left Join  (cost=0.00..862.00 rows=1 width=24)
          Hash Cond: ("outer".tblnm = pg_catalog.textin(unknownout("outer".tblnm), ''::void, '-1'::integer))
          ->  Result  (cost=0.00..431.00 rows=1 width=8)
