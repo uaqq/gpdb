@@ -98,6 +98,9 @@ private:
 	// get expression's derived property given its type
 	CDrvdProp *Pdp(const CDrvdProp::EPropType ept) const;
 
+	// parent motion's input segments
+	IntPtrArray *m_motionInputSegments;
+
 #ifdef GPOS_DEBUG
 
 	// assert valid property derivation
@@ -214,6 +217,45 @@ public:
 	Cost() const
 	{
 		return m_cost;
+	}
+
+	void
+	SetMotionInputs(IntPtrArray *motionInputSegments)
+	{
+		m_motionInputSegments = motionInputSegments;
+	}
+
+	void
+	SetMotionInputsForChilds()
+	{
+		COperator *pop = Pop();
+
+		if (pop->FPhysical())
+		{
+			COperator::EOperatorId op_id = pop->Eopid();
+
+			if (COperator::EopPhysicalMotionGather != op_id &&
+				COperator::EopPhysicalMotionBroadcast != op_id &&
+				COperator::EopPhysicalMotionHashDistribute != op_id &&
+				COperator::EopPhysicalMotionRandom != op_id &&
+				COperator::EopPhysicalMotionRoutedDistribute != op_id)
+			{
+				const ULONG arity = Arity();
+
+				for (ULONG ul = 0; ul < arity; ul++)
+				{
+					CExpression *pexprChild = (*m_pdrgpexpr)[ul];
+
+					pexprChild->m_motionInputSegments = m_motionInputSegments;
+				}
+			}
+		}
+	}
+
+	IntPtrArray *
+	GetMotionInputs() const
+	{
+		return m_motionInputSegments;
 	}
 
 	// get the suitable derived property type based on operator

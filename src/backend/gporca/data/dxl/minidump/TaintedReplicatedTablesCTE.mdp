@@ -458,7 +458,7 @@
             <dxl:SortingColumnList/>
             <dxl:Window PartitionColumns="0">
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="431.000041" Rows="3.000000" Width="16"/>
+                <dxl:Cost StartupCost="0" TotalCost="431.000041" Rows="1.000000" Width="16"/>
               </dxl:Properties>
               <dxl:ProjList>
                 <dxl:ProjElem ColId="0" Alias="name">
@@ -540,8 +540,8 @@
           <dxl:HashCondList>
             <dxl:Comparison ComparisonOperator="=" OperatorMdid="0.98.1.0">
               <dxl:Ident ColId="29" ColName="tblnm" TypeMdid="0.25.1.0"/>
-              <dxl:FuncExpr FuncId="0.46.1.0" FuncRetSet="false" TypeMdid="0.25.1.0">
-                <dxl:FuncExpr FuncId="0.110.1.0" FuncRetSet="false" TypeMdid="0.2275.1.0">
+              <dxl:FuncExpr FuncId="0.46.1.0" FuncRetSet="false" TypeMdid="0.25.1.0" FuncVariadic="false">
+                <dxl:FuncExpr FuncId="0.110.1.0" FuncRetSet="false" TypeMdid="0.2275.1.0" FuncVariadic="false">
                   <dxl:Ident ColId="30" ColName="tblnm" TypeMdid="0.705.1.0"/>
                 </dxl:FuncExpr>
                 <dxl:ConstValue TypeMdid="0.2278.1.0" Value="GQAAAA=="/>

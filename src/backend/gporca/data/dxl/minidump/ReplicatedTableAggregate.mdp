@@ -208,9 +208,9 @@
         <dxl:GroupingColumns/>
         <dxl:ProjList>
           <dxl:ProjElem ColId="9" Alias="count">
-            <dxl:AggFunc AggMdid="0.2803.1.0" AggDistinct="false" AggStage="Final" AggKind="n" >
+            <dxl:AggFunc AggMdid="0.2803.1.0" AggDistinct="false" AggStage="Final" AggKind="n">
               <dxl:ValuesList ParamType="aggargs">
-              <dxl:Ident ColId="10" ColName="ColRef_0010" TypeMdid="0.20.1.0"/>
+                <dxl:Ident ColId="10" ColName="ColRef_0010" TypeMdid="0.20.1.0"/>
               </dxl:ValuesList>
               <dxl:ValuesList ParamType="aggdirectargs"/>
               <dxl:ValuesList ParamType="aggorder"/>
@@ -232,12 +232,12 @@
           <dxl:SortingColumnList/>
           <dxl:Aggregate AggregationStrategy="Plain" StreamSafe="false">
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="431.002276" Rows="3.000000" Width="8"/>
+              <dxl:Cost StartupCost="0" TotalCost="431.002276" Rows="1.000000" Width="8"/>
             </dxl:Properties>
             <dxl:GroupingColumns/>
             <dxl:ProjList>
               <dxl:ProjElem ColId="10" Alias="ColRef_0010">
-                <dxl:AggFunc AggMdid="0.2803.1.0" AggDistinct="false" AggStage="Partial" AggKind="n" >
+                <dxl:AggFunc AggMdid="0.2803.1.0" AggDistinct="false" AggStage="Partial" AggKind="n">
                   <dxl:ValuesList ParamType="aggargs"/>
                   <dxl:ValuesList ParamType="aggdirectargs"/>
                   <dxl:ValuesList ParamType="aggorder"/>
