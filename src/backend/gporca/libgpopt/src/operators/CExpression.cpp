@@ -435,16 +435,13 @@ CExpression::AssertValidPropDerivation(const CDrvdProp::EPropType ept)
 void
 CExpression::SetMotionInputsForChilds()
 {
-	if (!CUtils::FPhysicalMotion(Pop()))
+	const ULONG arity = Arity();
+
+	for (ULONG ul = 0; ul < arity; ul++)
 	{
-		const ULONG arity = Arity();
+		CExpression *pexprChild = (*m_pdrgpexpr)[ul];
 
-		for (ULONG ul = 0; ul < arity; ul++)
-		{
-			CExpression *pexprChild = (*m_pdrgpexpr)[ul];
-
-			pexprChild->m_motionInputSegments = m_motionInputSegments;
-		}
+		pexprChild->m_motionInputSegments = m_motionInputSegments;
 	}
 }
 
