@@ -37,6 +37,7 @@
 #include "catalog/storage.h"
 #include "catalog/storage_tablespace.h"
 #include "catalog/storage_database.h"
+#include "catalog/storage_pending.h"
 #include "commands/async.h"
 #include "commands/dbcommands.h"
 #include "commands/extension.h"
@@ -7244,7 +7245,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 	 * If there were some rels created in current xact, remove them from
 	 * pending delete list.
 	 */
-	PendingDeleteRedoRemove(xid);
+	PdlRedoRemove(xid);
 
 	if (parsed->ndeldbs > 0)
 	{
@@ -7373,7 +7374,7 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 		DropRelationFiles(parsed->xnodes, parsed->nrels, true);
 	}
 
-	PendingDeleteRedoRemove(xid);
+	PdlRedoRemove(xid);
 
 	if (parsed->ndeldbs > 0)
 	{

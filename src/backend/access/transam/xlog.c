@@ -39,7 +39,7 @@
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
-#include "catalog/storage.h"
+#include "catalog/storage_pending.h"
 #include "commands/progress.h"
 #include "commands/tablespace.h"
 #include "common/controldata_utils.h"
@@ -7621,7 +7621,7 @@ StartupXLOG(void)
 				/* drop all orphaned files from base during recovery */
 				if (record->xl_rmid == RM_XLOG_ID &&
 					(record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN)
-					PendingDeleteRedoDropFiles();
+					PdlRedoDropFiles();
 
 				/*
 				 * If rm_redo called XLogRequestWalReceiverReply, then we wake
@@ -8067,7 +8067,7 @@ StartupXLOG(void)
 		{
 			CreateCheckPoint(CHECKPOINT_END_OF_RECOVERY | CHECKPOINT_IMMEDIATE);
 			/* drop all orphaned files from base after recovery */
-			PendingDeleteRedoDropFiles();
+			PdlRedoDropFiles();
 		}
 	}
 
@@ -9533,7 +9533,7 @@ CreateCheckPoint(int flags)
 	chkptr = ProcLastRecPtr;
 	if (!shutdown)
 	{
-		XLogRecPtr	pd_recptr = PendingDeleteXLogInsert();
+		XLogRecPtr	pd_recptr = PdlXLogInsert();
 
 		if (pd_recptr != InvalidXLogRecPtr)
 			recptr = pd_recptr;
@@ -10955,7 +10955,7 @@ xlog_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_PENDING_DELETE)
 	{
-		PendingDeleteRedoRecord(record);
+		PdlRedoXLogRecord(record);
 	}
 }
 
