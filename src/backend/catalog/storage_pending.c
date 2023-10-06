@@ -8,6 +8,8 @@
 #include "storage/lwlock.h"
 #include "storage/md.h"
 #include "storage/shmem.h"
+#include "utils/dsa.h"
+#include "utils/faultinjector.h"
 #include "utils/hsearch.h"
 
 /*
@@ -122,6 +124,8 @@ PdlShmemLinkNode(dsa_pointer cur)
 
 	LWLockAcquire(PendingDeleteLock, LW_EXCLUSIVE);
 
+	SIMPLE_FAULT_INJECTOR("pdl_link_node");
+
 	head = PendingDeleteShmem->pdl_head;
 	cur_node->next = head;
 	cur_node->prev = InvalidDsaPointer;
@@ -153,6 +157,8 @@ PdlShmemUnlinkNode(dsa_pointer cur)
 	cur_node = dsa_get_address(pendingDeleteDsa, cur);
 
 	LWLockAcquire(PendingDeleteLock, LW_EXCLUSIVE);
+
+	SIMPLE_FAULT_INJECTOR("pdl_unlink_node");
 
 	head = PendingDeleteShmem->pdl_head;
 
