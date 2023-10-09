@@ -10,6 +10,7 @@
 #include "storage/shmem.h"
 #include "utils/dsa.h"
 #include "utils/faultinjector.h"
+#include "utils/guc.h"
 #include "utils/hsearch.h"
 
 /*
@@ -58,6 +59,9 @@ PdlShmemSize(void)
 {
 	Size		size;
 
+	if (!gp_track_pending_delete)
+		return 0;
+
 	size = offsetof(PendingDeleteShmemStruct, dsa_mem);
 	/* dsa initialized over flexible static dsa_mem */
 	size = add_size(size, dsa_minimum_size());
@@ -71,8 +75,13 @@ PdlShmemSize(void)
 void
 PdlShmemInit(void)
 {
-	Size		size = PdlShmemSize();
+	Size		size;
 	bool		found;
+
+	if (!gp_track_pending_delete)
+		return;
+
+	size = PdlShmemSize();
 
 	PendingDeleteShmem = (PendingDeleteShmemStruct *)
 		ShmemInitStruct("Pending Delete",
@@ -223,10 +232,10 @@ PdlShmemAdd(RelFileNodePendingDelete * relnode, TransactionId xid)
 	dsa_pointer pdl_node_dsa;
 	PendingDeleteListNode *pdl_node;
 
-	elog(DEBUG2, "Trying to add pending delete rel %d to shmem (xid: %d).", relnode->node.relNode, xid);
-
-	if (xid == InvalidTransactionId || !IsUnderPostmaster)
+	if (xid == InvalidTransactionId || !IsUnderPostmaster || !gp_track_pending_delete)
 		return InvalidDsaPointer;
+
+	elog(DEBUG2, "Trying to add pending delete rel %d to shmem (xid: %d).", relnode->node.relNode, xid);
 
 	PdlAttachDsa();
 
@@ -267,6 +276,9 @@ PdlXLogShmemDump(Size *size)
 {
 	dsa_pointer pdl_node_dsa;
 	PendingRelXactDeleteArray *xrelnode_array;
+
+	if (!gp_track_pending_delete)
+		return NULL;
 
 	elog(DEBUG2, "Serializing pending deletes to array.");
 
@@ -344,10 +356,10 @@ PdlRedoAdd(PendingRelXactDelete * pd)
 	bool		found;
 	RelFileNodePendingDelete *relnode;
 
-	elog(DEBUG2, "Trying to add pending delete rel %d during redo (xid: %d).", pd->relnode.node.relNode, pd->xid);
-
-	if (pd->xid == InvalidTransactionId)
+	if (pd->xid == InvalidTransactionId || !gp_track_pending_delete)
 		return;
+
+	elog(DEBUG2, "Trying to add pending delete rel %d during redo (xid: %d).", pd->relnode.node.relNode, pd->xid);
 
 	if (!pendingDeleteRedo)
 	{
@@ -386,7 +398,12 @@ PdlRedoAdd(PendingRelXactDelete * pd)
 void
 PdlRedoXLogRecord(XLogReaderState *record)
 {
-	PendingRelXactDeleteArray *xrelnode_array = (PendingRelXactDeleteArray *) XLogRecGetData(record);
+	PendingRelXactDeleteArray *xrelnode_array;
+
+	if (!gp_track_pending_delete)
+		return;
+
+	xrelnode_array = (PendingRelXactDeleteArray *) XLogRecGetData(record);
 
 	Assert(xrelnode_array->count > 0);
 	Assert(XLogRecGetDataLen(record) ==
@@ -407,10 +424,10 @@ PdlRedoRemove(TransactionId xid)
 {
 	PendingDeleteHtabNode *h_node;
 
-	elog(DEBUG2, "Trying to remove pending delete rels during redo (xid: %d).", xid);
-
 	if (xid == InvalidTransactionId || !pendingDeleteRedo)
 		return;
+
+	elog(DEBUG2, "Trying to remove pending delete rels during redo (xid: %d).", xid);
 
 	h_node = (PendingDeleteHtabNode *) hash_search(pendingDeleteRedo, &xid, HASH_REMOVE, NULL);
 
@@ -490,10 +507,10 @@ PdlRedoDropFiles(void)
 	HASH_SEQ_STATUS seq_status;
 	PendingDeleteHtabNode *h_node;
 
-	elog(DEBUG2, "Trying to drop pending delete rels.");
-
 	if (!pendingDeleteRedo || hash_get_num_entries(pendingDeleteRedo) == 0)
 		return;
+
+	elog(DEBUG2, "Trying to drop pending delete rels.");
 
 	/* iterate over whole htab */
 	hash_seq_init(&seq_status, pendingDeleteRedo);

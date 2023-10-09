@@ -439,6 +439,8 @@ double		optimizer_jit_above_cost;
 double		optimizer_jit_inline_above_cost;
 double		optimizer_jit_optimize_above_cost;
 
+bool		gp_track_pending_delete = true;
+
 static const struct config_enum_entry gp_log_format_options[] = {
 	{"text", 0},
 	{"csv", 1},
@@ -2982,6 +2984,15 @@ struct config_bool ConfigureNamesBool_gp[] =
 		},
 		&gp_quicklz_fallback,
 		false,
+		NULL, NULL, NULL
+	},
+	{
+		{"gp_track_pending_delete", PGC_POSTMASTER, CUSTOM_OPTIONS,
+			gettext_noop("Enable pending delete relations tracker to avoid accumulation of orphaned files."),
+			gettext_noop("Disabling this turns off storing relation nodes in shmem, dumping them to WAL and removing of files during recovery.")
+		},
+		&gp_track_pending_delete,
+		true,
 		NULL, NULL, NULL
 	},
 

@@ -1599,6 +1599,16 @@ When enabled, the Postgres Planner will use the statistics of the referenced col
 |-----------|-------|-------------------|
 |Boolean|off|coordinator, session, reload|
 
+## <a id="gp_track_pending_delete"></a>gp\_track\_pending\_delete 
+
+This parameter enables global pending delete relations tracker. It helps to avoid accumulation of orphaned files in base directory after backend process crash.
+
+Interuption of relation creation by backend crash lefts orpahned files. Catalog has no information about such files after recovery and they can be removed only manually.
+
+If `gp_track_pending_delete` is enabled, pending delete relations from all backends become tracked in shared memory. Each online checkpoint generates additional type of record (`XLOG_PENDING_DELETE`), which contains a list of pending delete relations. During recovery, each not committed/aborted relation from this list or from `XLOG_SMGR_CREATE` record is considered orphaned. As relations are orphaned, their files can be safely removed, which is done automatically. The drawback is increased memory consumption during table(s) creation and recovery.
+
+The default value is `on`.
+
 ## <a id="gp_use_legacy_hashops"></a>gp\_use\_legacy\_hashops 
 
 For a table that is defined with a `DISTRIBUTED BY key\_column` clause, this parameter controls the hash algorithm that is used to distribute table data among segment instances. The default value is `false`, use the jump consistent hash algorithm.
