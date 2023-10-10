@@ -4883,22 +4883,6 @@ transformAlterTable_all_PartitionStmt(
 			/* No need to hold onto the lock -- see above */
 			heap_close(rel, AccessShareLock);
 	} /* end if alter */
-	else if (gp_add_partition_inherits_table_setting &&
-			 atc1->subtype == AT_PartAdd &&
-			 RelationIsAppendOptimized(pCxt->rel))
-	{
-		PartitionElem *pelem = (PartitionElem *) pc->arg1;
-
-		if (pelem->storeAttr == NULL)
-		{
-			AlterPartitionCmd *storenode = makeNode(AlterPartitionCmd);
-			List	   *opts = list_make1(makeDefElem("appendonly", (Node *) makeString("true")));
-
-			storenode->arg1 = (Node *) build_ao_rel_storage_opts(opts, pCxt->rel);
-			storenode->location = -1;
-			pelem->storeAttr = (Node *) storenode;
-		}
-	}
 
 	switch (atc1->subtype)
 	{
