@@ -68,7 +68,7 @@ BufferedAppendWritePreHook(BufferedAppend *bufferedAppend)
 
 		prevFileLen = bufferedAppend->fileLen;
 
-		if (bytesToWrite > 0 && temp_tables_limit_value->value + bytesToWrite > temp_tables_limit * 1024)
+		if (bytesToWrite > 0 && temp_tables_limit_value->value + bytesToWrite > TempTablesLimitToBytes())
 			elog(ERROR, "Temp tables quota exceeded");
 	}
 }
@@ -117,7 +117,7 @@ mdextend_pre_hook(SMgrRelation reln, ForkNumber forknum, int64 size)
 	TempTablesLimitChecks();
 
 	if (SmgrIsTemp(reln))
-		if (temp_tables_limit_value->value + size > temp_tables_limit * 1024
+		if (temp_tables_limit_value->value + size > TempTablesLimitToBytes()
 			&& forknum == MAIN_FORKNUM) /* visibility map can be extended during vacuum */
 			elog(ERROR, "Temp tables quota exceeded");
 }
