@@ -36,6 +36,7 @@
 #include "cdb/cdbappendonlystorage.h"
 #include "cdb/cdbappendonlyxlog.h"
 #include "common/relpath.h"
+#include "storage/temp_tables_limit.h"
 #include "utils/guc.h"
 
 #define SEGNO_SUFFIX_LENGTH 12
@@ -179,6 +180,8 @@ TruncateAOSegmentFile(File fd, Relation rel, int32 segFileNum, int64 offset)
 
 	Assert(fd > 0);
 	Assert(offset >= 0);
+
+	TruncateAOSegmentFilePreHook(rel, fd, offset);
 
 	/*
 	 * Call the 'fd' module with a 64-bit length since AO segment files

@@ -48,6 +48,7 @@
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
 #include "storage/spin.h"
+#include "storage/temp_tables_limit.h"
 #include "utils/backend_cancel.h"
 #include "utils/resource_manager.h"
 #include "utils/faultinjector.h"
@@ -210,6 +211,8 @@ CreateSharedMemoryAndSemaphores(int port)
 
 		/* size of parallel cursor count */
 		size = add_size(size, ParallelCursorCountSize());
+
+		size = add_size(size, TempTablesLimitSize());
 
 		elog(DEBUG3, "invoking IpcMemoryCreate(size=%zu)", size);
 
@@ -378,6 +381,9 @@ CreateSharedMemoryAndSemaphores(int port)
 	
 	if (Gp_role == GP_ROLE_DISPATCH)
 		ParallelCursorCountInit();
+
+	if (!IsUnderPostmaster)
+		TempTablesLimitShmemInit();
 
 	/*
 	 * Now give loadable modules a chance to set up their shmem allocations

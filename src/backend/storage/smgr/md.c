@@ -46,6 +46,7 @@
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
 #include "pg_trace.h"
+#include "storage/temp_tables_limit.h"
 
 #include "catalog/pg_tablespace.h"
 #include "utils/faultinjector.h"
@@ -511,6 +512,8 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo, char rel
 
 	path = relpath(rnode, forkNum);
 
+	mdunlinkfork_pre_hook(rnode, forkNum);
+
 	/*
 	 * Delete or truncate the first segment.
 	 */
@@ -589,6 +592,8 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo, char rel
 		pfree(segpath);
 	}
 
+	mdunlinkfork_post_hook(rnode);
+
 	pfree(path);
 }
 
@@ -613,6 +618,8 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 #ifdef CHECK_WRITE_VS_EXTEND
 	Assert(blocknum >= mdnblocks(reln, forknum));
 #endif
+
+	mdextend_pre_hook(reln, forknum, BLCKSZ);
 
 	/*
 	 * If a relation manages to grow to 2^32-1 blocks, refuse to extend it any
@@ -666,6 +673,8 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 	if (!skipFsync && !SmgrIsTemp(reln))
 		register_dirty_segment(reln, forknum, v);
+
+	mdextend_post_hook(reln, BLCKSZ);
 
 	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 }
@@ -1018,6 +1027,8 @@ mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks)
 
 		if (priorblocks > nblocks)
 		{
+			mdtruncate_pre_hook(reln, v->mdfd_vfd, 0);
+
 			/*
 			 * This segment is no longer active (and has already been unlinked
 			 * from the mdfd_chain). We truncate the file, but do not delete
@@ -1048,6 +1059,8 @@ mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks)
 			 * given in the header comments.
 			 */
 			BlockNumber lastsegblocks = nblocks - priorblocks;
+
+			mdtruncate_pre_hook(reln, v->mdfd_vfd, lastsegblocks);
 
 			if (FileTruncate(v->mdfd_vfd, (off_t) lastsegblocks * BLCKSZ) < 0)
 				ereport(ERROR,

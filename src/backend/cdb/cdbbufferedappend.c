@@ -21,6 +21,7 @@
 
 #include "cdb/cdbappendonlyxlog.h"
 #include "cdb/cdbbufferedappend.h"
+#include "storage/temp_tables_limit.h"
 #include "utils/guc.h"
 
 static void BufferedAppendWrite(
@@ -170,6 +171,8 @@ BufferedAppendWrite(BufferedAppend *bufferedAppend, bool needsWAL)
 	Assert(bufferedAppend->largeWriteLen > 0);
 	largeWriteMemory = bufferedAppend->largeWriteMemory;
 
+	BufferedAppendWritePreHook(bufferedAppend);
+
 	bytestotal = 0;
 	bytesleft = bufferedAppend->largeWriteLen;
 	while (bytesleft > 0)
@@ -192,6 +195,8 @@ BufferedAppendWrite(BufferedAppend *bufferedAppend, bool needsWAL)
 		if (file_extend_hook)
 			(*file_extend_hook)(bufferedAppend->relFileNode);
 	}
+
+	BufferedAppendWritePostHook(bufferedAppend);
 
 	elogif(Debug_appendonly_print_append_block, LOG,
 		   "Append-Only storage write: table \"%s\", segment file \"%s\", write position " INT64_FORMAT ", bytes written %d",
