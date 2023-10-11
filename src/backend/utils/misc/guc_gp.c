@@ -471,6 +471,8 @@ bool		gp_log_endpoints = false;
 /* optional reject to  parse ambigous 5-digits date in YYYMMDD format */
 bool		gp_allow_date_field_width_5digits = false;
 
+int			temp_tables_limit = 1024;
+
 static const struct config_enum_entry gp_log_format_options[] = {
 	{"text", 0},
 	{"csv", 1},
@@ -3335,6 +3337,17 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_UNIT_KB | GUC_NOT_IN_SAMPLE
 		},
 		&writable_external_table_bufsize,
+		1024, 32, 131072,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"temp_tables_limit", PGC_SUSET, RESOURCES_MEM,
+			gettext_noop("Maximum amount of memory per segment that temporary tables can occupy on disk. "),
+			gettext_noop("Valid value is between 32K and 128M: [32, 131072]."),
+			GUC_UNIT_MB | GUC_NOT_IN_SAMPLE
+		},
+		&temp_tables_limit,
 		1024, 32, 131072,
 		NULL, NULL, NULL
 	},

@@ -594,6 +594,8 @@ extern bool gp_log_endpoints;
 
 extern bool gp_allow_date_field_width_5digits;
 
+extern int temp_tables_limit;
+
 typedef enum
 {
 	INDEX_CHECK_NONE,

@@ -114,6 +114,7 @@
 		"statement_timeout",
 		"synchronize_seqscans",
 		"temp_buffers",
+		"temp_tables_limit",
 		"test_copy_qd_qe_split",
 		"test_print_prefetch_joinqual",
 		"TimeZone",
