@@ -1,0 +1,190 @@
+#include <libgen.h>
+#include <sys/stat.h>
+
+#include "postgres.h"
+
+#include "c.h"
+#include "cdb/cdbbufferedappend.h"
+#include "cdb/cdbvars.h"
+#include "port/atomics.h"
+#include "storage/fd.h"
+#include "storage/relfilenode.h"
+#include "storage/shmem.h"
+#include "storage/smgr.h"
+#include "storage/temp_tables_limit.h"
+#include "utils/elog.h"
+#include "utils/guc.h"
+
+#define TempTablesLimitChecks() do {\
+									if (!IsUnderPostmaster || Gp_role != GP_ROLE_EXECUTE)\
+										return;\
+									\
+									Assert(temp_tables_limit_value != NULL);\
+								} while (0)
+
+static volatile pg_atomic_uint64 *temp_tables_limit_value = NULL;
+static int64 prevFileLen = -1;
+static int curFd = -1;
+static bool fileSkip = false;
+
+static int bytes = 0; // for testing purposes
+
+static int64
+TempTablesLimitToBytes(void)
+{
+	return temp_tables_limit * 1024 * 1024;
+}
+
+/* init */
+
+Size
+TempTablesLimitSize(void)
+{
+	return sizeof(pg_atomic_uint64);
+}
+
+void
+TempTablesLimitShmemInit(void)
+{
+	temp_tables_limit_value = (volatile pg_atomic_uint64 *) ShmemAlloc(sizeof(pg_atomic_uint64));
+	pg_atomic_init_u64((pg_atomic_uint64 *) temp_tables_limit_value, 0);
+}
+
+/* ao */
+
+void
+BufferedAppendWritePreHook(BufferedAppend *bufferedAppend)
+{
+	int64 bytesToWrite;
+
+	TempTablesLimitChecks();
+
+	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
+	{
+		bytesToWrite = bufferedAppend->maxLargeWriteLen -
+			(bufferedAppend->fileLen - bufferedAppend->largeWritePosition);
+
+		bytes = bytesToWrite; // for testing purposes
+
+		prevFileLen = bufferedAppend->fileLen;
+
+		if (bytesToWrite > 0 && temp_tables_limit_value->value + bytesToWrite > temp_tables_limit * 1024)
+			elog(ERROR, "Temp tables quota exceeded");
+	}
+}
+
+void
+BufferedAppendWritePostHook(BufferedAppend *bufferedAppend)
+{
+	int64 newTotal;
+
+	TempTablesLimitChecks();
+
+	Assert(prevFileLen > 0);
+
+	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
+	{
+		newTotal = bufferedAppend->fileLen - prevFileLen;
+		Assert(newTotal == bytes); // for testing purposes
+		pg_atomic_add_fetch_u64(temp_tables_limit_value, newTotal);
+	}
+
+	bytes = 0;
+	prevFileLen = -1;
+}
+
+void
+TruncateAOSegmentFilePreHook(Relation rel, File fd, int64 offset)
+{
+	int64 fileSize;
+	int64 bytesToTruncate;
+
+	TempTablesLimitChecks();
+
+	if (rel->rd_islocaltemp)
+	{
+		fileSize = FileDiskSize(fd);
+		bytesToTruncate = fileSize - offset;
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, bytesToTruncate);
+	}
+}
+
+/* heap */
+
+void
+mdextend_pre_hook(SMgrRelation reln, ForkNumber forknum, int64 size)
+{
+	TempTablesLimitChecks();
+
+	if (SmgrIsTemp(reln))
+		if (temp_tables_limit_value->value + size > temp_tables_limit * 1024
+			&& forknum == MAIN_FORKNUM) /* visibility map can be extended during vacuum */
+			elog(ERROR, "Temp tables quota exceeded");
+}
+
+void
+mdextend_post_hook(SMgrRelation reln, int64 size)
+{
+	TempTablesLimitChecks();
+
+	if (SmgrIsTemp(reln))
+		pg_atomic_add_fetch_u64(temp_tables_limit_value, size);
+}
+
+void
+mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum)
+{
+	struct stat buf;
+	int status;
+	char *path;
+
+	TempTablesLimitChecks();
+
+	if (RelFileNodeBackendIsTemp(rnode))
+	{
+		path = relpath(rnode, forkNum);
+		curFd = OpenTransientFile((char *) path, O_RDWR | PG_BINARY, 0);
+		status = fstat(curFd, &buf);
+		if (status == 0)
+		{
+			prevFileLen = buf.st_size;
+			CloseTransientFile(curFd);
+		}
+		else
+			fileSkip = true; // file didn't exist, skip it;
+		
+	}
+}
+
+void
+mdunlinkfork_post_hook(RelFileNodeBackend rnode)
+{
+	int64 ret;
+	struct stat buf;
+
+	TempTablesLimitChecks();
+
+	Assert((prevFileLen > 0 && curFd > 0) || fileSkip);
+
+	if (RelFileNodeBackendIsTemp(rnode) && !fileSkip)
+		if (fstat(curFd, &buf) != 0) // if == 0 then failed to unlink, therefore we don't decrement the counter
+			pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen);
+
+	curFd = -1;
+	prevFileLen = -1;
+	fileSkip = false;
+}
+
+void
+mdtruncate_pre_hook(SMgrRelation reln, File vfd, BlockNumber blockNum)
+{
+	int64 fileSize;
+
+	TempTablesLimitChecks();
+
+	if (SmgrIsTemp(reln))
+	{
+		fileSize = FileDiskSize(vfd);
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, fileSize - blockNum * BLCKSZ);
+	}
+}
