@@ -166,7 +166,7 @@ mdunlinkfork_post_hook(RelFileNodeBackend rnode)
 	{
 		Assert(prevFileLen >= 0);
 
-		pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen); // if we didn't get there then assume that we failed to delete the file
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen);
 	}
 
 	prevFileLen = -1;
@@ -182,7 +182,21 @@ mdtruncate_pre_hook(SMgrRelation reln, File vfd, BlockNumber blockNum)
 
 	if (SmgrIsTemp(reln))
 	{
-		fileSize = FileDiskSize(vfd);
-		pg_atomic_sub_fetch_u64(temp_tables_limit_value, fileSize - blockNum * BLCKSZ);
+		prevFileLen = FileDiskSize(vfd);
 	}
+}
+
+void
+mdtruncate_post_hook(SMgrRelation reln, BlockNumber blockNum)
+{
+	TempTablesLimitChecks();
+
+	if (SmgrIsTemp(reln))
+	{
+		Assert(prevFileLen >= 0);
+
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen - blockNum * BLCKSZ);
+	}
+
+	prevFileLen = -1;
 }

@@ -31,4 +31,6 @@ void mdunlinkfork_post_hook(RelFileNodeBackend rnode);
 
 void mdtruncate_pre_hook(SMgrRelation reln, File vfd, BlockNumber blockNum);
 
+void mdtruncate_post_hook(SMgrRelation reln, BlockNumber blockNum);
+
 #endif

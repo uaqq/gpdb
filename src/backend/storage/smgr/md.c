@@ -1047,6 +1047,8 @@ mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks)
 												 * segment */
 			FileClose(ov->mdfd_vfd);
 			pfree(ov);
+
+			mdtruncate_post_hook(reln, 0);
 		}
 		else if (priorblocks + ((BlockNumber) RELSEG_SIZE) > nblocks)
 		{
@@ -1072,6 +1074,8 @@ mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks)
 				register_dirty_segment(reln, forknum, v);
 			v = v->mdfd_chain;
 			ov->mdfd_chain = NULL;
+
+			mdtruncate_post_hook(reln, lastsegblocks);
 		}
 		else
 		{
