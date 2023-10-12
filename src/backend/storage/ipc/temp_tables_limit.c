@@ -80,10 +80,10 @@ BufferedAppendWritePostHook(BufferedAppend *bufferedAppend)
 
 	TempTablesLimitChecks();
 
-	Assert(prevFileLen > 0);
-
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
+		Assert(prevFileLen > 0);
+		
 		newTotal = bufferedAppend->fileLen - prevFileLen;
 		Assert(newTotal == bytes); // for testing purposes
 		pg_atomic_add_fetch_u64(temp_tables_limit_value, newTotal);
@@ -151,24 +151,25 @@ mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum)
 			CloseTransientFile(curFd);
 		}
 		else
-			fileSkip = true; // file didn't exist, skip it;
-		
+			fileSkip = true; // file didn't exist, skip it
 	}
 }
 
 void
 mdunlinkfork_post_hook(RelFileNodeBackend rnode)
 {
-	int64 ret;
 	struct stat buf;
 
 	TempTablesLimitChecks();
 
-	Assert((prevFileLen > 0 && curFd > 0) || fileSkip);
-
 	if (RelFileNodeBackendIsTemp(rnode) && !fileSkip)
+	{
+		Assert((prevFileLen > 0 && curFd > 0));
+
 		if (fstat(curFd, &buf) != 0) // if == 0 then failed to unlink, therefore we don't decrement the counter
 			pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen);
+	}
+		
 
 	curFd = -1;
 	prevFileLen = -1;
