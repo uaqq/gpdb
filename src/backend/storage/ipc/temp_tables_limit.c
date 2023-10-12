@@ -24,7 +24,6 @@
 
 static volatile pg_atomic_uint64 *temp_tables_limit_value = NULL;
 static int64 prevFileLen = -1;
-static int curFd = -1;
 static bool fileSkip = false;
 
 static int bytes = 0; // for testing purposes
@@ -83,7 +82,7 @@ BufferedAppendWritePostHook(BufferedAppend *bufferedAppend)
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
 		Assert(prevFileLen > 0);
-		
+
 		newTotal = bufferedAppend->fileLen - prevFileLen;
 		Assert(newTotal == bytes); // for testing purposes
 		pg_atomic_add_fetch_u64(temp_tables_limit_value, newTotal);
@@ -137,18 +136,19 @@ mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum)
 	struct stat buf;
 	int status;
 	char *path;
+	int fd;
 
 	TempTablesLimitChecks();
 
 	if (RelFileNodeBackendIsTemp(rnode))
 	{
 		path = relpath(rnode, forkNum);
-		curFd = OpenTransientFile((char *) path, O_RDWR | PG_BINARY, 0);
-		status = fstat(curFd, &buf);
+		fd = OpenTransientFile((char *) path, O_RDWR | PG_BINARY, 0);
+		status = fstat(fd, &buf);
 		if (status == 0)
 		{
 			prevFileLen = buf.st_size;
-			CloseTransientFile(curFd);
+			CloseTransientFile(fd);
 		}
 		else
 			fileSkip = true; // file didn't exist, skip it
@@ -164,14 +164,11 @@ mdunlinkfork_post_hook(RelFileNodeBackend rnode)
 
 	if (RelFileNodeBackendIsTemp(rnode) && !fileSkip)
 	{
-		Assert((prevFileLen > 0 && curFd > 0));
+		Assert(prevFileLen >= 0);
 
-		if (fstat(curFd, &buf) != 0) // if == 0 then failed to unlink, therefore we don't decrement the counter
-			pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen);
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevFileLen); // if we didn't get there then assume that we failed to delete the file
 	}
-		
 
-	curFd = -1;
 	prevFileLen = -1;
 	fileSkip = false;
 }
