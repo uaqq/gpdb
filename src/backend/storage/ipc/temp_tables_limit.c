@@ -60,12 +60,12 @@ BufferedAppendWritePreHook(BufferedAppend *bufferedAppend)
 
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
-		bytesToWrite = bufferedAppend->maxLargeWriteLen -
-			(bufferedAppend->fileLen - bufferedAppend->largeWritePosition);
+		bytesToWrite = bufferedAppend->largeWriteLen -
+			(FileDiskSize(bufferedAppend->file) - FileSeek(bufferedAppend->file, 0, SEEK_CUR));
 
-		bytes = bytesToWrite; // for testing purposes
+		bytes = bytesToWrite > 0 ? bytesToWrite : 0; // for testing purposes
 
-		prevFileLen = bufferedAppend->fileLen;
+		prevFileLen = FileDiskSize(bufferedAppend->file);
 
 		if (bytesToWrite > 0 && temp_tables_limit_value->value + bytesToWrite > TempTablesLimitToBytes())
 			elog(ERROR, "Temp tables quota exceeded");
@@ -81,9 +81,9 @@ BufferedAppendWritePostHook(BufferedAppend *bufferedAppend)
 
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
-		Assert(prevFileLen > 0);
+		Assert(prevFileLen >= 0);
 
-		newTotal = bufferedAppend->fileLen - prevFileLen;
+		newTotal = FileDiskSize(bufferedAppend->file) - prevFileLen;
 		Assert(newTotal == bytes); // for testing purposes
 		pg_atomic_add_fetch_u64(temp_tables_limit_value, newTotal);
 	}
@@ -134,7 +134,6 @@ void
 mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum)
 {
 	struct stat buf;
-	int status;
 	char *path;
 	int fd;
 
@@ -144,8 +143,7 @@ mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum)
 	{
 		path = relpath(rnode, forkNum);
 		fd = OpenTransientFile((char *) path, O_RDWR | PG_BINARY, 0);
-		status = fstat(fd, &buf);
-		if (status == 0)
+		if (fstat(fd, &buf) == 0)
 		{
 			prevFileLen = buf.st_size;
 			CloseTransientFile(fd);
@@ -158,8 +156,6 @@ mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum)
 void
 mdunlinkfork_post_hook(RelFileNodeBackend rnode)
 {
-	struct stat buf;
-
 	TempTablesLimitChecks();
 
 	if (RelFileNodeBackendIsTemp(rnode) && !fileSkip)
@@ -176,8 +172,6 @@ mdunlinkfork_post_hook(RelFileNodeBackend rnode)
 void
 mdtruncate_pre_hook(SMgrRelation reln, File vfd, BlockNumber blockNum)
 {
-	int64 fileSize;
-
 	TempTablesLimitChecks();
 
 	if (SmgrIsTemp(reln))
