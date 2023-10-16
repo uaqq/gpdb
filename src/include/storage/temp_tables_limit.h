@@ -17,7 +17,9 @@ void BufferedAppendWritePreHook(BufferedAppend *bufferedAppend);
 
 void BufferedAppendWritePostHook(BufferedAppend *bufferedAppend);
 
-void TruncateAOSegmentFilePreHook(Relation rel, File fd, int64 offset);
+void TruncateAOSegmentFilePreHook(Relation rel, File fd);
+
+void TruncateAOSegmentFilePostHook(Relation rel, int64 offset);
 
 /* heap */
 
@@ -28,6 +30,14 @@ void mdextend_post_hook(SMgrRelation reln, int64 size);
 void mdunlinkfork_pre_hook(RelFileNodeBackend rnode, ForkNumber forkNum);
 
 void mdunlinkfork_post_hook(RelFileNodeBackend rnode);
+
+void mdunlinkforksegment_pre_hook(RelFileNodeBackend rnode, char *segpath);
+
+void mdunlinkforksegment_post_hook(RelFileNodeBackend rnode);
+
+void mdunlink_ao_perFile_pre_hook(char *segPath);
+
+void mdunlink_ao_perFile_post_hook(void);
 
 void mdtruncate_pre_hook(SMgrRelation reln, File vfd, BlockNumber blockNum);
 

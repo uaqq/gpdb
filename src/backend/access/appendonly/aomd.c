@@ -181,7 +181,7 @@ TruncateAOSegmentFile(File fd, Relation rel, int32 segFileNum, int64 offset)
 	Assert(fd > 0);
 	Assert(offset >= 0);
 
-	TruncateAOSegmentFilePreHook(rel, fd, offset);
+	TruncateAOSegmentFilePreHook(rel, fd);
 
 	/*
 	 * Call the 'fd' module with a 64-bit length since AO segment files
@@ -201,6 +201,8 @@ TruncateAOSegmentFile(File fd, Relation rel, int32 segFileNum, int64 offset)
 		rnode.backend = rel->rd_backend;
 		(*file_truncate_hook)(rnode);
 	}
+
+	TruncateAOSegmentFilePreHook(rel, offset);
 }
 
 struct mdunlink_ao_callback_ctx
@@ -253,6 +255,8 @@ mdunlink_ao_perFile(const int segno, void *ctx)
 	char *segPathSuffixPosition = unlinkFiles->segpathSuffixPosition;
 
 	sprintf(segPathSuffixPosition, ".%u", segno);
+
+	mdunlink_ao_perFile_pre_hook(segPath);
 	if (unlink(segPath) != 0)
 	{
 		/* ENOENT is expected after the end of the extensions */
@@ -263,6 +267,8 @@ mdunlink_ao_perFile(const int segno, void *ctx)
 		else
 			return false;
 	}
+
+	mdunlink_ao_perFile_post_hook();
 
 	return true;
 }

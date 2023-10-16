@@ -569,6 +569,8 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo, char rel
 		{
 			sprintf(segpath, "%s.%u", path, segno);
 
+			mdunlinkforksegment_pre_hook(rnode, segpath);
+
 			if (!RelFileNodeBackendIsTemp(rnode))
 			{
 				/*
@@ -586,8 +588,12 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo, char rel
 					ereport(WARNING,
 							(errcode_for_file_access(),
 							 errmsg("could not remove file \"%s\": %m", segpath)));
+
+				mdunlinkforksegment_post_hook(rnode);
 				break;
 			}
+
+			mdunlinkforksegment_post_hook(rnode);
 		}
 		pfree(segpath);
 	}

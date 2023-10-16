@@ -24,7 +24,9 @@
 
 static volatile pg_atomic_uint64 *temp_tables_limit_value = NULL;
 static int64 prevFileLen = -1;
+static int64 prevSegFileLen = -1;
 static bool fileSkip = false;
+static bool segFileSkip = false;
 
 static int bytes = 0; // for testing purposes
 
@@ -93,19 +95,32 @@ BufferedAppendWritePostHook(BufferedAppend *bufferedAppend)
 }
 
 void
-TruncateAOSegmentFilePreHook(Relation rel, File fd, int64 offset)
+TruncateAOSegmentFilePreHook(Relation rel, File fd)
 {
-	int64 fileSize;
+	TempTablesLimitChecks();
+
+	if (rel->rd_islocaltemp)
+	{
+		prevFileLen = FileDiskSize(fd);
+	}
+}
+
+void
+TruncateAOSegmentFilePostHook(Relation rel, int64 offset)
+{
 	int64 bytesToTruncate;
 
 	TempTablesLimitChecks();
 
 	if (rel->rd_islocaltemp)
 	{
-		fileSize = FileDiskSize(fd);
-		bytesToTruncate = fileSize - offset;
+		Assert(prevFileLen >= 0);
+
+		bytesToTruncate = prevFileLen - offset;
 		pg_atomic_sub_fetch_u64(temp_tables_limit_value, bytesToTruncate);
 	}
+
+	prevFileLen = -1;
 }
 
 /* heap */
@@ -167,6 +182,78 @@ mdunlinkfork_post_hook(RelFileNodeBackend rnode)
 
 	prevFileLen = -1;
 	fileSkip = false;
+}
+
+void
+mdunlinkforksegment_pre_hook(RelFileNodeBackend rnode, char *segpath)
+{
+	struct stat buf;
+	char fullPath[1024];
+
+	TempTablesLimitChecks();
+
+	sprintf(fullPath, "%s/%s", data_directory, segpath);
+
+	if (RelFileNodeBackendIsTemp(rnode))
+		if (stat(fullPath, &buf) == 0)
+			prevSegFileLen = buf.st_size;
+		else
+			segFileSkip = true;
+}
+
+void
+mdunlinkforksegment_post_hook(RelFileNodeBackend rnode)
+{
+	TempTablesLimitChecks();
+
+	if (RelFileNodeBackendIsTemp(rnode) && !segFileSkip)
+	{
+		Assert(prevSegFileLen >= 0);
+
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevSegFileLen);
+	}
+
+	prevSegFileLen = -1;
+	segFileSkip = false;
+}
+
+void
+mdunlink_ao_perFile_pre_hook(char *segPath)
+{
+	struct stat buf;
+	char segPathCopy[20];
+	char fullPath[1024];
+	char *name;
+
+	TempTablesLimitChecks();
+
+	strcpy(segPathCopy, segPath);
+	sprintf(fullPath, "%s/%s", data_directory, segPathCopy);
+
+	name = basename(segPathCopy);
+	if (name[0] == 't')
+		if (stat(fullPath, &buf) == 0)
+			prevSegFileLen = buf.st_size;
+		else
+			segFileSkip = true;
+	else
+		segFileSkip = true;
+}
+
+void
+mdunlink_ao_perFile_post_hook(void)
+{
+	TempTablesLimitChecks();
+
+	if (!segFileSkip)
+	{
+		Assert(prevSegFileLen >= 0);
+
+		pg_atomic_sub_fetch_u64(temp_tables_limit_value, prevSegFileLen);
+	}
+
+	prevSegFileLen = -1;
+	segFileSkip = false;
 }
 
 void
