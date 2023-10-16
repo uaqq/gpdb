@@ -15,19 +15,19 @@ create extension if not exists gp_inject_fault;
 -- Check that critical sections are correctly guarded
 
 -- second process can't add node while first is not complete with own adding
-select gp_inject_fault('pdl_link_node', 'suspend', dbid) from gp_segment_configuration;
+select gp_inject_fault('pdl_link_node', 'suspend', dbid) from gp_segment_configuration where preferred_role='p';
 1: begin;
 1&: create table pdl_test1(i int);
 2: begin;
 2&: create table pdl_test2(i int);
-select gp_inject_fault('pdl_link_node', 'reset', dbid) from gp_segment_configuration;
+select gp_inject_fault('pdl_link_node', 'reset', dbid) from gp_segment_configuration where preferred_role='p';
 1<:
 2<:
 -- second process can't remove node while first is not complete with removing
-select gp_inject_fault('pdl_unlink_node', 'suspend', dbid) from gp_segment_configuration;
+select gp_inject_fault('pdl_unlink_node', 'suspend', dbid) from gp_segment_configuration where preferred_role='p';
 1&: rollback;
 2&: rollback;
-select gp_inject_fault('pdl_unlink_node', 'reset', dbid) from gp_segment_configuration;
+select gp_inject_fault('pdl_unlink_node', 'reset', dbid) from gp_segment_configuration where preferred_role='p';
 1<:
 2<:
 
@@ -41,8 +41,8 @@ select gp_inject_fault('pdl_unlink_node', 'reset', dbid) from gp_segment_configu
 -- Creation of general object used in explicit connection #0 as we want to explicitly close it after backend kill.
 0: create table pdl_paths(id int, path text) distributed replicated;
 1: begin;
-1: create table test_ao(i int) with (appendonly=true);
-1: insert into test_ao select generate_series(1,10000);
+1: create table test_pdl_ao(i int) with (appendonly=true);
+1: insert into test_pdl_ao select generate_series(1,10000);
 -- Outer file is a persistent storage which survive process killing.
 -- We use it to keep paths to orphaned files.
 1: copy (
@@ -50,7 +50,7 @@ select gp_inject_fault('pdl_unlink_node', 'reset', dbid) from gp_segment_configu
     from (
         select unnest(array[1, 2, 3]) as id, unnest(array[relid, segrelid, visimaprelid]) as relid
         from pg_appendonly
-        where relid = 'test_ao'::regclass::oid
+        where relid = 'test_pdl_ao'::regclass::oid
     ) t
 ) to '/tmp/pdl_paths.csv' with csv;
 
@@ -81,15 +81,15 @@ language sql as $$
 $$ execute on all segments;
 
 1: begin;
-1: create table test_ao(i int) with (appendonly=true);
-1: insert into test_ao select generate_series(1,10000);
+1: create table test_pdl_ao(i int) with (appendonly=true);
+1: insert into test_pdl_ao select generate_series(1,10000);
 
 1: copy (
     select t1.id, t2.path
     from(
         select unnest(array[1, 2, 3]) as id, unnest(array[relid, segrelid, visimaprelid]) as relid
         from pg_appendonly
-        where relid = 'test_ao'::regclass::oid
+        where relid = 'test_pdl_ao'::regclass::oid
     ) t1,
     get_full_relpath_on_segments(t1.relid::regclass) t2
     where t2.gp_segment_id = 0
@@ -118,11 +118,11 @@ $$ execute on all segments;
 ---------------------
 
 -- Test 4
--- Create AO table. Kill backend on coordinator. Check that orphaned files were deleted.
+-- Create AO table. Kill backend on coordinator. Check that orphaned files were not deleted.
 
 1: begin;
-1: create table test_ao(i int) with (appendonly=true);
-1: insert into test_ao select generate_series(1,10000);
+1: create table test_pdl_ao(i int) with (appendonly=true);
+1: insert into test_pdl_ao select generate_series(1,10000);
 -- Outer file is a persistent storage which survive process killing.
 -- We use it to keep paths to orphaned files.
 1: copy (
@@ -130,7 +130,7 @@ $$ execute on all segments;
     from (
         select unnest(array[1, 2, 3]) as id, unnest(array[relid, segrelid, visimaprelid]) as relid
         from pg_appendonly
-        where relid = 'test_ao'::regclass::oid
+        where relid = 'test_pdl_ao'::regclass::oid
     ) t
 ) to '/tmp/pdl_paths.csv' with csv;
 
@@ -151,18 +151,18 @@ $$ execute on all segments;
 
 
 -- Test 5
--- Create AO table. Kill all processes on segment. Check that orphaned files were deleted.
+-- Create AO table. Kill all processes on segment. Check that orphaned files were not deleted.
 
 1: begin;
-1: create table test_ao(i int) with (appendonly=true);
-1: insert into test_ao select generate_series(1,10000);
+1: create table test_pdl_ao(i int) with (appendonly=true);
+1: insert into test_pdl_ao select generate_series(1,10000);
 
 1: copy (
     select t1.id, t2.path
     from(
         select unnest(array[1, 2, 3]) as id, unnest(array[relid, segrelid, visimaprelid]) as relid
         from pg_appendonly
-        where relid = 'test_ao'::regclass::oid
+        where relid = 'test_pdl_ao'::regclass::oid
     ) t1,
     get_full_relpath_on_segments(t1.relid::regclass) t2
     where t2.gp_segment_id = 0
