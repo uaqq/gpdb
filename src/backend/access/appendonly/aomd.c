@@ -202,7 +202,7 @@ TruncateAOSegmentFile(File fd, Relation rel, int32 segFileNum, int64 offset)
 		(*file_truncate_hook)(rnode);
 	}
 
-	TruncateAOSegmentFilePreHook(rel, offset);
+	TruncateAOSegmentFilePostHook(rel, offset);
 }
 
 struct mdunlink_ao_callback_ctx
