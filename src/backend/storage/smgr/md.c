@@ -555,6 +555,7 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo, char rel
 		{
 			mdunlink_ao(path, forkNum);
 			pfree(path);
+			mdunlinkfork_post_hook(rnode);
 			return;
 		}
 
