@@ -686,6 +686,7 @@ enum Edxltoken
 
 	EdxltokenInsertCols,
 	EdxltokenDeleteCols,
+	EdxltokenDeleteColsUsed,
 	EdxltokenNewCols,
 	EdxltokenOldCols,
 

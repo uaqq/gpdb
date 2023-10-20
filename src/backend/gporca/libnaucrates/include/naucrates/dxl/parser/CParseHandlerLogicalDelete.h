@@ -42,6 +42,7 @@ private:
 
 	// delete col ids
 	ULongPtrArray *m_deletion_colid_array;
+	ULongPtrArray *m_deletion_colid_array_used;
 
 	// private copy ctor
 	CParseHandlerLogicalDelete(const CParseHandlerLogicalDelete &);

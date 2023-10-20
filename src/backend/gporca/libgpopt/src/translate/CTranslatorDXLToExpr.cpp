@@ -1434,7 +1434,18 @@ CTranslatorDXLToExpr::PexprLogicalDelete(const CDXLNode *dxlnode)
 	ULongPtrArray *pdrgpulCols = pdxlopDelete->GetDeletionColIdArray();
 	CColRefArray *colref_array =
 		CTranslatorDXLToExprUtils::Pdrgpcr2(m_mp, m_phmulcr, pdrgpulCols, pdxlopDelete->GetDeletionColIdArrayUsed());
+/*
+	for (ULONG ul = 0; ul < colref_array->Size(); ul++)
+	{
+		CColRef *colref = (*colref_array)[ul];
 
+		if (!colref->IsDistCol() && !colref->IsSystemCol())
+		{
+			colref->MarkAsUnknown();
+			colref->MarkAsUnused();
+		}
+	}
+*/
 	return GPOS_NEW(m_mp) CExpression(
 		m_mp,
 		GPOS_NEW(m_mp)

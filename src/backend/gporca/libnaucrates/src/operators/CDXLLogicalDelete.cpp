@@ -110,6 +110,12 @@ CDXLLogicalDelete::SerializeToDXL(CXMLSerializer *xml_serializer,
 		CDXLTokens::GetDXLTokenStr(EdxltokenDeleteCols), deletion_colids);
 	GPOS_DELETE(deletion_colids);
 
+	CWStringDynamic *deletion_colids_used =
+		CDXLUtils::Serialize(m_mp, m_deletion_colid_array_used);
+	xml_serializer->AddAttribute(
+		CDXLTokens::GetDXLTokenStr(EdxltokenDeleteColsUsed), deletion_colids_used);
+	GPOS_DELETE(deletion_colids_used);
+
 	xml_serializer->AddAttribute(CDXLTokens::GetDXLTokenStr(EdxltokenCtidColId),
 								 m_ctid_colid);
 	xml_serializer->AddAttribute(
