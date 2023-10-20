@@ -32,12 +32,13 @@ using namespace gpdxl;
 CDXLLogicalDelete::CDXLLogicalDelete(CMemoryPool *mp,
 									 CDXLTableDescr *table_descr,
 									 ULONG ctid_colid, ULONG segid_colid,
-									 ULongPtrArray *delete_colid_array)
+									 ULongPtrArray *delete_colid_array, ULongPtrArray *delete_colid_array_used)
 	: CDXLLogical(mp),
 	  m_dxl_table_descr(table_descr),
 	  m_ctid_colid(ctid_colid),
 	  m_segid_colid(segid_colid),
-	  m_deletion_colid_array(delete_colid_array)
+	  m_deletion_colid_array(delete_colid_array),
+	  m_deletion_colid_array_used(delete_colid_array_used)
 {
 	GPOS_ASSERT(NULL != table_descr);
 	GPOS_ASSERT(NULL != delete_colid_array);
@@ -55,6 +56,8 @@ CDXLLogicalDelete::~CDXLLogicalDelete()
 {
 	m_dxl_table_descr->Release();
 	m_deletion_colid_array->Release();
+	if (m_deletion_colid_array_used)
+		m_deletion_colid_array_used->Release();
 }
 
 //---------------------------------------------------------------------------

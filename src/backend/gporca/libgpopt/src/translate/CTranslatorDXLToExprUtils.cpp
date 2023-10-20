@@ -244,6 +244,29 @@ CTranslatorDXLToExprUtils::Pdrgpcr(CMemoryPool *mp,
 	return colref_array;
 }
 
+CColRefArray *
+CTranslatorDXLToExprUtils::Pdrgpcr2(CMemoryPool *mp,
+								   UlongToColRefMap *colref_mapping,
+								   const ULongPtrArray *colids, const ULongPtrArray *colids_used)
+{
+	GPOS_ASSERT(NULL != colids);
+
+	CColRefArray *colref_array = GPOS_NEW(mp) CColRefArray(mp);
+
+	for (ULONG ul = 0; ul < colids->Size(); ul++)
+	{
+		ULONG *pulColId = (*colids)[ul];
+		CColRef *colref = colref_mapping->Find(pulColId);
+		if (colids_used != NULL && colids_used->Find(pulColId))
+			colref->MarkAsUsed();
+		GPOS_ASSERT(NULL != colref);
+
+		colref_array->Append(const_cast<CColRef *>(colref));
+	}
+
+	return colref_array;
+}
+
 
 //---------------------------------------------------------------------------
 //	@function:

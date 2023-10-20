@@ -78,6 +78,9 @@ public:
 	static CColRefArray *Pdrgpcr(CMemoryPool *mp,
 								 UlongToColRefMap *colref_mapping,
 								 const ULongPtrArray *colids);
+	static CColRefArray *Pdrgpcr2(CMemoryPool *mp,
+								 UlongToColRefMap *colref_mapping,
+								 const ULongPtrArray *colids, const ULongPtrArray *colids_used);
 
 	// is the given expression is a scalar function that casts
 	static BOOL FCastFunc(CMDAccessor *md_accessor, const CDXLNode *dxlnode,

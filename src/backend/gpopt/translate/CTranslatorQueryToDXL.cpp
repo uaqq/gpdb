@@ -1221,7 +1221,6 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 	GetCtidAndSegmentId(&ctid_colid, &segid_colid);
 
 	ULongPtrArray *delete_colid_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
-
 	const ULONG num_of_non_sys_cols = md_rel->ColumnCount();
 	for (ULONG ul = 0; ul < num_of_non_sys_cols; ul++)
 	{
@@ -1237,8 +1236,19 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 		delete_colid_array->Append(GPOS_NEW(m_mp) ULONG(colid));
 	}
 
+	ULongPtrArray *delete_colid_array_used = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
+	for (ULONG ul = 0; ul < m_dxl_query_output_cols->Size(); ul++)
+	{
+		CDXLNode *dxl_column =
+					(*m_dxl_query_output_cols)[ul];
+		CDXLScalarIdent *dxl_ident =
+			CDXLScalarIdent::Cast(dxl_column->GetOperator());
+		delete_colid_array_used->Append(
+			GPOS_NEW(m_mp) ULONG(dxl_ident->GetDXLColRef()->Id()));
+	}
+
 	CDXLLogicalDelete *delete_dxlop = GPOS_NEW(m_mp) CDXLLogicalDelete(
-		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array);
+		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array, delete_colid_array_used);
 
 	return GPOS_NEW(m_mp) CDXLNode(m_mp, delete_dxlop, query_dxlnode);
 }
