@@ -538,6 +538,12 @@ CPhysicalDML::ComputeRequiredLocalColumns(CMemoryPool *mp)
 
 	// include source columns
 	m_pcrsRequiredLocal->Include(m_pdrgpcrSource);
+	/*for (ULONG ul = 0; ul < m_pdrgpcrSource->Size(); ul++)
+	{
+		CColRef *colref = (*m_pdrgpcrSource)[ul];
+		if (colref->GetUsage() == CColRef::EUsed)
+			m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
+	}*/
 	m_pcrsRequiredLocal->Include(m_pcrAction);
 
 	if (CLogicalDML::EdmlDelete == m_edmlop ||
