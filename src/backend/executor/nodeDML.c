@@ -236,12 +236,12 @@ ExecInitDML(DML *node, EState *estate, int eflags)
 	 * Otherwise the mismatch of tuple descriptor will cause a break in
 	 * ExecInsert()->reconstructMatchingTupleSlot().
 	 */
-	TupleDesc cleanTupType = CreateTupleDescCopy(dmlstate->ps.state->es_result_relation_info->ri_RelationDesc->rd_att);
+	//TupleDesc cleanTupType = CreateTupleDescCopy(dmlstate->ps.state->es_result_relation_info->ri_RelationDesc->rd_att);
 
-	ExecSetSlotDescriptor(dmlstate->junkfilter->jf_resultSlot, cleanTupType);
+	//ExecSetSlotDescriptor(dmlstate->junkfilter->jf_resultSlot, cleanTupType);
 
-	ReleaseTupleDesc(dmlstate->junkfilter->jf_cleanTupType);
-	dmlstate->junkfilter->jf_cleanTupType = cleanTupType;
+	//ReleaseTupleDesc(dmlstate->junkfilter->jf_cleanTupType);
+	//dmlstate->junkfilter->jf_cleanTupType = cleanTupType;
 
 	if (estate->es_instrument && (estate->es_instrument & INSTRUMENT_CDB))
 	{
