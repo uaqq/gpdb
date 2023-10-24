@@ -87,7 +87,7 @@ CXformDelete2DML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 		if (colref->GetUsage() == CColRef::EUsed || colref->GetUsage() == CColRef::EUnknown)
 			colref_array2->Append(const_cast<CColRef *>(colref));
 	}
-	colref_array2->AddRef();
+	//colref_array2->AddRef();
 
 	CColRef *pcrCtid = popDelete->PcrCtid();
 
