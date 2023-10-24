@@ -264,7 +264,7 @@ CTranslatorDXLToExprUtils::Pdrgpcr2(CMemoryPool *mp,
 		else
 		{
 			colref->MarkAsUnknown();
-			colref->MarkAsUnused();
+			//colref->MarkAsUnused();
 		}
 		GPOS_ASSERT(NULL != colref);
 

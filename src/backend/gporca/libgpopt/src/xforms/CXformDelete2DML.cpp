@@ -80,6 +80,15 @@ CXformDelete2DML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 	CColRefArray *colref_array = popDelete->Pdrgpcr();
 	colref_array->AddRef();
 
+	CColRefArray *colref_array2 = GPOS_NEW(mp) CColRefArray(mp);
+	for (ULONG ul = 0; ul < colref_array->Size(); ul++)
+	{
+		CColRef *colref = (*colref_array)[ul];
+		if (colref->GetUsage() == CColRef::EUsed || colref->GetUsage() == CColRef::EUnknown)
+			colref_array2->Append(const_cast<CColRef *>(colref));
+	}
+	colref_array2->AddRef();
+
 	CColRef *pcrCtid = popDelete->PcrCtid();
 
 	CColRef *pcrSegmentId = popDelete->PcrSegmentId();
@@ -90,7 +99,7 @@ CXformDelete2DML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 
 	// create logical DML
 	CExpression *pexprAlt = CXformUtils::PexprLogicalDMLOverProject(
-		mp, pexprChild, CLogicalDML::EdmlDelete, ptabdesc, colref_array,
+		mp, pexprChild, CLogicalDML::EdmlDelete, ptabdesc, colref_array2,
 		pcrCtid, pcrSegmentId);
 
 	// add alternative to transformation result
