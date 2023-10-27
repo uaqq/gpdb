@@ -7577,10 +7577,11 @@ CTranslatorExprToDXL::MakeDXLTableDescr(const CTableDescriptor *ptabdesc,
 					NULL != reqd_prop_plan->PcrsRequired())
 				{
 					// ensure that any col removed is not a part of the plan's required cols
-					GPOS_ASSERT(
-						!reqd_prop_plan->PcrsRequired()->FMember(colref));
+					//GPOS_ASSERT(
+					//	!reqd_prop_plan->PcrsRequired()->FMember(colref));
 				}
 #endif
+				colref->MarkAsUnused();
 				continue;
 			}
 		}

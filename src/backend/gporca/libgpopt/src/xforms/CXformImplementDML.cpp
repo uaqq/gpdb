@@ -85,8 +85,11 @@ CXformImplementDML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 	for (ULONG ul = 0; ul < pdrgpcrSource->Size(); ul++)
 	{
 		CColRef *colref = (*pdrgpcrSource)[ul];
-		if (colref->GetUsage() == CColRef::EUsed)
-			colref_array->Append(const_cast<CColRef *>(colref));
+		//if (colref->GetUsage() == CColRef::EUsed)
+		//	colref_array->Append(const_cast<CColRef *>(colref));
+		if (!colref->IsDistCol() && !colref->IsSystemCol())
+			colref->MarkAsUnknown();
+		colref_array->Append(const_cast<CColRef *>(colref));
 	}*/
 	pdrgpcrSource->AddRef();
 	CBitSet *pbsModified = popDML->PbsModified();
