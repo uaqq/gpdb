@@ -4817,8 +4817,8 @@ CTranslatorDXLToPlStmt::TranslateDXLProjList(
 				target_entry->resorigcol = pteOriginal->resorigcol;
 			}
 
-			if (((Var *) expr)->varoattno == 0)
-				target_entry->resjunk = true;
+			//if (((Var *) expr)->varoattno == 0)
+			//	target_entry->resjunk = true;
 		}
 
 		// add column mapping to output translation context

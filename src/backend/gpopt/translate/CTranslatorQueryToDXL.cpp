@@ -1247,8 +1247,8 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 			GPOS_NEW(m_mp) ULONG(dxl_ident->GetDXLColRef()->Id()));
 	}
 
-	if (GPOS_FTRACE(EopttraceDisablePartSelection))
-		delete_colid_array_used = delete_colid_array;
+	//if (GPOS_FTRACE(EopttraceDisablePartSelection))
+	//	delete_colid_array_used = delete_colid_array;
 
 	CDXLLogicalDelete *delete_dxlop = GPOS_NEW(m_mp) CDXLLogicalDelete(
 		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array, delete_colid_array_used);
