@@ -257,7 +257,7 @@ CTranslatorDXLToExprUtils::Pdrgpcr2(CMemoryPool *mp,
 	{
 		ULONG *pulColId = (*colids)[ul];
 		CColRef *colref = colref_mapping->Find(pulColId);
-		if ((colids_used != NULL && colids_used->Find(pulColId) != NULL) || /*colref->IsDistCol() ||*/ colref->IsSystemCol())
+		if ((colids_used != NULL && colids_used->Find(pulColId) != NULL) || colref->IsDistCol() || colref->IsSystemCol())
 		{
 			colref->MarkAsUsed();
 		}

@@ -1247,6 +1247,32 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 			GPOS_NEW(m_mp) ULONG(dxl_ident->GetDXLColRef()->Id()));
 	}
 
+	if (md_rel->IsPartitioned())
+	{
+		const ULONG ulPartCols = md_rel->PartColumnCount();
+		// compute partition columns for table descriptor
+		for (ULONG ul = 0; ul < ulPartCols; ul++)
+		{
+			const IMDColumn *mdcol = md_rel->PartColAt(ul);
+			if (mdcol->IsDropped())
+			{
+				// ORCA assumes that if a table is partitioned, it always has partition key column/s.
+				// This assumption holds as GPDB doesn't allow dropping partition key via direct drop.
+				// But, if a partition key column is a user type which is dropped using DROP TYPE..CASCADE
+				// the partition key column is also dropped.
+				// This will break the underlying assumption in ORCA and may lead to crash.
+				// To avoid this, instead fallback to planner.
+				GPOS_RAISE(
+					gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature,
+					GPOS_WSZ_LIT("Table with dropped partition key column."));
+			}
+			ULONG colid = CTranslatorUtils::GetColId(
+			m_query_level, m_query->resultRelation, mdcol->AttrNum(),
+				mdcol->MdidType(), m_var_to_colid_map);
+			delete_colid_array_used->Append(GPOS_NEW(m_mp) ULONG(colid));
+		}
+	}
+
 	//if (GPOS_FTRACE(EopttraceDisablePartSelection))
 	//	delete_colid_array_used = delete_colid_array;
 
