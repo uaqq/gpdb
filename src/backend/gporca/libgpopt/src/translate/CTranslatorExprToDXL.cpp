@@ -7581,7 +7581,6 @@ CTranslatorExprToDXL::MakeDXLTableDescr(const CTableDescriptor *ptabdesc,
 						!reqd_prop_plan->PcrsRequired()->FMember(colref));
 				}
 #endif
-				colref->MarkAsUnused();
 				continue;
 			}
 		}
