@@ -228,6 +228,23 @@ CPhysicalDML::PcrsRequired(CMemoryPool *mp,
 		0 == child_index &&
 		"Required properties can only be computed on the relational child");
 
+	/*CColRefSet *pcrs = GPOS_NEW(mp) CColRefSet(mp);
+	CColRefSetIter crsi(*m_pcrsRequiredLocal);
+	while (crsi.Advance())
+	{
+		CColRef *colref = crsi.Pcr();
+		if (!colref->IsDistCol())
+			pcrs->Include(colref);
+	}
+
+	CColRefSetIter crsi2(*pcrsRequired);
+	while (crsi2.Advance())
+	{
+		CColRef *colref = crsi2.Pcr();
+		if (!colref->IsDistCol())
+			pcrs->Include(colref);
+	}*/
+
 	CColRefSet *pcrs = GPOS_NEW(mp) CColRefSet(mp, *m_pcrsRequiredLocal);
 	pcrs->Union(pcrsRequired);
 
@@ -542,10 +559,9 @@ CPhysicalDML::ComputeRequiredLocalColumns(CMemoryPool *mp)
 	{
 		CColRef *colref = (*m_pdrgpcrSource)[ul];
 		//if (colref->GetUsage() == CColRef::EUsed)
-		//	m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));		
-		if (!colref->IsDistCol() && !colref->IsSystemCol())
-			colref->MarkAsUnknown();
-		m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
+		//	m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
+		if (!colref->IsDistCol())
+			m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
 	}*/
 	m_pcrsRequiredLocal->Include(m_pcrAction);
 

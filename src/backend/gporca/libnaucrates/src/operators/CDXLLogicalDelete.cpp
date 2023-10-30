@@ -32,13 +32,12 @@ using namespace gpdxl;
 CDXLLogicalDelete::CDXLLogicalDelete(CMemoryPool *mp,
 									 CDXLTableDescr *table_descr,
 									 ULONG ctid_colid, ULONG segid_colid,
-									 ULongPtrArray *delete_colid_array, ULongPtrArray *delete_colid_array_used)
+									 ULongPtrArray *delete_colid_array)
 	: CDXLLogical(mp),
 	  m_dxl_table_descr(table_descr),
 	  m_ctid_colid(ctid_colid),
 	  m_segid_colid(segid_colid),
-	  m_deletion_colid_array(delete_colid_array),
-	  m_deletion_colid_array_used(delete_colid_array_used)
+	  m_deletion_colid_array(delete_colid_array)
 {
 	GPOS_ASSERT(NULL != table_descr);
 	GPOS_ASSERT(NULL != delete_colid_array);
@@ -56,8 +55,6 @@ CDXLLogicalDelete::~CDXLLogicalDelete()
 {
 	m_dxl_table_descr->Release();
 	m_deletion_colid_array->Release();
-	if (m_deletion_colid_array_used)
-		m_deletion_colid_array_used->Release();
 }
 
 //---------------------------------------------------------------------------
@@ -109,12 +106,6 @@ CDXLLogicalDelete::SerializeToDXL(CXMLSerializer *xml_serializer,
 	xml_serializer->AddAttribute(
 		CDXLTokens::GetDXLTokenStr(EdxltokenDeleteCols), deletion_colids);
 	GPOS_DELETE(deletion_colids);
-
-	CWStringDynamic *deletion_colids_used =
-		CDXLUtils::Serialize(m_mp, m_deletion_colid_array_used);
-	xml_serializer->AddAttribute(
-		CDXLTokens::GetDXLTokenStr(EdxltokenDeleteColsUsed), deletion_colids_used);
-	GPOS_DELETE(deletion_colids_used);
 
 	xml_serializer->AddAttribute(CDXLTokens::GetDXLTokenStr(EdxltokenCtidColId),
 								 m_ctid_colid);

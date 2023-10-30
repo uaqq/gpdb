@@ -81,7 +81,7 @@ CXformImplementDML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 	ptabdesc->AddRef();
 
 	CColRefArray *pdrgpcrSource = popDML->PdrgpcrSource();
-	CColRefArray *colref_array = GPOS_NEW(mp) CColRefArray(mp);
+	/*CColRefArray *colref_array = GPOS_NEW(mp) CColRefArray(mp);
 	for (ULONG ul = 0; ul < pdrgpcrSource->Size(); ul++)
 	{
 		CColRef *colref = (*pdrgpcrSource)[ul];
@@ -90,8 +90,8 @@ CXformImplementDML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 		//if (!colref->IsDistCol() && !colref->IsSystemCol())
 		//	colref->MarkAsUnknown();
 		//colref_array->Append(const_cast<CColRef *>(colref));
-	}
-	//pdrgpcrSource->AddRef();
+	}*/
+	pdrgpcrSource->AddRef();
 	CBitSet *pbsModified = popDML->PbsModified();
 	pbsModified->AddRef();
 
@@ -108,7 +108,7 @@ CXformImplementDML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 	CExpression *pexprAlt = GPOS_NEW(mp) CExpression(
 		mp,
 		GPOS_NEW(mp)
-			CPhysicalDML(mp, edmlop, ptabdesc, colref_array, pbsModified,
+			CPhysicalDML(mp, edmlop, ptabdesc, pdrgpcrSource, pbsModified,
 						 pcrAction, pcrCtid, pcrSegmentId, pcrTupleOid),
 		pexprChild);
 	// add alternative to transformation result

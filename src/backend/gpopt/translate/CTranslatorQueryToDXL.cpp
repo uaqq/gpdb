@@ -1220,22 +1220,6 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 	ULONG segid_colid = 0;
 	GetCtidAndSegmentId(&ctid_colid, &segid_colid);
 
-	ULongPtrArray *delete_colid_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
-	const ULONG num_of_non_sys_cols = md_rel->ColumnCount();
-	for (ULONG ul = 0; ul < num_of_non_sys_cols; ul++)
-	{
-		const IMDColumn *mdcol = md_rel->GetMdCol(ul);
-		if (mdcol->IsSystemColumn() || mdcol->IsDropped())
-		{
-			continue;
-		}
-
-		ULONG colid = CTranslatorUtils::GetColId(
-			m_query_level, m_query->resultRelation, mdcol->AttrNum(),
-			mdcol->MdidType(), m_var_to_colid_map);
-		delete_colid_array->Append(GPOS_NEW(m_mp) ULONG(colid));
-	}
-
 	ULongPtrArray *delete_colid_array_used = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
 	for (ULONG ul = 0; ul < m_dxl_query_output_cols->Size(); ul++)
 	{
@@ -1273,11 +1257,36 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 		}
 	}
 
-	//if (GPOS_FTRACE(EopttraceDisablePartSelection))
-	//	delete_colid_array_used = delete_colid_array;
+	const ULONG ulDistCols = md_rel->DistrColumnCount();
+	for (ULONG ul = 0; ul < ulDistCols; ul++)
+	{
+		const IMDColumn *mdcol = md_rel->GetDistrColAt(ul);
+		ULONG colid = CTranslatorUtils::GetColId(
+		m_query_level, m_query->resultRelation, mdcol->AttrNum(),
+			mdcol->MdidType(), m_var_to_colid_map);
+		delete_colid_array_used->Append(GPOS_NEW(m_mp) ULONG(colid));
+	}
+
+	ULongPtrArray *delete_colid_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
+	const ULONG num_of_non_sys_cols = md_rel->ColumnCount();
+	for (ULONG ul = 0; ul < num_of_non_sys_cols; ul++)
+	{
+		const IMDColumn *mdcol = md_rel->GetMdCol(ul);
+		if (mdcol->IsSystemColumn() || mdcol->IsDropped())
+		{
+			continue;
+		}
+
+		ULONG colid = CTranslatorUtils::GetColId(
+			m_query_level, m_query->resultRelation, mdcol->AttrNum(),
+			mdcol->MdidType(), m_var_to_colid_map);
+		
+		if (delete_colid_array_used->Find(&colid))
+			delete_colid_array->Append(GPOS_NEW(m_mp) ULONG(colid));
+	}
 
 	CDXLLogicalDelete *delete_dxlop = GPOS_NEW(m_mp) CDXLLogicalDelete(
-		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array, delete_colid_array_used);
+		m_mp, table_descr, ctid_colid, segid_colid, delete_colid_array);
 
 	return GPOS_NEW(m_mp) CDXLNode(m_mp, delete_dxlop, query_dxlnode);
 }

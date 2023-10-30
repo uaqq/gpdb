@@ -724,7 +724,6 @@ CDXLTokens::Init(CMemoryPool *mp)
 
 		{EdxltokenInsertCols, GPOS_WSZ_LIT("InsertColumns")},
 		{EdxltokenDeleteCols, GPOS_WSZ_LIT("DeleteColumns")},
-		{EdxltokenDeleteColsUsed, GPOS_WSZ_LIT("DeleteColumnsUsed")},
 		{EdxltokenNewCols, GPOS_WSZ_LIT("NewColumns")},
 		{EdxltokenOldCols, GPOS_WSZ_LIT("OldColumns")},
 

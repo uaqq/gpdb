@@ -45,7 +45,6 @@ private:
 
 	// list of deletion column ids
 	ULongPtrArray *m_deletion_colid_array;
-	ULongPtrArray *m_deletion_colid_array_used;
 
 	// private copy ctor
 	CDXLLogicalDelete(const CDXLLogicalDelete &);
@@ -54,7 +53,7 @@ public:
 	// ctor
 	CDXLLogicalDelete(CMemoryPool *mp, CDXLTableDescr *table_descr,
 					  ULONG ctid_colid, ULONG segid_colid,
-					  ULongPtrArray *delete_colid_array, ULongPtrArray *delete_colid_array_used);
+					  ULongPtrArray *delete_colid_array);
 
 	// dtor
 	virtual ~CDXLLogicalDelete();
@@ -91,12 +90,6 @@ public:
 	GetDeletionColIdArray() const
 	{
 		return m_deletion_colid_array;
-	}
-
-	ULongPtrArray *
-	GetDeletionColIdArrayUsed() const
-	{
-		return m_deletion_colid_array_used;
 	}
 
 #ifdef GPOS_DEBUG
