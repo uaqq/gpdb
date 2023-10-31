@@ -248,6 +248,17 @@ CPhysicalDML::PcrsRequired(CMemoryPool *mp,
 	CColRefSet *pcrs = GPOS_NEW(mp) CColRefSet(mp, *m_pcrsRequiredLocal);
 	pcrs->Union(pcrsRequired);
 
+	/*CColRefSetIter crsi(*pcrs);
+	while (crsi.Advance())
+	{
+		CColRef *colref = crsi.Pcr();
+		if (colref->IsDistCol())
+		{
+			colref->MarkAsUnknown();
+			colref->MarkAsUnused();
+		}
+	}*/
+
 	return pcrs;
 }
 
@@ -560,8 +571,9 @@ CPhysicalDML::ComputeRequiredLocalColumns(CMemoryPool *mp)
 		CColRef *colref = (*m_pdrgpcrSource)[ul];
 		//if (colref->GetUsage() == CColRef::EUsed)
 		//	m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
-		if (!colref->IsDistCol())
-			m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
+		//if (!colref->IsDistCol())
+		colref->MarkAsUnknown();
+		m_pcrsRequiredLocal->Include(const_cast<CColRef *>(colref));
 	}*/
 	m_pcrsRequiredLocal->Include(m_pcrAction);
 

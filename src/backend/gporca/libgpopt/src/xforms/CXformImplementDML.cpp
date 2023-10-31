@@ -91,6 +91,15 @@ CXformImplementDML::Transform(CXformContext *pxfctxt, CXformResult *pxfres,
 		//	colref->MarkAsUnknown();
 		//colref_array->Append(const_cast<CColRef *>(colref));
 	}*/
+	/*for (ULONG ul = 0; ul < pdrgpcrSource->Size(); ul++)
+	{
+		CColRef *colref = (*pdrgpcrSource)[ul];
+		if (colref->IsDistCol())
+		{
+			colref->MarkAsUnknown();
+			colref->MarkAsUnused();
+		}
+	}*/
 	pdrgpcrSource->AddRef();
 	CBitSet *pbsModified = popDML->PbsModified();
 	pbsModified->AddRef();

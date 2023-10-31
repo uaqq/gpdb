@@ -1352,7 +1352,13 @@ CXformUtils::PexprLogicalDMLOverProject(CMemoryPool *mp,
 												  colref_array);
 		}
 	}
-
+	/*CColRefArray *colref_array2 = GPOS_NEW(mp) CColRefArray(mp);
+	for (ULONG ul = 0; ul < colref_array->Size(); ul++)
+	{
+		CColRef *colref = (*colref_array)[ul];
+		if (!colref->IsDistCol())
+			colref_array2->Append(const_cast<CColRef *>(colref));
+	}*/
 	CExpression *pexprDML = GPOS_NEW(mp) CExpression(
 		mp,
 		GPOS_NEW(mp)
