@@ -4884,7 +4884,7 @@ CTranslatorDXLToPlStmt::CreateTargetListWithNullsForDroppedCols(
 
 			expr = (Expr *) gpdb::MakeNULLConst(oid_type);
 		}
-		else
+		else if (last_tgt_elem < target_list->length)
 		{
 			TargetEntry *target_entry =
 				(TargetEntry *) gpdb::ListNth(target_list, last_tgt_elem);
@@ -4892,6 +4892,8 @@ CTranslatorDXLToPlStmt::CreateTargetListWithNullsForDroppedCols(
 			last_tgt_elem++;
 		}
 
+		if (expr)
+		{
 		CHAR *name_str =
 			CTranslatorUtils::CreateMultiByteCharStringFromWCString(
 				md_col->Mdname().GetMDName()->GetBuffer());
@@ -4899,6 +4901,7 @@ CTranslatorDXLToPlStmt::CreateTargetListWithNullsForDroppedCols(
 			gpdb::MakeTargetEntry(expr, resno, name_str, false /*resjunk*/);
 		result_list = gpdb::LAppend(result_list, te_new);
 		resno++;
+		}
 	}
 
 	return result_list;
