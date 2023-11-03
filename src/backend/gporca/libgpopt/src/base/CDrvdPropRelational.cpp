@@ -351,7 +351,8 @@ CDrvdPropRelational::DeriveOutputColumns(CExpressionHandle &exprhdl)
 	if (!m_is_prop_derived->ExchangeSet(EdptPcrsOutput))
 	{
 		CLogical *popLogical = CLogical::PopConvert(exprhdl.Pop());
-		CColRefSetIter crsi(*popLogical->DeriveOutputColumns(m_mp, exprhdl));
+		CColRefSet *pcrsOutput = popLogical->DeriveOutputColumns(m_mp, exprhdl);
+		CColRefSetIter crsi(*pcrsOutput);
 
 		m_pcrsOutput = GPOS_NEW(m_mp) CColRefSet(m_mp);
 
@@ -367,6 +368,8 @@ CDrvdPropRelational::DeriveOutputColumns(CExpressionHandle &exprhdl)
 				m_pcrsOutput->Include(crsi.Pcr());
 			}
 		}
+
+		pcrsOutput->Release();
 	}
 
 	return m_pcrsOutput;
