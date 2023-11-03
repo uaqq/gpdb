@@ -271,10 +271,10 @@
         </dxl:LogicalSelect>
       </dxl:LogicalProject>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="229">
+    <dxl:Plan Id="0" SpaceSize="68">
       <dxl:Result>
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="862.000327" Rows="3.000000" Width="4"/>
+          <dxl:Cost StartupCost="0" TotalCost="4310.001524" Rows="1.000000" Width="4"/>
         </dxl:Properties>
         <dxl:ProjList>
           <dxl:ProjElem ColId="9" Alias="mrs_t1">
@@ -285,7 +285,7 @@
         <dxl:OneTimeFilter/>
         <dxl:NestedLoopJoin JoinType="In" IndexNestedLoopJoin="false" OuterRefAsParam="false">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="862.000315" Rows="3.000000" Width="1"/>
+            <dxl:Cost StartupCost="0" TotalCost="4310.001520" Rows="1.000000" Width="1"/>
           </dxl:Properties>
           <dxl:ProjList/>
           <dxl:Filter/>

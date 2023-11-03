@@ -16,6 +16,7 @@
 #include "gpos/task/CWorker.h"
 
 #include "gpopt/base/CColRefSet.h"
+#include "gpopt/base/CColRefSetIter.h"
 #include "gpopt/base/CKeyCollection.h"
 #include "gpopt/base/CPartInfo.h"
 #include "gpopt/base/CReqdPropPlan.h"
@@ -350,7 +351,22 @@ CDrvdPropRelational::DeriveOutputColumns(CExpressionHandle &exprhdl)
 	if (!m_is_prop_derived->ExchangeSet(EdptPcrsOutput))
 	{
 		CLogical *popLogical = CLogical::PopConvert(exprhdl.Pop());
-		m_pcrsOutput = popLogical->DeriveOutputColumns(m_mp, exprhdl);
+		CColRefSetIter crsi(*popLogical->DeriveOutputColumns(m_mp, exprhdl));
+
+		m_pcrsOutput = GPOS_NEW(m_mp) CColRefSet(m_mp);
+
+		while (crsi.Advance())
+		{
+			// We want to limit the output columns to only those which are referenced in the query
+			// We will know the entire list of columns which are referenced in the query only after
+			// translating the entire DXL to an expression. Hence we should not limit the output columns
+			// before we have processed the entire DXL.
+			if (crsi.Pcr()->GetUsage() == CColRef::EUsed ||
+				crsi.Pcr()->GetUsage() == CColRef::EUnknown)
+			{
+				m_pcrsOutput->Include(crsi.Pcr());
+			}
+		}
 	}
 
 	return m_pcrsOutput;

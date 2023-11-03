@@ -147,109 +147,79 @@
         </dxl:LogicalProject>
       </dxl:Difference>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="120">
-      <dxl:Aggregate AggregationStrategy="Sorted" StreamSafe="false">
+    <dxl:Plan Id="0" SpaceSize="130">
+      <dxl:HashJoin JoinType="LeftAntiSemiJoin">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="0.000519" Rows="1.000000" Width="8"/>
+          <dxl:Cost StartupCost="0" TotalCost="0.000506" Rows="1.000000" Width="8"/>
         </dxl:Properties>
-        <dxl:GroupingColumns>
-          <dxl:GroupingColumn ColId="1"/>
-        </dxl:GroupingColumns>
         <dxl:ProjList>
           <dxl:ProjElem ColId="1" Alias="intrange">
             <dxl:Ident ColId="1" ColName="intrange" TypeMdid="0.82272.1.0"/>
           </dxl:ProjElem>
         </dxl:ProjList>
         <dxl:Filter/>
-        <dxl:Sort SortDiscardDuplicates="false">
+        <dxl:JoinFilter/>
+        <dxl:HashCondList>
+          <dxl:Not>
+            <dxl:IsDistinctFrom OperatorMdid="0.3882.1.0">
+              <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
+                <dxl:Ident ColId="1" ColName="intrange" TypeMdid="0.82272.1.0"/>
+              </dxl:Cast>
+              <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
+                <dxl:Ident ColId="3" ColName="intrange" TypeMdid="0.82272.1.0"/>
+              </dxl:Cast>
+            </dxl:IsDistinctFrom>
+          </dxl:Not>
+        </dxl:HashCondList>
+        <dxl:Result>
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="0.000506" Rows="1.000000" Width="8"/>
+            <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="1" Alias="intrange">
-              <dxl:Ident ColId="1" ColName="intrange" TypeMdid="0.82272.1.0"/>
+              <dxl:ConstValue TypeMdid="0.82272.1.0" Value="AAAAEWBBAQACAAAABQAAAAA="/>
             </dxl:ProjElem>
           </dxl:ProjList>
           <dxl:Filter/>
-          <dxl:SortingColumnList>
-            <dxl:SortingColumn ColId="1" SortOperatorMdid="0.3884.1.0" SortOperatorName="&lt;" SortNullsFirst="false"/>
-          </dxl:SortingColumnList>
-          <dxl:LimitCount/>
-          <dxl:LimitOffset/>
-          <dxl:HashJoin JoinType="LeftAntiSemiJoin">
+          <dxl:OneTimeFilter/>
+          <dxl:Result>
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="0.000506" Rows="1.000000" Width="8"/>
+              <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
             </dxl:Properties>
             <dxl:ProjList>
-              <dxl:ProjElem ColId="1" Alias="intrange">
-                <dxl:Ident ColId="1" ColName="intrange" TypeMdid="0.82272.1.0"/>
+              <dxl:ProjElem ColId="0" Alias="">
+                <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
               </dxl:ProjElem>
             </dxl:ProjList>
             <dxl:Filter/>
-            <dxl:JoinFilter/>
-            <dxl:HashCondList>
-              <dxl:Not>
-                <dxl:IsDistinctFrom OperatorMdid="0.3882.1.0">
-                  <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
-                    <dxl:Ident ColId="1" ColName="intrange" TypeMdid="0.82272.1.0"/>
-                  </dxl:Cast>
-                  <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
-                    <dxl:Ident ColId="3" ColName="intrange" TypeMdid="0.82272.1.0"/>
-                  </dxl:Cast>
-                </dxl:IsDistinctFrom>
-              </dxl:Not>
-            </dxl:HashCondList>
-            <dxl:Result>
-              <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
-              </dxl:Properties>
-              <dxl:ProjList>
-                <dxl:ProjElem ColId="1" Alias="intrange">
-                  <dxl:ConstValue TypeMdid="0.82272.1.0" Value="AAAAEWBBAQACAAAABQAAAAA="/>
-                </dxl:ProjElem>
-              </dxl:ProjList>
-              <dxl:Filter/>
-              <dxl:OneTimeFilter/>
-              <dxl:Result>
-                <dxl:Properties>
-                  <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
-                </dxl:Properties>
-                <dxl:ProjList>
-                  <dxl:ProjElem ColId="0" Alias="">
-                    <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
-                  </dxl:ProjElem>
-                </dxl:ProjList>
-                <dxl:Filter/>
-                <dxl:OneTimeFilter/>
-              </dxl:Result>
-            </dxl:Result>
-            <dxl:Result>
-              <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
-              </dxl:Properties>
-              <dxl:ProjList>
-                <dxl:ProjElem ColId="3" Alias="intrange">
-                  <dxl:ConstValue TypeMdid="0.82272.1.0" Value="AAAAEWBBAQAFAAAABgAAAAA="/>
-                </dxl:ProjElem>
-              </dxl:ProjList>
-              <dxl:Filter/>
-              <dxl:OneTimeFilter/>
-              <dxl:Result>
-                <dxl:Properties>
-                  <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
-                </dxl:Properties>
-                <dxl:ProjList>
-                  <dxl:ProjElem ColId="2" Alias="">
-                    <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
-                  </dxl:ProjElem>
-                </dxl:ProjList>
-                <dxl:Filter/>
-                <dxl:OneTimeFilter/>
-              </dxl:Result>
-            </dxl:Result>
-          </dxl:HashJoin>
-        </dxl:Sort>
-      </dxl:Aggregate>
+            <dxl:OneTimeFilter/>
+          </dxl:Result>
+        </dxl:Result>
+        <dxl:Result>
+          <dxl:Properties>
+            <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
+          </dxl:Properties>
+          <dxl:ProjList>
+            <dxl:ProjElem ColId="3" Alias="intrange">
+              <dxl:ConstValue TypeMdid="0.82272.1.0" Value="AAAAEWBBAQAFAAAABgAAAAA="/>
+            </dxl:ProjElem>
+          </dxl:ProjList>
+          <dxl:Filter/>
+          <dxl:OneTimeFilter/>
+          <dxl:Result>
+            <dxl:Properties>
+              <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
+            </dxl:Properties>
+            <dxl:ProjList>
+              <dxl:ProjElem ColId="2" Alias="">
+                <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
+              </dxl:ProjElem>
+            </dxl:ProjList>
+            <dxl:Filter/>
+            <dxl:OneTimeFilter/>
+          </dxl:Result>
+        </dxl:Result>
+      </dxl:HashJoin>
     </dxl:Plan>
   </dxl:Thread>
 </dxl:DXLMessage>

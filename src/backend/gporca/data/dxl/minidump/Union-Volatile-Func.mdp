@@ -108,7 +108,7 @@
         </dxl:LogicalProject>
       </dxl:Union>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="840">
+    <dxl:Plan Id="0" SpaceSize="889">
       <dxl:Aggregate AggregationStrategy="Sorted" StreamSafe="false">
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="0.000174" Rows="1.000000" Width="4"/>
