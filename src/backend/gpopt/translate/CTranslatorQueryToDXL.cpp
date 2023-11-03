@@ -1207,6 +1207,16 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 			GPOS_NEW(m_mp) ULONG(dxl_ident->GetDXLColRef()->Id()));
 	}
 
+	const ULONG ulDistCols = md_rel->DistrColumnCount();
+	for (ULONG ul = 0; ul < ulDistCols; ul++)
+	{
+		const IMDColumn *mdcol = md_rel->GetDistrColAt(ul);
+		ULONG colid = CTranslatorUtils::GetColId(
+		m_query_level, m_query->resultRelation, mdcol->AttrNum(),
+			mdcol->MdidType(), m_var_to_colid_map);
+		delete_colid_array_used->Append(GPOS_NEW(m_mp) ULONG(colid));
+	}
+
 	if (md_rel->IsPartitioned())
 	{
 		const ULONG ulPartCols = md_rel->PartColumnCount();
@@ -1231,16 +1241,6 @@ CTranslatorQueryToDXL::TranslateDeleteQueryToDXL()
 				mdcol->MdidType(), m_var_to_colid_map);
 			delete_colid_array_used->Append(GPOS_NEW(m_mp) ULONG(colid));
 		}
-	}
-
-	const ULONG ulDistCols = md_rel->DistrColumnCount();
-	for (ULONG ul = 0; ul < ulDistCols; ul++)
-	{
-		const IMDColumn *mdcol = md_rel->GetDistrColAt(ul);
-		ULONG colid = CTranslatorUtils::GetColId(
-		m_query_level, m_query->resultRelation, mdcol->AttrNum(),
-			mdcol->MdidType(), m_var_to_colid_map);
-		delete_colid_array_used->Append(GPOS_NEW(m_mp) ULONG(colid));
 	}
 
 	ULongPtrArray *delete_colid_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
