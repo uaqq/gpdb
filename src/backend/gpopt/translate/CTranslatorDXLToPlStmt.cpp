@@ -4875,7 +4875,7 @@ CTranslatorDXLToPlStmt::CreateTargetListWithNullsForDroppedCols(
 		}
 
 		Expr *expr = NULL;
-		if (md_col->IsDropped() || last_tgt_elem < target_list->length)
+		if (md_col->IsDropped())
 		{
 			// add a NULL element
 			OID oid_type = CMDIdGPDB::CastMdid(
@@ -4884,7 +4884,7 @@ CTranslatorDXLToPlStmt::CreateTargetListWithNullsForDroppedCols(
 
 			expr = (Expr *) gpdb::MakeNULLConst(oid_type);
 		}
-		else
+		else if (last_tgt_elem < target_list->length)
 		{
 			TargetEntry *target_entry =
 				(TargetEntry *) gpdb::ListNth(target_list, last_tgt_elem);
