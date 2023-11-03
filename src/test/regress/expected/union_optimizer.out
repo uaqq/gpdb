@@ -737,10 +737,9 @@ WHERE x < 4;
          ->  Result
                ->  Result
    ->  Result
-         ->  Result
-               One-Time Filter: false
- Optimizer: Pivotal Optimizer (GPORCA) version 2.74.0
-(9 rows)
+         One-Time Filter: false
+ Optimizer: Pivotal Optimizer (GPORCA)
+(8 rows)
 
 SELECT * FROM
   (SELECT 1 AS t, 2 AS x
@@ -773,10 +772,9 @@ ORDER BY x;
                            ->  Result
                                  ->  Result
                      ->  Result
-                           ->  Result
-                                 One-Time Filter: false
- Optimizer: Pivotal Optimizer (GPORCA) version 2.74.0
-(15 rows)
+                           One-Time Filter: false
+ Optimizer: Pivotal Optimizer (GPORCA)
+(14 rows)
 
 SELECT * FROM
   (SELECT 1 AS t, generate_series(1,10) AS x
