@@ -252,7 +252,7 @@ CPhysical::CReqdColsRequest::Equals(const CReqdColsRequest *prcrFst,
 //---------------------------------------------------------------------------
 CDistributionSpec *
 CPhysical::PdsCompute(CMemoryPool *mp, const CTableDescriptor *ptabdesc,
-					  CColRefArray *pdrgpcrOutput, CColRef *pcr_segment_id)
+					  CColRefArray *pdrgpcrOutput, CColRef *pcr_segment_id, BOOL isDelete)
 {
 	CDistributionSpec *pds = NULL;
 
@@ -295,21 +295,27 @@ CPhysical::PdsCompute(CMemoryPool *mp, const CTableDescriptor *ptabdesc,
 				CColumnDescriptor *pcoldesc = (*pdrgpcoldesc)[ul];
 
 				CColRef *colref = NULL;
-				for (ULONG i = 0; i < pdrgpcrOutput->Size(); i++)
+				if (isDelete)
 				{
-					colref = (*pdrgpcrOutput)[i];
-					if ((colref->Id() + 1) == (ULONG)pcoldesc->AttrNum())
-						break;
+					for (ULONG i = 0; i < pdrgpcrOutput->Size(); i++)
+					{
+						colref = (*pdrgpcrOutput)[i];
+						if ((colref->Id() + 1) == (ULONG)pcoldesc->AttrNum())
+							break;
+					}
+					GPOS_ASSERT(colref != NULL);
 				}
-				GPOS_ASSERT(colref != NULL);
+				else
+				{
+					ULONG ulPos =
+						ptabdesc->UlPos(pcoldesc, ptabdesc->Pdrgpcoldesc());
 
-				/*ULONG ulPos =
-					ptabdesc->UlPos(pcoldesc, ptabdesc->Pdrgpcoldesc());
+					GPOS_ASSERT(ulPos < ptabdesc->Pdrgpcoldesc()->Size() &&
+								"Column not found");
 
-				GPOS_ASSERT(ulPos < ptabdesc->Pdrgpcoldesc()->Size() &&
-							"Column not found");
+					/*CColRef **/colref = (*pdrgpcrOutput)[ulPos];
+				}
 
-				CColRef *colref = (*pdrgpcrOutput)[ulPos];*/				
 				colref_array->Append(colref);
 			}
 

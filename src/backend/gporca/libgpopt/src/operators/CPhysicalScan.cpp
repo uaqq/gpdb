@@ -54,7 +54,7 @@ CPhysicalScan::CPhysicalScan(CMemoryPool *mp, const CName *pnameAlias,
 	else
 	{
 		m_pds = CPhysical::PdsCompute(m_mp, ptabdesc, pdrgpcrOutput,
-									  NULL /* gp_segment_id */);
+									  NULL /* gp_segment_id */, false);
 	}
 	ComputeTableStats(m_mp);
 }

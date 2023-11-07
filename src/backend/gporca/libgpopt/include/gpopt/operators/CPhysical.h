@@ -366,7 +366,7 @@ public:
 	static CDistributionSpec *PdsCompute(CMemoryPool *mp,
 										 const CTableDescriptor *ptabdesc,
 										 CColRefArray *pdrgpcrOutput,
-										 CColRef *gp_segment_id);
+										 CColRef *gp_segment_id, BOOL isDelete);
 
 	// compute required sort order of the n-th child
 	virtual COrderSpec *PosRequired(CMemoryPool *mp, CExpressionHandle &exprhdl,
