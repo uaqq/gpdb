@@ -6,6 +6,7 @@
 #include "c.h"
 #include "cdb/cdbbufferedappend.h"
 #include "cdb/cdbvars.h"
+#include "pg_config_manual.h"
 #include "port/atomics.h"
 #include "storage/fd.h"
 #include "storage/relfilenode.h"
@@ -188,7 +189,7 @@ void
 mdunlinkforksegment_pre_hook(RelFileNodeBackend rnode, char *segpath)
 {
 	struct stat buf;
-	char fullPath[1024];
+	char fullPath[MAXPGPATH];
 
 	TempTablesLimitChecks();
 
@@ -221,8 +222,8 @@ void
 mdunlink_ao_perFile_pre_hook(char *segPath)
 {
 	struct stat buf;
-	char segPathCopy[20];
-	char fullPath[1024];
+	char *segPathCopy = malloc(sizeof(char) * strlen(segPath));
+	char fullPath[MAXPGPATH];
 	char *name;
 
 	TempTablesLimitChecks();
@@ -238,6 +239,8 @@ mdunlink_ao_perFile_pre_hook(char *segPath)
 			segFileSkip = true;
 	else
 		segFileSkip = true;
+
+	free(segPathCopy);
 }
 
 void
