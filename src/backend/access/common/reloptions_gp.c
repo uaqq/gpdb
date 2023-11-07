@@ -1358,6 +1358,19 @@ reloptions_has_opt(List *opts, const char *name)
 	return false;
 }
 
+DefElem *
+reloptions_get_opt(List *opts, const char *name)
+{
+	ListCell *lc;
+	foreach(lc, opts)
+	{
+		DefElem *de = lfirst(lc);
+		if (pg_strcasecmp(de->defname, name) == 0)
+			return de;
+	}
+	return NULL;
+}
+
 /*
  * GPDB: Convenience function to build storage reloptions for a given relation, just for AO table .
  */

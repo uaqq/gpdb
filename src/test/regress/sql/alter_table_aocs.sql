@@ -498,6 +498,7 @@ CREATE TABLE aocs_alter_add_part(a int, b int) WITH (appendonly=true, orientatio
 SET gp_default_storage_options = 'appendonly=true, orientation=column, compresstype=zlib, compresslevel=2';
 -- use statement encoding
 ALTER TABLE aocs_alter_add_part ADD PARTITION "30" START (20) INCLUSIVE END (30) EXCLUSIVE WITH (appendonly=true, orientation=column, compresstype=zlib, compresslevel=3, blocksize=16384);
+ALTER TABLE aocs_alter_add_part ADD PARTITION "60" START (50) INCLUSIVE END (60) EXCLUSIVE WITH (appendonly=true, orientation=column);
 -- use table setting
 ALTER TABLE aocs_alter_add_part ADD PARTITION "40" START (30) INCLUSIVE END (40) EXCLUSIVE;
 RESET gp_default_storage_options;
@@ -512,6 +513,7 @@ CREATE TABLE aocs_alter_add_part_no_compress(a int, b int) WITH (appendonly=true
 SET gp_default_storage_options ='appendonly=true, orientation=column, compresstype=zlib, compresslevel=2, blocksize=8192';
 -- use statement encoding
 ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "30" START (20) INCLUSIVE END (30) EXCLUSIVE WITH (appendonly=true, orientation=column, compresstype=rle_type, compresslevel=3, blocksize=16384);
+ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "60" START (50) INCLUSIVE END (60) EXCLUSIVE WITH (appendonly=true, orientation=column);
 -- use gp_default_storage_options
 ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "40" START (30) INCLUSIVE END (40) EXCLUSIVE;
 RESET gp_default_storage_options;

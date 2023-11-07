@@ -6773,8 +6773,23 @@ atpxPartAddList(Relation rel,
 
 	if (pelem->storeAttr)
 		ct->options = (List *) ((AlterPartitionCmd *) pelem->storeAttr)->arg1;
-	else if (gp_add_partition_inherits_table_setting)
-		ct->options = reloptions_list(RelationGetRelid(rel));
+
+	if (gp_add_partition_inherits_table_setting)
+	{
+		ListCell *lc;
+		List *opts = reloptions_list(RelationGetRelid(rel));
+
+		foreach(lc, ct->options)
+		{
+			DefElem *de = lfirst(lc);
+			DefElem *def = reloptions_get_opt(opts, de->defname);
+
+			if (def != NULL)
+				*def = *de;
+		}
+
+		ct->options = build_ao_rel_storage_opts(opts, rel);
+	}
 
 	ct->tableElts = list_concat(ct->tableElts, list_copy(colencs));
 

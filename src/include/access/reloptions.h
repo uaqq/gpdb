@@ -21,6 +21,7 @@
 
 #include "access/htup.h"
 #include "access/tupdesc.h"
+#include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
 #include "utils/rel.h"
 
@@ -318,6 +319,7 @@ extern void validate_and_refill_options(StdRdOptions *result, relopt_value *opti
 extern void validate_and_adjust_options(StdRdOptions *result, relopt_value *options,
 										int num_options, relopt_kind kind, bool validate);
 extern bool reloptions_has_opt(List *opts, const char *name);
+extern DefElem *reloptions_get_opt(List *opts, const char *name);
 extern List *build_ao_rel_storage_opts(List *opts, Relation rel);
 extern void free_options_deep(relopt_value *options, int num_options);
 #endif   /* RELOPTIONS_H */
