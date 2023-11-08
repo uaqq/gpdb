@@ -190,10 +190,11 @@ mdunlinkforksegment_pre_hook(RelFileNodeBackend rnode, char *segpath)
 {
 	struct stat buf;
 	char fullPath[MAXPGPATH];
+	size_t strLen = strlen(data_directory) + strlen(segpath) + 1;
 
 	TempTablesLimitChecks();
 
-	sprintf(fullPath, "%s/%s", data_directory, segpath);
+	snprintf(fullPath, strLen, "%s/%s", data_directory, segpath);
 
 	if (RelFileNodeBackendIsTemp(rnode))
 		if (stat(fullPath, &buf) == 0)
@@ -222,14 +223,15 @@ void
 mdunlink_ao_perFile_pre_hook(char *segPath)
 {
 	struct stat buf;
-	char *segPathCopy = malloc(sizeof(char) * strlen(segPath));
+	char *segPathCopy = malloc(sizeof(char) * (strlen(segPath) + 1));
 	char fullPath[MAXPGPATH];
 	char *name;
+	size_t strLen = strlen(data_directory) + strlen(segPathCopy) + 1;
 
 	TempTablesLimitChecks();
 
 	strcpy(segPathCopy, segPath);
-	sprintf(fullPath, "%s/%s", data_directory, segPathCopy);
+	snprintf(fullPath, strLen, "%s/%s", data_directory, segPathCopy);
 
 	name = basename(segPathCopy);
 	if (name[0] == 't')
