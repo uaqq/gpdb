@@ -235,7 +235,7 @@ mdunlink_ao_perFile_pre_hook(char *segPath)
 
 	TempTablesLimitChecks();
 
-	strcpy(segPathCopy, segPath);
+	strncat(segPathCopy, segPath, strnlen(segPathCopy, MAXPGPATH));
 	snprintf(fullPath, strLen, "%s/%s", data_directory, segPathCopy);
 
 	name = basename(segPathCopy);
