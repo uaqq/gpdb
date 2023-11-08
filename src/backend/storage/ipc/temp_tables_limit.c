@@ -63,12 +63,12 @@ BufferedAppendWritePreHook(BufferedAppend *bufferedAppend)
 
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
+		prevFileLen = FileDiskSize(bufferedAppend->file);
+
 		bytesToWrite = bufferedAppend->largeWriteLen -
-			(FileDiskSize(bufferedAppend->file) - FileSeek(bufferedAppend->file, 0, SEEK_CUR));
+			(prevFileLen - FileSeek(bufferedAppend->file, 0, SEEK_CUR));
 
 		bytes = bytesToWrite > 0 ? bytesToWrite : 0; // for testing purposes
-
-		prevFileLen = FileDiskSize(bufferedAppend->file);
 
 		if (bytesToWrite > 0 && temp_tables_limit_value->value + bytesToWrite > TempTablesLimitToBytes())
 			elog(ERROR, "Temp tables quota exceeded");
@@ -226,7 +226,7 @@ mdunlink_ao_perFile_pre_hook(char *segPath)
 	char *segPathCopy = malloc(sizeof(char) * (strlen(segPath) + 1));
 	char fullPath[MAXPGPATH];
 	char *name;
-	size_t strLen = strlen(data_directory) + strlen(segPathCopy) + 1;
+	size_t strLen = strlen(data_directory) + strlen(segPath) + 1;
 
 	TempTablesLimitChecks();
 
