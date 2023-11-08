@@ -4904,7 +4904,7 @@ transformAlterTable_all_PartitionStmt(
 		AlterPartitionCmd *storenode = pelem->storeAttr;
 		List	   *opts;
 
-		if (storenode != NULL) 
+		if (storenode != NULL)
 		{
 			opts = storenode->arg1;
 		}
