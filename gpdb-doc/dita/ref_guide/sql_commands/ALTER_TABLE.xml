@@ -786,7 +786,7 @@ where <varname>action</varname> is one of:
                                                 If the partitioned table was originally defined
                                                 using a subpartition template, then the template
                                                 will be used to generate the subpartitions
-                                                automatically.</pd>
+                                                automatically.
                                                 <p>When you add a partition to an
                                                 append-optimized, row-oriented or column-oriented table, Greenplum
                                                 Database sets each parameter (<codeph>appendonly</codeph>, <codeph>orientation</codeph>,
@@ -813,7 +813,7 @@ where <varname>action</varname> is one of:
                                                   the server configuration parameter <codeph><xref
                                                   href="../config_params/guc-list.xml#gp_default_storage_options"
                                                   >gp_default_storage_option</xref></codeph>.</li>
-                                                </ol></p>
+                                                </ol></p></pd>
                                 </plentry>
                                 <plentry>
                                         <pt>EXCHANGE [DEFAULT] PARTITION</pt>
