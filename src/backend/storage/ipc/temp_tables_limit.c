@@ -226,7 +226,12 @@ mdunlink_ao_perFile_pre_hook(char *segPath)
 	char *segPathCopy = malloc(sizeof(char) * (strlen(segPath) + 1));
 	char fullPath[MAXPGPATH];
 	char *name;
-	size_t strLen = strlen(data_directory) + strlen(segPath) + 1;
+	size_t strLen;
+
+	if (data_directory) // unit tests don't fill data_directory so we can get a segfault here
+		strLen = strlen(data_directory) + strlen(segPath) + 1;
+	else
+		strLen = strlen(segPath) + 1;
 
 	TempTablesLimitChecks();
 
