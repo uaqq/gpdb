@@ -4901,11 +4901,21 @@ transformAlterTable_all_PartitionStmt(
 			 RelationIsAppendOptimized(pCxt->rel))
 	{
 		PartitionElem *pelem = (PartitionElem *) pc->arg1;
-		AlterPartitionCmd *storenode = makeNode(AlterPartitionCmd);
-		List	   *opts = pelem->storeAttr ? ((AlterPartitionCmd *)pelem->storeAttr)->arg1 : list_make1(makeDefElem("appendonly", (Node *) makeString("true")));
+		AlterPartitionCmd *storenode = pelem->storeAttr;
+		List	   *opts;
+
+		if (storenode != NULL) 
+		{
+			opts = storenode->arg1;
+		}
+		else
+		{
+			storenode = makeNode(AlterPartitionCmd);
+			storenode->location = -1;
+			opts = list_make1(makeDefElem("appendonly", (Node *) makeString("true")));
+		}
 
 		storenode->arg1 = (Node *) build_ao_rel_storage_opts(opts, pCxt->rel);
-		storenode->location = -1;
 		pelem->storeAttr = (Node *) storenode;
 	}
 
