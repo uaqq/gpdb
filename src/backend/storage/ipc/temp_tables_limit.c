@@ -190,7 +190,7 @@ mdunlinkforksegment_pre_hook(RelFileNodeBackend rnode, char *segpath)
 {
 	struct stat buf;
 	char fullPath[MAXPGPATH];
-	size_t strLen = strlen(data_directory) + strlen(segpath) + 1;
+	size_t strLen = strnlen(data_directory, MAXPGPATH) + strnlen(segpath, MAXPGPATH) + 1;
 
 	TempTablesLimitChecks();
 
@@ -223,15 +223,15 @@ void
 mdunlink_ao_perFile_pre_hook(char *segPath)
 {
 	struct stat buf;
-	char *segPathCopy = malloc(sizeof(char) * (strlen(segPath) + 1));
+	char *segPathCopy = malloc(sizeof(char) * (strnlen(segPath, MAXPGPATH) + 1));
 	char fullPath[MAXPGPATH];
 	char *name;
 	size_t strLen;
 
 	if (data_directory) // unit tests don't fill data_directory so we can get a segfault here
-		strLen = strlen(data_directory) + strlen(segPath) + 1;
+		strLen = strnlen(data_directory, MAXPGPATH) + strnlen(segPath, MAXPGPATH) + 1;
 	else
-		strLen = strlen(segPath) + 1;
+		strLen = strnlen(segPath, MAXPGPATH) + 1;
 
 	TempTablesLimitChecks();
 
