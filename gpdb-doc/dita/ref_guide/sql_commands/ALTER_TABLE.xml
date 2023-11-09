@@ -791,7 +791,7 @@ where <varname>action</varname> is one of:
                                                 append-optimized, row-oriented or column-oriented table, Greenplum
                                                 Database sets each parameter (<codeph>appendonly</codeph>, <codeph>orientation</codeph>,
                                                   <codeph>compresstype</codeph>,
-                                                  <codeph>compresslevel</codeph>, and
+                                                  <codeph>compresslevel</codeph>, <codeph>checksum</codeph> and
                                                   <codeph>blocksize</codeph>) based on the following
                                                 setting, in order of preference.<ol
                                                   id="ol_hqk_l4w_kmc">

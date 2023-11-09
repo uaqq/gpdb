@@ -2263,13 +2263,14 @@
       <p>When adding a partition to an append-optimized, row-oriented or column-oriented table with the <codeph><xref
             href="../sql_commands/ALTER_TABLE.xml">ALTER TABLE</xref></codeph> command, this
         parameter controls whether the table's parameters (<codeph>appendonly</codeph>, <codeph>orientation</codeph>,
-          <codeph>compresstype</codeph>, <codeph>compresslevel</codeph>, and
+          <codeph>compresstype</codeph>, <codeph>compresslevel</codeph>, <codeph>checksum</codeph> and
           <codeph>blocksize</codeph>) can be inherited from the table values. The default is
           <codeph>off</codeph>, the table's settings are not considered when adding
         a partition to the table. If the value is <codeph>on</codeph>, the table's settings are
         considered. </p>
       <p>When you create an append-optimized row-oriented or column-oriented table, you can set the table's
-        parameters <codeph>appendonly</codeph>, <codeph>orientation</codeph>, <codeph>compresstype</codeph>, <codeph>compresslevel</codeph>, and
+        parameters <codeph>appendonly</codeph>, <codeph>orientation</codeph>, <codeph>compresstype</codeph>,
+          <codeph>compresslevel</codeph>, <codeph>checksum</codeph> and
           <codeph>blocksize</codeph> for the table in the <codeph>WITH</codeph> clause. When you add
         a partition, Greenplum Database sets each parameter based on one of the
         following settings, in order of preference.<ol id="ol_hqk_l4w_kmc">
