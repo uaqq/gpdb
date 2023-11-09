@@ -223,31 +223,20 @@ void
 mdunlink_ao_perFile_pre_hook(char *segPath)
 {
 	struct stat buf;
-	char *segPathCopy = malloc(sizeof(char) * (strnlen(segPath, MAXPGPATH) + 1));
-	char fullPath[MAXPGPATH];
+	char segPathCopy[MAXPGPATH];
 	char *name;
-	size_t strLen;
 
-	if (data_directory) // unit tests don't fill data_directory so we can get a segfault here
-		strLen = strnlen(data_directory, MAXPGPATH) + strnlen(segPath, MAXPGPATH) + 1;
-	else
-		strLen = strnlen(segPath, MAXPGPATH) + 1;
-
-	TempTablesLimitChecks();
-
-	strncat(segPathCopy, segPath, strnlen(segPathCopy, MAXPGPATH));
-	snprintf(fullPath, strLen, "%s/%s", data_directory, segPathCopy);
+	segPathCopy[0] = '\0';
+	strncpy(segPathCopy, segPath, strnlen(segPathCopy, MAXPGPATH)); // basename may modify incoming string so we better make a copy
 
 	name = basename(segPathCopy);
 	if (name[0] == 't')
-		if (stat(fullPath, &buf) == 0)
+		if (stat(segPath, &buf) == 0)
 			prevSegFileLen = buf.st_size;
 		else
 			segFileSkip = true;
 	else
 		segFileSkip = true;
-
-	free(segPathCopy);
 }
 
 void
