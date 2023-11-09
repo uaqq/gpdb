@@ -490,13 +490,13 @@ RESET gp_add_column_inherits_table_setting;
 SET gp_add_partition_inherits_table_setting = on;
 
 CREATE TABLE aocs_alter_add_part(a int, b int) WITH (appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536) DISTRIBUTED BY (a) PARTITION BY RANGE (b)
-  (PARTITION "10" START (1) INCLUSIVE END (10) EXCLUSIVE,
-   PARTITION "20" START (11) INCLUSIVE END (20) EXCLUSIVE);
+  (PARTITION "10" START (0) INCLUSIVE END (20) EXCLUSIVE);
 SET gp_default_storage_options = 'appendonly=true, orientation=column, compresstype=zlib, compresslevel=2';
 -- use statement encoding
 ALTER TABLE aocs_alter_add_part ADD PARTITION "30" START (20) INCLUSIVE END (30) EXCLUSIVE WITH (appendonly=true, orientation=column, compresstype=zlib, compresslevel=3, blocksize=16384);
 ALTER TABLE aocs_alter_add_part ADD PARTITION "60" START (50) INCLUSIVE END (60) EXCLUSIVE WITH (appendonly=true, orientation=column);
 -- use table setting
+ALTER TABLE aocs_alter_add_part SPLIT PARTITION "10" AT (10) INTO (PARTITION "10", PARTITION "20");
 ALTER TABLE aocs_alter_add_part ADD PARTITION "40" START (30) INCLUSIVE END (40) EXCLUSIVE;
 RESET gp_default_storage_options;
 -- use table setting
@@ -505,16 +505,16 @@ ALTER TABLE aocs_alter_add_part ADD PARTITION "50" START (40) INCLUSIVE END (50)
 DROP TABLE aocs_alter_add_part;
 
 CREATE TABLE aocs_alter_add_part_no_compress(a int, b int) WITH (appendonly=true, orientation=column) DISTRIBUTED BY (a) PARTITION BY RANGE (b)
-  (PARTITION "10" START (1) INCLUSIVE END (10) EXCLUSIVE,
-   PARTITION "20" START (11) INCLUSIVE END (20) EXCLUSIVE);
+  (PARTITION "10" START (0) INCLUSIVE END (20) EXCLUSIVE);
 SET gp_default_storage_options ='appendonly=true, orientation=column, compresstype=zlib, compresslevel=2, blocksize=8192';
 -- use statement encoding
 ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "30" START (20) INCLUSIVE END (30) EXCLUSIVE WITH (appendonly=true, orientation=column, compresstype=rle_type, compresslevel=3, blocksize=16384);
 ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "60" START (50) INCLUSIVE END (60) EXCLUSIVE WITH (appendonly=true, orientation=column);
--- use gp_default_storage_options
+-- use table setting
+ALTER TABLE aocs_alter_add_part_no_compress SPLIT PARTITION "10" AT (10) INTO (PARTITION "10", PARTITION "20");
 ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "40" START (30) INCLUSIVE END (40) EXCLUSIVE;
 RESET gp_default_storage_options;
--- use default value
+-- use table setting
 ALTER TABLE aocs_alter_add_part_no_compress ADD PARTITION "50" START (40) INCLUSIVE END (50) EXCLUSIVE;
 \d+ aocs_alter_add_part_no_compress*
 DROP TABLE aocs_alter_add_part_no_compress;
