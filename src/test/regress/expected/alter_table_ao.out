@@ -790,7 +790,7 @@ Check constraints:
     "ao_alter_add_part_1_prt_10_check" CHECK (b >= 0 AND b < 10)
 Inherits: ao_alter_add_part
 Distributed by: (a)
-Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=4, blocksize=65536
+Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=4, blocksize=65536, checksum=true
 
         Append-Only Table "public.ao_alter_add_part_1_prt_20"
  Column |  Type   | Modifiers | Storage | Stats target | Description 
@@ -805,7 +805,7 @@ Check constraints:
     "ao_alter_add_part_1_prt_20_check" CHECK (b >= 10 AND b < 20)
 Inherits: ao_alter_add_part
 Distributed by: (a)
-Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=4, blocksize=65536
+Options: appendonly=true, orientation=row, compresstype=zstd, compresslevel=4, blocksize=65536, checksum=true
 
         Append-Only Table "public.ao_alter_add_part_1_prt_30"
  Column |  Type   | Modifiers | Storage | Stats target | Description 
@@ -914,30 +914,30 @@ Options: appendonly=true, orientation=row
 --------+---------+-----------+---------+--------------+-------------
  a      | integer |           | plain   |              | 
  b      | integer |           | plain   |              | 
-Compression Type: zlib
-Compression Level: 2
-Block Size: 8192
+Compression Type: none
+Compression Level: 0
+Block Size: 32768
 Checksum: t
 Check constraints:
     "ao_alter_add_part_no_compress_1_prt_10_check" CHECK (b >= 0 AND b < 10)
 Inherits: ao_alter_add_part_no_compress
 Distributed by: (a)
-Options: appendonly=true, orientation=row, blocksize=8192, compresslevel=2
+Options: appendonly=true, orientation=row, blocksize=32768, compresslevel=0, checksum=true, compresstype=none
 
   Append-Only Table "public.ao_alter_add_part_no_compress_1_prt_20"
  Column |  Type   | Modifiers | Storage | Stats target | Description 
 --------+---------+-----------+---------+--------------+-------------
  a      | integer |           | plain   |              | 
  b      | integer |           | plain   |              | 
-Compression Type: zlib
-Compression Level: 2
-Block Size: 8192
+Compression Type: none
+Compression Level: 0
+Block Size: 32768
 Checksum: t
 Check constraints:
     "ao_alter_add_part_no_compress_1_prt_20_check" CHECK (b >= 10 AND b < 20)
 Inherits: ao_alter_add_part_no_compress
 Distributed by: (a)
-Options: appendonly=true, orientation=row, blocksize=8192, compresslevel=2
+Options: appendonly=true, orientation=row, blocksize=32768, compresslevel=0, checksum=true, compresstype=none
 
   Append-Only Table "public.ao_alter_add_part_no_compress_1_prt_30"
  Column |  Type   | Modifiers | Storage | Stats target | Description 

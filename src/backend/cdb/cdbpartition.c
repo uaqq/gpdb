@@ -6771,6 +6771,9 @@ atpxPartAddList(Relation rel,
 	if (pelem->storeAttr)
 		ct->options = (List *) ((AlterPartitionCmd *) pelem->storeAttr)->arg1;
 
+	if (gp_add_partition_inherits_table_setting && RelationIsAppendOptimized(rel))
+		ct->options = build_ao_rel_storage_opts(ct->options, rel);
+
 	ct->tableElts = list_concat(ct->tableElts, list_copy(colencs));
 
 	ct->oncommit = ONCOMMIT_NOOP;

@@ -890,7 +890,7 @@ Check constraints:
     "aocs_alter_add_part_1_prt_10_check" CHECK (b >= 0 AND b < 10)
 Inherits: aocs_alter_add_part
 Distributed by: (a)
-Options: appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536
+Options: appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536, checksum=true
 
                             Append-Only Columnar Table "public.aocs_alter_add_part_1_prt_20"
  Column |  Type   | Modifiers | Storage | Stats target | Compression Type | Compression Level | Block Size | Description 
@@ -902,7 +902,7 @@ Check constraints:
     "aocs_alter_add_part_1_prt_20_check" CHECK (b >= 10 AND b < 20)
 Inherits: aocs_alter_add_part
 Distributed by: (a)
-Options: appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536
+Options: appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536, checksum=true
 
                             Append-Only Columnar Table "public.aocs_alter_add_part_1_prt_30"
  Column |  Type   | Modifiers | Storage | Stats target | Compression Type | Compression Level | Block Size | Description 
@@ -992,7 +992,7 @@ Check constraints:
     "aocs_alter_add_part_no_compress_1_prt_10_check" CHECK (b >= 0 AND b < 10)
 Inherits: aocs_alter_add_part_no_compress
 Distributed by: (a)
-Options: appendonly=true, orientation=column, blocksize=8192, compresslevel=2
+Options: appendonly=true, orientation=column, blocksize=32768, compresslevel=0, checksum=true, compresstype=none
 
                       Append-Only Columnar Table "public.aocs_alter_add_part_no_compress_1_prt_20"
  Column |  Type   | Modifiers | Storage | Stats target | Compression Type | Compression Level | Block Size | Description 
@@ -1004,7 +1004,7 @@ Check constraints:
     "aocs_alter_add_part_no_compress_1_prt_20_check" CHECK (b >= 10 AND b < 20)
 Inherits: aocs_alter_add_part_no_compress
 Distributed by: (a)
-Options: appendonly=true, orientation=column, blocksize=8192, compresslevel=2
+Options: appendonly=true, orientation=column, blocksize=32768, compresslevel=0, checksum=true, compresstype=none
 
                       Append-Only Columnar Table "public.aocs_alter_add_part_no_compress_1_prt_30"
  Column |  Type   | Modifiers | Storage | Stats target | Compression Type | Compression Level | Block Size | Description 

@@ -1364,6 +1364,9 @@ reloptions_has_opt(List *opts, const char *name)
 List *
 build_ao_rel_storage_opts(List *opts, Relation rel)
 {
+	if (!reloptions_has_opt(opts, "appendonly"))
+		opts = lappend(opts, makeDefElem("appendonly", (Node *) makeString("true")));
+
 	if (!reloptions_has_opt(opts, "blocksize"))
 		opts = lappend(opts, makeDefElem("blocksize", (Node *) makeInteger(rel->rd_appendonly->blocksize)));
 
