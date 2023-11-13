@@ -29,8 +29,6 @@ static int64 prevSegFileLen = -1;
 static bool fileSkip = false;
 static bool segFileSkip = false;
 
-static int bytes = 0; // for testing purposes
-
 static int64
 TempTablesLimitToBytes(void)
 {
@@ -57,20 +55,14 @@ TempTablesLimitShmemInit(void)
 void
 BufferedAppendWritePreHook(BufferedAppend *bufferedAppend)
 {
-	int64 bytesToWrite;
-
 	TempTablesLimitChecks();
 
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
-		prevFileLen = FileDiskSize(bufferedAppend->file);
+		prevFileLen = bufferedAppend->largeWritePosition;
 
-		bytesToWrite = bufferedAppend->largeWriteLen -
-			(prevFileLen - FileSeek(bufferedAppend->file, 0, SEEK_CUR));
-
-		bytes = bytesToWrite > 0 ? bytesToWrite : 0; // for testing purposes
-
-		if (bytesToWrite > 0 && temp_tables_limit_value->value + bytesToWrite > TempTablesLimitToBytes())
+		if (bufferedAppend->largeWriteLen > 0 &&
+			temp_tables_limit_value->value + bufferedAppend->largeWriteLen > TempTablesLimitToBytes())
 			elog(ERROR, "Temp tables quota exceeded");
 	}
 }
@@ -78,20 +70,14 @@ BufferedAppendWritePreHook(BufferedAppend *bufferedAppend)
 void
 BufferedAppendWritePostHook(BufferedAppend *bufferedAppend)
 {
-	int64 newTotal;
-
 	TempTablesLimitChecks();
 
 	if (RelFileNodeBackendIsTemp(bufferedAppend->relFileNode))
 	{
 		Assert(prevFileLen >= 0);
-
-		newTotal = FileDiskSize(bufferedAppend->file) - prevFileLen;
-		Assert(newTotal == bytes); // for testing purposes
-		pg_atomic_add_fetch_u64(temp_tables_limit_value, newTotal);
+		pg_atomic_add_fetch_u64(temp_tables_limit_value, bufferedAppend->largeWriteLen);
 	}
 
-	bytes = 0;
 	prevFileLen = -1;
 }
 
