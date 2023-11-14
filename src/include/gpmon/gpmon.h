@@ -42,13 +42,16 @@ for example SCHEMA.RELATION\0
    ------------------------------------------------------------------ */
 
 extern void gpmon_qlog_packet_init(gpmon_packet_t *gpmonPacket);
-extern void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket);
-extern void gpmon_qlog_query_text(const gpmon_packet_t *gpmonPacket,
+extern void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket,
 		gpmon_query_text_save_t *gpmonQueryTextSave);
-extern void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket);
-extern void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket);
-extern void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket);
-extern void gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket);
+extern void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket,
+		gpmon_query_text_save_t *gpmonQueryTextSave);
+extern void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket,
+		gpmon_query_text_save_t *gpmonQueryTextSave);
+extern void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket,
+		gpmon_query_text_save_t *gpmonQueryTextSave);
+extern void gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket,
+		gpmon_query_text_save_t *gpmonQueryTextSave);
 extern void gpmon_send(gpmon_packet_t*);
 extern void gpmon_gettmid(int32*);
 
@@ -59,7 +62,7 @@ extern void gpmon_qlog_query_text_save(gpmon_query_text_save_t *qt,
 		const char *appName,
 		const char *resqName,
 		const char *resqPriority);
-extern void gpmon_query_text_drop(gpmon_query_text_save_t* qt);
+extern void gpmon_qlog_query_text_drop(gpmon_query_text_save_t* qt);
 
 /* ------------------------------------------------------------------
          FSINFO

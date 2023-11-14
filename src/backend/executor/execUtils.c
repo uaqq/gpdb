@@ -2233,7 +2233,7 @@ void mppExecutorCleanup(QueryDesc *queryDesc)
 		queryDesc->gpmon_pkt &&
 		QueryCancelCleanup)
 	{			
-		gpmon_qlog_query_canceling(queryDesc->gpmon_pkt);
+		gpmon_qlog_query_canceling(queryDesc->gpmon_pkt, queryDesc->gpmon_qt_save);
 	}
 
 	/*
@@ -2258,9 +2258,11 @@ void mppExecutorCleanup(QueryDesc *queryDesc)
 			&& Gp_role == GP_ROLE_DISPATCH
 			&& queryDesc->gpmon_pkt)
 	{			
-		gpmon_qlog_query_error(queryDesc->gpmon_pkt);
+		gpmon_qlog_query_error(queryDesc->gpmon_pkt, queryDesc->gpmon_qt_save);
 		pfree(queryDesc->gpmon_pkt);
 		queryDesc->gpmon_pkt = NULL;
+		pfree(queryDesc->gpmon_qt_save);
+		queryDesc->gpmon_qt_save = NULL;
 	}
 
 	ReportOOMConsumption();

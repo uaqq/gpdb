@@ -1879,13 +1879,12 @@ BeginCopy(bool is_from,
 		if (gp_enable_gpperfmon && Gp_role == GP_ROLE_DISPATCH)
 		{
 			Assert(queryString);
-			gpmon_qlog_query_submit(cstate->queryDesc->gpmon_pkt);
 			gpmon_qlog_query_text_save(cstate->queryDesc->gpmon_qt_save,
 					queryString,
 					application_name,
 					GetResqueueName(GetResQueueId()),
 					GetResqueuePriority(GetResQueueId()));
-			gpmon_qlog_query_text(cstate->queryDesc->gpmon_pkt,
+			gpmon_qlog_query_submit(cstate->queryDesc->gpmon_pkt,
 					cstate->queryDesc->gpmon_qt_save);
 		}
 

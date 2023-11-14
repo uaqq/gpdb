@@ -24,13 +24,11 @@
 /* Extern stuff */
 extern char *get_database_name(Oid dbid);
 
-static FILE *gpmon_open_record_file(int32 tmid, int32 ssid, int32 ccnt);
+static FILE *gpmon_open_record_file(int32 tmid, int32 ssid, int32 ccnt, bool *created);
 static void gpmon_record_single_kv(FILE* fp, const char* key,
                                    const char* value, bool extraNewLine);
-static void gpmon_record_kvs(const gpmon_packet_t *gpmonPacket,
-                             gpmon_query_text_save_t *gpmonQueryTextSave);
-static void gpmon_record_update(int32 tmid, int32 ssid,
-                                int32 ccnt, int32 status);
+static void gpmon_record_query(const gpmon_packet_t *gpmonPacket,
+                               gpmon_query_text_save_t *gpmonQueryTextSave);
 static void gpmon_null_subst(char** input);
 
 
@@ -105,14 +103,20 @@ void gpmon_init(void)
 }
 
 
-static FILE *gpmon_open_record_file(int32 tmid, int32 ssid, int32 ccnt)
+static FILE *gpmon_open_record_file(int32 tmid, int32 ssid, int32 ccnt, bool *created)
 {
 	char fname[GPMON_DIR_MAX_PATH];
 	FILE* fp;
 
 	snprintf(fname, GPMON_DIR_MAX_PATH, "%sq%d-%d-%d.txt", GPMON_DIR, tmid, ssid, ccnt);
 
-	fp = fopen(fname, "a");
+	*created = false;
+	fp = fopen(fname, "r+");
+	if (!fp)
+	{
+		fp = fopen(fname, "a");
+		*created = !(fp == NULL);
+	}
 	return fp;
 }
 
@@ -138,25 +142,6 @@ static void gpmon_record_single_kv(FILE *fp, const char* key,
 	}
 }
 
-void gpmon_record_update(int32 tmid, int32 ssid, int32 ccnt,
-						 int32 status)
-{
-	char fname[GPMON_DIR_MAX_PATH];
-	FILE *fp;
-
-	snprintf(fname, GPMON_DIR_MAX_PATH, "%sq%d-%d-%d.txt", GPMON_DIR, tmid, ssid, ccnt);
-
-	fp = fopen(fname, "r+");
-
-	if (!fp)
-		return;
-
-	if (0 == fseek(fp, -1, SEEK_END))
-	{
-		fprintf(fp, "%d", status);
-	}
-	fclose(fp);
-}
 
 void gpmon_gettmid(int32* tmid)
 {
@@ -245,7 +230,8 @@ void gpmon_qlog_packet_init(gpmon_packet_t *gpmonPacket)
 /**
  * Call this method when query is submitted.
  */
-void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket)
+void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket,
+                             gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	struct timeval tv;
 
@@ -256,11 +242,7 @@ void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket)
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_SUBMIT;
 	gpmonPacket->u.qlog.tsubmit = tv.tv_sec;
 
-	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
-			gpmonPacket->u.qlog.key.ssid,
-			gpmonPacket->u.qlog.key.ccnt,
-			gpmonPacket->u.qlog.status);
-
+	gpmon_record_query(gpmonPacket, gpmonQueryTextSave);
 	gpmon_send(gpmonPacket);
 }
 
@@ -273,52 +255,50 @@ static void gpmon_null_subst(char** input)
 }
 
 /**
- * Call this method to let gpmon know the query text, application name, resource queue name and priority
- * at submit time. It writes 4 key value pairs using keys: qtext, appname, resqname and priority using
- * the format as described in gpmon_record_single_kv().
+ * Call this method to let gpmon know the query text, application name, resource queue name, priority
+ * and status at submit time. It writes 4 key value pairs using keys: qtext, appname, resqname and priority
+ * using the format as described in gpmon_record_single_kv(), and status.
  */
-static void gpmon_record_kvs(const gpmon_packet_t *gpmonPacket,
-                             gpmon_query_text_save_t *gpmonQueryTextSave)
+static void gpmon_record_query(const gpmon_packet_t *gpmonPacket,
+                               gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	gpmon_query_text_save_t *qt = gpmonQueryTextSave;
 	Assert(qt);
 	Assert(qt->queryText);
-	gpmon_null_subst(&(qt->appName));
-	gpmon_null_subst(&(qt->resqName));
-	gpmon_null_subst(&(qt->resqPriority));
 
+	bool fp_created = false;
 	FILE* fp = gpmon_open_record_file(gpmonPacket->u.qlog.key.tmid,
                                       gpmonPacket->u.qlog.key.ssid,
-                                      gpmonPacket->u.qlog.key.ccnt);
+                                      gpmonPacket->u.qlog.key.ccnt,
+									  &fp_created);
 	if (!fp)
 		return;
 
-	gpmon_record_single_kv(fp, "qtext", qt->queryText, false);
-	gpmon_record_single_kv(fp, "appname", qt->appName, false);
-	gpmon_record_single_kv(fp, "resqname", qt->resqName, false);
-	gpmon_record_single_kv(fp, "priority", qt->resqPriority, true);
+	if (fp_created)
+	{
+		gpmon_null_subst(&(qt->appName));
+		gpmon_null_subst(&(qt->resqName));
+		gpmon_null_subst(&(qt->resqPriority));
+		
+		gpmon_record_single_kv(fp, "qtext", qt->queryText, false);
+		gpmon_record_single_kv(fp, "appname", qt->appName, false);
+		gpmon_record_single_kv(fp, "resqname", qt->resqName, false);
+		gpmon_record_single_kv(fp, "priority", qt->resqPriority, true);
+	}
+
+	if (0 == fseek(fp, -1, SEEK_END))
+	{
+		fprintf(fp, "%d", gpmonPacket->u.qlog.status);
+	}
 
 	fclose(fp);
-}
-
-
-void gpmon_qlog_query_text(const gpmon_packet_t *gpmonPacket,
-                           gpmon_query_text_save_t *gpmonQueryTextSave)
-{
-	GPMON_QLOG_PACKET_ASSERTS(gpmonPacket);
-
-	gpmon_record_kvs(gpmonPacket, gpmonQueryTextSave);
-
-	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
-			gpmonPacket->u.qlog.key.ssid,
-			gpmonPacket->u.qlog.key.ccnt,
-			GPMON_QLOG_STATUS_SUBMIT);
 }
 
 /**
  * Call this method when query starts executing.
  */
-void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket)
+void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket,
+                            gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	struct timeval tv;
 
@@ -329,10 +309,7 @@ void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket)
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_START;
 	gpmonPacket->u.qlog.tstart = tv.tv_sec;
 
-	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
-			gpmonPacket->u.qlog.key.ssid,
-			gpmonPacket->u.qlog.key.ccnt,
-			gpmonPacket->u.qlog.status);
+	gpmon_record_query(gpmonPacket, gpmonQueryTextSave);
 
 	gpmon_send(gpmonPacket);
 }
@@ -340,7 +317,8 @@ void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket)
 /**
  * Call this method when query finishes executing.
  */
-void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket)
+void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket,
+                          gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	struct timeval tv;
 
@@ -351,18 +329,17 @@ void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket)
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_DONE;
 	gpmonPacket->u.qlog.tfin = tv.tv_sec;
 
-	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
-			gpmonPacket->u.qlog.key.ssid,
-			gpmonPacket->u.qlog.key.ccnt,
-			gpmonPacket->u.qlog.status);
+	gpmon_record_query(gpmonPacket, gpmonQueryTextSave);
 
 	gpmon_send(gpmonPacket);
+	gpmon_qlog_query_text_drop(gpmonQueryTextSave);
 }
 
 /**
  * Call this method when query errored out.
  */
-void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket)
+void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket,
+                            gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	struct timeval tv;
 
@@ -376,12 +353,10 @@ void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket)
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_ERROR;
 	gpmonPacket->u.qlog.tfin = tv.tv_sec;
 
-	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
-			gpmonPacket->u.qlog.key.ssid,
-			gpmonPacket->u.qlog.key.ccnt,
-			gpmonPacket->u.qlog.status);
+	gpmon_record_query(gpmonPacket, gpmonQueryTextSave);
 
 	gpmon_send(gpmonPacket);
+	gpmon_qlog_query_text_drop(gpmonQueryTextSave);
 }
 
 /*
@@ -389,7 +364,8 @@ void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket)
  *    Record that the query is being canceled.
  */
 void
-gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket)
+gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket,
+                           gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	GPMON_QLOG_PACKET_ASSERTS(gpmonPacket);
 	Assert(gpmonPacket->u.qlog.status == GPMON_QLOG_STATUS_START ||
@@ -397,10 +373,7 @@ gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket)
 
 	gpmonPacket->u.qlog.status = GPMON_QLOG_STATUS_CANCELING;
 
-	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
-			gpmonPacket->u.qlog.key.ssid,
-			gpmonPacket->u.qlog.key.ccnt,
-			gpmonPacket->u.qlog.status);
+	gpmon_record_query(gpmonPacket, gpmonQueryTextSave);
 
 	gpmon_send(gpmonPacket);
 }
@@ -426,7 +399,7 @@ void gpmon_qlog_query_text_save(gpmon_query_text_save_t *qt,
 		qt->resqPriority = pstrdup(resqPriority);
 }
 
-void gpmon_query_text_drop(gpmon_query_text_save_t* qt)
+void gpmon_qlog_query_text_drop(gpmon_query_text_save_t* qt)
 {
 	qt->queryText = NULL;
 	pfree(qt->appName);

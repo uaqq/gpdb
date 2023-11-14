@@ -445,13 +445,12 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 	if (gp_enable_gpperfmon && Gp_role == GP_ROLE_DISPATCH)
 	{
 		Assert(queryString);
-		gpmon_qlog_query_submit(queryDesc->gpmon_pkt);
 		gpmon_qlog_query_text_save(queryDesc->gpmon_qt_save,
 				queryString,
 				application_name,
 				GetResqueueName(GetResQueueId()),
 				GetResqueuePriority(GetResQueueId()));
-		gpmon_qlog_query_text(queryDesc->gpmon_pkt,
+		gpmon_qlog_query_submit(queryDesc->gpmon_pkt,
 				queryDesc->gpmon_qt_save);
 	}
 

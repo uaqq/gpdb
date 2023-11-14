@@ -184,11 +184,6 @@ FreeQueryDesc(QueryDesc *qdesc)
 		cdbexplain_showStatCtxFree(qdesc->showstatctx);
 
 	/* Only the QueryDesc itself need be freed */
-	if (qdesc->gpmon_qt_save)  /* ??? */
-	{
-		gpmon_query_text_drop(qdesc->gpmon_qt_save);
-		pfree(qdesc->gpmon_qt_save);
-	}
 	pfree(qdesc);
 }
 
@@ -248,13 +243,12 @@ ProcessQuery(Portal portal,
 	if (gp_enable_gpperfmon && Gp_role == GP_ROLE_DISPATCH)
 	{
 		Assert(portal->sourceText);
-		gpmon_qlog_query_submit(queryDesc->gpmon_pkt);
 		gpmon_qlog_query_text_save(queryDesc->gpmon_qt_save,
 				portal->sourceText,
 				application_name,
 				GetResqueueName(portal->queueId),
 				GetResqueuePriority(portal->queueId));
-		gpmon_qlog_query_text(queryDesc->gpmon_pkt,
+		gpmon_qlog_query_submit(queryDesc->gpmon_pkt,
 				queryDesc->gpmon_qt_save);
 	}
 
@@ -684,13 +678,12 @@ PortalStart(Portal portal, ParamListInfo params,
 				if (gp_enable_gpperfmon && Gp_role == GP_ROLE_DISPATCH)
 				{			
 					Assert(portal->sourceText);
-					gpmon_qlog_query_submit(queryDesc->gpmon_pkt);
 					gpmon_qlog_query_text_save(queryDesc->gpmon_qt_save,
 							portal->sourceText,
 							application_name,
 							GetResqueueName(portal->queueId),
 							GetResqueuePriority(portal->queueId));
-					gpmon_qlog_query_text(queryDesc->gpmon_pkt,
+					gpmon_qlog_query_submit(queryDesc->gpmon_pkt,
 							queryDesc->gpmon_qt_save);
 				}
 

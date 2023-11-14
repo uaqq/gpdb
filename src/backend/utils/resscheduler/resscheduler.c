@@ -710,9 +710,11 @@ ResLockPortal(Portal portal, QueryDesc *qDesc)
 				 */
 				if (gp_enable_gpperfmon && qDesc->gpmon_pkt)
 				{			
-					gpmon_qlog_query_error(qDesc->gpmon_pkt);
+					gpmon_qlog_query_error(qDesc->gpmon_pkt, qDesc->gpmon_qt_save);
 					pfree(qDesc->gpmon_pkt);
 					qDesc->gpmon_pkt = NULL;
+					pfree(qDesc->gpmon_qt_save);
+					qDesc->gpmon_qt_save = NULL;
 				}
 
 				portal->queueId = InvalidOid;

@@ -334,7 +334,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		&& Gp_role == GP_ROLE_DISPATCH
 		&& queryDesc->gpmon_pkt)
 	{
-		gpmon_qlog_query_start(queryDesc->gpmon_pkt);
+		gpmon_qlog_query_start(queryDesc->gpmon_pkt, queryDesc->gpmon_qt_save);
 	}
 
 	/* GPDB hook for collecting query info */
@@ -1460,9 +1460,11 @@ standard_ExecutorEnd(QueryDesc *queryDesc)
 			&& Gp_role == GP_ROLE_DISPATCH
 			&& queryDesc->gpmon_pkt)
 	{			
-		gpmon_qlog_query_end(queryDesc->gpmon_pkt);
+		gpmon_qlog_query_end(queryDesc->gpmon_pkt, queryDesc->gpmon_qt_save);
 		pfree(queryDesc->gpmon_pkt);
 		queryDesc->gpmon_pkt = NULL;
+		pfree(queryDesc->gpmon_qt_save);
+		queryDesc->gpmon_qt_save = NULL;
 	}
 
 	/* GPDB hook for collecting query info */
