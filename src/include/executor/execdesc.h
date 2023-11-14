@@ -269,6 +269,7 @@ typedef struct QueryDesc
 
 	/* Gpmon */
 	gpmon_packet_t *gpmon_pkt;
+	gpmon_query_text_save_t *gpmon_qt_save;
 
 	/* This is always set NULL by the core system, but plugins can change it */
 	struct Instrumentation *totaltime;	/* total time spent in ExecutorRun */

@@ -30,7 +30,7 @@ static void gpmon_record_kv(int32 tmid, int32 ssid, int32 ccnt,
 						 bool extraNewLine);
 static void gpmon_record_update(int32 tmid, int32 ssid,
 								int32 ccnt, int32 status);
-static const char* gpmon_null_subst(const char* input);
+static void gpmon_null_subst(char** input);
 
 
 struct  {
@@ -266,9 +266,9 @@ void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket)
 /**
  * Wrapper function that returns string if not null. Returns GPMON_UNKNOWN if it is null.
  */
-static const char* gpmon_null_subst(const char* input)
+static void gpmon_null_subst(char** input)
 {
-	return input ? input : GPMON_UNKNOWN;
+	if (!(*input)) *input = GPMON_UNKNOWN;
 }
 
 
@@ -279,48 +279,41 @@ static const char* gpmon_null_subst(const char* input)
  */
 
 void gpmon_qlog_query_text(const gpmon_packet_t *gpmonPacket,
-		const char *queryText,
-		const char *appName,
-		const char *resqName,
-		const char *resqPriority)
+		gpmon_query_text_save_t *gpmonQueryTextSave)
 {
 	GPMON_QLOG_PACKET_ASSERTS(gpmonPacket);
 
-	queryText = gpmon_null_subst(queryText);
-	appName = gpmon_null_subst(appName);
-	resqName = gpmon_null_subst(resqName);
-	resqPriority = gpmon_null_subst(resqPriority);
-
-	Assert(queryText);
-	Assert(appName);
-	Assert(resqName);
-	Assert(resqPriority);
+	gpmon_query_text_save_t *qt = gpmonQueryTextSave;
+	Assert(qt);
+	Assert(qt->queryText);
+	gpmon_null_subst(&(qt->appName));
+	gpmon_null_subst(&(qt->resqName));
+	gpmon_null_subst(&(qt->resqPriority));
 
 	gpmon_record_kv(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
-			"qtext", queryText, false);
+			"qtext", qt->queryText, false);
 
 	gpmon_record_kv(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
-			"appname", appName, false);
+			"appname", qt->appName, false);
 
 	gpmon_record_kv(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
-			"resqname", resqName, false);
+			"resqname", qt->resqName, false);
 
 	gpmon_record_kv(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
-			"priority", resqPriority, true);
+			"priority", qt->resqPriority, true);
 
 	gpmon_record_update(gpmonPacket->u.qlog.key.tmid,
 			gpmonPacket->u.qlog.key.ssid,
 			gpmonPacket->u.qlog.key.ccnt,
 			GPMON_QLOG_STATUS_SUBMIT);
-
 }
 
 /**
@@ -413,3 +406,31 @@ gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket)
 	gpmon_send(gpmonPacket);
 }
 
+/* gpmon_query_text_save_t */
+void gpmon_qlog_query_text_init(gpmon_query_text_save_t *qt)
+{
+	qt->queryText = NULL;
+	qt->appName = qt->resqName = qt->resqPriority = NULL;
+}
+
+void gpmon_qlog_query_text_save(gpmon_query_text_save_t *qt,
+		const char *queryText,
+		const char *appName,
+		const char *resqName,
+		const char *resqPriority)
+{
+	qt->queryText = queryText;
+	qt->appName = pstrdup(appName);
+	if (resqName)
+		qt->resqName = pstrdup(resqName);
+	if (resqPriority)
+		qt->resqPriority = pstrdup(resqPriority);
+}
+
+void gpmon_query_text_drop(gpmon_query_text_save_t* qt)
+{
+	qt->queryText = NULL;
+	pfree(qt->appName);
+	pfree(qt->resqName);
+	pfree(qt->resqPriority);
+}

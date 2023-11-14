@@ -935,11 +935,13 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 			/* For log level of DEBUG4, gpmon is sent information about queries inside SQL functions as well */
 			Assert(fcache->src);
 			gpmon_qlog_query_submit(es->qd->gpmon_pkt);
-			gpmon_qlog_query_text(es->qd->gpmon_pkt,
+			gpmon_qlog_query_text_save(es->qd->gpmon_qt_save,
 					fcache->src,
 					application_name,
 					NULL /* resqueue name */,
 					NULL /* priority */);
+			gpmon_qlog_query_text(es->qd->gpmon_pkt,
+					es->qd->gpmon_qt_save);
 
 		}
 		else

@@ -15,6 +15,7 @@ typedef struct gpmon_fsinfokey_t gpmon_fsinfokey_t;
 typedef struct gpmon_fsinfo_t gpmon_fsinfo_t;
 typedef struct gpmon_query_seginfo_key_t gpmon_query_seginfo_key_t;
 typedef struct gpmon_query_seginfo_t gpmon_query_seginfo_t;
+typedef struct gpmon_query_text_save_t gpmon_query_text_save_t;
 
 /*
  * this dir sits in $MASTER_DATA_DIRECTORY. always include the
@@ -43,16 +44,22 @@ for example SCHEMA.RELATION\0
 extern void gpmon_qlog_packet_init(gpmon_packet_t *gpmonPacket);
 extern void gpmon_qlog_query_submit(gpmon_packet_t *gpmonPacket);
 extern void gpmon_qlog_query_text(const gpmon_packet_t *gpmonPacket,
-		const char *queryText,
-		const char *appName,
-		const char *resqName,
-		const char *resqPriority);
+		gpmon_query_text_save_t *gpmonQueryTextSave);
 extern void gpmon_qlog_query_start(gpmon_packet_t *gpmonPacket);
 extern void gpmon_qlog_query_end(gpmon_packet_t *gpmonPacket);
 extern void gpmon_qlog_query_error(gpmon_packet_t *gpmonPacket);
 extern void gpmon_qlog_query_canceling(gpmon_packet_t *gpmonPacket);
 extern void gpmon_send(gpmon_packet_t*);
 extern void gpmon_gettmid(int32*);
+
+/* gpmon_query_text_save_t */
+extern void gpmon_qlog_query_text_init(gpmon_query_text_save_t *qt);
+extern void gpmon_qlog_query_text_save(gpmon_query_text_save_t *qt,
+		const char *queryText,
+		const char *appName,
+		const char *resqName,
+		const char *resqPriority);
+extern void gpmon_query_text_drop(gpmon_query_text_save_t* qt);
 
 /* ------------------------------------------------------------------
          FSINFO
@@ -267,6 +274,12 @@ struct gpmon_packet_t {
     } u;
 };
 
+struct gpmon_query_text_save_t {
+	const char* queryText;
+	char* appName;
+	char* resqName;
+	char* resqPriority;
+};
 
 extern const char* gpmon_qlog_status_string(int gpmon_qlog_status);
 
