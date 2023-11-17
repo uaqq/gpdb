@@ -355,27 +355,29 @@ CDrvdPropRelational::DeriveOutputColumns(CExpressionHandle &exprhdl,
 		m_pcrsOutput = popLogical->DeriveOutputColumns(m_mp, exprhdl);
 	}
 
-	if (include_unused)
+	if (!include_unused)
 	{
-		return m_pcrsOutput;
-	}
+		CColRefSet *pcrsOutput = m_pcrsOutput;
+		CColRefSetIter crsi(*pcrsOutput);
 
-	CColRefSet *pcrsOutput = GPOS_NEW(m_mp) CColRefSet(m_mp);
-	CColRefSetIter crsi(*m_pcrsOutput);
+		m_pcrsOutput = GPOS_NEW(m_mp) CColRefSet(m_mp);
 
-	while (crsi.Advance())
-	{
-		// We want to limit the output columns to only those which are referenced in the query
-		// We will know the entire list of columns which are referenced in the query only after
-		// translating the entire DXL to an expression. Hence we should not limit the output columns
-		// before we have processed the entire DXL.
-		if (CColRef::EUnused != crsi.Pcr()->GetUsage())
+		while (crsi.Advance())
 		{
-			pcrsOutput->Include(crsi.Pcr());
+			// We want to limit the output columns to only those which are referenced in the query
+			// We will know the entire list of columns which are referenced in the query only after
+			// translating the entire DXL to an expression. Hence we should not limit the output columns
+			// before we have processed the entire DXL.
+			if (CColRef::EUnused != crsi.Pcr()->GetUsage())
+			{
+				m_pcrsOutput->Include(crsi.Pcr());
+			}
 		}
+
+		pcrsOutput->Release();
 	}
 
-	return pcrsOutput;
+	return m_pcrsOutput;
 }
 
 // outer references
