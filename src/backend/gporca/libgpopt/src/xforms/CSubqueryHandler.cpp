@@ -1301,7 +1301,8 @@ CSubqueryHandler::FCreateCorrelatedApplyForExistentialSubquery(
 
 	// for existential subqueries, used column produced by inner expression
 	// can be used to check for empty answers; we use first column for that
-	CColRef *colref = pexprInner->DeriveUsedOutputColumns()->PcrFirst();
+	CColRef *colref =
+		pexprInner->DeriveOutputColumns(false /* include_unused */)->PcrFirst();
 
 	pexprInner->AddRef();
 	if (EsqctxtFilter == esqctxt)
@@ -1933,7 +1934,9 @@ CSubqueryHandler::FRemoveExistentialSubquery(
 
 		// for existential subqueries, used column produced by inner expression
 		// can be used to check for empty answers; we use first column for that
-		CColRef *colref = pexprInner->DeriveUsedOutputColumns()->PcrFirst();
+		CColRef *colref =
+			pexprInner->DeriveOutputColumns(false /* include_unused */)
+				->PcrFirst();
 
 		if (COperator::EopScalarSubqueryExists == op_id)
 		{

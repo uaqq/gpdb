@@ -1451,19 +1451,11 @@ CExpression::DeriveOuterReferences()
 }
 
 CColRefSet *
-CExpression::DeriveOutputColumns()
+CExpression::DeriveOutputColumns(BOOL include_unused)
 {
 	CExpressionHandle exprhdl(m_mp);
 	exprhdl.Attach(this);
-	return m_pdprel->DeriveOutputColumns(exprhdl);
-}
-
-CColRefSet *
-CExpression::DeriveUsedOutputColumns()
-{
-	CExpressionHandle exprhdl(m_mp);
-	exprhdl.Attach(this);
-	return m_pdprel->DeriveUsedOutputColumns(exprhdl);
+	return m_pdprel->DeriveOutputColumns(exprhdl, include_unused);
 }
 
 CColRefSet *

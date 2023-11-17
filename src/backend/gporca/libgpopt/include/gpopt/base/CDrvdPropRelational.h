@@ -143,10 +143,8 @@ private:
 
 protected:
 	// output columns
-	CColRefSet *DeriveOutputColumns(CExpressionHandle &);
-
-	// used output columns
-	CColRefSet *DeriveUsedOutputColumns(CExpressionHandle &);
+	CColRefSet *DeriveOutputColumns(CExpressionHandle &,
+									BOOL include_unused = true);
 
 	// outer references
 	CColRefSet *DeriveOuterReferences(CExpressionHandle &);
