@@ -147,88 +147,118 @@
       </dxl:Difference>
     </dxl:Query>
     <dxl:Plan Id="0" SpaceSize="12">
-      <dxl:NestedLoopJoin JoinType="LeftAntiSemiJoin" IndexNestedLoopJoin="false" OuterRefAsParam="false">
+      <dxl:Aggregate AggregationStrategy="Sorted" StreamSafe="false">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="441344.325378" Rows="1.000000" Width="8"/>
+          <dxl:Cost StartupCost="0" TotalCost="441344.325391" Rows="1.000000" Width="8"/>
         </dxl:Properties>
+        <dxl:GroupingColumns>
+          <dxl:GroupingColumn ColId="1"/>
+        </dxl:GroupingColumns>
         <dxl:ProjList>
           <dxl:ProjElem ColId="1" Alias="cashrange">
             <dxl:Ident ColId="1" ColName="cashrange" TypeMdid="0.82276.1.0"/>
           </dxl:ProjElem>
         </dxl:ProjList>
         <dxl:Filter/>
-        <dxl:JoinFilter>
-          <dxl:Not>
-            <dxl:IsDistinctFrom OperatorMdid="0.3882.1.0">
-              <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
-                <dxl:Ident ColId="1" ColName="cashrange" TypeMdid="0.82276.1.0"/>
-              </dxl:Cast>
-              <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
-                <dxl:Ident ColId="3" ColName="cashrange" TypeMdid="0.82276.1.0"/>
-              </dxl:Cast>
-            </dxl:IsDistinctFrom>
-          </dxl:Not>
-        </dxl:JoinFilter>
-        <dxl:Result>
+        <dxl:NestedLoopJoin JoinType="LeftAntiSemiJoin" IndexNestedLoopJoin="false" OuterRefAsParam="false">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
+            <dxl:Cost StartupCost="0" TotalCost="441344.325378" Rows="1.000000" Width="8"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="1" Alias="cashrange">
-              <dxl:ConstValue TypeMdid="0.82276.1.0" Value="AAAAGWRBAQDIAAAAAAAAAPQBAAAAAAAAAA=="/>
+              <dxl:Ident ColId="1" ColName="cashrange" TypeMdid="0.82276.1.0"/>
             </dxl:ProjElem>
           </dxl:ProjList>
           <dxl:Filter/>
-          <dxl:OneTimeFilter/>
-          <dxl:Result>
-            <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
-            </dxl:Properties>
-            <dxl:ProjList>
-              <dxl:ProjElem ColId="0" Alias="">
-                <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
-              </dxl:ProjElem>
-            </dxl:ProjList>
-            <dxl:Filter/>
-            <dxl:OneTimeFilter/>
-          </dxl:Result>
-        </dxl:Result>
-        <dxl:Materialize Eager="false">
-          <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="0.000017" Rows="1.000000" Width="8"/>
-          </dxl:Properties>
-          <dxl:ProjList>
-            <dxl:ProjElem ColId="3" Alias="cashrange">
-              <dxl:Ident ColId="3" ColName="cashrange" TypeMdid="0.82276.1.0"/>
-            </dxl:ProjElem>
-          </dxl:ProjList>
-          <dxl:Filter/>
-          <dxl:Result>
+          <dxl:JoinFilter>
+            <dxl:Not>
+              <dxl:IsDistinctFrom OperatorMdid="0.3882.1.0">
+                <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
+                  <dxl:Ident ColId="1" ColName="cashrange" TypeMdid="0.82276.1.0"/>
+                </dxl:Cast>
+                <dxl:Cast TypeMdid="0.3831.1.0" FuncId="0.0.0.0">
+                  <dxl:Ident ColId="3" ColName="cashrange" TypeMdid="0.82276.1.0"/>
+                </dxl:Cast>
+              </dxl:IsDistinctFrom>
+            </dxl:Not>
+          </dxl:JoinFilter>
+          <dxl:Sort SortDiscardDuplicates="false">
             <dxl:Properties>
               <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
             </dxl:Properties>
             <dxl:ProjList>
-              <dxl:ProjElem ColId="3" Alias="cashrange">
-                <dxl:ConstValue TypeMdid="0.82276.1.0" Value="AAAAGWRBAQD0AQAAAAAAAFgCAAAAAAAAAA=="/>
+              <dxl:ProjElem ColId="1" Alias="cashrange">
+                <dxl:Ident ColId="1" ColName="cashrange" TypeMdid="0.82276.1.0"/>
               </dxl:ProjElem>
             </dxl:ProjList>
             <dxl:Filter/>
-            <dxl:OneTimeFilter/>
+            <dxl:SortingColumnList>
+              <dxl:SortingColumn ColId="1" SortOperatorMdid="0.3884.1.0" SortOperatorName="&lt;" SortNullsFirst="false"/>
+            </dxl:SortingColumnList>
+            <dxl:LimitCount/>
+            <dxl:LimitOffset/>
             <dxl:Result>
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
+                <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
               </dxl:Properties>
               <dxl:ProjList>
-                <dxl:ProjElem ColId="2" Alias="">
-                  <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
+                <dxl:ProjElem ColId="1" Alias="cashrange">
+                  <dxl:ConstValue TypeMdid="0.82276.1.0" Value="AAAAGWRBAQDIAAAAAAAAAPQBAAAAAAAAAA=="/>
                 </dxl:ProjElem>
               </dxl:ProjList>
               <dxl:Filter/>
               <dxl:OneTimeFilter/>
+              <dxl:Result>
+                <dxl:Properties>
+                  <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
+                </dxl:Properties>
+                <dxl:ProjList>
+                  <dxl:ProjElem ColId="0" Alias="">
+                    <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
+                  </dxl:ProjElem>
+                </dxl:ProjList>
+                <dxl:Filter/>
+                <dxl:OneTimeFilter/>
+              </dxl:Result>
             </dxl:Result>
-          </dxl:Result>
-        </dxl:Materialize>
-      </dxl:NestedLoopJoin>
+          </dxl:Sort>
+          <dxl:Materialize Eager="false">
+            <dxl:Properties>
+              <dxl:Cost StartupCost="0" TotalCost="0.000017" Rows="1.000000" Width="8"/>
+            </dxl:Properties>
+            <dxl:ProjList>
+              <dxl:ProjElem ColId="3" Alias="cashrange">
+                <dxl:Ident ColId="3" ColName="cashrange" TypeMdid="0.82276.1.0"/>
+              </dxl:ProjElem>
+            </dxl:ProjList>
+            <dxl:Filter/>
+            <dxl:Result>
+              <dxl:Properties>
+                <dxl:Cost StartupCost="0" TotalCost="0.000009" Rows="1.000000" Width="8"/>
+              </dxl:Properties>
+              <dxl:ProjList>
+                <dxl:ProjElem ColId="3" Alias="cashrange">
+                  <dxl:ConstValue TypeMdid="0.82276.1.0" Value="AAAAGWRBAQD0AQAAAAAAAFgCAAAAAAAAAA=="/>
+                </dxl:ProjElem>
+              </dxl:ProjList>
+              <dxl:Filter/>
+              <dxl:OneTimeFilter/>
+              <dxl:Result>
+                <dxl:Properties>
+                  <dxl:Cost StartupCost="0" TotalCost="0.000001" Rows="1.000000" Width="1"/>
+                </dxl:Properties>
+                <dxl:ProjList>
+                  <dxl:ProjElem ColId="2" Alias="">
+                    <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
+                  </dxl:ProjElem>
+                </dxl:ProjList>
+                <dxl:Filter/>
+                <dxl:OneTimeFilter/>
+              </dxl:Result>
+            </dxl:Result>
+          </dxl:Materialize>
+        </dxl:NestedLoopJoin>
+      </dxl:Aggregate>
     </dxl:Plan>
   </dxl:Thread>
 </dxl:DXLMessage>

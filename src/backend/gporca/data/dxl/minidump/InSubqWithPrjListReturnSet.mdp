@@ -203,7 +203,7 @@ Optimizer: Pivotal Optimizer (GPORCA)
         </dxl:LogicalProject>
       </dxl:LogicalProject>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="84">
+    <dxl:Plan Id="0" SpaceSize="66">
       <dxl:Result>
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="441357.573926" Rows="1.000000" Width="1"/>
@@ -236,7 +236,7 @@ Optimizer: Pivotal Optimizer (GPORCA)
                     <dxl:Cost StartupCost="0" TotalCost="0.000106" Rows="1.000000" Width="5"/>
                   </dxl:Properties>
                   <dxl:ProjList>
-                    <dxl:ProjElem ColId="5" Alias="ColRef_0005">
+                    <dxl:ProjElem ColId="9" Alias="ColRef_0009">
                       <dxl:ConstValue TypeMdid="0.16.1.0" Value="true"/>
                     </dxl:ProjElem>
                     <dxl:ProjElem ColId="3" Alias="generate_series">
