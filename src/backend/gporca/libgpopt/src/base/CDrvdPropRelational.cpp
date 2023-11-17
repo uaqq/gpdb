@@ -16,6 +16,7 @@
 #include "gpos/task/CWorker.h"
 
 #include "gpopt/base/CColRefSet.h"
+#include "gpopt/base/CColRefSetIter.h"
 #include "gpopt/base/CKeyCollection.h"
 #include "gpopt/base/CPartInfo.h"
 #include "gpopt/base/CReqdPropPlan.h"
@@ -354,6 +355,28 @@ CDrvdPropRelational::DeriveOutputColumns(CExpressionHandle &exprhdl)
 	}
 
 	return m_pcrsOutput;
+}
+
+// used output columns
+CColRefSet *
+CDrvdPropRelational::DeriveUsedOutputColumns(CExpressionHandle &exprhdl)
+{
+	CColRefSet *pcrsOutput = DeriveOutputColumns(exprhdl);
+	CColRefSetIter crsi(*m_pcrsOutput);
+
+	while (crsi.Advance())
+	{
+		// We want to limit the output columns to only those which are referenced in the query
+		// We will know the entire list of columns which are referenced in the query only after
+		// translating the entire DXL to an expression. Hence we should not limit the output columns
+		// before we have processed the entire DXL.
+		if (CColRef::EUnused == crsi.Pcr()->GetUsage())
+		{
+			pcrsOutput->Exclude(crsi.Pcr());
+		}
+	}
+
+	return pcrsOutput;
 }
 
 // outer references

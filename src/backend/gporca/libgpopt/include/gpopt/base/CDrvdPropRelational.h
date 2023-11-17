@@ -145,6 +145,9 @@ protected:
 	// output columns
 	CColRefSet *DeriveOutputColumns(CExpressionHandle &);
 
+	// used output columns
+	CColRefSet *DeriveUsedOutputColumns(CExpressionHandle &);
+
 	// outer references
 	CColRefSet *DeriveOuterReferences(CExpressionHandle &);
 

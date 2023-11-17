@@ -1299,9 +1299,9 @@ CSubqueryHandler::FCreateCorrelatedApplyForExistentialSubquery(
 	// get the logical child of subquery
 	CExpression *pexprInner = (*pexprSubquery)[0];
 
-	// for existential subqueries, any column produced by inner expression
+	// for existential subqueries, used column produced by inner expression
 	// can be used to check for empty answers; we use first column for that
-	CColRef *colref = pexprInner->DeriveOutputColumns()->PcrFirst();
+	CColRef *colref = pexprInner->DeriveUsedOutputColumns()->PcrFirst();
 
 	pexprInner->AddRef();
 	if (EsqctxtFilter == esqctxt)
@@ -1931,9 +1931,9 @@ CSubqueryHandler::FRemoveExistentialSubquery(
 	{
 		GPOS_ASSERT(EsqctxtFilter == esqctxt);
 
-		// for existential subqueries, any column produced by inner expression
+		// for existential subqueries, used column produced by inner expression
 		// can be used to check for empty answers; we use first column for that
-		CColRef *colref = pexprInner->DeriveOutputColumns()->PcrFirst();
+		CColRef *colref = pexprInner->DeriveUsedOutputColumns()->PcrFirst();
 
 		if (COperator::EopScalarSubqueryExists == op_id)
 		{

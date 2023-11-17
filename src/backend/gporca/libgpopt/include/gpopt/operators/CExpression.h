@@ -293,6 +293,7 @@ public:
 	// Relational property accessors - derived as needed
 	CColRefSet *DeriveOuterReferences();
 	CColRefSet *DeriveOutputColumns();
+	CColRefSet *DeriveUsedOutputColumns();
 	CColRefSet *DeriveNotNullColumns();
 	CColRefSet *DeriveCorrelatedApplyColumns();
 	CKeyCollection *DeriveKeyCollection();

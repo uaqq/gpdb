@@ -1459,6 +1459,14 @@ CExpression::DeriveOutputColumns()
 }
 
 CColRefSet *
+CExpression::DeriveUsedOutputColumns()
+{
+	CExpressionHandle exprhdl(m_mp);
+	exprhdl.Attach(this);
+	return m_pdprel->DeriveUsedOutputColumns(exprhdl);
+}
+
+CColRefSet *
 CExpression::DeriveNotNullColumns()
 {
 	CExpressionHandle exprhdl(m_mp);
