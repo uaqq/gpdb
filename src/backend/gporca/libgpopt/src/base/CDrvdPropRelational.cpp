@@ -374,6 +374,10 @@ CDrvdPropRelational::DeriveOutputColumns(CExpressionHandle &exprhdl)
 			m_pcrsOutput->Release();
 			m_pcrsOutput = pcrsOutput;
 		}
+		else
+		{
+			pcrsOutput->Release();
+		}
 	}
 
 	return m_pcrsOutput;
