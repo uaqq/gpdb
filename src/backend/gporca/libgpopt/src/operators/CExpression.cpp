@@ -67,7 +67,8 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_pgexpr(pgexpr),
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
-	  m_ulOriginGrpExprId(gpos::ulong_max)
+	  m_ulOriginGrpExprId(gpos::ulong_max),
+	  m_motionInputSegments(NULL)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -102,7 +103,8 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop, CExpression *pexpr)
 	  m_pgexpr(NULL),
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
-	  m_ulOriginGrpExprId(gpos::ulong_max)
+	  m_ulOriginGrpExprId(gpos::ulong_max),
+	  m_motionInputSegments(NULL)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -139,7 +141,8 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_pgexpr(NULL),
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
-	  m_ulOriginGrpExprId(gpos::ulong_max)
+	  m_ulOriginGrpExprId(gpos::ulong_max),
+	  m_motionInputSegments(NULL)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -180,7 +183,8 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_pgexpr(NULL),
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
-	  m_ulOriginGrpExprId(gpos::ulong_max)
+	  m_ulOriginGrpExprId(gpos::ulong_max),
+	  m_motionInputSegments(NULL)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -221,7 +225,8 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_pgexpr(NULL),
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
-	  m_ulOriginGrpExprId(gpos::ulong_max)
+	  m_ulOriginGrpExprId(gpos::ulong_max),
+	  m_motionInputSegments(NULL)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -254,7 +259,8 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_pgexpr(pgexpr),
 	  m_cost(cost),
 	  m_ulOriginGrpId(gpos::ulong_max),
-	  m_ulOriginGrpExprId(gpos::ulong_max)
+	  m_ulOriginGrpExprId(gpos::ulong_max),
+	  m_motionInputSegments(NULL)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -425,6 +431,27 @@ CExpression::AssertValidPropDerivation(const CDrvdProp::EPropType ept)
 
 #endif	// GPOS_DEBUG
 
+void
+CExpression::SetMotionInputsForChildren()
+{
+	const ULONG arity = Arity();
+
+	for (ULONG ul = 0; ul < arity; ul++)
+	{
+		CExpression *pexprChild = (*m_pdrgpexpr)[ul];
+		COperator::EOperatorId opid = pexprChild->m_pop->Eopid();
+
+		if
+		(
+			opid != EdxlopPhysicalMotionGather &&
+			opid != EdxlopPhysicalMotionBroadcast &&
+			opid != EdxlopPhysicalMotionRedistribute &&
+			opid != EdxlopPhysicalMotionRoutedDistribute &&
+			opid != EdxlopPhysicalMotionRandom
+		)
+			pexprChild->SetMotionInputs(m_motionInputSegments);
+	}
+}
 
 //---------------------------------------------------------------------------
 //	@function:
