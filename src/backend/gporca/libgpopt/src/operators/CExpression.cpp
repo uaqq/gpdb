@@ -439,15 +439,14 @@ CExpression::SetMotionInputsForChildren()
 	for (ULONG ul = 0; ul < arity; ul++)
 	{
 		CExpression *pexprChild = (*m_pdrgpexpr)[ul];
-		COperator::EOperatorId opid = pexprChild->m_pop->Eopid();
+		COperator::EOperatorId opid = pexprChild->Pop()->Eopid();
 
-		if
-		(
-			opid != EdxlopPhysicalMotionGather &&
-			opid != EdxlopPhysicalMotionBroadcast &&
-			opid != EdxlopPhysicalMotionRedistribute &&
-			opid != EdxlopPhysicalMotionRoutedDistribute &&
-			opid != EdxlopPhysicalMotionRandom
+		if (
+			opid != COperator::EopPhysicalMotionGather &&
+			opid != COperator::EopPhysicalMotionBroadcast &&
+			opid != COperator::EopPhysicalMotionHashDistribute &&
+			opid != COperator::EopPhysicalMotionRoutedDistribute &&
+			opid != COperator::EopPhysicalMotionRandom
 		)
 			pexprChild->SetMotionInputs(m_motionInputSegments);
 	}

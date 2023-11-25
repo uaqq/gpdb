@@ -2049,7 +2049,6 @@ CTranslatorExprToDXL::PdxlnCTEProducer(
 
 	// extract components
 	CExpression *pexprRelational = (*pexprCTEProducer)[0];
-
 	CPhysicalCTEProducer *popCTEProducer =
 		CPhysicalCTEProducer::PopConvert(pexprCTEProducer->Pop());
 
@@ -3427,6 +3426,7 @@ CTranslatorExprToDXL::PdxlnExistentialSubplan(
 
 	// translate inner child
 	CExpression *pexprInner = (*pexprCorrelatedNLJoin)[1];
+
 	CDXLNode *pdxlnInnerChild = CreateDXLNode(
 		pexprInner, NULL /*colref_array*/, pdrgpdsBaseTables,
 		pulNonGatherMotions, pfDML, false /*fRemap*/, false /*fRoot*/);
@@ -3992,6 +3992,7 @@ CTranslatorExprToDXL::PdxlnNLJoin(CExpression *pexprInnerNLJ,
 	CExpression *pexprOuterChild = (*pexprInnerNLJ)[0];
 	CExpression *pexprInnerChild = (*pexprInnerNLJ)[1];
 	CExpression *pexprScalar = (*pexprInnerNLJ)[2];
+
 
 #ifdef GPOS_DEBUG
 	GPOS_ASSERT_IMP(
