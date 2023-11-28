@@ -456,7 +456,14 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 		COperator::EopPhysicalMotionRandom == ulOpId)
 	{
 		gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexpr);
-		pexpr->SetMotionInputs(inputSegmentInfo);
+
+		if (NULL != inputSegmentInfo)
+		{
+			pexpr->SetMotionInputsNumber(inputSegmentInfo->Size());
+			CRefCount::SafeRelease(inputSegmentInfo);
+		}
+		else
+			pexpr->SetMotionInputsNumber(0);
 	}
 	PfPdxlnPhysical pf = m_rgpfPhysicalTranslators[ulOpId];
 	if (NULL == pf)
@@ -470,7 +477,7 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 	// are no longer needed
 	CDXLNode *pdxlnNew = NULL;
 
-	pexpr->SetMotionInputsForChildren();
+	pexpr->SetMotionInputsNumberForChildren();
 
 	CDXLNode *dxlnode = (this->*pf)(pexpr, colref_array, pdrgpdsBaseTables,
 									pulNonGatherMotions, pfDML);
@@ -4440,8 +4447,6 @@ CTranslatorExprToDXL::PdxlnMotion(CExpression *pexprMotion,
 	GPOS_ASSERT(NULL != pexprMotion);
 	GPOS_ASSERT(1 == pexprMotion->Arity());
 
-	gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexprMotion);
-
 	// extract components
 	CExpression *pexprChild = (*pexprMotion)[0];
 
@@ -4531,7 +4536,8 @@ CTranslatorExprToDXL::PdxlnMotion(CExpression *pexprMotion,
 			m_mp, m_pcf, m_phmcrdxln, pdxlnProjListChild);
 
 	// set input and output segment information
-	motion->SetSegmentInfo(inputSegmentInfo, GetOutputSegIdsArray(pexprMotion));
+	motion->SetSegmentInfo(GetInputSegIdsArray(pexprMotion),
+						   GetOutputSegIdsArray(pexprMotion));
 
 	CDXLNode *pdxlnMotion = GPOS_NEW(m_mp) CDXLNode(m_mp, motion);
 	CDXLPhysicalProperties *dxl_properties = GetProperties(pexprMotion);
@@ -7652,8 +7658,8 @@ CTranslatorExprToDXL::GetProperties(const CExpression *pexpr)
 	{
 		// if distribution is replicated, multiply number of rows by number of segments
 		ULONG ulSegments =
-			pexpr->GetMotionInputs()
-				? pexpr->GetMotionInputs()->Size()
+			pexpr->GetMotionInputsNumber() > 0
+				? pexpr->GetMotionInputsNumber()
 				: COptCtxt::PoctxtFromTLS()->GetCostModel()->UlHosts();
 		rows = rows * ulSegments;
 	}

@@ -68,7 +68,7 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
 	  m_ulOriginGrpExprId(gpos::ulong_max),
-	  m_motionInputSegments(NULL)
+	  m_motionInputSegmentsNumber(0)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -104,7 +104,7 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop, CExpression *pexpr)
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
 	  m_ulOriginGrpExprId(gpos::ulong_max),
-	  m_motionInputSegments(NULL)
+	  m_motionInputSegmentsNumber(0)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -142,7 +142,7 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
 	  m_ulOriginGrpExprId(gpos::ulong_max),
-	  m_motionInputSegments(NULL)
+	  m_motionInputSegmentsNumber(0)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -184,7 +184,7 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
 	  m_ulOriginGrpExprId(gpos::ulong_max),
-	  m_motionInputSegments(NULL)
+	  m_motionInputSegmentsNumber(0)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -226,7 +226,7 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_cost(GPOPT_INVALID_COST),
 	  m_ulOriginGrpId(gpos::ulong_max),
 	  m_ulOriginGrpExprId(gpos::ulong_max),
-	  m_motionInputSegments(NULL)
+	  m_motionInputSegmentsNumber(0)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -260,7 +260,7 @@ CExpression::CExpression(CMemoryPool *mp, COperator *pop,
 	  m_cost(cost),
 	  m_ulOriginGrpId(gpos::ulong_max),
 	  m_ulOriginGrpExprId(gpos::ulong_max),
-	  m_motionInputSegments(NULL)
+	  m_motionInputSegmentsNumber(0)
 {
 	GPOS_ASSERT(NULL != mp);
 	GPOS_ASSERT(NULL != pop);
@@ -432,7 +432,7 @@ CExpression::AssertValidPropDerivation(const CDrvdProp::EPropType ept)
 #endif	// GPOS_DEBUG
 
 void
-CExpression::SetMotionInputsForChildren()
+CExpression::SetMotionInputsNumberForChildren()
 {
 	const ULONG arity = Arity();
 
@@ -446,7 +446,7 @@ CExpression::SetMotionInputsForChildren()
 			opid != COperator::EopPhysicalMotionHashDistribute &&
 			opid != COperator::EopPhysicalMotionRoutedDistribute &&
 			opid != COperator::EopPhysicalMotionRandom)
-			pexprChild->SetMotionInputs(m_motionInputSegments);
+			pexprChild->SetMotionInputsNumber(m_motionInputSegmentsNumber);
 	}
 }
 

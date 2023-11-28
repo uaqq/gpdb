@@ -99,7 +99,7 @@ private:
 	CDrvdProp *Pdp(const CDrvdProp::EPropType ept) const;
 
 	// parent motion's input segments
-	IntPtrArray *m_motionInputSegments;
+	ULONG m_motionInputSegmentsNumber;
 
 #ifdef GPOS_DEBUG
 
@@ -219,18 +219,18 @@ public:
 		return m_cost;
 	}
 
-	void SetMotionInputsForChildren();
+	void SetMotionInputsNumberForChildren();
 
 	void
-	SetMotionInputs(IntPtrArray *motionInputSegments)
+	SetMotionInputsNumber(ULONG motionInputSegmentsNumber)
 	{
-		m_motionInputSegments = motionInputSegments;
+		m_motionInputSegmentsNumber = motionInputSegmentsNumber;
 	}
 
-	IntPtrArray *
-	GetMotionInputs() const
+	ULONG
+	GetMotionInputsNumber() const
 	{
-		return m_motionInputSegments;
+		return m_motionInputSegmentsNumber;
 	}
 
 	// get the suitable derived property type based on operator

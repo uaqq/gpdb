@@ -317,8 +317,6 @@ COptimizer::PdxlnOptimize(
 			CExpression *pexprPlan = PexprOptimize(mp, pqc, search_stage_array);
 			GPOS_CHECK_ABORT;
 
-			pexprPlan->SetMotionInputs(NULL);
-
 			// translate plan into DXL
 			pdxlnPlan = CreateDXLNode(mp, md_accessor, pexprPlan,
 									  pqc->PdrgPcr(), pdrgpmdname, ulHosts);
