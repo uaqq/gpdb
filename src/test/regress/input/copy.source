@@ -220,3 +220,27 @@ COPY table_with_oids FROM '@abs_srcdir@/data/copy_with_oids.data' WITH OIDS DELI
 SELECT count(*) FROM table_with_oids;
 SELECT * FROM table_with_oids;
 DROP TABLE table_with_oids;
+
+-- special case, copy with FILL MISSING FIELDS option
+CREATE TABLE table_test (
+	a 			int,
+	b			text,
+	c			text
+);
+-- request without FILL MISSING FIELDS should fail
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data';
+-- check 'old' syntax
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' FILL MISSING FIELDS;
+-- check 'new' syntax
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MISSING FIELDS);
+-- next 5 requests are expected to fail
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MISSING FIELDS SOME_STR);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (SOME_STR FILL MISSING FIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MIISSING FIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FIILL MISSING FIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MISSING FIIELDS);
+-- check target option in pair with other option
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv, FILL MISSING FIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FILL MISSING FIELDS, FORMAT csv);
+SELECT * FROM table_test;
+DROP TABLE table_test;
