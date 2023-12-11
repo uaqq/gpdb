@@ -4398,9 +4398,18 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
 			sub_final_rel = fetch_upper_rel(best_path->parent->subroot, UPPERREL_FINAL, NULL);
 			subplan = create_plan(best_path->parent->subroot, sub_final_rel->cheapest_total_path, root->curSlice);
 			cteplaninfo->shared_plan = prepare_plan_for_sharing(cteroot, subplan);
+			cteplaninfo->gangType = root->curSlice->gangType;
 		}
 		/* Wrap the common Plan tree in a ShareInputScan node */
 		subplan = share_prepared_plan(cteroot, cteplaninfo->shared_plan);
+		/*
+		 * If the subplan makes a primary writer gang, set this gang type to
+		 * all CTE occurences. After setting the reader and writer shareinput
+		 * scan roles, the readers will be reassigned GANGTYPE_PRIMARY_READER
+		 * in the shareinput_mutator_xslice_2().
+		 */
+		if (cteplaninfo->gangType == GANGTYPE_PRIMARY_WRITER)
+			root->curSlice->gangType = cteplaninfo->gangType;
 	}
 
 	scan_plan = (Plan *) make_subqueryscan(tlist,

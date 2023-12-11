@@ -993,12 +993,12 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 		sisc->producer_slice_id = pershare->producer_slice_id;
 		sisc->nconsumers = bms_num_members(pershare->participant_slices) - 1;
 
+		PlanSlice  *currentSlice = &ctxt->slices[motId];
 		/*
 		 * If this share needs to run in the QD, mark the slice accordingly.
 		 */
 		if (bms_is_member(sisc->share_id, ctxt->qdShares))
 		{
-			PlanSlice  *currentSlice = &ctxt->slices[motId];
 
 			switch (currentSlice->gangType)
 			{
@@ -1014,6 +1014,12 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 					break;
 			}
 		}
+
+		/*
+		 * Remove writer gang for the shareinput scan readers
+		 */
+		if (currentSlice->gangType == GANGTYPE_PRIMARY_WRITER && !plan->lefttree)
+			currentSlice->gangType = GANGTYPE_PRIMARY_READER;
 	}
 	return true;
 }

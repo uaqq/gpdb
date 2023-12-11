@@ -490,6 +490,11 @@ typedef struct CtePlanInfo
 	 * The subroot corresponding to the subplan.
 	 */
 	PlannerInfo *subroot;
+
+	/*
+	 * The gang type of the subplan
+	 */
+	GangType gangType;
 } CtePlanInfo;
 
 /*

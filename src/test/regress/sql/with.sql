@@ -1190,3 +1190,11 @@ create temp table with_test (i int);
 with with_test as (select 42) insert into with_test select * from with_test;
 select * from with_test;
 drop table with_test;
+
+-- check that planner correctly assigns writer slice in case of shared
+-- modifying CTE
+CREATE TEMP TABLE withmodcte (c1 int, c2 int) DISTRIBUTED RANDOMLY;
+EXPLAIN (SLICETABLE, COSTS OFF)
+WITH cte AS (
+	INSERT INTO withmodcte VALUES ( 1, 2 ) RETURNING *
+) SELECT * FROM cte a JOIN cte b USING(c1);
