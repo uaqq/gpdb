@@ -244,3 +244,4 @@ COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv, FILL MISSING FIEL
 COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FILL MISSING FIELDS, FORMAT csv);
 SELECT * FROM table_test;
 DROP TABLE table_test;
+
