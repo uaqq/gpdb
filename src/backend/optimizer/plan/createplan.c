@@ -4403,13 +4403,16 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
 		/* Wrap the common Plan tree in a ShareInputScan node */
 		subplan = share_prepared_plan(cteroot, cteplaninfo->shared_plan);
 		/*
-		 * If the subplan makes a primary writer gang, set this gang type to
-		 * all CTE occurences. After setting the reader and writer shareinput
-		 * scan roles, the readers will be reassigned GANGTYPE_PRIMARY_READER
-		 * in the shareinput_mutator_xslice_2().
+		 * If the subplan for modifying CTE makes a primary writer gang, set
+		 * this gang type to all CTE occurences. After setting the reader and
+		 * writer shareinput scan roles, the readers will be reassigned
+		 * GANGTYPE_PRIMARY_READER in the shareinput_mutator_xslice_2().
 		 */
-		if (cteplaninfo->gangType == GANGTYPE_PRIMARY_WRITER)
+		if (root->parse->hasModifyingCTE &&
+			cteplaninfo->gangType == GANGTYPE_PRIMARY_WRITER)
+		{
 			root->curSlice->gangType = cteplaninfo->gangType;
+		}
 	}
 
 	scan_plan = (Plan *) make_subqueryscan(tlist,
