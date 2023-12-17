@@ -1017,11 +1017,12 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 
 		/*
 		 * Remove writer gang for the shareinput scan readers in case
-		 * of modifying CTE
+		 * of cross-slice modifying CTE
 		 */
-		if (root->parse->hasModifyingCTE &&
-			currentSlice->gangType == GANGTYPE_PRIMARY_WRITER
-			&& !plan->lefttree)
+		if (sisc->cross_slice &&
+			root->parse->hasModifyingCTE &&
+			currentSlice->gangType == GANGTYPE_PRIMARY_WRITER &&
+			!plan->lefttree)
 		{
 			currentSlice->gangType = GANGTYPE_PRIMARY_READER;
 		}
