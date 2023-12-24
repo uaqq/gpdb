@@ -74,8 +74,10 @@ typedef struct ApplyMotionState
 	plan_tree_base_prefix base; /* Required prefix for
 								 * plan_tree_walker/mutator */
 	int			nextMotionID;
+	int			numsegments;
 	int			sliceDepth;
 	bool		containMotionNodes;
+	Node	   *from;
 	HTAB	   *planid_subplans; /* hash table for InitPlanItem */
 } ApplyMotionState;
 
@@ -93,16 +95,6 @@ typedef struct
 	bool		single_row_insert;
 	List	   *cursorPositions;
 } pre_dispatch_function_evaluation_context;
-
-typedef struct RowsMutatorState {
-	   plan_tree_base_prefix base;
-	   Node *sliceRoot;
-	   int scaleFactor;
-} RowsMutatorState;
-
-static bool broadcast_motion_walker(Node *node, RowsMutatorState *state);
-
-static bool rows_number_walker(Node *node, RowsMutatorState *state);
 
 static Node *planner_make_plan_constant(struct PlannerInfo *root, Node *n, bool is_SRI);
 
@@ -376,49 +368,49 @@ get_partitioned_policy_from_flow(Plan *plan)
 									   GP_POLICY_DEFAULT_NUMSEGMENTS());
 }
 
-/*
-	Make a single traversal to fixup rows number in slices which are
-	below Broadcast Motion nodes. 
- */
-static bool
-broadcast_motion_walker(Node *node, RowsMutatorState *state)
-{
-	if (node == NULL)
-		return false;
-
-	if (is_plan_node(node) &&
-		((Plan *) node)->flow != NULL &&
-		((Plan *) node)->flow->req_move == MOVEMENT_BROADCAST)
-	{
-		state->scaleFactor = ((Plan *) node)->flow->numsegments;
-		plan_tree_walker(state->sliceRoot, rows_number_walker, state);
-	}
-	else if (IsA(node, Motion) || IsA(node, SubPlan))
-		state->sliceRoot = node;
-
-	return plan_tree_walker(node, broadcast_motion_walker, state);
-}
 
 static bool
-rows_number_walker(Node *node, RowsMutatorState *state)
+rows_number_walker(Node *node, ApplyMotionState *context)
 {
-	Plan	  *currentPlan;
-
 	if (node == NULL)
 		return false;
 
 	if (is_plan_node(node))
 	{
-		if (((Plan *) node)->flow != NULL &&
-			((Plan *) node)->flow->req_move == MOVEMENT_BROADCAST)
+		Plan	  *plan = (Plan *) node;
+
+		if (plan->flow != NULL && plan->flow->req_move == MOVEMENT_BROADCAST)
 			return true;
 
-		currentPlan = (Plan *) node;
-		currentPlan->plan_rows *= state->scaleFactor;
+		plan->plan_rows *= context->numsegments;
 	}
 
-	return plan_tree_walker(node, rows_number_walker, state);
+	return plan_tree_walker(node, rows_number_walker, context);
 }
+
+
+static bool
+broadcast_motion_walker(Node *node, ApplyMotionState *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (is_plan_node(node))
+	{
+		Plan	  *plan = (Plan *) node;
+
+		if (plan->flow != NULL && plan->flow->req_move == MOVEMENT_BROADCAST)
+		{
+			context->numsegments = plan->flow->numsegments;
+			(void )rows_number_walker(context->from, context);
+		}
+	}
+	else if (IsA(node, Motion) || IsA(node, SubPlan))
+		context->from = node;
+
+	return plan_tree_walker(node, broadcast_motion_walker, context);
+}
+
 
 /* -------------------------------------------------------------------------
  * Function apply_motion() and apply_motion_mutator() add motion nodes to a
@@ -444,17 +436,11 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 	InitPlanItem *item;
 	GpPolicyType targetPolicyType = POLICYTYPE_ENTRY;
 	ApplyMotionState state;
-	RowsMutatorState broadcast_motion_walker_state;
 	HASHCTL ctl;
 	HASH_SEQ_STATUS status;
 	bool		needToAssignDirectDispatchContentIds = false;
 	bool		bringResultToDispatcher = false;
 	int			numsegments = getgpsegmentCount();
-
-	/* Initialize broadcast motion walker context */
-
-	planner_init_plan_tree_base(&broadcast_motion_walker_state.base, root);
-	broadcast_motion_walker_state.sliceRoot = (Node*)(plan);
 
 	/* Initialize mutator context. */
 
@@ -462,8 +448,10 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 													 * descend into subplan
 													 * plan */
 	state.nextMotionID = 1;		/* Start at 1 so zero will mean "unassigned". */
+	state.numsegments = numsegments;
 	state.sliceDepth = 0;
 	state.containMotionNodes = false;
+	state.from = (Node *) plan;
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(int);
 	ctl.entrysize = sizeof(InitPlanItem);
@@ -742,7 +730,7 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 			Insist(focusPlan(plan, false, false));
 	}
 
-	plan_tree_walker((Node*)plan, broadcast_motion_walker, &broadcast_motion_walker_state);
+	(void) plan_tree_walker((Node *) plan, broadcast_motion_walker, &state);
 
 	result = (Plan *) apply_motion_mutator((Node *) plan, &state);
 

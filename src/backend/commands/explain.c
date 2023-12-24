@@ -1213,29 +1213,19 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	char       *skip_outer_msg = NULL;
 	int			motion_recv;
 	int			motion_snd;
-
-	/*
-	 * We will divide planner estimates by this factor to produce per-segment
-	 * estimates. In those cases when a command is executed on a single
-	 * segment, save_currentSlice->gangSize will equal 0, so we use
-	 * scaleFactor == 1 instead. save_currentSlice can be null if we use
-	 * utility mode.
-	 */
-	float		scaleFactor = (save_currentSlice && save_currentSlice->gangSize) ?
-	(float) save_currentSlice->gangSize :
-	1.0;
+	float		scaleFactor = 1.0; /* we will divide planner estimates by this factor to produce
+									  per-segment estimates */
+	Slice		*parentSlice = NULL;
 
 	/* Remember who called us. */
 	parentplanstate = es->parentPlanState;
 	es->parentPlanState = planstate;
 
-	if (nodeTag(plan) == T_ModifyTable && CdbPathLocus_IsReplicated(*(plan->flow)))
+	if (save_currentSlice != NULL && save_currentSlice->gangSize > 0)
 	{
-		Assert(es->pstmt->planGen == PLANGEN_PLANNER);	/* T_ModifyTable can be
-														 * produce by planner
-														 * only */
-		scaleFactor = 1.0;
+		scaleFactor = (float) save_currentSlice->gangSize;
 	}
+
 	if (plan->flow != NULL && CdbPathLocus_IsSegmentGeneral(*(plan->flow)))
 	{
 		/* Replicated table has full data on every segment */
@@ -1249,6 +1239,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_ModifyTable:
 			sname = "ModifyTable";
+
+			if (plan->flow != NULL && CdbPathLocus_IsReplicated(*(plan->flow)))
+			{
+				scaleFactor = 1.0;
+			}
+
 			switch (((ModifyTable *) plan)->operation)
 			{
 				case CMD_INSERT:
