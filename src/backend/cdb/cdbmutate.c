@@ -1016,13 +1016,20 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 		}
 
 		/*
-		 * Remove writer gang for the shareinput scan readers in case
-		 * of cross-slice modifying CTE
+		 * The SISC's plan contains modifying operation, which
+		 * creates a writer gang. Due to specific tree traverse order
+		 * during apply_shareinput_dag_to_tree, the producer could get
+		 * to the reader slice, while the consumer could get to the
+		 * writer slice (gangType is chosen before shareinput fixing).
+		 * Therefore, in order to prevent this, we set up the correct
+		 * gangType back.
 		 */
-		if (sisc->cross_slice &&
-			root->parse->hasModifyingCTE &&
-			currentSlice->gangType == GANGTYPE_PRIMARY_WRITER &&
-			!plan->lefttree)
+		if (plan->lefttree && sisc->rootSliceIsWriter)
+			currentSlice->gangType = GANGTYPE_PRIMARY_WRITER;
+
+		if (!plan->lefttree &&
+			sisc->this_slice_id != sisc->producer_slice_id &&
+			sisc->rootSliceIsWriter)
 		{
 			currentSlice->gangType = GANGTYPE_PRIMARY_READER;
 		}

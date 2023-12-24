@@ -492,9 +492,13 @@ typedef struct CtePlanInfo
 	PlannerInfo *subroot;
 
 	/*
-	 * The gang type of the subplan
+	 * For shared plans only. Indicates that CTE's root slice is writing.
+	 * I.e. in CTE's plan there is a modifying operation without a motion
+	 * above. The flag can't be used before create_ctescan_plan processing of
+	 * the shared plan. This flag is needed for correct gangType allocation
+	 * after consumer's plan is cut.
 	 */
-	GangType gangType;
+	bool rootSliceIsWriter;
 } CtePlanInfo;
 
 /*
