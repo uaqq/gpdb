@@ -5848,7 +5848,6 @@ CTranslatorExprToDXL::PdxlnCTAS(CExpression *pexpr,
 	GPOS_ASSERT(CLogicalDML::EdmlInsert == popDML->Edmlop());
 
 	CExpression *pexprChild = (*pexpr)[0];
-
 	CTableDescriptor *ptabdesc = popDML->Ptabdesc();
 	CColRefArray *pdrgpcrSource = popDML->PdrgpcrSource();
 	CMDRelationCtasGPDB *pmdrel =
