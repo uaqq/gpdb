@@ -981,6 +981,7 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 		ShareInputScan *sisc = (ShareInputScan *) plan;
 		int			motId = shareinput_peekmot(ctxt);
 		ApplyShareInputContextPerShare *pershare;
+		PlanSlice  *currentSlice = &ctxt->slices[motId];
 
 		pershare = &ctxt->shared_inputs[sisc->share_id];
 
@@ -993,7 +994,6 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 		sisc->producer_slice_id = pershare->producer_slice_id;
 		sisc->nconsumers = bms_num_members(pershare->participant_slices) - 1;
 
-		PlanSlice  *currentSlice = &ctxt->slices[motId];
 		/*
 		 * If this share needs to run in the QD, mark the slice accordingly.
 		 */
@@ -1024,14 +1024,12 @@ shareinput_mutator_xslice_2(Node *node, PlannerInfo *root, bool fPop)
 		 * Therefore, in order to prevent this, we set up the correct
 		 * gangType back.
 		 */
-		if (plan->lefttree && sisc->rootSliceIsWriter)
-			currentSlice->gangType = GANGTYPE_PRIMARY_WRITER;
-
-		if (!plan->lefttree &&
-			sisc->this_slice_id != sisc->producer_slice_id &&
-			sisc->rootSliceIsWriter)
+		if (sisc->rootSliceIsWriter)
 		{
-			currentSlice->gangType = GANGTYPE_PRIMARY_READER;
+			if (plan->lefttree)
+				currentSlice->gangType = GANGTYPE_PRIMARY_WRITER;
+			else if (sisc->this_slice_id != sisc->producer_slice_id)
+				currentSlice->gangType = GANGTYPE_PRIMARY_READER;
 		}
 	}
 	return true;
