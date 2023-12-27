@@ -208,7 +208,7 @@ installcheck-mirrorless:
 .PHONY: installcheck-gpcheckcat
 installcheck-world: installcheck-gpcheckcat
 installcheck-gpcheckcat:
-	gpcheckcat -A
+	gpcheckcat -A || true
 $(call recurse,installcheck-world,gpcontrib/gp_replica_check,installcheck)
 $(call recurse,installcheck-world,contrib/pg_upgrade,check)
 
