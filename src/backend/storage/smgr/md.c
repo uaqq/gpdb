@@ -382,6 +382,14 @@ mdcreate_ao(RelFileNodeBackend rnode, int32 segmentFileNum, bool isRedo)
 		}
 	}
 
+	/* 
+	 * This function is intended only to a create file.
+	 * So, once the file is created successfully, close it.
+	 * If someone wants to access this file afterward,
+	 * he will need to open it again.
+	 */
+	FileClose(fd);
+
 	if (path != buf)
 		pfree(path);
 }

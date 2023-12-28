@@ -180,11 +180,18 @@ BufferedAppendWrite(BufferedAppend *bufferedAppend, bool needsWAL)
 								 (char *) largeWriteMemory + bytestotal,
 								 bytesleft);
 		if (byteswritten < 0)
+		{
+			/*
+			 * Close the file before throwing the ereport
+			 * to avoid orphaned file descriptors if we run out of space
+			 */
+			FileClose(bufferedAppend->file);
 			ereport(ERROR,
 					(errcode_for_file_access(),
 					 errmsg("could not write in table \"%s\" to segment file \"%s\": %m",
 							bufferedAppend->relationName,
 							bufferedAppend->filePathName)));
+		}
 
 		bytesleft -= byteswritten;
 		bytestotal += byteswritten;

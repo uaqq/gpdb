@@ -112,6 +112,16 @@ CREATE TABLE tablespace_table (i int) TABLESPACE testspace; -- fail
 ALTER TABLE testschema.tablespace_acl ALTER c TYPE bigint;
 RESET ROLE;
 
+CREATE TEMP TABLE test_table(a int) WITH (APPENDONLY = TRUE) TABLESPACE testspace DISTRIBUTED BY (a);
+INSERT INTO test_table SELECT generate_series(1,100);
+DROP TABLE test_table;
+
+CREATE TABLE test_table(a int) WITH (APPENDONLY = TRUE) TABLESPACE testspace DISTRIBUTED BY (a);
+INSERT INTO test_table SELECT generate_series(1,100);
+DROP TABLE test_table;
+-- Check there is zero opened file descriptors after query
+\! lsof +L1 | grep postgres | grep testtablespace
+
 ALTER TABLESPACE testspace RENAME TO testspace_renamed;
 
 -- Test that default_tablespace GUC is honored even after gang reset.
