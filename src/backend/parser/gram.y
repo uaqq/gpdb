@@ -4078,11 +4078,7 @@ copy_generic_opt_list:
 		;
 
 copy_generic_opt_elem:
-			FILL MISSING FIELDS
-				{
-					$$ = makeDefElem("fill_missing_fields", (Node *)makeInteger(TRUE));
-				}
-			| ColLabel copy_generic_opt_arg
+			ColLabel copy_generic_opt_arg
 				{
 					$$ = makeDefElem($1, $2);
 				}

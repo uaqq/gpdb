@@ -222,6 +222,7 @@ SELECT * FROM table_with_oids;
 DROP TABLE table_with_oids;
 
 -- special case, copy with FILL MISSING FIELDS option
+DROP TABLE IF EXISTS table_test;
 CREATE TABLE table_test (
 	a 			int,
 	b			text,
@@ -232,16 +233,31 @@ COPY table_test FROM '@abs_srcdir@/data/copy_simple.data';
 -- check 'old' syntax
 COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' FILL MISSING FIELDS;
 -- check 'new' syntax
-COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MISSING FIELDS);
--- next 5 requests are expected to fail
-COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MISSING FIELDS SOME_STR);
-COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (SOME_STR FILL MISSING FIELDS);
-COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MIISSING FIELDS);
-COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FIILL MISSING FIELDS);
-COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL MISSING FIIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL_MISSING_FIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL_MISSING_FIELDS 1);
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL_MISSING_FIELDS true);
 -- check target option in pair with other option
-COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv, FILL MISSING FIELDS);
-COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FILL MISSING FIELDS, FORMAT csv);
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv, FILL_MISSING_FIELDS);
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FILL_MISSING_FIELDS, FORMAT csv);
 SELECT * FROM table_test;
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv, FILL_MISSING_FIELDS true);
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FILL_MISSING_FIELDS true, FORMAT csv);
+SELECT * FROM table_test;
+-- check 'new' ON_SEGMENT syntax
+COPY table_test TO '@abs_srcdir@/data/copy_table_test_<SEGID>.data' (ON_SEGMENT);
+COPY table_test TO '@abs_srcdir@/data/copy_table_test_<SEGID>.data' (ON_SEGMENT 1);
+COPY table_test TO '@abs_srcdir@/data/copy_table_test_<SEGID>.data' (ON_SEGMENT true);
+-- check SEGMENT REJECT LIMIT (without FILL_MISSING_FIELDS) - it will produce relevant notices
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv) LOG ERRORS SEGMENT REJECT LIMIT 10;
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv) SEGMENT REJECT LIMIT 10;
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv) SEGMENT REJECT LIMIT 10 ROWS;
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FORMAT csv) SEGMENT REJECT LIMIT 10 PERCENT;
+-- check SEGMENT REJECT LIMIT (with FILL_MISSING_FIELDS) - should be silent
+COPY table_test FROM '@abs_srcdir@/data/copy.csv' (FILL_MISSING_FIELDS, FORMAT csv) LOG ERRORS SEGMENT REJECT LIMIT 10;
+-- check IGNORE EXTERNAL PARTITIONS syntax
+COPY table_test TO '@abs_srcdir@/data/copy_table_test.csv' (FORMAT csv) IGNORE EXTERNAL PARTITIONS;
+-- check NEWLINE
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL_MISSING_FIELDS, NEWLINE 'LF');
+COPY table_test FROM '@abs_srcdir@/data/copy_simple.data' (FILL_MISSING_FIELDS, NEWLINE 'CR');
 DROP TABLE table_test;
 
