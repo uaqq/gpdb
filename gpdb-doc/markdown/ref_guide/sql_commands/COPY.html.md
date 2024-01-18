@@ -8,12 +8,12 @@ Copies data between a file and a table.
 COPY <table_name> [(<column_name> [, ...])] 
      FROM {'<filename>' | PROGRAM '<command>' | STDIN}
      [ [ WITH ] ( <option> [, ...] ) ]
-     [ ON SEGMENT ]
+     [ [LOG ERRORS] SEGMENT REJECT LIMIT <count> [ [ROWS] | PERCENT ] ]
 
 COPY { <table_name> [(<column_name> [, ...])] | (<query>)} 
      TO {'<filename>' | PROGRAM '<command>' | STDOUT}
      [ [ WITH ] ( <option> [, ...] ) ]
-     [ ON SEGMENT ]
+     [ IGNORE EXTERNAL PARTITIONS ]
 ```
 
 where option can be one of:
@@ -28,36 +28,44 @@ NULL '<null string>'
 HEADER [ <boolean> ]
 QUOTE '<quote_character>'
 ESCAPE '<escape_character>'
+NEWLINE '<newline_character>'
 FORCE_QUOTE { ( <column_name> [, ...] ) | * }
 FORCE_NOT_NULL ( <column_name> [, ...] ) 
 FORCE_NULL ( <column_name> [, ...] )
 ENCODING '<encoding_name>'       
-FILL MISSING FIELDS
-LOG ERRORS [ SEGMENT REJECT LIMIT <count> [ ROWS | PERCENT ] ]
-IGNORE EXTERNAL PARTITIONS
+FILL_MISSING_FIELDS [ <boolean> ]
+ON_SEGMENT [ <boolean> ]
 ```
 
 ## <a id="section3"></a>Description 
 
-`COPY` moves data between Greenplum Database tables and standard file-system files. `COPY TO` copies the contents of a table to a file \(or multiple files based on the segment ID if copying `ON SEGMENT`\), while `COPY FROM` copies data from a file to a table \(appending the data to whatever is in the table already\). `COPY TO` can also copy the results of a `SELECT` query.
+`COPY` moves data between Greenplum Database tables and standard file-system files. `COPY TO` copies the contents of a table to a file \(or multiple files based on the segment ID if copying `ON_SEGMENT`\), while `COPY FROM` copies data from a file to a table \(appending the data to whatever is in the table already\). `COPY TO` can also copy the results of a `SELECT` query.
 
 If a list of columns is specified, `COPY` will only copy the data in the specified columns to or from the file. If there are any columns in the table that are not in the column list, `COPY FROM` will insert the default values for those columns.
 
 `COPY` with a file name instructs the Greenplum Database master host to directly read from or write to a file. The file must be accessible to the master host and the name must be specified from the viewpoint of the master host.
 
-When `COPY` is used with the `ON SEGMENT` clause, the `COPY TO` causes segments to create individual segment-oriented files, which remain on the segment hosts. The filename argument for `ON SEGMENT` takes the string literal `<SEGID>` \(required\) and uses either the absolute path or the `<SEG_DATA_DIR>` string literal. When the `COPY` operation is run, the segment IDs and the paths of the segment data directories are substituted for the string literal values.
+When `COPY` is used with the `ON_SEGMENT` option, the `COPY TO` causes segments to create individual segment-oriented files, which remain on the segment hosts. The filename argument for `ON_SEGMENT` takes the string literal `<SEGID>` \(required\) and uses either the absolute path or the `<SEG_DATA_DIR>` string literal. When the `COPY` operation is run, the segment IDs and the paths of the segment data directories are substituted for the string literal values.
 
-Using `COPY TO` with a replicated table \(`DISTRIBUTED REPLICATED`\) as source creates a file with rows from a single segment so that the target file contains no duplicate rows. Using `COPY TO` with the `ON SEGMENT` clause with a replicated table as source creates target files on segment hosts containing all table rows.
+Using `COPY TO` with a replicated table \(`DISTRIBUTED REPLICATED`\) as source creates a file with rows from a single segment so that the target file contains no duplicate rows. Using `COPY TO` with the `ON_SEGMENT` option with a replicated table as source creates target files on segment hosts containing all table rows.
 
-The `ON SEGMENT` clause allows you to copy table data to files on segment hosts for use in operations such as migrating data between clusters or performing a backup. Segment data created by the `ON SEGMENT` clause can be restored by tools such as `gpfdist`, which is useful for high speed data loading.
+The `ON_SEGMENT` option allows you to copy table data to files on segment hosts for use in operations such as migrating data between clusters or performing a backup. Segment data created by the `ON_SEGMENT` option can be restored by tools such as `gpfdist`, which is useful for high speed data loading.
 
-> **Caution** Use of the `ON SEGMENT` clause is recommended for expert users only.
+**Warning:** Use of the `ON_SEGMENT` option is recommended for expert users only.
 
 When `PROGRAM` is specified, the server runs the given command and reads from the standard output of the program, or writes to the standard input of the program. The command must be specified from the viewpoint of the server, and be executable by the `gpadmin` user.
 
-When `STDIN` or `STDOUT` is specified, data is transmitted via the connection between the client and the master. `STDIN` and `STDOUT` cannot be used with the `ON SEGMENT` clause.
+When `STDIN` or `STDOUT` is specified, data is transmitted via the connection between the client and the master. `STDIN` and `STDOUT` cannot be used with the `ON_SEGMENT` option.
 
-If `SEGMENT REJECT LIMIT` is used, then a `COPY FROM` operation will operate in single row error isolation mode. In this release, single row error isolation mode only applies to rows in the input file with format errors — for example, extra or missing attributes, attributes of a wrong data type, or invalid client encoding sequences. Constraint errors such as violation of a `NOT NULL`, `CHECK`, or `UNIQUE` constraint will still be handled in 'all-or-nothing' input mode. The user can specify the number of error rows acceptable \(on a per-segment basis\), after which the entire `COPY FROM` operation will be cancelled and no rows will be loaded. The count of error rows is per-segment, not per entire load operation. If the per-segment reject limit is not reached, then all rows not containing an error will be loaded and any error rows discarded. To keep error rows for further examination, specify the `LOG ERRORS` clause to capture error log information. The error information and the row is stored internally in Greenplum Database.
+If `SEGMENT REJECT LIMIT` is used, then a `COPY FROM` operation will operate in single row error isolation mode. In this release, single row error isolation mode only applies to rows in the input file with format errors — for example, extra or missing attributes, attributes of a wrong data type, or invalid client encoding sequences. Constraint errors such as violation of a `NOT NULL`, `CHECK`, or `UNIQUE` constraint will still be handled in 'all-or-nothing' input mode. The user can specify the number of error rows acceptable \(on a per-segment basis\), after which the entire `COPY FROM` operation will be cancelled and no rows will be loaded. The count of error rows is per-segment, not per entire load operation. If the per-segment reject limit is not reached, then all rows not containing an error will be loaded and any error rows discarded. To keep error rows for further examination, specify the `LOG ERRORS` clause to capture error log information. The error information and the row is stored internally in Greenplum Database and is accessed with the Greenplum Database built-in SQL function `gp_read_error_log()`.
+
+See [Notes](#section6) for information about the error log information and built-in functions for viewing and managing error log information.
+
+The reject limit count can be specified as number of rows \(the default\) or percentage of total rows \(1-100\). If `PERCENT` is used, each segment starts calculating the bad row percentage only after the number of rows specified by the parameter `gp_reject_percent_threshold` has been processed. The default for `gp_reject_percent_threshold` is 300 rows.
+
+**Note** Greenplum Database limits the initial number of rows that can contain formatting errors if the `SEGMENT REJECT LIMIT` is not triggered first or is not specified. If the first 1000 rows are rejected, the `COPY` operation is stopped and rolled back.
+
+The limit for the number of initial rejected rows can be changed with the Greenplum Database server configuration parameter `gp_initial_bad_row_limit`. See [Server Configuration Parameters](../config_params/guc_config.html) for information about the parameter.
 
 **Outputs**
 
@@ -72,6 +80,12 @@ If running a `COPY FROM` command in single row error isolation mode, the followi
 ```
 NOTICE: Rejected <count> badly formatted rows.
 ```
+
+If `IGNORE EXTERNAL PARTITIONS` is used, when copying data from partitioned tables, data are not copied from leaf child partitions that are external tables. A message is added to the log file when data are not copied.
+
+If this clause is not specified and Greenplum Database attempts to copy data from a leaf child partition that is an external table, an error is returned.
+
+See the section "Notes" for information about specifying an SQL query to copy data from leaf child partitions that are external tables.
 
 ## <a id="section5"></a>Parameters 
 
@@ -94,15 +108,15 @@ PROGRAM 'command'
 
 :   The command is invoked by a shell. When passing arguments to the shell, strip or escape any special characters that have a special meaning for the shell. For security reasons, it is best to use a fixed command string, or at least avoid passing any user input in the string.
 
-:   When `ON SEGMENT` is specified, the command must be executable on all Greenplum Database primary segment hosts by the Greenplum Database administrator user \(`gpadmin`\). The command is run by each Greenplum segment instance. The `<SEGID>` is required in the command.
+:   When `ON_SEGMENT` is specified, the command must be executable on all Greenplum Database primary segment hosts by the Greenplum Database administrator user \(`gpadmin`\). The command is run by each Greenplum segment instance. The `<SEGID>` is required in the command.
 
-:   See the `ON SEGMENT` clause for information about command syntax requirements and the data that is copied when the clause is specified.
+:   See the `ON_SEGMENT` option for information about command syntax requirements and the data that is copied when the clause is specified.
 
 STDIN
-:   Specifies that input comes from the client application. The `ON SEGMENT` clause is not supported with `STDIN`.
+:   Specifies that input comes from the client application. The `ON_SEGMENT` option is not supported with `STDIN`.
 
 STDOUT
-:   Specifies that output goes to the client application. The `ON SEGMENT` clause is not supported with `STDOUT`.
+:   Specifies that output goes to the client application. The `ON_SEGMENT` option is not supported with `STDOUT`.
 
 boolean
 :   Specifies whether the selected option should be turned on or off. You can write `TRUE`, `ON`, or `1` to enable the option, and `FALSE`, `OFF`, or `0` to deactivate it. The boolean value can also be omitted, in which case `TRUE` is assumed.
@@ -147,30 +161,30 @@ FORCE\_NULL
 ENCODING
 :   Specifies that the file is encoded in the encoding\_name. If this option is omitted, the current client encoding is used. See the Notes below for more details.
 
-ON SEGMENT
-:   Specify individual, segment data files on the segment hosts. Each file contains the table data that is managed by the primary segment instance. For example, when copying data to files from a table with a `COPY TO...ON SEGMENT` command, the command creates a file on the segment host for each segment instance on the host. Each file contains the table data that is managed by the segment instance.
+ON_SEGMENT
+:   Specify individual, segment data files on the segment hosts. Each file contains the table data that is managed by the primary segment instance. For example, when copying data to files from a table with a `COPY TO... WITH (ON_SEGMENT)` command, the command creates a file on the segment host for each segment instance on the host. Each file contains the table data that is managed by the segment instance.
 
 :   The `COPY` command does not copy data from or to mirror segment instances and segment data files.
 
-:   The keywords `STDIN` and `STDOUT` are not supported with `ON SEGMENT`.
+:   The keywords `STDIN` and `STDOUT` are not supported with `ON_SEGMENT`.
 
 :   The `<SEG_DATA_DIR>` and `<SEGID>` string literals are used to specify an absolute path and file name with the following syntax:
 
     ```
-    COPY <table> [TO|FROM] '<SEG_DATA_DIR>/<gpdumpname><SEGID>_<suffix>' ON SEGMENT;
+    COPY <table> [TO|FROM] '<SEG_DATA_DIR>/<gpdumpname><SEGID>_<suffix>' (ON_SEGMENT);
     ```
 
     <SEG\_DATA\_DIR\>
-    :   The string literal representing the absolute path of the segment instance data directory for `ON SEGMENT` copying. The angle brackets \(`<` and `>`\) are part of the string literal used to specify the path. `COPY` replaces the string literal with the segment path\(s\) when `COPY` is run. An absolute path can be used in place of the `<SEG_DATA_DIR>` string literal.
+    :   The string literal representing the absolute path of the segment instance data directory for `ON_SEGMENT` copying. The angle brackets \(`<` and `>`\) are part of the string literal used to specify the path. `COPY` replaces the string literal with the segment path\(s\) when `COPY` is run. An absolute path can be used in place of the `<SEG_DATA_DIR>` string literal.
 
     <SEGID\>
-    :   The string literal representing the content ID number of the segment instance to be copied when copying `ON SEGMENT`. `<SEGID>` is a required part of the file name when `ON SEGMENT` is specified. The angle brackets are part of the string literal used to specify the file name.
+    :   The string literal representing the content ID number of the segment instance to be copied when copying `ON_SEGMENT`. `<SEGID>` is a required part of the file name when `ON_SEGMENT` is specified. The angle brackets are part of the string literal used to specify the file name.
     :   With `COPY TO`, the string literal is replaced by the content ID of the segment instance when the `COPY` command is run.
     :   With `COPY FROM`, specify the segment instance content ID in the name of the file and place that file on the segment instance host. There must be a file for each primary segment instance on each host. When the `COPY FROM` command is run, the data is copied from the file to the segment instance.
 
 :   When the `PROGRAM command` clause is specified, the `<SEGID>` string literal is required in the command, the `<SEG_DATA_DIR>` string literal is optional. See [Examples](#section11).
 
-:   For a `COPY FROM...ON SEGMENT` command, the table distribution policy is checked when data is copied into the table. By default, an error is returned if a data row violates the table distribution policy. You can deactivate the distribution policy check with the server configuration parameter `gp_enable_segment_copy_checking`. See [Notes](#section6).
+:   For a `COPY FROM...(ON_SEGMENT)` command, the table distribution policy is checked when data is copied into the table. By default, an error is returned if a data row violates the table distribution policy. You can deactivate the distribution policy check with the server configuration parameter `gp_enable_segment_copy_checking`. See [Notes](#section6).
 
 NEWLINE
 :   Specifies the newline used in your data files — `LF` \(Line feed, 0x0A\), `CR` \(Carriage return, 0x0D\), or `CRLF` \(Carriage return plus line feed, 0x0D 0x0A\). If not specified, a Greenplum Database segment will detect the newline type by looking at the first row of data it receives and using the first newline type encountered.
@@ -178,29 +192,8 @@ NEWLINE
 CSV
 :   Selects Comma Separated Value \(CSV\) mode. See [CSV Format](#section9).
 
-FILL MISSING FIELDS
-:   In `COPY FROM` more for both `TEXT` and `CSV`, specifying `FILL MISSING FIELDS` will set missing trailing field values to `NULL` \(instead of reporting an error\) when a row of data has missing data fields at the end of a line or row. Blank rows, fields with a `NOT NULL` constraint, and trailing delimiters on a line will still report an error.
-
-LOG ERRORS
-:   This is an optional clause that can precede a `SEGMENT REJECT LIMIT` clause to capture error log information about rows with formatting errors.
-
-:   Error log information is stored internally and is accessed with the Greenplum Database built-in SQL function `gp_read_error_log()`.
-
-:   See [Notes](#section6) for information about the error log information and built-in functions for viewing and managing error log information.
-
-SEGMENT REJECT LIMIT count \[ROWS \| PERCENT\]
-:   Runs a `COPY FROM` operation in single row error isolation mode. If the input rows have format errors they will be discarded provided that the reject limit count is not reached on any Greenplum Database segment instance during the load operation. The reject limit count can be specified as number of rows \(the default\) or percentage of total rows \(1-100\). If `PERCENT` is used, each segment starts calculating the bad row percentage only after the number of rows specified by the parameter `gp_reject_percent_threshold` has been processed. The default for `gp_reject_percent_threshold` is 300 rows. Constraint errors such as violation of a `NOT NULL`, `CHECK`, or `UNIQUE` constraint will still be handled in 'all-or-nothing' input mode. If the limit is not reached, all good rows will be loaded and any error rows discarded.
-
-:   > **Note** Greenplum Database limits the initial number of rows that can contain formatting errors if the `SEGMENT REJECT LIMIT` is not triggered first or is not specified. If the first 1000 rows are rejected, the `COPY` operation is stopped and rolled back.
-
-The limit for the number of initial rejected rows can be changed with the Greenplum Database server configuration parameter `gp_initial_bad_row_limit`. See [Server Configuration Parameters](../config_params/guc_config.html) for information about the parameter.
-
-IGNORE EXTERNAL PARTITIONS
-:   When copying data from partitioned tables, data are not copied from leaf child partitions that are external tables. A message is added to the log file when data are not copied.
-
-:   If this clause is not specified and Greenplum Database attempts to copy data from a leaf child partition that is an external table, an error is returned.
-
-:   See the next section "Notes" for information about specifying an SQL query to copy data from leaf child partitions that are external tables.
+FILL_MISSING_FIELDS
+:   In `COPY FROM` more for both `TEXT` and `CSV`, specifying `FILL_MISSING_FIELDS` will set missing trailing field values to `NULL` \(instead of reporting an error\) when a row of data has missing data fields at the end of a line or row. Blank rows, fields with a `NOT NULL` constraint, and trailing delimiters on a line will still report an error.
 
 ## <a id="section6"></a>Notes 
 
@@ -232,11 +225,11 @@ By default, `COPY` stops operation at the first error. This should not lead to p
 
 `FORCE_NULL` and `FORCE_NOT_NULL` can be used simultaneously on the same column. This results in converting quoted null strings to null values and unquoted null strings to empty strings.
 
-When a `COPY FROM...ON SEGMENT` command is run, the server configuration parameter `gp_enable_segment_copy_checking` controls whether the table distribution policy \(from the table `DISTRIBUTED` clause\) is checked when data is copied into the table. The default is to check the distribution policy. An error is returned if the row of data violates the distribution policy for the segment instance. For information about the parameter, see [Server Configuration Parameters](../config_params/guc_config.html).
+When a `COPY FROM...(ON_SEGMENT)` command is run, the server configuration parameter `gp_enable_segment_copy_checking` controls whether the table distribution policy \(from the table `DISTRIBUTED` clause\) is checked when data is copied into the table. The default is to check the distribution policy. An error is returned if the row of data violates the distribution policy for the segment instance. For information about the parameter, see [Server Configuration Parameters](../config_params/guc_config.html).
 
-Data from a table that is generated by a `COPY TO...ON SEGMENT` command can be used to restore table data with `COPY FROM...ON SEGMENT`. However, data restored to the segments is distributed according to the table distribution policy at the time the files were generated with the `COPY TO` command. The `COPY` command might return table distribution policy errors, if you attempt to restore table data and the table distribution policy was changed after the `COPY FROM...ON SEGMENT` was run.
+Data from a table that is generated by a `COPY TO...(ON_SEGMENT)` command can be used to restore table data with `COPY FROM...(ON_SEGMENT)`. However, data restored to the segments is distributed according to the table distribution policy at the time the files were generated with the `COPY TO` command. The `COPY` command might return table distribution policy errors, if you attempt to restore table data and the table distribution policy was changed after the `COPY FROM...(ON_SEGMENT)` was run.
 
-> **Note** If you run `COPY FROM...ON SEGMENT` and the server configuration parameter `gp_enable_segment_copy_checking` is `false`, manual redistribution of table data might be required. See the `ALTER TABLE` clause `WITH REORGANIZE`.
+> **Note** If you run `COPY FROM...(ON_SEGMENT)` and the server configuration parameter `gp_enable_segment_copy_checking` is `false`, manual redistribution of table data might be required. See the `ALTER TABLE` clause `WITH REORGANIZE`.
 
 When you specify the `LOG ERRORS` clause, Greenplum Database captures errors that occur while reading the external table data. You can view and manage the captured error log data.
 
@@ -368,10 +361,10 @@ COPY sales FROM '/home/usr1/sql/sales_data' LOG ERRORS
    SEGMENT REJECT LIMIT 10 ROWS;
 ```
 
-To copy segment data for later use, use the `ON SEGMENT` clause. Use of the `COPY TO ON SEGMENT` command takes the form:
+To copy segment data for later use, use the `ON_SEGMENT` option. Use of the `COPY TO (ON_SEGMENT)` command takes the form:
 
 ```
-COPY <table> TO '<SEG_DATA_DIR>/<gpdumpname><SEGID>_<suffix>' ON SEGMENT; 
+COPY <table> TO '<SEG_DATA_DIR>/<gpdumpname><SEGID>_<suffix>' (ON_SEGMENT); 
 ```
 
 The `<SEGID>` is required. However, you can substitute an absolute path for the `<SEG_DATA_DIR>` string literal in the path.
@@ -391,7 +384,7 @@ contentid | dbid | file segment location
 running the command:
 
 ```
-COPY mytable TO '<SEG_DATA_DIR>/gpbackup<SEGID>.txt' ON SEGMENT;
+COPY mytable TO '<SEG_DATA_DIR>/gpbackup<SEGID>.txt' (ON_SEGMENT);
 ```
 
 would result in the following files:
@@ -401,22 +394,22 @@ would result in the following files:
 /home/usr1/data2/gpsegdir1/gpbackup1.txt
 ```
 
-The content ID in the first column is the identifier inserted into the file path \(for example, `gpsegdir0/gpbackup0.txt` above\) Files are created on the segment hosts, rather than on the master, as they would be in a standard `COPY` operation. No data files are created for the mirror segments when using `ON SEGMENT` copying.
+The content ID in the first column is the identifier inserted into the file path \(for example, `gpsegdir0/gpbackup0.txt` above\) Files are created on the segment hosts, rather than on the master, as they would be in a standard `COPY` operation. No data files are created for the mirror segments when using `ON_SEGMENT` copying.
 
 If an absolute path is specified, instead of `<SEG_DATA_DIR>`, such as in the statement
 
 ```
-COPY mytable TO '/tmp/gpdir/gpbackup_<SEGID>.txt' ON SEGMENT;
+COPY mytable TO '/tmp/gpdir/gpbackup_<SEGID>.txt' (ON_SEGMENT);
 ```
 
-files would be placed in `/tmp/gpdir` on every segment. The `gpfdist` tool can also be used to restore data files generated with `COPY TO` with the `ON SEGMENT` option if redistribution is necessary.
+files would be placed in `/tmp/gpdir` on every segment. The `gpfdist` tool can also be used to restore data files generated with `COPY TO` with the `ON_SEGMENT` option if redistribution is necessary.
 
-> **Note** Tools such as `gpfdist` can be used to restore data. The backup/restore tools will not work with files that were manually generated with `COPY TO ON SEGMENT`.
+> **Note** Tools such as `gpfdist` can be used to restore data. The backup/restore tools will not work with files that were manually generated with `COPY TO (ON_SEGMENT)`.
 
 This example uses a `SELECT` statement to copy data to files on each segment:
 
 ```
-COPY (SELECT * FROM testtbl) TO '/tmp/mytst<SEGID>' ON SEGMENT;
+COPY (SELECT * FROM testtbl) TO '/tmp/mytst<SEGID>' (ON_SEGMENT);
 ```
 
 This example copies the data from the `lineitem` table and uses the `PROGRAM` clause to add the data to the `/tmp/lineitem_program.csv` file with `cat` utility. The file is placed on the Greenplum Database master.
@@ -425,16 +418,16 @@ This example copies the data from the `lineitem` table and uses the `PROGRAM` cl
 COPY LINEITEM TO PROGRAM 'cat > /tmp/lineitem.csv' CSV; 
 ```
 
-This example uses the `PROGRAM` and `ON SEGMENT` clauses to copy data to files on the segment hosts. On the segment hosts, the `COPY` command replaces `<SEGID>` with the segment content ID to create a file for each segment instance on the segment host.
+This example uses the `PROGRAM` and `(ON_SEGMENT)` clauses to copy data to files on the segment hosts. On the segment hosts, the `COPY` command replaces `<SEGID>` with the segment content ID to create a file for each segment instance on the segment host.
 
 ```
-COPY LINEITEM TO PROGRAM 'cat > /tmp/lineitem_program<SEGID>.csv' ON SEGMENT CSV; 
+COPY LINEITEM TO PROGRAM 'cat > /tmp/lineitem_program<SEGID>.csv' (ON_SEGMENT, FORMAT csv); 
 ```
 
-This example uses the `PROGRAM` and `ON SEGMENT` clauses to copy data from files on the segment hosts. The `COPY` command replaces `<SEGID>` with the segment content ID when copying data from the files. On the segment hosts, there must be a file for each segment instance where the file name contains the segment content ID on the segment host.
+This example uses the `PROGRAM` and `ON_SEGMENT` clauses to copy data from files on the segment hosts. The `COPY` command replaces `<SEGID>` with the segment content ID when copying data from the files. On the segment hosts, there must be a file for each segment instance where the file name contains the segment content ID on the segment host.
 
 ```
-COPY LINEITEM_4 FROM PROGRAM 'cat /tmp/lineitem_program<SEGID>.csv' ON SEGMENT CSV;
+COPY LINEITEM_4 FROM PROGRAM 'cat /tmp/lineitem_program<SEGID>.csv' (ON_SEGMENT, FORMAT csv);
 ```
 
 ## <a id="section12"></a>Compatibility 
