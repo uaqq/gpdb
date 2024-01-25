@@ -1423,7 +1423,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_Motion:
 			{
-				Motion	   *pMotion = (Motion *) plan;
+				Motion		*pMotion = (Motion *) plan;
 				SliceTable *sliceTable = planstate->state->es_sliceTable;
 
 				/* Descending into a new slice. */
