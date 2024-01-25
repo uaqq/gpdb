@@ -7657,8 +7657,8 @@ CTranslatorExprToDXL::GetProperties(const CExpression *pexpr)
 	{
 		// if distribution is replicated, multiply number of rows by number of segments
 		ULONG ulSegments =
-			pexpr->GetMotionInputsNumber() > 0
-				? pexpr->GetMotionInputsNumber()
+			pexpr->GetMotionInputSegmentsNumber() > 0
+				? pexpr->GetMotionInputSegmentsNumber()
 				: COptCtxt::PoctxtFromTLS()->GetCostModel()->UlHosts();
 		rows = rows * ulSegments;
 	}

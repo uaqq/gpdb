@@ -228,7 +228,7 @@ public:
 	}
 
 	ULONG
-	GetMotionInputsNumber() const
+	GetMotionInputSegmentsNumber() const
 	{
 		return m_motionInputSegmentsNumber;
 	}
