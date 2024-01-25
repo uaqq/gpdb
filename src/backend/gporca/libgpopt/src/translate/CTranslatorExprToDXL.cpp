@@ -477,7 +477,7 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 	// are no longer needed
 	CDXLNode *pdxlnNew = NULL;
 
-	pexpr->SetMotionInputsNumberForChildren();
+	pexpr->SetMotionInputSegmentsNumberForChildren();
 
 	CDXLNode *dxlnode = (this->*pf)(pexpr, colref_array, pdrgpdsBaseTables,
 									pulNonGatherMotions, pfDML);
