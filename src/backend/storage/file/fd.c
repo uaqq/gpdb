@@ -267,6 +267,10 @@ static Oid *tempTableSpaces = NULL;
 static int	numTempTableSpaces = -1;
 static int	nextTempTableSpace = 0;
 
+static Oid *fileTempTableSpaces = NULL;
+static int	fileNumTempTableSpaces = -1;
+static int	fileNextTempTableSpace = 0;
+
 /*--------------------
  *
  * Private Routines
@@ -1235,9 +1239,9 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
  * This is used for inter-process communication, where one process creates
  * a file, and another process reads it.
  *
- * NOTE: this always uses the session temp tablespace from `temp_tablespaces`. Otherwise
- * picking randomly from list would be hard for the reader process to find the
- * file created by the writer process.
+ * NOTE: this always uses the session temp tablespace from
+ * `temp_file_tablespaces`.  Otherwise picking randomly from list would be hard
+ * for the reader process to find the file created by the writer process.
  */
 File
 OpenNamedTemporaryFile(const char *fileName,
@@ -1256,9 +1260,9 @@ OpenNamedTemporaryFile(const char *fileName,
 	 * force it into the database's default tablespace, so that it will not
 	 * pose a threat to possible tablespace drop attempts.
 	 */
-	if (numTempTableSpaces > 0 && !interXact && !GetForceDefaultTableSpaceVal())
+	if (!interXact && !GetForceDefaultTableSpaceVal())
 	{
-		Oid            tblspcOid = GetNextTempTableSpace();
+		Oid            tblspcOid = GetNextFileTempTableSpace();
 
 		if (OidIsValid(tblspcOid))
 			file = OpenTemporaryFileInTablespace(tblspcOid,
@@ -1341,9 +1345,9 @@ OpenTemporaryFile(bool interXact, const char *filePrefix)
 	 * force it into the database's default tablespace, so that it will not
 	 * pose a threat to possible tablespace drop attempts.
 	 */
-	if (numTempTableSpaces > 0 && !interXact)
+	if (!interXact)
 	{
-		Oid			tblspcOid = GetNextTempTableSpace();
+		Oid			tblspcOid = GetNextFileTempTableSpace();
 
 		if (OidIsValid(tblspcOid))
 			file = OpenTemporaryFileInTablespace(tblspcOid,
@@ -1403,7 +1407,7 @@ GetTempFilePath(const char *filename, bool createdir)
 	char		tempfilepath[MAXPGPATH];
 	Oid			tblspcOid;
 
-	tblspcOid = GetNextTempTableSpace();
+	tblspcOid = GetNextFileTempTableSpace();
 	if (!OidIsValid(tblspcOid))
 	{
 		if (MyDatabaseTableSpace)
@@ -2603,13 +2607,20 @@ closeAllVfds(void)
 
 
 /*
- * SetTempTablespaces
+ * SetTempTablespaces & SetFileTempTablespaces
  *
  * Define a list (actually an array) of OIDs of tablespaces to use for
  * temporary files.  This list will be used until end of transaction,
  * unless this function is called again before then.  It is caller's
  * responsibility that the passed-in array has adequate lifespan (typically
  * it'd be allocated in TopTransactionContext).
+ *
+ * We select a random starting point in the list.  This is to minimize
+ * conflicts between backends that are most likely sharing the same list
+ * of temp tablespaces.  Note that if we create multiple temp files in the
+ * same transaction, we'll advance circularly through the list --- this
+ * ensures that large temporary sort files are nicely spread across all
+ * available tablespaces.
  */
 void
 SetTempTablespaces(Oid *tableSpaces, int numSpaces)
@@ -2618,26 +2629,31 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 	tempTableSpaces = tableSpaces;
 	numTempTableSpaces = numSpaces;
 
-	/*
-	 * Select a random starting point in the list.  This is to minimize
-	 * conflicts between backends that are most likely sharing the same list
-	 * of temp tablespaces.  Note that if we create multiple temp files in the
-	 * same transaction, we'll advance circularly through the list --- this
-	 * ensures that large temporary sort files are nicely spread across all
-	 * available tablespaces.
-	 */
 	if (numSpaces > 1)
 		nextTempTableSpace = random() % numSpaces;
 	else
 		nextTempTableSpace = 0;
 }
 
+void
+SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
+{
+	Assert(numSpaces >= 0);
+	fileTempTableSpaces = tableSpaces;
+	fileNumTempTableSpaces = numSpaces;
+
+	if (numSpaces > 1)
+		fileNextTempTableSpace = random() % numSpaces;
+	else
+		fileNextTempTableSpace = 0;
+}
+
 /*
- * TempTablespacesAreSet
+ * TempTablespacesAreSet & FileTempTablespacesAreSet
  *
- * Returns TRUE if SetTempTablespaces has been called in current transaction.
- * (This is just so that tablespaces.c doesn't need its own per-transaction
- * state.)
+ * Returns TRUE if SetTempTablespaces/SetFileTempTablespaces has been called in
+ * current transaction.  (This is just so that tablespaces.c doesn't need its
+ * own per-transaction state.)
  */
 bool
 TempTablespacesAreSet(void)
@@ -2645,14 +2661,22 @@ TempTablespacesAreSet(void)
 	return (numTempTableSpaces >= 0);
 }
 
+bool
+FileTempTablespacesAreSet(void)
+{
+	return (fileNumTempTableSpaces >= 0);
+}
+
 /*
- * GetSessionTempTableSpace
+ * GetSessionTempTableSpace & GetSessionFileTempTableSpace
  *
  * Select temp tablespace for current session to use. It's like
  * GetNextTempTableSpace in upstream, but it gets the same temp
  * tablespace in all QD/QE processes in the same session.
  * A result of InvalidOid means to use the current database's
  * default tablespace.
+ *
+ * If this session is not MPP, use the implementation from upstream.
  */
 static inline Oid
 GetSessionTempTableSpace(void)
@@ -2663,14 +2687,27 @@ GetSessionTempTableSpace(void)
 	if (gp_session_id >= 0)
 		return tempTableSpaces[gp_session_id % numTempTableSpaces];
 
-	/* If this session is not MPP, uses the implementation from upstream */
 	if (++nextTempTableSpace >= numTempTableSpaces)
 		nextTempTableSpace = 0;
 	return tempTableSpaces[nextTempTableSpace];
 }
 
+static inline Oid
+GetSessionFileTempTableSpace(void)
+{
+	if (fileNumTempTableSpaces <= 0)
+		return InvalidOid;
+
+	if (gp_session_id >= 0)
+		return fileTempTableSpaces[gp_session_id % fileNumTempTableSpaces];
+
+	if (++fileNextTempTableSpace >= fileNumTempTableSpaces)
+		fileNextTempTableSpace = 0;
+	return fileTempTableSpaces[fileNextTempTableSpace];
+}
+
 /*
- * GetNextTempTableSpace
+ * GetNextTempTableSpace & GetNextFileTempTableSpace
  *
  * Select the next temp tablespace to use.  A result of InvalidOid means
  * to use the current database's default tablespace.
@@ -2679,6 +2716,17 @@ Oid
 GetNextTempTableSpace(void)
 {
 	return GetSessionTempTableSpace();
+}
+
+Oid
+GetNextFileTempTableSpace(void)
+{
+	Oid		tablespace = GetSessionFileTempTableSpace();
+	if (OidIsValid(tablespace))
+		return tablespace;
+
+	/* Fall back to temp_tablespaces if temp_file_tablespaces is not set. */
+	return GetNextTempTableSpace();
 }
 
 /*

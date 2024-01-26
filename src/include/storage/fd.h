@@ -113,8 +113,11 @@ extern void InitFileAccess(void);
 extern void set_max_safe_fds(void);
 extern void closeAllVfds(void);
 extern void SetTempTablespaces(Oid *tableSpaces, int numSpaces);
+extern void SetFileTempTablespaces(Oid *tableSpaces, int numSpaces);
 extern bool TempTablespacesAreSet(void);
+extern bool FileTempTablespacesAreSet(void);
 extern Oid	GetNextTempTableSpace(void);
+extern Oid	GetNextFileTempTableSpace(void);
 extern void AtEOXact_Files(void);
 extern void AtEOSubXact_Files(bool isCommit, SubTransactionId mySubid,
 				  SubTransactionId parentSubid);
