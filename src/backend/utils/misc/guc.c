@@ -136,6 +136,7 @@ extern int	CommitDelay;
 extern int	CommitSiblings;
 extern char *default_tablespace;
 extern char *temp_tablespaces;
+extern char *temp_file_tablespaces;
 extern bool ignore_checksum_failure;
 extern bool synchronize_seqscans;
 extern char *SSLCipherSuites;
@@ -2865,13 +2866,24 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"temp_tablespaces", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets the tablespace(s) to use for temporary tables and sort files."),
+			gettext_noop("Sets the tablespace(s) to use for temporary tables."),
 			NULL,
 			GUC_LIST_INPUT | GUC_LIST_QUOTE
 		},
 		&temp_tablespaces,
 		"",
 		check_temp_tablespaces, assign_temp_tablespaces, NULL
+	},
+
+	{
+		{"temp_file_tablespaces", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the tablespace(s) to use for temporary files."),
+			NULL,
+			GUC_LIST_INPUT | GUC_LIST_QUOTE
+		},
+		&temp_file_tablespaces,
+		"",
+		check_temp_tablespaces, assign_file_temp_tablespaces, NULL
 	},
 
 	{
