@@ -26,6 +26,7 @@ begin
             from get_explain_xml_output($$' || query_string || '$$) as x';
 end;
 $_$ language plpgsql;
+-- end_ignore
 
 create table scale_factor_repl(c1 int, c2 int) distributed replicated;
 create table scale_factor_distr(c1 int, c2 int) distributed by (c1);
@@ -55,7 +56,6 @@ analyze scale_factor_rand_distr;
 analyze scale_factor_part_distr;
 analyze scale_factor_partitioned;
 analyze scale_factor_master_only;
--- end_ignore
 
 -- This plan from postgres optimizer may seem incorrect at the first glance, but in fact
 -- Gather Motion has fractional number of rows, which is 3.3... and this number was rounded up
