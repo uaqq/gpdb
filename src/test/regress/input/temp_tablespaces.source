@@ -301,3 +301,105 @@ $$;
 drop table tmp_table_12871;
 drop tablespace space_12871;
 
+-- temp_file_tablespaces:
+
+-- If the temp_file_tablespaces is not empty, but temp_tablespaces is empty,
+-- only temporary files will be saved in the specified table spaces. Temporary
+-- table files will still be stored in the system tablespace.
+CREATE TABLESPACE temp_tables LOCATION '@testtablespace@_temp_tables';
+CREATE TABLESPACE temp_files LOCATION '@testtablespace@_temp_files';
+
+SET optimizer = off;
+SET statement_mem = '2MB';
+
+SET temp_tablespaces = temp_tables;
+SET temp_file_tablespaces = temp_files;
+
+CREATE TEMPORARY TABLE tts_baz (a int) DISTRIBUTED BY (a);
+
+SELECT pg_tablespace.spcname
+    FROM pg_class
+    INNER JOIN pg_tablespace ON pg_class.reltablespace = pg_tablespace.oid
+        WHERE relname = 'tts_baz';
+
+CREATE TABLE tts_foo (a int, b int) DISTRIBUTED BY (a);
+CREATE TABLE tts_bar (c int, d int) DISTRIBUTED BY (d);
+CREATE TABLE tts_jazz (e int, f int) DISTRIBUTED BY (e);
+
+INSERT INTO tts_foo SELECT i, i FROM generate_series (1, 1000000) i;
+INSERT INTO tts_bar SELECT i, i FROM generate_series (6000, 120000) i;
+INSERT INTO tts_jazz SELECT i, i FROM generate_series (4000,150000) i;
+
+ANALYZE tts_foo;
+ANALYZE tts_bar;
+ANALYZE tts_jazz;
+
+-- This query should create the temporary directory
+with out11 as (
+    SELECT * FROM (
+      WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
+      SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
+      UNION ALL SELECT *, 1, 2 FROM cte
+    ) AS XY
+    JOIN tts_jazz on c = e AND b = f
+)
+select count(*) from out11;
+
+SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'tables', gp_temptablespace_path((SELECT oid FROM pg_tablespace WHERE spcname = 'temp_tables' LIMIT 1)));
+SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'files', gp_temptablespace_path((SELECT oid FROM pg_tablespace WHERE spcname = 'temp_files' LIMIT 1)));
+
+-- Run this this query again to create temporary hashjoin files in temp_files
+-- tablespace
+with out11 as (
+    SELECT * FROM (
+      WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
+      SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
+      UNION ALL SELECT *, 1, 2 FROM cte
+    ) AS XY
+    JOIN tts_jazz on c = e AND b = f
+)
+select count(*) from out11;
+
+SELECT gp_tablespace_watch_stop();
+SELECT gp_tablespace_watch_match(gp_execution_dbid(), 'tables', '_HashJoin') > 0 as "exist";
+SELECT gp_tablespace_watch_match(gp_execution_dbid(), 'files', '_HashJoin') > 0 as "exist";
+
+-- If temp_tablespaces is not empty, temporary tables should be stored in
+-- temp_tablespaces, while files should be stored in temp_file_tablespaces.
+RESET temp_file_tablespaces;
+
+-- This query should create the temporary directory
+with out11 as (
+    SELECT * FROM (
+      WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
+      SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
+      UNION ALL SELECT *, 1, 2 FROM cte
+    ) AS XY
+    JOIN tts_jazz on c = e AND b = f
+)
+select count(*) from out11;
+
+SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'tables', gp_temptablespace_path((SELECT oid FROM pg_tablespace WHERE spcname = 'temp_tables' LIMIT 1)));
+
+-- Run this this query again to create temporary hashjoin files in temp_
+-- tablespace
+with out11 as (
+    SELECT * FROM (
+      WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
+      SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
+      UNION ALL SELECT *, 1, 2 FROM cte
+    ) AS XY
+    JOIN tts_jazz on c = e AND b = f
+)
+select count(*) from out11;
+
+SELECT gp_tablespace_watch_stop();
+SELECT gp_tablespace_watch_match(gp_execution_dbid(), 'tables', '_HashJoin') > 0 as "exist";
+
+DROP TABLE tts_baz;
+DROP TABLE tts_foo;
+DROP TABLE tts_bar;
+DROP TABLE tts_jazz;
+
+DROP TABLESPACE temp_tables;
+DROP TABLESPACE temp_files;
