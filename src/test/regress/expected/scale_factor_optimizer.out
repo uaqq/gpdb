@@ -1,30 +1,4 @@
 -- start_ignore
-create or replace function get_explain_xml_output(query_string text)
-returns xml as
-$$
-declare
-  x xml;
-begin
-  execute 'explain (format xml) ' || query_string
-  into x;
-  return x;
-end;
-$$ language plpgsql;
-create or replace function get_motion_snd_recv(query_string text)
-returns table(node_name xml, motion_snd xml, motion_recv xml) as
-$_$
-declare
-  node_xml      text := '//*[local-name()="Node-Type"][contains(text(), "Motion")]/../*[local-name()="Node-Type"]/text()';
-  motion_snd    text := '//*[local-name()="Node-Type"][contains(text(), "Motion")]/../*[local-name()="Senders"]/text()';
-  motion_recv   text := '//*[local-name()="Node-Type"][contains(text(), "Motion")]/../*[local-name()="Receivers"]/text()';
-begin
-   return query
-   execute 'select unnest(xpath(''' || node_xml || ''', x)) node_name,
-                   unnest(xpath(''' || motion_snd || ''', x)) motion_snd,
-                   unnest(xpath(''' || motion_recv || ''', x)) motion_recv
-            from get_explain_xml_output($$' || query_string || '$$) as x';
-end;
-$_$ language plpgsql;
 -- end_ignore
 create table scale_factor_repl(c1 int, c2 int) distributed replicated;
 create table scale_factor_distr(c1 int, c2 int) distributed by (c1);
@@ -214,12 +188,4 @@ explain select t1.c1, row_number() over (order by t1.c1 desc) from scale_factor_
 (16 rows)
 
 -- start_ignore
-drop table scale_factor_repl;
-drop table scale_factor_distr;
-drop table scale_factor_rand_distr;
-drop table scale_factor_part_distr;
-drop table scale_factor_partitioned;
-drop table scale_factor_master_only;
-drop function get_motion_snd_recv(text);
-drop function get_explain_xml_output(text);
 -- end_ignore
