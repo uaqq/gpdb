@@ -54,6 +54,10 @@ private:
 	// name of table
 	CName m_name;
 
+	// table alias
+	CName m_alias;
+	BOOL m_alias_used;
+
 	// array of columns
 	CColumnDescriptorArray *m_pdrgpcoldesc;
 
@@ -136,6 +140,26 @@ public:
 	Name() const
 	{
 		return m_name;
+	}
+
+	BOOL 
+	IsAliasUsed() const 
+	{
+		return m_alias_used;
+	}
+
+	// alias accessor
+	const CName &
+	Alias() const
+	{
+		return m_alias;
+	}
+
+	void 
+	SetAlias(const CName &alias) 
+	{
+		m_alias = alias;
+		m_alias_used = true;
 	}
 
 	// execute as user accessor

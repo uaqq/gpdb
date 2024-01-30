@@ -2101,6 +2101,11 @@ CTranslatorDXLToExpr::Ptabdesc(CDXLTableDescr *table_descr)
 		m_mp, mdid, CName(m_mp, &strName), pmdrel->ConvertHashToRandom(),
 		rel_distr_policy, rel_storage_type, table_descr->GetExecuteAsUserId());
 
+	if (NULL != table_descr->MdAlias()) {
+		CMDName *alias = GPOS_NEW(m_mp) CMDName(table_descr->MdAlias()->GetMDName(), true);
+		table_descr->SetMdAlias(alias);
+	}
+
 	const ULONG ulColumns = table_descr->Arity();
 	for (ULONG ul = 0; ul < ulColumns; ul++)
 	{

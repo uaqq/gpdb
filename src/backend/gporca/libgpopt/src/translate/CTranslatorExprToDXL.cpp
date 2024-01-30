@@ -1363,7 +1363,7 @@ CTranslatorExprToDXL::PdxlnMultiExternalScan(
 		extpart_mdid->AddRef();
 		CTableDescriptor *table_descr = GPOS_NEW(m_mp) CTableDescriptor(
 			m_mp, extpart_mdid, extpart->Mdname().GetMDName(),
-			extpart->ConvertHashToRandom(), extpart->GetRelDistribution(),
+						extpart->ConvertHashToRandom(), extpart->GetRelDistribution(),
 			extpart->RetrieveRelStorageType(),
 			multi_extscan->Ptabdesc()->GetExecuteAsUserId());
 
@@ -7553,9 +7553,14 @@ CTranslatorExprToDXL::MakeDXLTableDescr(const CTableDescriptor *ptabdesc,
 
 	CMDIdGPDB *mdid = CMDIdGPDB::CastMdid(ptabdesc->MDId());
 	mdid->AddRef();
-
+                                                                                                                                                                                                                       
 	CDXLTableDescr *table_descr = GPOS_NEW(m_mp)
 		CDXLTableDescr(m_mp, mdid, pmdnameTbl, ptabdesc->GetExecuteAsUserId());
+
+	if (ptabdesc->IsAliasUsed()) {
+		CMDName *pmdaliasTbl = GPOS_NEW(m_mp) CMDName(m_mp, ptabdesc->Alias().Pstr());
+		table_descr->SetMdAlias(pmdaliasTbl);
+	}
 
 	const ULONG ulColumns = ptabdesc->ColumnCount();
 	// translate col descriptors

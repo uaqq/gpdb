@@ -4672,8 +4672,11 @@ CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
 	alias->colnames = NIL;
 
 	// get table alias
+	const CMDName *md_alias = table_descr->MdAlias() ? 
+			table_descr->MdAlias() : table_descr->MdName();
+
 	alias->aliasname = CTranslatorUtils::CreateMultiByteCharStringFromWCString(
-		table_descr->MdName()->GetMDName()->GetBuffer());
+		md_alias->GetMDName()->GetBuffer());
 
 	// get column names
 	const ULONG arity = table_descr->Arity();
@@ -4723,6 +4726,11 @@ CTranslatorDXLToPlStmt::TranslateDXLTblDescrToRangeTblEntry(
 	}
 
 	rte->eref = alias;
+
+	if (NULL != md_alias) {
+		rte->alias = alias;
+	}
+	
 
 	return rte;
 }

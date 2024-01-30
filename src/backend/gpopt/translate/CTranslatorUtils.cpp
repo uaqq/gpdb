@@ -136,6 +136,15 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 	CDXLTableDescr *table_descr =
 		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser);
 
+	if (rte->alias != NULL) {
+		CWStringDynamic cw_alias(mp); 
+
+		cw_alias.AppendCharArray(rte->alias->aliasname);
+
+		CMDName *table_alias = GPOS_NEW(mp) CMDName(mp, &cw_alias);
+		table_descr->SetMdAlias(table_alias);
+	}
+
 	const ULONG len = rel->ColumnCount();
 
 	IMDRelation::Ereldistrpolicy distribution_policy =
