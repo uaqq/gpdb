@@ -3972,21 +3972,15 @@ select t1.* from
                                  Output: "outer".d1, i8b1.q2
                                  ->  Result
                                        Output: '***'::text, i8b1.q2
-                                       ->  Gather Motion 3:1  (slice3; segments: 3)
+                                       ->  Gather Motion 3:1  (slice4; segments: 3)
                                              Output: i8b1.q2
                                              ->  Seq Scan on public.int8_tbl i8b1
                                                    Output: i8b1.q2
                      ->  Hash
                            Output: t1.f1
-                           ->  Gather Motion 3:1  (slice4; segments: 3)
-                                 Output: t1.f1
-                                 ->  Seq Scan on public.text_tbl t1
-                                       Output: t1.f1
-         ->  Hash
-               Output: t1.f1
                            ->  Gather Motion 3:1  (slice5; segments: 3)
                                  Output: t1.f1
-                                 ->  Seq Scan on public.t1
+                                 ->  Seq Scan on public.text_tbl t1
                                        Output: t1.f1
          ->  Hash
                Output: i4.f1

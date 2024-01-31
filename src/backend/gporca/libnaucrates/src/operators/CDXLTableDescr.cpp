@@ -95,11 +95,12 @@ CDXLTableDescr::MdAlias() const
 	return m_mdalias;
 }
 
-void 
+void
 CDXLTableDescr::SetMdAlias(CMDName *alias)
 {
-	if (m_mdalias != NULL) {
-		GPOS_DELETE (m_mdalias);
+	if (m_mdalias != NULL)
+	{
+		GPOS_DELETE(m_mdalias);
 	}
 
 	m_mdalias = alias;
@@ -218,9 +219,10 @@ CDXLTableDescr::SerializeToDXL(CXMLSerializer *xml_serializer) const
 	xml_serializer->AddAttribute(CDXLTokens::GetDXLTokenStr(EdxltokenTableName),
 								 m_mdname->GetMDName());
 
-	if (NULL != m_mdalias) {
+	if (NULL != m_mdalias)
+	{
 		xml_serializer->AddAttribute(CDXLTokens::GetDXLTokenStr(EdxltokenAlias),
-								 m_mdalias->GetMDName());
+									 m_mdalias->GetMDName());
 	}
 
 	if (GPDXL_DEFAULT_USERID != m_execute_as_user_id)

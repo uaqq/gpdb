@@ -44,7 +44,7 @@ private:
 	// table name
 	CMDName *m_mdname;
 
-	// Optional table alias 
+	// Optional table alias
 	CMDName *m_mdalias;
 
 	// list of column descriptors

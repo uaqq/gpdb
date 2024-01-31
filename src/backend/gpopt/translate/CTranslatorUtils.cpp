@@ -136,8 +136,9 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 	CDXLTableDescr *table_descr =
 		GPOS_NEW(mp) CDXLTableDescr(mp, mdid, table_mdname, rte->checkAsUser);
 
-	if (rte->alias != NULL) {
-		CWStringDynamic cw_alias(mp); 
+	if (rte->alias != NULL)
+	{
+		CWStringDynamic cw_alias(mp);
 
 		cw_alias.AppendCharArray(rte->alias->aliasname);
 
