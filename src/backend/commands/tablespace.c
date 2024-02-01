@@ -1675,9 +1675,6 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 	List	   *namelist;
 	ListCell   *l;
 
-	Oid *iTblSpcs;
-	Oid iNumSpcs;
-
 	/*
 	 * Can't do catalog access unless within a transaction.  This is just a
 	 * safety check in case this function is called by low-level code that
@@ -1703,9 +1700,9 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 	}
 
 	/* Store tablespace OIDs in an array in TopTransactionContext */
-	iTblSpcs = (Oid *) MemoryContextAlloc(TopTransactionContext,
+	*tblSpcs = (Oid *) MemoryContextAlloc(TopTransactionContext,
 										  list_length(namelist) * sizeof(Oid));
-	iNumSpcs = 0;
+	*numSpcs = 0;
 	foreach(l, namelist)
 	{
 		char	   *curname = (char *) lfirst(l);
@@ -1715,7 +1712,7 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 		/* Allow an empty string (signifying database default) */
 		if (curname[0] == '\0')
 		{
-			iTblSpcs[iNumSpcs++] = InvalidOid;
+			(*tblSpcs)[(*numSpcs)++] = InvalidOid;
 			continue;
 		}
 
@@ -1733,7 +1730,7 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 		 */
 		if (curoid == MyDatabaseTableSpace)
 		{
-			iTblSpcs[iNumSpcs++] = InvalidOid;
+			(*tblSpcs)[(*numSpcs)++] = InvalidOid;
 			continue;
 		}
 
@@ -1743,11 +1740,8 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 		if (aclresult != ACLCHECK_OK)
 			continue;
 
-		iTblSpcs[iNumSpcs++] = curoid;
+		(*tblSpcs)[(*numSpcs)++] = curoid;
 	}
-
-	*tblSpcs = iTblSpcs;
-	*numSpcs = iNumSpcs;
 
 	pfree(rawname);
 	list_free(namelist);
