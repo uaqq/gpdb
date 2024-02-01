@@ -1760,17 +1760,20 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 void
 PrepareTempTablespaces(void)
 {
-	Oid		   *tblSpcs;
-	int			numSpcs;
-
 	if (!TempTablespacesAreSet())
 	{
+		Oid		   *tblSpcs = NULL;
+		int			numSpcs = 0;
+
 		PrepareTablespacesImpl(temp_tablespaces, &tblSpcs, &numSpcs);
 		SetTempTablespaces(tblSpcs, numSpcs);
 	}
 
 	if (!FileTempTablespacesAreSet())
 	{
+		Oid		   *tblSpcs = NULL;
+		int			numSpcs = 0;
+
 		PrepareTablespacesImpl(temp_file_tablespaces, &tblSpcs, &numSpcs);
 		SetFileTempTablespaces(tblSpcs, numSpcs);
 	}
