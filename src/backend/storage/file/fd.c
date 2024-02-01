@@ -2675,8 +2675,6 @@ FileTempTablespacesAreSet(void)
  * tablespace in all QD/QE processes in the same session.
  * A result of InvalidOid means to use the current database's
  * default tablespace.
- *
- * If this session is not MPP, use the implementation from upstream.
  */
 static inline Oid
 GetSessionTempTableSpace(void)
@@ -2687,6 +2685,7 @@ GetSessionTempTableSpace(void)
 	if (gp_session_id >= 0)
 		return tempTableSpaces[gp_session_id % numTempTableSpaces];
 
+	/* If this session is not MPP, uses the implementation from upstream */
 	if (++nextTempTableSpace >= numTempTableSpaces)
 		nextTempTableSpace = 0;
 	return tempTableSpaces[nextTempTableSpace];
@@ -2701,6 +2700,7 @@ GetSessionFileTempTableSpace(void)
 	if (gp_session_id >= 0)
 		return fileTempTableSpaces[gp_session_id % fileNumTempTableSpaces];
 
+	/* If this session is not MPP, uses the implementation from upstream */
 	if (++fileNextTempTableSpace >= fileNumTempTableSpaces)
 		fileNextTempTableSpace = 0;
 	return fileTempTableSpaces[fileNextTempTableSpace];
