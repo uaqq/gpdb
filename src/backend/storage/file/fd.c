@@ -1264,6 +1264,11 @@ OpenNamedTemporaryFile(const char *fileName,
 	{
 		Oid            tblspcOid = GetNextFileTempTableSpace();
 
+		/*
+		 * If we got an InvalidOid, this may mean we couldn't not retrieve
+		 * tablespaces from GUCS. The caller must ensure that
+		 * PrepareTempTablespaces() was called before opening temporary files.
+		 */
 		if (OidIsValid(tblspcOid))
 			file = OpenTemporaryFileInTablespace(tblspcOid,
 												 false, /* rejectError */
@@ -1349,6 +1354,11 @@ OpenTemporaryFile(bool interXact, const char *filePrefix)
 	{
 		Oid			tblspcOid = GetNextFileTempTableSpace();
 
+		/*
+		 * If we got an InvalidOid, this may mean we couldn't not retrieve
+		 * tablespaces from GUCS. The caller must ensure that
+		 * PrepareTempTablespaces() was called before opening temporary files.
+		 */
 		if (OidIsValid(tblspcOid))
 			file = OpenTemporaryFileInTablespace(tblspcOid,
 												 false, /* rejectError */
