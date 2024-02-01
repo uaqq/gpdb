@@ -3421,7 +3421,7 @@ EXPLAIN (costs off) SELECT * FROM coercejoin a, coercejoin b WHERE a.a::numeric=
          Hash Cond: ((a.a)::numeric = (b.a)::numeric)
          ->  Redistribute Motion 3:3  (slice1; segments: 3)
                Hash Key: (a.a)::numeric
-               ->  Seq Scan on coercejoin
+               ->  Seq Scan on coercejoin a
          ->  Hash
                ->  Redistribute Motion 3:3  (slice2; segments: 3)
                      Hash Key: (b.a)::numeric

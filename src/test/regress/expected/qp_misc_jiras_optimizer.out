@@ -3011,7 +3011,7 @@ explain select count(distinct j) from (select t1.* from qp_misc_jiras.tbl5994_te
                                  ->  Seq Scan on tbl5994_test t1  (cost=0.00..431.00 rows=1 width=4)
                                  ->  Hash  (cost=431.00..431.00 rows=1 width=4)
                                        ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=4)
-                                             ->  Seq Scan on tbl5994_test tbl5994_test_1  (cost=0.00..431.00 rows=1 width=4)
+                                             ->  Seq Scan on tbl5994_test t2  (cost=0.00..431.00 rows=1 width=4)
  Optimizer: Pivotal Optimizer (GPORCA) version 3.64.0
 (15 rows)
 

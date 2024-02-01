@@ -98,7 +98,7 @@ explain analyze select count(*) from test_gang_reuse_t1 a
                      Hash Cond: (c.c2 = a.c2)
                      ->  Redistribute Motion 3:3  (slice1; gang3; segments: 3)  (cost=0.00..431.00 rows=1 width=4) (never executed)
                            Hash Key: c.c2
-                           ->  Seq Scan on test_gang_reuse_t1  (cost=0.00..431.00 rows=1 width=4) (actual time=0.000..0.003 rows=0 loops=1)
+                           ->  Seq Scan on test_gang_reuse_t1 c  (cost=0.00..431.00 rows=1 width=4) (actual time=0.000..0.003 rows=0 loops=1)
                      ->  Hash  (cost=862.00..862.00 rows=1 width=4) (actual time=0.000..4.456 rows=0 loops=1)
                            ->  Hash Join  (cost=0.00..862.00 rows=1 width=4) (actual time=0.000..4.449 rows=0 loops=1)
                                  Hash Cond: (a.c2 = b.c2)
@@ -133,7 +133,7 @@ explain analyze select count(*) from test_gang_reuse_t1 a
                      Hash Cond: (a.c2 = b.c2)
                      ->  Redistribute Motion 3:3  (slice1; gang3; segments: 3)  (cost=0.00..431.00 rows=1 width=4) (never executed)
                            Hash Key: a.c2
-                           ->  Seq Scan on test_gang_reuse_t1  (cost=0.00..431.00 rows=1 width=4) (actual time=0.000..0.002 rows=0 loops=1)
+                           ->  Seq Scan on test_gang_reuse_t1 a  (cost=0.00..431.00 rows=1 width=4) (actual time=0.000..0.002 rows=0 loops=1)
                      ->  Hash  (cost=431.00..431.00 rows=1 width=4) (actual time=0.000..0.702 rows=0 loops=1)
                            ->  Redistribute Motion 3:3  (slice2; gang6; segments: 3)  (cost=0.00..431.00 rows=1 width=4) (actual time=0.000..0.696 rows=0 loops=1)
                                  Hash Key: b.c2

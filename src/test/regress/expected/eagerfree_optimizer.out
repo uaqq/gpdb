@@ -1318,9 +1318,9 @@ explain analyze select t1.* from smallt as t1, smallt as t2 where t1.i = t2.i;
          Hash Cond: smallt.i = smallt_1.i
          Extra Text: (seg0)   Hash chain length 10.0 avg, 10 max, using 4 of 524288 buckets.
  
-         ->  Seq Scan on smallt  (cost=0.00..431.00 rows=34 width=15) (actual time=0.002..0.008 rows=20 loops=2)
+         ->  Seq Scan on smallt t1  (cost=0.00..431.00 rows=34 width=15) (actual time=0.002..0.008 rows=20 loops=2)
          ->  Hash  (cost=431.00..431.00 rows=34 width=4) (actual time=0.034..0.034 rows=20 loops=2)
-               ->  Seq Scan on smallt smallt_1  (cost=0.00..431.00 rows=34 width=4) (actual time=0.019..0.023 rows=20 loops=2)
+               ->  Seq Scan on smallt t2  (cost=0.00..431.00 rows=34 width=4) (actual time=0.019..0.023 rows=20 loops=2)
    (slice0)    Executor memory: 322K bytes.
    (slice1)    Executor memory: 4198K bytes avg x 3 workers, 4206K bytes max (seg0).  Work_mem: 1K bytes max.
  Memory used:  128000kB
@@ -1627,10 +1627,10 @@ explain analyze select t1.* from smallt as t1, smallt as t2 where t1.i = t2.i an
          Hash Cond: smallt.i = smallt_1.i
          Extra Text: (seg0)   Hash chain length 10.0 avg, 10 max, using 1 of 524288 buckets.
  
-         ->  Seq Scan on smallt  (cost=0.00..431.00 rows=7 width=15) (actual time=0.002..0.007 rows=5 loops=2)
+         ->  Seq Scan on smallt t1  (cost=0.00..431.00 rows=7 width=15) (actual time=0.002..0.007 rows=5 loops=2)
                Filter: i < 2
          ->  Hash  (cost=431.00..431.00 rows=7 width=4) (actual time=0.049..0.049 rows=5 loops=2)
-               ->  Seq Scan on smallt smallt_1  (cost=0.00..431.00 rows=7 width=4) (actual time=0.037..0.044 rows=5 loops=2)
+               ->  Seq Scan on smallt t2  (cost=0.00..431.00 rows=7 width=4) (actual time=0.037..0.044 rows=5 loops=2)
                      Filter: i < 2
    (slice0)    Executor memory: 322K bytes.
    (slice1)    Executor memory: 4182K bytes avg x 3 workers, 4182K bytes max (seg0).  Work_mem: 1K bytes max.

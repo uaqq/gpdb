@@ -9913,7 +9913,7 @@ where c.cid = s.cid and s.date_sk = d.date_sk and
                                  ->  Seq Scan on sales s  (cost=0.00..431.00 rows=1 width=16)
                                        Filter: lower(type) = 't1'::text OR upper(type) = 'T2'::text
                            ->  Hash  (cost=431.00..431.00 rows=1 width=12)
-                                 ->  Seq Scan on datedim  (cost=0.00..431.00 rows=1 width=12)
+                                 ->  Seq Scan on datedim d  (cost=0.00..431.00 rows=1 width=12)
                                        Filter: year = 2001 OR moy = 4
  Settings:  optimizer=on; optimizer_segments=3
  Optimizer status: Pivotal Optimizer (GPORCA) version 1.602
@@ -12822,11 +12822,11 @@ where out.b in (select max(tcorr2.b + out.b - 1)
  Result  (cost=0.00..1324032.62 rows=1 width=8)
    Filter: (SubPlan 1)
    ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
-         ->  Seq Scan on tcorr1  (cost=0.00..431.00 rows=1 width=8)
+         ->  Seq Scan on tcorr1 "out"  (cost=0.00..431.00 rows=1 width=8)
    SubPlan 1  (slice0)
      ->  Aggregate  (cost=0.00..431.00 rows=1 width=4)
            ->  Result  (cost=0.00..431.00 rows=1 width=4)
-                 Filter: (tcorr2.a = tcorr1.a)
+                 Filter: (tcorr2.a = "out".a)
                  ->  Materialize  (cost=0.00..431.00 rows=1 width=8)
                        ->  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..431.00 rows=1 width=8)
                              ->  Seq Scan on tcorr2  (cost=0.00..431.00 rows=1 width=8)
