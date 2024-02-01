@@ -1704,7 +1704,7 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 
 	/* Store tablespace OIDs in an array in TopTransactionContext */
 	iTblSpcs = (Oid *) MemoryContextAlloc(TopTransactionContext,
-										 list_length(namelist) * sizeof(Oid));
+										  list_length(namelist) * sizeof(Oid));
 	iNumSpcs = 0;
 	foreach(l, namelist)
 	{
