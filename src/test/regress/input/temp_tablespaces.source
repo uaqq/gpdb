@@ -381,7 +381,7 @@ select count(*) from out11;
 
 SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'tables', gp_temptablespace_path((SELECT oid FROM pg_tablespace WHERE spcname = 'temp_tables' LIMIT 1)));
 
--- Run this this query again to create temporary hashjoin files in temp_
+-- Run this this query again to create temporary hashjoin files in temp_tables
 -- tablespace
 with out11 as (
     SELECT * FROM (

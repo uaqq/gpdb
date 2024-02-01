@@ -620,7 +620,7 @@ SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'tables', gp_temptablespac
  
 (3 rows)
 
--- Run this this query again to create temporary hashjoin files in temp_
+-- Run this this query again to create temporary hashjoin files in temp_tables
 -- tablespace
 with out11 as (
     SELECT * FROM (
