@@ -2866,7 +2866,7 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"temp_tablespaces", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets the tablespace(s) to use for temporary tables."),
+			gettext_noop("Sets the tablespace(s) to use for temporary tables and sort files."),
 			NULL,
 			GUC_LIST_INPUT | GUC_LIST_QUOTE
 		},
@@ -2878,7 +2878,8 @@ static struct config_string ConfigureNamesString[] =
 	{
 		{"temp_file_tablespaces", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the tablespace(s) to use for temporary files."),
-			NULL,
+			gettext_noop("This setting takes precedence over temp_tablespaces "
+						 "for temporary files."),
 			GUC_LIST_INPUT | GUC_LIST_QUOTE
 		},
 		&temp_file_tablespaces,
