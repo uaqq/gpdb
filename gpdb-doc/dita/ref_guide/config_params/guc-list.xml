@@ -9809,7 +9809,7 @@ statement_mem = rg_perseg_mem / max_expected_concurrent_queries</codeblock></li>
       <p>When setting <codeph>temp_file_tablespaces</codeph> interactively, avoid specifying a
         nonexistent tablespace, or a tablespace for which the user does have <codeph>CREATE</codeph>
         privileges. For non-superusers, a superuser must <codeph>GRANT</codeph> them the
-          <codeph>CREATE</codeph> privilege on the temp tablespace.. When using a previously set
+          <codeph>CREATE</codeph> privilege on the temp tablespace. When using a previously set
         value (for example a value in <codeph>postgresql.conf</codeph>), nonexistent tablespaces are
         ignored, as are tablespaces for which the user lacks <codeph>CREATE</codeph> privilege. </p>
       <p>The default value is an empty string, which results in all temporary files being created

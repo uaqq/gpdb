@@ -3029,7 +3029,7 @@ When setting `temp_tablespaces` interactively, avoid specifying a nonexistent ta
 
 The default value is an empty string, which results in all temporary objects being created in the default tablespace of the current database.
 
-See also [temp_file_tablespaces](#temp_file_tablespaces), [default\_tablespace](#default_tablespace).
+See also [temp\_file\_tablespaces](#temp_file_tablespaces), [default\_tablespace](#default_tablespace).
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
