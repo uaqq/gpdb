@@ -1674,10 +1674,9 @@ PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
 {
 	char	   *rawname;
 	List	   *namelist;
+	Oid		   *tblSpcs;
+	int			numSpcs;
 	ListCell   *l;
-
-	Oid *tblSpcs;
-	int numSpcs;
 
 	/*
 	 * Can't do catalog access unless within a transaction.  This is just a
