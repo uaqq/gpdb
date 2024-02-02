@@ -1631,33 +1631,38 @@ check_temp_tablespaces(char **newval, void **extra, GucSource source)
 	return true;
 }
 
-/*
- * assign_temp_tablespaces & assign_file_temp_tablespaces
- *
- * assign_hook: do extra actions as needed
- *
- * If check_temp_tablespaces was executed inside a transaction, then pass
- * the list it made to fd.c.  Otherwise, clear fd.c's list; we must be
- * still outside a transaction, or else restoring during transaction exit,
- * and in either case we can just let the next PrepareTempTablespaces call
- * make things sane.
- */
+/* assign_hook: do extra actions as needed */
 void
 assign_temp_tablespaces(const char *newval, void *extra)
 {
 	temp_tablespaces_extra *myextra = (temp_tablespaces_extra *) extra;
 
+	/*
+	 * If check_temp_tablespaces was executed inside a transaction, then pass
+	 * the list it made to fd.c.  Otherwise, clear fd.c's list; we must be
+	 * still outside a transaction, or else restoring during transaction exit,
+	 * and in either case we can just let the next PrepareTempTablespaces call
+	 * make things sane.
+	 */
 	if (myextra)
 		SetTempTablespaces(myextra->tblSpcs, myextra->numSpcs);
 	else
 		SetTempTablespaces(NULL, 0);
 }
 
+/* assign_hook: do extra actions as needed */
 void
 assign_file_temp_tablespaces(const char *newval, void *extra)
 {
 	temp_tablespaces_extra *myextra = (temp_tablespaces_extra *) extra;
 
+	/*
+	 * If check_temp_tablespaces was executed inside a transaction, then pass
+	 * the list it made to fd.c.  Otherwise, clear fd.c's list; we must be
+	 * still outside a transaction, or else restoring during transaction exit,
+	 * and in either case we can just let the next PrepareTempTablespaces call
+	 * make things sane.
+	 */
 	if (myextra)
 		SetFileTempTablespaces(myextra->tblSpcs, myextra->numSpcs);
 	else

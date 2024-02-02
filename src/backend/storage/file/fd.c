@@ -2621,10 +2621,10 @@ closeAllVfds(void)
 
 
 /*
- * SetTempTablespaces & SetFileTempTablespaces
+ * SetTempTablespaces
  *
  * Define a list (actually an array) of OIDs of tablespaces to use for
- * temporary files.  This list will be used until end of transaction,
+ * temporary files and tables.  This list will be used until end of transaction,
  * unless this function is called again before then.  It is caller's
  * responsibility that the passed-in array has adequate lifespan (typically
  * it'd be allocated in TopTransactionContext).
@@ -2649,6 +2649,22 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 		nextTempTableSpace = 0;
 }
 
+/*
+ * SetFileTempTablespaces
+ *
+ * Define a list (actually an array) of OIDs of tablespaces to use for
+ * temporary files.  This list will be used until end of transaction,
+ * unless this function is called again before then.  It is caller's
+ * responsibility that the passed-in array has adequate lifespan (typically
+ * it'd be allocated in TopTransactionContext).
+ *
+ * We select a random starting point in the list.  This is to minimize
+ * conflicts between backends that are most likely sharing the same list
+ * of temp tablespaces.  Note that if we create multiple temp files in the
+ * same transaction, we'll advance circularly through the list --- this
+ * ensures that large temporary sort files are nicely spread across all
+ * available tablespaces.
+ */
 void
 SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
 {
@@ -2663,11 +2679,11 @@ SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
 }
 
 /*
- * TempTablespacesAreSet & FileTempTablespacesAreSet
+ * TempTablespacesAreSet
  *
- * Returns TRUE if SetTempTablespaces/SetFileTempTablespaces has been called in
- * current transaction.  (This is just so that tablespaces.c doesn't need its
- * own per-transaction state.)
+ * Returns TRUE if SetTempTablespaces has been called in current transaction.
+ * (This is just so that tablespaces.c doesn't need its own per-transaction
+ * state.)
  */
 bool
 TempTablespacesAreSet(void)
@@ -2675,6 +2691,13 @@ TempTablespacesAreSet(void)
 	return (numTempTableSpaces >= 0);
 }
 
+/*
+ * FileTempTablespacesAreSet
+ *
+ * Returns TRUE if SetFileTempTablespaces has been called in current
+ * transaction.  (This is just so that tablespaces.c doesn't need its own
+ * per-transaction state.)
+ */
 bool
 FileTempTablespacesAreSet(void)
 {
@@ -2682,7 +2705,7 @@ FileTempTablespacesAreSet(void)
 }
 
 /*
- * GetSessionTempTableSpace & GetSessionFileTempTableSpace
+ * GetSessionTempTableSpace
  *
  * Select temp tablespace for current session to use. It's like
  * GetNextTempTableSpace in upstream, but it gets the same temp
@@ -2705,6 +2728,15 @@ GetSessionTempTableSpace(void)
 	return tempTableSpaces[nextTempTableSpace];
 }
 
+/*
+ * GetSessionFileTempTableSpace
+ *
+ * Select temp tablespace for current session to use. It's like
+ * GetNextTempTableSpace in upstream, but it gets the same temp
+ * tablespace in all QD/QE processes in the same session.
+ * A result of InvalidOid means to use the current database's
+ * default tablespace.
+ */
 static inline Oid
 GetSessionFileTempTableSpace(void)
 {
@@ -2721,7 +2753,7 @@ GetSessionFileTempTableSpace(void)
 }
 
 /*
- * GetNextTempTableSpace & GetNextFileTempTableSpace
+ * GetNextTempTableSpace
  *
  * Select the next temp tablespace to use.  A result of InvalidOid means
  * to use the current database's default tablespace.
@@ -2732,6 +2764,12 @@ GetNextTempTableSpace(void)
 	return GetSessionTempTableSpace();
 }
 
+/*
+ * GetNextFileTempTableSpace
+ *
+ * Select the next temp tablespace to use for temporary files.  A result of
+ * InvalidOid means to use the current database's default tablespace.
+ */
 Oid
 GetNextFileTempTableSpace(void)
 {
