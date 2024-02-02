@@ -594,8 +594,8 @@ SELECT gp_tablespace_watch_match(gp_execution_dbid(), 'files', '_HashJoin') > 0 
  t
 (3 rows)
 
--- If temp_tablespaces is not empty, temporary tables should be stored in
--- temp_tablespaces, while files should be stored in temp_file_tablespaces.
+-- If temp_file_tablespaces is empty, temporary tables should be stored in
+-- temp_tablespaces.
 RESET temp_file_tablespaces;
 -- This query should create the temporary directory
 with out11 as (
