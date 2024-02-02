@@ -138,11 +138,9 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 
 	if (NULL != rte->alias)
 	{
-		CWStringDynamic cw_alias(mp);
+		CMDName *table_alias =
+			CDXLUtils::CreateMDNameFromCharArray(mp, rte->alias->aliasname);
 
-		cw_alias.AppendCharArray(rte->alias->aliasname);
-
-		CMDName *table_alias = GPOS_NEW(mp) CMDName(mp, &cw_alias);
 		table_descr->SetMdAlias(table_alias);
 	}
 
