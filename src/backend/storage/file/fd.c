@@ -2628,13 +2628,6 @@ closeAllVfds(void)
  * unless this function is called again before then.  It is caller's
  * responsibility that the passed-in array has adequate lifespan (typically
  * it'd be allocated in TopTransactionContext).
- *
- * We select a random starting point in the list.  This is to minimize
- * conflicts between backends that are most likely sharing the same list
- * of temp tablespaces.  Note that if we create multiple temp files in the
- * same transaction, we'll advance circularly through the list --- this
- * ensures that large temporary sort files are nicely spread across all
- * available tablespaces.
  */
 void
 SetTempTablespaces(Oid *tableSpaces, int numSpaces)
@@ -2643,6 +2636,14 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 	tempTableSpaces = tableSpaces;
 	numTempTableSpaces = numSpaces;
 
+	/*
+	 * We select a random starting point in the list.  This is to minimize
+	 * conflicts between backends that are most likely sharing the same list
+	 * of temp tablespaces.  Note that if we create multiple temp files in the
+	 * same transaction, we'll advance circularly through the list --- this
+	 * ensures that large temporary sort files are nicely spread across all
+	 * available tablespaces.
+	 */
 	if (numSpaces > 1)
 		nextTempTableSpace = random() % numSpaces;
 	else
@@ -2657,13 +2658,6 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
  * unless this function is called again before then.  It is caller's
  * responsibility that the passed-in array has adequate lifespan (typically
  * it'd be allocated in TopTransactionContext).
- *
- * We select a random starting point in the list.  This is to minimize
- * conflicts between backends that are most likely sharing the same list
- * of temp tablespaces.  Note that if we create multiple temp files in the
- * same transaction, we'll advance circularly through the list --- this
- * ensures that large temporary sort files are nicely spread across all
- * available tablespaces.
  */
 void
 SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
@@ -2672,6 +2666,14 @@ SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
 	fileTempTableSpaces = tableSpaces;
 	fileNumTempTableSpaces = numSpaces;
 
+	/*
+	 * We select a random starting point in the list.  This is to minimize
+	 * conflicts between backends that are most likely sharing the same list
+	 * of temp tablespaces.  Note that if we create multiple temp files in the
+	 * same transaction, we'll advance circularly through the list --- this
+	 * ensures that large temporary sort files are nicely spread across all
+	 * available tablespaces.
+	 */
 	if (numSpaces > 1)
 		fileNextTempTableSpace = random() % numSpaces;
 	else
