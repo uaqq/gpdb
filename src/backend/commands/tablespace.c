@@ -1669,7 +1669,8 @@ assign_file_temp_tablespaces(const char *newval, void *extra)
  * temp_tablespaces GUC variable and tell fd.c which tablespace(s) to use
  * for temporary files or tables.
  */
-static void PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
+static void
+PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
 {
 	char	   *rawname;
 	List	   *namelist;
