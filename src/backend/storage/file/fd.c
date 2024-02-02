@@ -1244,8 +1244,9 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
  * a file, and another process reads it.
  *
  * NOTE: this always uses the session temp tablespace from
- * `temp_file_tablespaces`.  Otherwise picking randomly from list would be hard
- * for the reader process to find the file created by the writer process.
+ * `temp_file_tablespaces` or `temp_tablespaces`, if first is not set.
+ * Otherwise picking randomly from list would be hard for the reader process to
+ * find the file created by the writer process.
  */
 File
 OpenNamedTemporaryFile(const char *fileName,
