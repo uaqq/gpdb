@@ -1669,11 +1669,14 @@ assign_file_temp_tablespaces(const char *newval, void *extra)
  * temp_tablespaces GUC variable and tell fd.c which tablespace(s) to use
  * for temporary files or tables.
  */
-static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
+static void PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
 {
 	char	   *rawname;
 	List	   *namelist;
 	ListCell   *l;
+
+	Oid *tblSpcs;
+	int numSpcs;
 
 	/*
 	 * Can't do catalog access unless within a transaction.  This is just a
@@ -1692,17 +1695,16 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 	if (!SplitIdentifierString(rawname, ',', &namelist))
 	{
 		/* syntax error in name list */
-		*tblSpcs = NULL;
-		*numSpcs = 0;
+		set(NULL, 0);
 		pfree(rawname);
 		list_free(namelist);
 		return;
 	}
 
 	/* Store tablespace OIDs in an array in TopTransactionContext */
-	*tblSpcs = (Oid *) MemoryContextAlloc(TopTransactionContext,
-										  list_length(namelist) * sizeof(Oid));
-	*numSpcs = 0;
+	tblSpcs = (Oid *) MemoryContextAlloc(TopTransactionContext,
+										 list_length(namelist) * sizeof(Oid));
+	numSpcs = 0;
 	foreach(l, namelist)
 	{
 		char	   *curname = (char *) lfirst(l);
@@ -1712,7 +1714,7 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 		/* Allow an empty string (signifying database default) */
 		if (curname[0] == '\0')
 		{
-			(*tblSpcs)[(*numSpcs)++] = InvalidOid;
+			tblSpcs[numSpcs++] = InvalidOid;
 			continue;
 		}
 
@@ -1730,7 +1732,7 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 		 */
 		if (curoid == MyDatabaseTableSpace)
 		{
-			(*tblSpcs)[(*numSpcs)++] = InvalidOid;
+			tblSpcs[numSpcs++] = InvalidOid;
 			continue;
 		}
 
@@ -1740,8 +1742,10 @@ static void PrepareTablespacesImpl(char *str, Oid **tblSpcs, int *numSpcs)
 		if (aclresult != ACLCHECK_OK)
 			continue;
 
-		(*tblSpcs)[(*numSpcs)++] = curoid;
+		tblSpcs[numSpcs++] = curoid;
 	}
+
+	set(tblSpcs, numSpcs);
 
 	pfree(rawname);
 	list_free(namelist);
@@ -1755,22 +1759,10 @@ void
 PrepareTempTablespaces(void)
 {
 	if (!TempTablespacesAreSet())
-	{
-		Oid		   *tblSpcs = NULL;
-		int			numSpcs = 0;
-
-		PrepareTablespacesImpl(temp_tablespaces, &tblSpcs, &numSpcs);
-		SetTempTablespaces(tblSpcs, numSpcs);
-	}
+		PrepareTablespacesImpl(temp_tablespaces, SetTempTablespaces);
 
 	if (!FileTempTablespacesAreSet())
-	{
-		Oid		   *tblSpcs = NULL;
-		int			numSpcs = 0;
-
-		PrepareTablespacesImpl(temp_file_tablespaces, &tblSpcs, &numSpcs);
-		SetFileTempTablespaces(tblSpcs, numSpcs);
-	}
+		PrepareTablespacesImpl(temp_file_tablespaces, SetTempTablespaces);
 }
 
 /*
