@@ -2774,6 +2774,7 @@ Oid
 GetNextFileTempTableSpace(void)
 {
 	Oid		tablespace = GetSessionFileTempTableSpace();
+
 	if (OidIsValid(tablespace))
 		return tablespace;
 
