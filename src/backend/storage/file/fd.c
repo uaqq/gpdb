@@ -267,6 +267,10 @@ static Oid *tempTableSpaces = NULL;
 static int	numTempTableSpaces = -1;
 static int	nextTempTableSpace = 0;
 
+/*
+ * Array of OIDs of temp file tablespaces.  When fileNumTempTableSpaces is -1,
+ * this has not been set in the current transaction.
+ */
 static Oid *fileTempTableSpaces = NULL;
 static int	fileNumTempTableSpaces = -1;
 static int	fileNextTempTableSpace = 0;
