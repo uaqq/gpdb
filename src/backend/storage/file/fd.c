@@ -1270,7 +1270,7 @@ OpenNamedTemporaryFile(const char *fileName,
 
 		/*
 		 * If we got an InvalidOid, this may mean we couldn't not retrieve
-		 * tablespaces from GUCS. The caller must ensure that
+		 * tablespaces from GUCs.  The caller must ensure that
 		 * PrepareTempTablespaces() was called before opening temporary files.
 		 */
 		if (OidIsValid(tblspcOid))
@@ -2637,7 +2637,7 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 	numTempTableSpaces = numSpaces;
 
 	/*
-	 * We select a random starting point in the list.  This is to minimize
+	 * Select a random starting point in the list.  This is to minimize
 	 * conflicts between backends that are most likely sharing the same list
 	 * of temp tablespaces.  Note that if we create multiple temp files in the
 	 * same transaction, we'll advance circularly through the list --- this
@@ -2667,7 +2667,7 @@ SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
 	fileNumTempTableSpaces = numSpaces;
 
 	/*
-	 * We select a random starting point in the list.  This is to minimize
+	 * Select a random starting point in the list.  This is to minimize
 	 * conflicts between backends that are most likely sharing the same list
 	 * of temp tablespaces.  Note that if we create multiple temp files in the
 	 * same transaction, we'll advance circularly through the list --- this
