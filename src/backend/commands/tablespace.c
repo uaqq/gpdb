@@ -1675,7 +1675,7 @@ assign_file_temp_tablespaces(const char *newval, void *extra)
  * for temporary files or tables.
  */
 static void
-PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
+PrepareTablespacesImpl(char *str, void (*setTablespacesFunc)(Oid *, int))
 {
 	char	   *rawname;
 	List	   *namelist;
@@ -1700,7 +1700,7 @@ PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
 	if (!SplitIdentifierString(rawname, ',', &namelist))
 	{
 		/* syntax error in name list */
-		set(NULL, 0);
+		setTablespacesFunc(NULL, 0);
 		pfree(rawname);
 		list_free(namelist);
 		return;
@@ -1750,7 +1750,7 @@ PrepareTablespacesImpl(char *str, void (*set)(Oid *, int))
 		tblSpcs[numSpcs++] = curoid;
 	}
 
-	set(tblSpcs, numSpcs);
+	setTablespacesFunc(tblSpcs, numSpcs);
 
 	pfree(rawname);
 	list_free(namelist);
