@@ -510,7 +510,7 @@ ANALYZE tts_bar;
 ANALYZE tts_jazz;
 -- If the temp_file_tablespaces is not empty, but temp_tablespaces is empty,
 -- only temporary files will be saved in the specified table spaces.
-CREATE TABLESPACE temp_files LOCATION '/home/sd/Work/Actual/gpdb/src/test/regress/testtablespace_temp_files';
+CREATE TABLESPACE temp_files LOCATION '@testtablespace@_temp_files';
 SET temp_file_tablespaces = temp_files;
 -- Should be in default tablespace.
 CREATE TEMPORARY TABLE tts_baz (a int) DISTRIBUTED BY (a);
@@ -599,8 +599,8 @@ RESET temp_file_tablespaces;
 -- If both temp_tablespaces and temp_file_tablespaces is not empty, only
 -- temporary files should be saved in temp_file_tablespaces. Temporary tables
 -- shoud still be stored in temp_tablespaces.
-CREATE TABLESPACE temp_tables LOCATION '/home/sd/Work/Actual/gpdb/src/test/regress/testtablespace_temp_tables';
-CREATE TABLESPACE temp_files LOCATION '/home/sd/Work/Actual/gpdb/src/test/regress/testtablespace_temp_files';
+CREATE TABLESPACE temp_tables LOCATION '@testtablespace@_temp_tables';
+CREATE TABLESPACE temp_files LOCATION '@testtablespace@_temp_files';
 SET temp_tablespaces = temp_tables;
 SET temp_file_tablespaces = temp_files;
 -- Should be in temp_tables tablespace.
