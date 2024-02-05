@@ -2090,7 +2090,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 		leftmostSelect = leftmostSelect->larg;
 	Assert(leftmostSelect && IsA(leftmostSelect, SelectStmt) &&
 		   leftmostSelect->larg == NULL);
-	if (leftmostSelect->intoClause)
+	if (leftmostSelect && leftmostSelect->intoClause)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("SELECT ... INTO is not allowed here"),
