@@ -504,7 +504,7 @@ CREATE TABLE tts_bar (c int, d int) DISTRIBUTED BY (d);
 CREATE TABLE tts_jazz (e int, f int) DISTRIBUTED BY (e);
 INSERT INTO tts_foo SELECT i, i FROM generate_series (1, 1000000) i;
 INSERT INTO tts_bar SELECT i, i FROM generate_series (6000, 120000) i;
-INSERT INTO tts_jazz SELECT i, i FROM generate_series (4000,150000) i;
+INSERT INTO tts_jazz SELECT i, i FROM generate_series (4000, 150000) i;
 ANALYZE tts_foo;
 ANALYZE tts_bar;
 ANALYZE tts_jazz;
@@ -524,7 +524,7 @@ SELECT count(*)
 
 DROP TABLE tts_baz;
 -- This query should create the temporary directory.
-with out11 as (
+WITH out11 AS (
     SELECT * FROM (
       WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
       SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
@@ -532,7 +532,7 @@ with out11 as (
     ) AS XY
     JOIN tts_jazz on c = e AND b = f
 )
-select count(*) from out11;
+SELECT count(*) FROM out11;
  count  
 --------
  228002
@@ -556,7 +556,7 @@ SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'default', gp_temptablespa
 
 -- Run this this query again to create temporary hashjoin files in temp_files
 -- tablespace.
-with out11 as (
+WITH out11 AS (
     SELECT * FROM (
       WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
       SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
@@ -564,7 +564,7 @@ with out11 as (
     ) AS XY
     JOIN tts_jazz on c = e AND b = f
 )
-select count(*) from out11;
+SELECT count(*) FROM out11;
  count  
 --------
  228002
@@ -616,7 +616,7 @@ SELECT pg_tablespace.spcname
 
 DROP TABLE tts_baz;
 -- This query should create the temporary directory.
-with out11 as (
+WITH out11 AS (
     SELECT * FROM (
       WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
       SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
@@ -624,7 +624,7 @@ with out11 as (
     ) AS XY
     JOIN tts_jazz on c = e AND b = f
 )
-select count(*) from out11;
+SELECT count(*) FROM out11;
  count  
 --------
  228002
@@ -648,7 +648,7 @@ SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'files', gp_temptablespace
 
 -- Run this this query again to create temporary hashjoin files in temp_files
 -- tablespace.
-with out11 as (
+WITH out11 AS (
     SELECT * FROM (
       WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
       SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
@@ -656,7 +656,7 @@ with out11 as (
     ) AS XY
     JOIN tts_jazz on c = e AND b = f
 )
-select count(*) from out11;
+SELECT count(*) FROM out11;
  count  
 --------
  228002
@@ -690,7 +690,7 @@ SELECT gp_tablespace_watch_match(gp_execution_dbid(), 'files', '_HashJoin') > 0 
 -- temp_tablespaces.
 RESET temp_file_tablespaces;
 -- This query should create the temporary directory
-with out11 as (
+WITH out11 AS (
     SELECT * FROM (
       WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
       SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
@@ -698,7 +698,7 @@ with out11 as (
     ) AS XY
     JOIN tts_jazz on c = e AND b = f
 )
-select count(*) from out11;
+SELECT count(*) FROM out11;
  count  
 --------
  228002
@@ -714,7 +714,7 @@ SELECT gp_tablespace_watch_start(gp_execution_dbid(), 'tables', gp_temptablespac
 
 -- Run this this query again to create temporary hashjoin files in temp_tables
 -- tablespace.
-with out11 as (
+WITH out11 AS (
     SELECT * FROM (
       WITH cte(a,b) AS (SELECT a-1, b+1 FROM tts_foo)
       SELECT * FROM (SELECT * FROM cte UNION ALL SELECT * FROM cte) AS X JOIN tts_bar ON b = c
@@ -722,7 +722,7 @@ with out11 as (
     ) AS XY
     JOIN tts_jazz on c = e AND b = f
 )
-select count(*) from out11;
+SELECT count(*) FROM out11;
  count  
 --------
  228002
