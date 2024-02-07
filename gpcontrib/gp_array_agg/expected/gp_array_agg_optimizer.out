@@ -110,8 +110,8 @@ order by 1,2;
          ->  Append
                ->  Result
                      ->  HashAggregate
-                           Group Key: mergeappend_test.a, mergeappend_test.b
-                           ->  Seq Scan on mergeappend_test
+                           Group Key: r.a, r.b
+                           ->  Seq Scan on mergeappend_test r
                ->  Result
                      ->  Redistribute Motion 1:3  (slice2)
                            ->  Aggregate
