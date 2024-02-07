@@ -945,6 +945,8 @@ CopyArrayEls(ArrayType *array,
 	int			bitmask = 1;
 	int			i;
 
+	Assert(values || nitems == 0);
+
 	if (typbyval)
 		freedata = false;
 
