@@ -1675,7 +1675,7 @@ assign_file_temp_tablespaces(const char *newval, void *extra)
  * for temporary files or tables.
  */
 static void
-PrepareTablespacesImpl(char *gucStr, void (*setTablespacesFunc)(Oid *, int))
+PrepareTablespacesImpl(char *gucstr, void (*setTablespacesFunc)(Oid *, int))
 {
 	char	   *rawname;
 	List	   *namelist;
@@ -1694,7 +1694,7 @@ PrepareTablespacesImpl(char *gucStr, void (*setTablespacesFunc)(Oid *, int))
 		return;
 
 	/* Need a modifiable copy of string */
-	rawname = pstrdup(gucStr);
+	rawname = pstrdup(gucstr);
 
 	/* Parse string into list of identifiers */
 	if (!SplitIdentifierString(rawname, ',', &namelist))

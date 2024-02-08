@@ -9802,7 +9802,7 @@ statement_mem = rg_perseg_mem / max_expected_concurrent_queries</codeblock></li>
         one tablespace name, Greenplum chooses a random list member each time it creates a temporary
         file. An exception applies within a transaction, where successively created temporary files
         are placed in successive tablespaces from the list. If the selected element of the list is
-        an empty string, Greenplum automatically falls back to tablespaces specified
+        an empty string, Greenplum automatically falls back to tablespaces specified in
         <codeph>temp_tablespaces<codeph>. If <codeph>temp_tablespaces<codeph> is empty, Greenplum
         uses the default tablespace of the current database instead.</p>
 
@@ -9817,7 +9817,7 @@ statement_mem = rg_perseg_mem / max_expected_concurrent_queries</codeblock></li>
           <codeph>temp_tablespaces<codeph> is also empty, default tablespace of the current database
         will be used.</p>
       <p>See also <xref href="#default_tablespace" format="dita"/>.</p>
-      <table id="table_l52_fqm_f3b">
+      <table id="temp_file_tablespaces_table">
         <tgroup cols="3">
           <colspec colnum="1" colname="col1" colwidth="1*"/>
           <colspec colnum="2" colname="col2" colwidth="1*"/>
