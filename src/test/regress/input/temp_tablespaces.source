@@ -325,8 +325,8 @@ CREATE TABLESPACE temp_files3 LOCATION '@testtablespace@_temp_files3';
 SET optimizer = off;
 SET statement_mem = '2MB';
 
--- Creates a temporary table returns the tablespace it was created in. Runs a
--- query that creates some temporary files, calculates the tablespace for
+-- Creates a temporary table and remembers the tablespace it was created in.
+-- Runs a query that creates some temporary files, calculates the tablespace for
 -- temporary files that will be used for current session, and checks if any
 -- files were created in that tablespace.
 --
@@ -345,7 +345,7 @@ CREATE OR REPLACE FUNCTION gp_tablespace_file_report(
     ) AS $$
 DECLARE
     owo int;
-    session_ts_n int;
+    session_file_ts_n int;
     session_file_ts_name text;
     temp_table_ts_name text;
 BEGIN
@@ -376,8 +376,8 @@ BEGIN
     -- N = gp_session_id % number of tablespaces in GUC.
     SELECT id.setting::int % n_temp_file_tablespaces
         FROM (SELECT setting FROM pg_settings WHERE name = 'gp_session_id') id
-        INTO session_ts_n;
-    SELECT 'temp_files' || session_ts_n INTO session_file_ts_name;
+        INTO session_file_ts_n;
+    SELECT 'temp_files' || session_file_ts_n INTO session_file_ts_name;
 
     -- Create the temporary directory.
     WITH out11 AS (
