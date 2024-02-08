@@ -185,7 +185,10 @@ tablespace-setup:
 	./testtablespace_space_12871 \
 	./testtablespace_database_tablespace \
 	./testtablespace_temp_tables \
-	./testtablespace_temp_files
+	./testtablespace_temp_files0 \
+	./testtablespace_temp_files1 \
+	./testtablespace_temp_files2 \
+	./testtablespace_temp_files3
 
 .PHONY: hooktest
 hooktest:
