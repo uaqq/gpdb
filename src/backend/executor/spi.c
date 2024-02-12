@@ -1935,6 +1935,8 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 		List	   *stmt_list;
 		CachedPlanSource *plansource;
 
+		Assert(parsetree);
+
 		/*
 		 * Create the CachedPlanSource before we do parse analysis, since it
 		 * needs to see the unmodified raw parse tree.
@@ -1982,7 +1984,7 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 		CompleteCachedPlan(plansource,
 						   stmt_list,
 						   NULL,
-						   parsetree ? nodeTag(parsetree) : T_Invalid,
+						   nodeTag(parsetree),
 						   plan->argtypes,
 						   plan->nargs,
 						   plan->parserSetup,
@@ -2153,6 +2155,8 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			const char *src = plansource->query_string;
 			List	   *stmt_list;
 
+			Assert(parsetree);
+
 			/*
 			 * Parameter datatypes are driven by parserSetup hook if provided,
 			 * otherwise we use the fixed parameter list.
@@ -2192,7 +2196,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			CompleteCachedPlan(plansource,
 							   stmt_list,
 							   NULL,
-							   parsetree ? nodeTag(parsetree) : T_Invalid,
+							   nodeTag(parsetree),
 							   plan->argtypes,
 							   plan->nargs,
 							   plan->parserSetup,
