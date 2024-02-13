@@ -1767,7 +1767,7 @@ PrepareTempTablespaces(void)
 		PrepareTablespacesImpl(temp_tablespaces, SetTempTablespaces);
 
 	if (!FileTempTablespacesAreSet())
-		PrepareTablespacesImpl(temp_file_tablespaces, SetTempTablespaces);
+		PrepareTablespacesImpl(temp_file_tablespaces, SetFileTempTablespaces);
 }
 
 /*
