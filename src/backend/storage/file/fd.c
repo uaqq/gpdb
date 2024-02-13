@@ -271,9 +271,9 @@ static int	nextTempTableSpace = 0;
  * Array of OIDs of temp file tablespaces.  When fileNumTempTableSpaces is -1,
  * this has not been set in the current transaction.
  */
-static Oid *fileTempTableSpaces = NULL;
-static int	fileNumTempTableSpaces = -1;
-static int	fileNextTempTableSpace = 0;
+static Oid *tempFileTableSpaces = NULL;
+static int	numTempFileTableSpaces = -1;
+static int	nextTempFileTableSpace = 0;
 
 /*--------------------
  *
@@ -1267,7 +1267,7 @@ OpenNamedTemporaryFile(const char *fileName,
 	 */
 	if (!interXact && !GetForceDefaultTableSpaceVal())
 	{
-		Oid            tblspcOid = GetNextFileTempTableSpace();
+		Oid            tblspcOid = GetNextTempFileTableSpace();
 
 		/*
 		 * If we got an InvalidOid, this may mean we couldn't retrieve
@@ -1357,7 +1357,7 @@ OpenTemporaryFile(bool interXact, const char *filePrefix)
 	 */
 	if (!interXact)
 	{
-		Oid			tblspcOid = GetNextFileTempTableSpace();
+		Oid			tblspcOid = GetNextTempFileTableSpace();
 
 		/*
 		 * If we got an InvalidOid, this may mean we couldn't retrieve
@@ -1422,7 +1422,7 @@ GetTempFilePath(const char *filename, bool createdir)
 	char		tempfilepath[MAXPGPATH];
 	Oid			tblspcOid;
 
-	tblspcOid = GetNextFileTempTableSpace();
+	tblspcOid = GetNextTempFileTableSpace();
 	if (!OidIsValid(tblspcOid))
 	{
 		if (MyDatabaseTableSpace)
@@ -2661,11 +2661,11 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
  * it'd be allocated in TopTransactionContext).
  */
 void
-SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
+SetTempFileTablespaces(Oid *tableSpaces, int numSpaces)
 {
 	Assert(numSpaces >= 0);
-	fileTempTableSpaces = tableSpaces;
-	fileNumTempTableSpaces = numSpaces;
+	tempFileTableSpaces = tableSpaces;
+	numTempFileTableSpaces = numSpaces;
 
 	/*
 	 * Select a random starting point in the list.  This is to minimize
@@ -2676,9 +2676,9 @@ SetFileTempTablespaces(Oid *tableSpaces, int numSpaces)
 	 * available tablespaces.
 	 */
 	if (numSpaces > 1)
-		fileNextTempTableSpace = random() % numSpaces;
+		nextTempFileTableSpace = random() % numSpaces;
 	else
-		fileNextTempTableSpace = 0;
+		nextTempFileTableSpace = 0;
 }
 
 /*
@@ -2702,9 +2702,9 @@ TempTablespacesAreSet(void)
  * per-transaction state.)
  */
 bool
-FileTempTablespacesAreSet(void)
+TempFileTablespacesAreSet(void)
 {
-	return (fileNumTempTableSpaces >= 0);
+	return (numTempFileTableSpaces >= 0);
 }
 
 /*
@@ -2741,18 +2741,18 @@ GetSessionTempTableSpace(void)
  * default tablespace.
  */
 static inline Oid
-GetSessionFileTempTableSpace(void)
+GetSessionTempFileTableSpace(void)
 {
-	if (fileNumTempTableSpaces <= 0)
+	if (numTempFileTableSpaces <= 0)
 		return InvalidOid;
 
 	if (gp_session_id >= 0)
-		return fileTempTableSpaces[gp_session_id % fileNumTempTableSpaces];
+		return tempFileTableSpaces[gp_session_id % numTempFileTableSpaces];
 
 	/* If this session is not MPP, uses the implementation from upstream */
-	if (++fileNextTempTableSpace >= fileNumTempTableSpaces)
-		fileNextTempTableSpace = 0;
-	return fileTempTableSpaces[fileNextTempTableSpace];
+	if (++nextTempFileTableSpace >= numTempFileTableSpaces)
+		nextTempFileTableSpace = 0;
+	return tempFileTableSpaces[nextTempFileTableSpace];
 }
 
 /*
@@ -2774,9 +2774,9 @@ GetNextTempTableSpace(void)
  * InvalidOid means to use the current database's default tablespace.
  */
 Oid
-GetNextFileTempTableSpace(void)
+GetNextTempFileTableSpace(void)
 {
-	Oid		tablespace = GetSessionFileTempTableSpace();
+	Oid		tablespace = GetSessionTempFileTableSpace();
 
 	if (OidIsValid(tablespace))
 		return tablespace;

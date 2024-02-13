@@ -1652,7 +1652,7 @@ assign_temp_tablespaces(const char *newval, void *extra)
 
 /* assign_hook: do extra actions as needed */
 void
-assign_file_temp_tablespaces(const char *newval, void *extra)
+assign_temp_file_tablespaces(const char *newval, void *extra)
 {
 	temp_tablespaces_extra *myextra = (temp_tablespaces_extra *) extra;
 
@@ -1664,9 +1664,9 @@ assign_file_temp_tablespaces(const char *newval, void *extra)
 	 * make things sane.
 	 */
 	if (myextra)
-		SetFileTempTablespaces(myextra->tblSpcs, myextra->numSpcs);
+		SetTempFileTablespaces(myextra->tblSpcs, myextra->numSpcs);
 	else
-		SetFileTempTablespaces(NULL, 0);
+		SetTempFileTablespaces(NULL, 0);
 }
 
 /*
@@ -1675,7 +1675,7 @@ assign_file_temp_tablespaces(const char *newval, void *extra)
  * for temporary files or tables.
  */
 static void
-PrepareTablespacesImpl(char *gucstr, void (*setTablespacesFunc)(Oid *, int))
+PrepareTempTablespacesImpl(char *gucstr, void (*setTablespacesFunc)(Oid *, int))
 {
 	char	   *rawname;
 	List	   *namelist;
@@ -1757,17 +1757,17 @@ PrepareTablespacesImpl(char *gucstr, void (*setTablespacesFunc)(Oid *, int))
 }
 
 /*
- * PrepareTempTablespaces -- prepare to use temp tablespaces for tables and
- * files.  No work if already done in current transaction.
+ * PrepareTempTablespaces -- prepare to use tablespaces set in temp_tablespaces
+ * and temp_file_tablespaces.  No work if already done in current transaction.
  */
 void
 PrepareTempTablespaces(void)
 {
 	if (!TempTablespacesAreSet())
-		PrepareTablespacesImpl(temp_tablespaces, SetTempTablespaces);
+		PrepareTempTablespacesImpl(temp_tablespaces, SetTempTablespaces);
 
-	if (!FileTempTablespacesAreSet())
-		PrepareTablespacesImpl(temp_file_tablespaces, SetFileTempTablespaces);
+	if (!TempFileTablespacesAreSet())
+		PrepareTempTablespacesImpl(temp_file_tablespaces, SetTempFileTablespaces);
 }
 
 /*

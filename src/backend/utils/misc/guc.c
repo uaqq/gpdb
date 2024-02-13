@@ -2884,7 +2884,7 @@ static struct config_string ConfigureNamesString[] =
 		},
 		&temp_file_tablespaces,
 		"",
-		check_temp_tablespaces, assign_file_temp_tablespaces, NULL
+		check_temp_tablespaces, assign_temp_file_tablespaces, NULL
 	},
 
 	{
