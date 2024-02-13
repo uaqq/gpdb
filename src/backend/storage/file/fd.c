@@ -2652,7 +2652,7 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 }
 
 /*
- * SetFileTempTablespaces
+ * SetTempFileTablespaces
  *
  * Define a list (actually an array) of OIDs of tablespaces to use for
  * temporary files.  This list will be used until end of transaction,
@@ -2695,7 +2695,7 @@ TempTablespacesAreSet(void)
 }
 
 /*
- * FileTempTablespacesAreSet
+ * TempFileTablespacesAreSet
  *
  * Returns TRUE if SetFileTempTablespaces has been called in current
  * transaction.  (This is just so that tablespaces.c doesn't need its own
@@ -2732,7 +2732,7 @@ GetSessionTempTableSpace(void)
 }
 
 /*
- * GetSessionFileTempTableSpace
+ * GetSessionTempFileTableSpace
  *
  * Select temp tablespace for current session to use. It's like
  * GetNextTempTableSpace in upstream, but it gets the same temp
@@ -2768,7 +2768,7 @@ GetNextTempTableSpace(void)
 }
 
 /*
- * GetNextFileTempTableSpace
+ * GetNextTempFileTableSpace
  *
  * Select the next temp tablespace to use for temporary files.  A result of
  * InvalidOid means to use the current database's default tablespace.
