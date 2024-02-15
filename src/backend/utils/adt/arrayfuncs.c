@@ -945,8 +945,6 @@ CopyArrayEls(ArrayType *array,
 	int			bitmask = 1;
 	int			i;
 
-	Insist(values);
-
 	if (typbyval)
 		freedata = false;
 
@@ -3062,7 +3060,7 @@ construct_md_array(Datum *elems,
 	memcpy(ARR_DIMS(result), dims, ndims * sizeof(int));
 	memcpy(ARR_LBOUND(result), lbs, ndims * sizeof(int));
 
-	if (elems==NULL && fixedwidthtype) 
+	if (elems==NULL || fixedwidthtype) 
 	{
 		/* do nothing */
 	} 
