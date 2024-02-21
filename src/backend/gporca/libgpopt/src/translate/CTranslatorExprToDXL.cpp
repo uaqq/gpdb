@@ -459,11 +459,11 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 
 		if (NULL != inputSegmentInfo)
 		{
-			pexpr->SetMotionInputsNumber(inputSegmentInfo->Size());
+			pexpr->SetMotionInputSegmentsNumber(inputSegmentInfo->Size());
 			CRefCount::SafeRelease(inputSegmentInfo);
 		}
 		else
-			pexpr->SetMotionInputsNumber(0);
+			pexpr->SetMotionInputSegmentsNumber(0);
 	}
 	PfPdxlnPhysical pf = m_rgpfPhysicalTranslators[ulOpId];
 	if (NULL == pf)

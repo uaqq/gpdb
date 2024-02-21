@@ -222,7 +222,7 @@ public:
 	void SetMotionInputSegmentsNumberForChildren();
 
 	void
-	SetMotionInputsNumber(ULONG motionInputSegmentsNumber)
+	SetMotionInputSegmentsNumber(ULONG motionInputSegmentsNumber)
 	{
 		m_motionInputSegmentsNumber = motionInputSegmentsNumber;
 	}
