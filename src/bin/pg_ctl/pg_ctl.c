@@ -27,6 +27,7 @@
 #include "common/controldata_utils.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
+#include "common/string.h"
 #include "getopt_long.h"
 #include "utils/pidfile.h"
 
@@ -123,6 +124,7 @@ static char *register_password = NULL;
 static char *argv0 = NULL;
 static bool allow_core_files = false;
 static time_t start_time;
+static bool gp_mirror_fast_wait = false;
 
 static char postopts_file[MAXPGPATH];
 static char version_file[MAXPGPATH];
@@ -737,7 +739,8 @@ wait_for_postmaster_start(pgpid_t pm_pid, bool do_checkpoint)
 				}
 				else /* I'm one of coordinator, standby-coor, primary, mirror */
 				{
-					if (strcmp(pmstatus, pmReadyStatuses[pmStartMode]) == 0)
+					if (strcmp(pmstatus, pmReadyStatuses[pmStartMode]) == 0 ||
+						(gp_mirror_fast_wait && pmStartMode == IS_MIRROR && strcmp(pmstatus, PM_STATUS_STANDBY) == 0))
 					{
 						/* postmaster is done starting up */
 						free_readfile(optlines);
@@ -2543,9 +2546,8 @@ adjust_data_dir(void)
 	pclose(fd);
 	free(my_exec_path);
 
-	/* Remove trailing newline */
-	if (strchr(filename, '\n') != NULL)
-		*strchr(filename, '\n') = '\0';
+	/* strip trailing newline and carriage return */
+	(void) pg_strip_crlf(filename);
 
 	free(pg_data);
 	pg_data = pg_strdup(filename);
@@ -2589,6 +2591,7 @@ main(int argc, char **argv)
 		{"wrapper-args", optional_argument, NULL, 'Q'},
 		{"wait", no_argument, NULL, 'w'},
 		{"no-wait", no_argument, NULL, 'W'},
+		{"gp-mirror-fast-wait", no_argument, NULL, 128},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -2751,6 +2754,15 @@ main(int argc, char **argv)
 					break;
 				case 'Q':
 					wrapper_args = pg_strdup(optarg);
+					break;
+				case 128:
+					/*
+					 * GPDB: Wait for mirror's postmaster.pid to show
+					 * 'standby' instead of 'wrecvstreaming'. This is useful
+					 * for utilities (e.g. gpstart) that do not care if a
+					 * mirror's wal receiver has starting streaming or not.
+					 */
+					gp_mirror_fast_wait = true;
 					break;
 				default:
 					/* getopt_long already issued a suitable error message */

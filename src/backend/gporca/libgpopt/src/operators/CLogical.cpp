@@ -27,13 +27,16 @@
 #include "gpopt/operators/CLogicalApply.h"
 #include "gpopt/operators/CLogicalBitmapTableGet.h"
 #include "gpopt/operators/CLogicalDynamicBitmapTableGet.h"
+#include "gpopt/operators/CLogicalDynamicForeignGet.h"
 #include "gpopt/operators/CLogicalDynamicGet.h"
+#include "gpopt/operators/CLogicalForeignGet.h"
 #include "gpopt/operators/CLogicalGet.h"
 #include "gpopt/operators/CLogicalNAryJoin.h"
 #include "gpopt/operators/CLogicalSelect.h"
 #include "gpopt/operators/CPredicateUtils.h"
 #include "gpopt/operators/CScalarIdent.h"
 #include "gpopt/optimizer/COptimizerConfig.h"
+#include "gpopt/xforms/CXformUtils.h"
 #include "naucrates/md/IMDCheckConstraint.h"
 #include "naucrates/md/IMDColumn.h"
 #include "naucrates/md/IMDIndex.h"
@@ -187,46 +190,9 @@ CLogical::PosFromIndex(CMemoryPool *mp, const IMDIndex *pmdindex,
 		const ULONG ulPosTabDesc = ptabdesc->GetAttributePosition(attno);
 		CColRef *colref = (*colref_array)[ulPosTabDesc];
 
-		IMDId *mdid = nullptr;
-		COrderSpec::ENullTreatment ent = COrderSpec::EntLast;
-		// if scan direction is forward, order spec computed should match
-		// the index's sort and nulls order.
-		if (scan_direction == EForwardScan)
-		{
-			// if sort direction of key is 0(ASC), choose MDID for less than
-			// type and vice-versa
-			mdid =
-				(pmdindex->KeySortDirectionAt(ul) == SORT_ASC)
-					? colref->RetrieveType()->GetMdidForCmpType(IMDType::EcmptL)
-					: colref->RetrieveType()->GetMdidForCmpType(
-						  IMDType::EcmptG);
-
-			// if nulls direction of key is 0, choose ENTLast and
-			// vice-versa
-			ent = (pmdindex->KeyNullsDirectionAt(ul) == COrderSpec::EntLast)
-					  ? COrderSpec::EntLast
-					  : COrderSpec::EntFirst;
-		}
-		// if scan direction is backward, order spec computed should be
-		// commutative to index's sort and nulls order.
-		else if (scan_direction == EBackwardScan)
-		{
-			// if sort order of key is 0(ASC), choose MDID for greater than
-			// type and vice-versa
-			mdid =
-				(pmdindex->KeySortDirectionAt(ul) == SORT_ASC)
-					? colref->RetrieveType()->GetMdidForCmpType(IMDType::EcmptG)
-					: colref->RetrieveType()->GetMdidForCmpType(
-						  IMDType::EcmptL);
-
-			// if nulls direction of key is 0, choose ENTFirst and
-			// vice-versa
-			ent = (pmdindex->KeyNullsDirectionAt(ul) == COrderSpec::EntLast)
-					  ? COrderSpec::EntFirst
-					  : COrderSpec::EntLast;
-		}
-		mdid->AddRef();
-		pos->Append(mdid, colref, ent);
+		// Compute and update OrderSpec for Index key
+		CXformUtils::ComputeOrderSpecForIndexKey(mp, &pos, pmdindex,
+												 scan_direction, colref, ul);
 	}
 
 	return pos;
@@ -972,12 +938,10 @@ CLogical::DeriveFunctionProperties(CMemoryPool *mp,
 //		Derive table descriptor for tables used by operator
 //
 //---------------------------------------------------------------------------
-CTableDescriptor *
-CLogical::DeriveTableDescriptor(CMemoryPool *, CExpressionHandle &) const
+CTableDescriptorHashSet *
+CLogical::DeriveTableDescriptor(CMemoryPool *mp, CExpressionHandle &) const
 {
-	//currently return null unless there is a single table being used. Later we may want
-	//to make this return a set of table descriptors and pass them up all operators
-	return nullptr;
+	return GPOS_NEW(mp) CTableDescriptorHashSet(mp);
 }
 //---------------------------------------------------------------------------
 //	@function:
@@ -1299,6 +1263,10 @@ CLogical::PtabdescFromTableGet(COperator *pop)
 			return CLogicalDynamicGet::PopConvert(pop)->Ptabdesc();
 		case CLogical::EopLogicalBitmapTableGet:
 			return CLogicalBitmapTableGet::PopConvert(pop)->Ptabdesc();
+		case CLogical::EopLogicalForeignGet:
+			return CLogicalForeignGet::PopConvert(pop)->Ptabdesc();
+		case CLogical::EopLogicalDynamicForeignGet:
+			return CLogicalDynamicForeignGet::PopConvert(pop)->Ptabdesc();
 		case CLogical::EopLogicalDynamicBitmapTableGet:
 			return CLogicalDynamicBitmapTableGet::PopConvert(pop)->Ptabdesc();
 		case CLogical::EopLogicalSelect:

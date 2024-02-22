@@ -38,7 +38,7 @@
         </dxl:Opfamilies>
       </dxl:Index>
       <dxl:RelationStatistics Mdid="2.76091.1.0" Name="points" Rows="6.000000" RelPages="3" RelAllVisible="3" EmptyRelation="false"/>
-      <dxl:Relation Mdid="6.76091.1.0" Name="points" IsTemporary="false" StorageType="Heap" DistributionPolicy="Random" Keys="7,1">
+      <dxl:Relation Mdid="6.76091.1.0" Name="points" IsTemporary="false" Rows="6.000000" StorageType="Heap" DistributionPolicy="Random" Keys="7,1">
         <dxl:Columns>
           <dxl:Column Name="p" Attno="1" Mdid="0.600.1.0" Nullable="true" ColWidth="16">
           </dxl:Column>
@@ -240,7 +240,7 @@
     <dxl:Plan Id="0" SpaceSize="1">
       <dxl:GatherMotion InputSegments="0,1,2" OutputSegments="-1">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="6.000325" Rows="2.400000" Width="16"/>
+          <dxl:Cost StartupCost="0" TotalCost="6.000326" Rows="2.400000" Width="16"/>
         </dxl:Properties>
         <dxl:ProjList>
           <dxl:ProjElem ColId="0" Alias="p">
@@ -251,7 +251,7 @@
         <dxl:SortingColumnList/>
         <dxl:IndexOnlyScan IndexScanDirection="Forward">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="6.000132" Rows="2.400000" Width="16"/>
+            <dxl:Cost StartupCost="0" TotalCost="6.000133" Rows="2.400000" Width="16"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="0" Alias="p">

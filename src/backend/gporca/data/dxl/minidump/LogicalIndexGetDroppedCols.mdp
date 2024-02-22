@@ -1063,7 +1063,7 @@ EXPLAIN SELECT * FROM solo WHERE year_id=2017 AND month_id=6;
         </dxl:StatsBucket>
       </dxl:ColumnStatistics>
       <dxl:RelationStatistics Mdid="2.30044.1.0" Name="solo" Rows="36.000000" EmptyRelation="false"/>
-      <dxl:Relation Mdid="6.30044.1.0" Name="solo" IsTemporary="false" StorageType="Heap" DistributionPolicy="Hash" DistributionColumns="0" Keys="36,30">
+      <dxl:Relation Mdid="6.30044.1.0" Name="solo" IsTemporary="false" Rows="36.000000" StorageType="Heap" DistributionPolicy="Hash" DistributionColumns="0" Keys="36,30">
         <dxl:Columns>
           <dxl:Column Name="some_id" Attno="1" Mdid="0.23.1.0" Nullable="true" ColWidth="4">
           </dxl:Column>
@@ -1437,7 +1437,7 @@ EXPLAIN SELECT * FROM solo WHERE year_id=2017 AND month_id=6;
     <dxl:Plan Id="0" SpaceSize="2">
       <dxl:GatherMotion InputSegments="0,1,2" OutputSegments="-1">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="6.002520" Rows="1.774224" Width="88"/>
+          <dxl:Cost StartupCost="0" TotalCost="6.001822" Rows="1.774224" Width="88"/>
         </dxl:Properties>
         <dxl:ProjList>
           <dxl:ProjElem ColId="0" Alias="some_id">
@@ -1514,7 +1514,7 @@ EXPLAIN SELECT * FROM solo WHERE year_id=2017 AND month_id=6;
         <dxl:SortingColumnList/>
         <dxl:IndexScan IndexScanDirection="Forward">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="6.001841" Rows="1.774224" Width="88"/>
+            <dxl:Cost StartupCost="0" TotalCost="6.001144" Rows="1.774224" Width="88"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="0" Alias="some_id">

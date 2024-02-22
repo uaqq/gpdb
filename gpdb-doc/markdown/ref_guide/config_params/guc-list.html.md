@@ -614,6 +614,20 @@ The `gp_autostats_allow_nonowner` configuration parameter can be changed only by
 |-----------|-------|-------------------|
 |Boolean|false|coordinator, session, reload, superuser|
 
+## <a id="gp_autostats_lock_wait"></a>gp_autostats_lock_wait 
+
+The `gp_autostats_lock_wait` server configuration parameter allows you to control whether `ANALYZE` commands triggered by autostats collection will block if they cannot acquire the table lock.
+
+The default value is `off`; `ANALYZE` commands will attempt locks on tables and, if unsuccessful, will proceed without possession of the table lock. 
+
+Keeping this parameter turned off will prevent deadlocks and make automatic statistics collection sessions finish in a more timely and predictable fashion.
+
+When set to `on`, the `ANALYZE` command will block until the table lock is acquired.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|Boolean|off|coordinator, session, session, reload|
+
 ## <a id="gp_autostats_mode"></a>gp\_autostats\_mode 
 
 Specifies the mode for triggering automatic statistics collection with `ANALYZE`. The `on_no_stats` option triggers statistics collection for `CREATE TABLE AS SELECT`, `INSERT`, or `COPY` operations on any table that has no existing statistics.
@@ -1416,8 +1430,6 @@ The value of `gp_resgroup_memory_query_fixed_mem` must be lower than `max_statem
 
 > **Note** The `gp_resource_group_bypass` server configuration parameter is enforced only when resource group-based resource management is active.
 
-This parameter can only be changed by a superuser.
-
  Activates or deactivates  the enforcement of resource group concurrent transaction limits on Greenplum Database resources. The default value is `false`, which enforces resource group transaction limits. Resource groups manage resources such as CPU, memory, and the number of concurrent transactions that are used by queries.
 
 You can set this parameter to `true` to bypass resource group concurrent transaction limitations so that a query can run immediately. If you set this parameter to true, the query no longer enforces the CPU or memory limits assigned to its resource group. Instead, the memory quota assigned to this query is `statement_mem` per query. If there is not enough memory to satisfy the memory allocation request, the query will fail.
@@ -1457,6 +1469,16 @@ When set to `true` (the default) Greenplum Database's resource group scheduler b
 |-----------|-------|-------------------|
 |Boolean|true|local, session, reload|
 
+## <a id="gp_resource_group_cgroup_parent"></a>gp_resource_group_cgroup_parent
+
+> **Note** The `gp_resource_group_cgroup_parent` server configuration parameter is enforced only when resource group-based resource management is active and cgroup v2 is used.
+
+Identifies the root path of the `gpdb` cgroup hierarchy.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|char|"gpdb.service"|local, system, restart, superuser|
+
 ## <a id="gp_resource_group_cpu_limit"></a>gp\_resource\_group\_cpu\_limit 
 
 > **Note** The `gp_resource_group_cpu_limit` server configuration parameter is enforced only when resource group-based resource management is active.
@@ -1479,11 +1501,21 @@ Sets the CPU priority for Greenplum processes relative to non-Greenplum processe
 |-----------|-------|-------------------|
 |1 - 50|10|local, system, restart|
 
+## <a id="gp_resource_group_move_timeout"></a>gp\_resource\_group\_move\_timeout
+
+> **Note** The `gp_resource_group_move_timeout` server configuration parameter is enforced only when resource group-based resource management is active.
+
+Cancels the `pg_resgroup_move_query()` function, which moves a running query from one resouce group to another, if it waits longer than the specified number of miliseconds.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|10 - `INT_MAX` millisecs|3000 millisecs|coordinator, session, reload|
+
 ## <a id="gp_resource_group_queuing_timeout"></a>gp\_resource\_group\_queuing\_timeout 
 
 > **Note** The `gp_resource_group_queuing_timeout` server configuration parameter is enforced only when resource group-based resource management is active.
 
-Cancel a transaction queued in a resource group that waits longer than the specified number of milliseconds. The time limit applies separately to each transaction. The default value is zero; transactions are queued indefinitely and never time out.
+Cancels a transaction queued in a resource group that waits longer than the specified number of milliseconds. The time limit applies separately to each transaction. The default value is zero; transactions are queued indefinitely and never time out.
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
@@ -2013,6 +2045,18 @@ This outputs a line to the server log detailing each successful connection. Some
 |-----------|-------|-------------------|
 |Boolean|off|local, system, reload|
 
+## <a id="log_directory"></a>log\_directory
+
+Sets the destination directory for log files. You may specify its value as relative to the coordinator and segments data directory or as absolute path. Only superusers and users privilege can change this setting. The default value, `log`, indicates that the logs are located in the `log` directory under the coordinator and segment data directory.
+
+When you specify the value as an absolute path, or as a relative path that is outside the data directory, Greenplum appends a subdirectory with a unique identifier (DBID) to the directory specified by this parameter. The unique identifier matches the value of `dbid` from `gp_segment_configuration`. For example, if you set `log_directory` as `/tmp/logs`, Greenplum creates the directories: `/tmp/logs/1` for the coordinator, `/tmp/logs/2` for seg0, `/tmp/logs/3` for seg1, etcetera. 
+
+> **Important** Do not remove the default log directories as some Greenplum utilities will still need them during initialization.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|String|log|coordinator, system, reload, superuser|
+
 ## <a id="log_disconnections"></a>log\_disconnections 
 
 This outputs a line in the server log at termination of a client session, and includes the duration of the session.
@@ -2506,6 +2550,18 @@ For information about GPORCA, see [About GPORCA](../../admin_guide/query/topics/
 |-----------|-------|-------------------|
 |Boolean|off|coordinator, session, reload|
 
+## <a id="optimizer_enable_orderedagg"></a>optimizer\_enable\_orderedagg 
+
+When GPORCA is enabled \(the default\), this parameter determines whether or not GPORCA generates a query plan for ordered aggregates.
+
+The default value is `on`, GPORCA generates a plan for a query that includes an ordered aggregate. When `off`, the query falls back to the Postgres-based planner.
+
+You can set this parameter for a database system, an individual database, or a session or query.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|Boolean|on|coordinator, session, reload|
+
 ## <a id="optimizer_enable_push_join_below_union_all"></a>optimizer\_enable\_push\_join\_below\_union\_all
 
 When GPORCA is enabled \(the default\), the `optimizer_enable_push_join_below_union_all` parameter controls GPORCA's behaviour when it encounters a query that includes a `JOIN` of a `UNION ALL`.
@@ -2531,6 +2587,22 @@ The default value is `on`, GPORCA attempts to plan and execute operations on rep
 The parameter can be set for a database system, an individual database, or a session or query.
 
 For information about GPORCA, see [About GPORCA](../../admin_guide/query/topics/query-piv-optimizer.html) in the *Greenplum Database Administrator Guide*.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|Boolean|on|coordinator, session, reload|
+
+## <a id="optimizer_enable_right_outer_join"></a>optimizer_enable_right_outer_join 
+
+When GPORCA is enabled (the default), this parameter allows you to control whether GPORCA generates right outer joins. 
+
+When set to the default value of `on`, GPORCA may both generate right outer joins and convert left outer joins to right outer joins if the situation calls for it. By setting this to `off`, you force GPORCA to generate equivalent left outer joins for incoming right outer joins and never generate right outer joins. 
+
+In situations in which you are observing poor performance related to right outer joins you may choose to suppress their use by setting this parameter to `off`.
+
+You may set this parameter for a database system, an individual database, or a session or query. However, we recommend that you set this parameter at the query level, as there are a number of use cases where right outer join is the correct query plan alternative to choose.
+
+For information about GPORCA, see the [About GPORCA](../../admin_guide/query/topics/query-piv-optimizer.html) topic.
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
@@ -3431,18 +3503,20 @@ When a Greenplum Database external table is defined with the `gpfdists` protocol
 
 Regardless of the setting of this server configuration parameter, Greenplum Database always encrypts data that you read from or write to an external table that specifies the `gpfdists` protocol.
 
-The default is `true`, SSL authentication is enabled when Greenplum Database communicates with the `gpfdist` utility to either read data from or write data to an external data source.
+The default is `true`, SSL certificate authentication is enabled when Greenplum Database communicates with the `gpfdist` utility to either read data from or write data to an external data source.
 
 The value `false` deactivates SSL certificate authentication. These SSL exceptions are ignored:
 
 -   The self-signed SSL certificate that is used by `gpfdist` is not trusted by Greenplum Database.
 -   The host name contained in the SSL certificate does not match the host name that is running `gpfdist`.
 
+When you set `verify_gpfdists_cert` to `false`, the CA certification file is not required for Greenplum Database segments.
+
 You can set the value to `false` to deactivate authentication when testing the communication between the Greenplum Database external table and the `gpfdist` utility that is serving the external data.
 
 > **Caution** Deactivating SSL certificate authentication exposes a security risk by not validating the `gpfdists` SSL certificate.
 
-For information about the `gpfdists` protocol, see [gpfdists:// Protocol](../../admin_guide/external/g-gpfdists-protocol.html). For information about running the `gpfdist` utility, see [gpfdist](../../utility_guide/ref/gpfdist.html).
+For information about the `gpfdists` protocol and how this setting affects the certificate files required on Greenplum Database segments, see [gpfdists:// Protocol](../../admin_guide/external/g-gpfdists-protocol.html). For information about running the `gpfdist` utility, see [gpfdist](../../utility_guide/ref/gpfdist.html).
 
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
@@ -3489,6 +3563,18 @@ The value of [wal\_sender\_timeout](#replication_timeout) controls the time that
 |Value Range|Default|Set Classifications|
 |-----------|-------|-------------------|
 |integer 0- INT\_MAX/1000|10 sec|coordinator, system, reload, superuser|
+
+## <a id="work_mem"></a>work_mem
+
+Sets the maximum amount of memory to be used by a query operation (such as a sort or hash table) before writing to temporary disk files. If this value is specified without units, it is taken as kilobytes. The default value is 32 MB. Note that for a complex query, several sort or hash operations might be running in parallel; each operation will be allowed to use as much memory as this value specifies before it starts to write data into temporary files. In addition, several running sessions may be performing such operations concurrently. Therefore, the total memory used could be many times the value of `work_mem`; keep this fact in mind when choosing the value for this parameter. Sort operations are used for `ORDER BY`, `DISTINCT`, and merge joins. Hash tables are used in hash joins, hash-based aggregation, and hash-based processing of `IN` subqueries. Apart from sorting and hashing, bitmap index scans also rely on `work_mem`. Operations relying on tuplestores such as function scans, CTEs, PL/pgSQL and administration UDFs also rely on `work_mem`.
+
+Apart from assigning memory to specific execution operators, setting `work_mem` also influences certain query plans over others, when the Postgres-based planner is used as the optimizer.
+
+`work_mem` is a distinct memory management concept that does not interact with resource queue or resource group memory controls, which are imposed at the query level.
+
+|Value Range|Default|Set Classifications|
+|-----------|-------|-------------------|
+|number of kilobytes|32MB|coordinator, session, reload|
 
 ## <a id="writable_external_table_bufsize"></a>writable\_external\_table\_bufsize 
 

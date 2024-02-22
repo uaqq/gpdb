@@ -637,7 +637,7 @@ CTranslatorRelcacheToDXL::RetrieveRel(CMemoryPool *mp, CMDAccessor *md_accessor,
 	// get key sets
 	BOOL should_add_default_keys = RelHasSystemColumns(rel->rd_rel->relkind);
 	keyset_array = RetrieveRelKeysets(mp, oid, should_add_default_keys,
-									  is_partitioned, attno_mapping);
+									  is_partitioned, attno_mapping, dist);
 
 	// collect all check constraints
 	check_constraint_mdids = RetrieveRelCheckConstraints(mp, oid);
@@ -671,7 +671,7 @@ CTranslatorRelcacheToDXL::RetrieveRel(CMemoryPool *mp, CMDAccessor *md_accessor,
 		mdcol_array, distr_cols, distr_op_families, part_keys, part_types,
 		partition_oids, convert_hash_to_random, keyset_array,
 		md_index_info_array, check_constraint_mdids, mdpart_constraint,
-		foreign_server_mdid);
+		foreign_server_mdid, rel->rd_rel->reltuples);
 
 	return md_rel;
 }
@@ -1056,7 +1056,7 @@ CTranslatorRelcacheToDXL::RetrieveIndex(CMemoryPool *mp,
 		}
 
 		// check if index can return column for index-only scans
-		if (gpdb::IndexCanReturn(index_rel.get(), attno))
+		if (gpdb::IndexCanReturn(index_rel.get(), i + 1))
 		{
 			returnable_cols->Append(
 				GPOS_NEW(mp) ULONG(GetAttributePosition(attno, attno_mapping)));
@@ -2652,13 +2652,15 @@ CTranslatorRelcacheToDXL::ConstructAttnoMapping(CMemoryPool *mp,
 //
 //	@doc:
 //		Get key sets for relation
+//		For a relation, 'key sets' contains all 'Unique keys'
+//		defined as unique constraints in the catalog table.
+//		Conditionally, a combination of {segid, ctid} is also added.
 //
 //---------------------------------------------------------------------------
 ULongPtr2dArray *
-CTranslatorRelcacheToDXL::RetrieveRelKeysets(CMemoryPool *mp, OID oid,
-											 BOOL should_add_default_keys,
-											 BOOL is_partitioned,
-											 ULONG *attno_mapping)
+CTranslatorRelcacheToDXL::RetrieveRelKeysets(
+	CMemoryPool *mp, OID oid, BOOL should_add_default_keys, BOOL is_partitioned,
+	ULONG *attno_mapping, IMDRelation::Ereldistrpolicy rel_distr_policy)
 {
 	ULongPtr2dArray *key_sets = GPOS_NEW(mp) ULongPtr2dArray(mp);
 
@@ -2683,9 +2685,12 @@ CTranslatorRelcacheToDXL::RetrieveRelKeysets(CMemoryPool *mp, OID oid,
 		key_sets->Append(key_set);
 	}
 
-	// add {segid, ctid} as a key
-
-	if (should_add_default_keys)
+	// 1. add {segid, ctid} as a key
+	// 2. Skip addition of {segid, ctid} as a key for replicated table,
+	// as same data is present across segments thus seg_id,
+	// will not help in defining a unique tuple.
+	if (should_add_default_keys &&
+		IMDRelation::EreldistrReplicated != rel_distr_policy)
 	{
 		ULongPtrArray *key_set = GPOS_NEW(mp) ULongPtrArray(mp);
 		if (is_partitioned)

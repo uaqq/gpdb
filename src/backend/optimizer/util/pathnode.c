@@ -3132,22 +3132,14 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_aware = false;
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
-	// GPDB_96_MERGE_FIXME: Why do we set pathkeys in GPDB, but not in Postgres?
-	// pathnode->pathkeys = NIL;	/* XXX for now, result is always unordered */
 	pathnode->pathkeys = pathkeys;
 	pathnode->locus = locus;
 
-	/*
-	 * We can't extract these two values from the subplan, so we simple set
-	 * them to their worst case here.
-	 *
-	 * GPDB_96_MERGE_FIXME: we do have the subpath, at least if it's not a
-	 * shared cte
-	 */
-	pathnode->motionHazard = true;
-	pathnode->rescannable = false;
 	pathnode->sameslice_relids = NULL;
 
+	/*
+	 * GPDB: we do have the subpath, at least if it's not a shared cte.
+	 */
 	if (subpath)
 	{
 		/* copy the cost estimates from the subpath */
@@ -3162,10 +3154,19 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel,
 		pathnode->startup_cost = subpath->startup_cost;
 		pathnode->total_cost = subpath->total_cost;
 
+		pathnode->motionHazard = subpath->motionHazard;
+		pathnode->rescannable = subpath->rescannable;
+
 		ctepath->subpath = subpath;
 	}
 	else
 	{
+		/*
+	 	 * We can't extract these two values from the subplan, so we simple set
+	 	 * them to their worst case here.
+		 */
+		pathnode->motionHazard = true;
+		pathnode->rescannable = false;
 		/* Shared scan. We'll use the cost estimates from the CTE rel. */
 		cost_ctescan(pathnode, root, rel, pathnode->param_info);
 	}
@@ -3275,16 +3276,15 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 		CdbPathLocus_MakeEntry(&result);
 	else if (ctelocus.locustype == CdbLocusType_SingleQE)
 		CdbPathLocus_MakeSingleQE(&result, ctelocus.numsegments);
-	else if (ctelocus.locustype == CdbLocusType_General)
-		CdbPathLocus_MakeGeneral(&result);
 	else if (ctelocus.locustype == CdbLocusType_OuterQuery)
 		CdbPathLocus_MakeOuterQuery(&result);
-	else if (ctelocus.locustype == CdbLocusType_SegmentGeneral)
+	else if (ctelocus.locustype == CdbLocusType_SegmentGeneral
+				|| ctelocus.locustype == CdbLocusType_General)
 	{
 		/* See comments in set_worktable_pathlist */
 		elog(ERROR,
 			 "worktable scan path can never have "
-			 "segmentgeneral locus.");
+			 "segmentgeneral or general locus.");
 	}
 	else
 		CdbPathLocus_MakeStrewn(&result, ctelocus.numsegments);
@@ -5442,30 +5442,11 @@ adjust_modifytable_subpaths(PlannerInfo *root, CmdType operation,
 	/*
 	 * Set the distribution of the ModifyTable node itself. If there is only
 	 * one subplan, or all the subplans have a compatible distribution, then
-	 * we could mark the ModifyTable with the same distribution key. However,
-	 * currently, because a ModifyTable node can only be at the top of the
-	 * plan, it won't make any difference to the overall plan.
-	 *
-	 * GPDB_96_MERGE_FIXME: it might with e.g. a INSERT RETURNING in a CTE
-	 * I tried here, the locus setting is quite simple, but failed if it's not
-	 * in a CTE and the locus is General. Haven't figured out how to create
-	 * flow in that case.
-	 * Example:
-	 * CREATE TABLE cte_returning_locus(c1 int) DISTRIBUTED BY (c1);
-	 * COPY cte_returning_locus FROM PROGRAM 'seq 1 100';
-	 * EXPLAIN WITH aa AS (
-	 *        INSERT INTO cte_returning_locus SELECT generate_series(3,300) RETURNING c1
-	 * )
-	 * SELECT count(*) FROM aa,cte_returning_locus WHERE aa.c1 = cte_returning_locus.c1;
-	 *
-	 * The returning doesn't need a motion to be hash joined, works fine. But
-	 * without the WITH, what is the proper flow? FLOW_SINGLETON returns
-	 * nothing, FLOW_PARTITIONED without hashExprs(General locus has no
-	 * distkeys) returns duplication.
-	 *
-	 * GPDB_90_MERGE_FIXME: I've hacked a basic implementation of the above for
-	 * the case where all the subplans are POLICYTYPE_ENTRY, but it seems like
-	 * there should be a more general way to do this.
+	 * we could mark the ModifyTable with the same distribution key. Otherwise,
+	 * mark the ModifyTable with Strewn.
+	 * We may set a proper locus of Hashed for the ModifyTable to eliminate
+	 * extra redistribution, but after discussion we decided it's not worthy
+	 * to do because the scenario is not common and the benefit is limited.
 	 */
 	if (all_subplans_entry)
 	{

@@ -3537,7 +3537,8 @@ CTestUtils::EresSamplePlans(const CHAR *rgszFileNames[], ULONG ulTests,
 					CEnumeratorConfig(mp, 0 /*plan_id*/, 1000 /*ullSamples*/),
 				CStatisticsConfig::PstatsconfDefault(mp),
 				CCTEConfig::PcteconfDefault(mp), ICostModel::PcmDefault(mp),
-				CHint::PhintDefault(mp), CWindowOids::GetWindowOids(mp));
+				CHint::PhintDefault(mp), nullptr,
+				CWindowOids::GetWindowOids(mp));
 		}
 		else
 		{
@@ -3675,7 +3676,8 @@ CTestUtils::EresCheckPlans(const CHAR *rgszFileNames[], ULONG ulTests,
 					CEnumeratorConfig(mp, 0 /*plan_id*/, 1000 /*ullSamples*/),
 				CStatisticsConfig::PstatsconfDefault(mp),
 				CCTEConfig::PcteconfDefault(mp), ICostModel::PcmDefault(mp),
-				CHint::PhintDefault(mp), CWindowOids::GetWindowOids(mp));
+				CHint::PhintDefault(mp), nullptr,
+				CWindowOids::GetWindowOids(mp));
 		}
 		else
 		{
@@ -3878,14 +3880,13 @@ CTestUtils::CreateGenericDatum(CMemoryPool *mp, CMDAccessor *md_accessor,
 		CDXLUtils::DecodeByteArrayFromString(mp, pstrEncodedValue, &ulbaSize);
 
 	CDXLDatumGeneric *dxl_datum = nullptr;
-	if (CMDTypeGenericGPDB::IsTimeRelatedTypeMappableToDouble(mdid_type))
+	if (CMDTypeGenericGPDB::IsTimeRelatedType(mdid_type))
 	{
 		dxl_datum = GPOS_NEW(mp) CDXLDatumStatsDoubleMappable(
 			mp, mdid_type, default_type_modifier, false /*is_const_null*/, data,
 			ulbaSize, CDouble(value));
 	}
-	else if (pmdtype->IsTextRelated() ||
-			 CMDTypeGenericGPDB::IsTimeRelatedTypeMappableToLint(mdid_type))
+	else if (pmdtype->IsTextRelated())
 	{
 		dxl_datum = GPOS_NEW(mp) CDXLDatumStatsLintMappable(
 			mp, mdid_type, default_type_modifier, false /*is_const_null*/, data,

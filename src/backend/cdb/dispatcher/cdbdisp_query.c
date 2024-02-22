@@ -329,12 +329,18 @@ CdbDispatchSetCommand(const char *strCommand, bool cancelOnError)
 
 		cdbdisp_dispatchToGang(ds, rg, -1);
 	}
-	addToGxactDtxSegments(primaryGang);
 
 	/*
-	 * No need for two-phase commit, so no need to call
-	 * addToGxactDtxSegments.
+	 * If there is an explicit BEGIN, we'll begin transaction and setup DTX 
+	 * context on QEs at the time of the first SET command. So we need to
+	 * add dtxSegments to make sure we end the transaction at the time of END/COMMIT.
+	 *
+	 * We shouldn't do this when there's no explicit BEGIN, though, because
+	 * if QEs do not have DTX context being setup, they would not recognize
+	 * the DTX protocol command that is going to be sent to the dtxSegments.
 	 */
+	if (isDtxExplicitBegin())
+		addToGxactDtxSegments(primaryGang);
 
 	cdbdisp_waitDispatchFinish(ds);
 
@@ -852,6 +858,7 @@ buildGpQueryString(DispatchCommandQueryParms *pQueryParms,
 {
 	const char *command = pQueryParms->strCommand;
 	int			command_len;
+	int			is_hs_dispatch = IS_HOT_STANDBY_QD() ? 1 : 0;
 	const char *plantree = pQueryParms->serializedPlantree;
 	int			plantree_len = pQueryParms->serializedPlantreelen;
 	const char *sddesc = pQueryParms->serializedQueryDispatchDesc;
@@ -906,6 +913,7 @@ buildGpQueryString(DispatchCommandQueryParms *pQueryParms,
 		sizeof(outerUserId) /* outerUserIsSuper */ +
 		sizeof(currentUserId) +
 		sizeof(n32) * 2 /* currentStatementStartTimestamp */ +
+		sizeof(is_hs_dispatch) +
 		sizeof(command_len) +
 		sizeof(plantree_len) +
 		sizeof(sddesc_len) +
@@ -960,6 +968,10 @@ buildGpQueryString(DispatchCommandQueryParms *pQueryParms,
 	n32 = htonl(n32);
 	memcpy(pos, &n32, sizeof(n32));
 	pos += sizeof(n32);
+
+	tmp = htonl(is_hs_dispatch);
+	memcpy(pos, &tmp, sizeof(is_hs_dispatch));
+	pos += sizeof(is_hs_dispatch);
 
 	tmp = htonl(command_len);
 	memcpy(pos, &tmp, sizeof(command_len));

@@ -293,7 +293,7 @@ CTableDescriptor::OsPrint(IOstream &os) const
 //		CTableDescriptor::IndexCount
 //
 //	@doc:
-//		 Returns number of b-tree indices
+//		 Returns number of indices in the relation
 //
 //
 //---------------------------------------------------------------------------
@@ -307,6 +307,34 @@ CTableDescriptor::IndexCount()
 	const ULONG ulIndices = pmdrel->IndexCount();
 
 	return ulIndices;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CTableDescriptor::HashValue
+//
+//	@doc:
+//		Returns hash value of the relation. The value is unique by MDId and
+//		relation name (or alias).
+//
+//
+//---------------------------------------------------------------------------
+ULONG
+CTableDescriptor::HashValue(const CTableDescriptor *ptabdesc)
+{
+	ULONG ulHash =
+		gpos::CombineHashes(ptabdesc->MDId()->HashValue(),
+							CWStringConst::HashValue(ptabdesc->Name().Pstr()));
+
+	return ulHash;
+}
+
+BOOL
+CTableDescriptor::Equals(const CTableDescriptor *ptabdescLeft,
+						 const CTableDescriptor *ptabdescRight)
+{
+	return ptabdescLeft->MDId()->Equals(ptabdescRight->MDId()) &&
+		   ptabdescLeft->Name().Equals(ptabdescRight->Name());
 }
 
 

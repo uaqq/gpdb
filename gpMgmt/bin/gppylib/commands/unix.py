@@ -9,10 +9,13 @@ import os
 import platform
 import psutil
 import pwd
+import shlex
 import socket
 import signal
 import uuid
 import pipes
+import re
+from pkg_resources import parse_version
 
 from gppylib.gplog import get_default_logger
 from gppylib.commands.base import *
@@ -199,8 +202,8 @@ class GenericPlatform():
     def get_machine_arch_cmd(self):
         return 'uname -i'
 
-    def getDiskFreeCmd(self):
-        return findCmdInPath('df') + " -k"
+    def getDiskUsageCmd(self):
+        return findCmdInPath('du') + " -ks"
 
     def getTarCmd(self):
         return findCmdInPath('tar')
@@ -217,7 +220,7 @@ class LinuxPlatform(GenericPlatform):
         return "linux"
 
     def getDiskFreeCmd(self):
-        # -P is for POSIX formatting.  Prevents error 
+        # -P is for POSIX formatting.  Prevents error
         # on lines that would wrap
         return findCmdInPath('df') + " -Pk"
 
@@ -309,46 +312,79 @@ class Ping(Command):
 
 
 # -------------df----------------------
+# NOTE: This purposely does not follow the similar pattern of the other commands.
+# Due to the limitations of the Command framework we created a separate python
+# script called calcualte_disk_free.py to determine the free space. This script
+# handles the case where the input directory may not have been created df will
+# fail. Thus, take each path element starting at the end and execute df until
+# it succeeds in order to find the filesystem and free space.
 class DiskFree(Command):
-    def __init__(self, name, directory, ctxt=LOCAL, remoteHost=None):
-        self.directory = directory
-        cmdStr = "%s %s" % (SYSTEM.getDiskFreeCmd(), directory)
-        Command.__init__(self, name, cmdStr, ctxt, remoteHost)
+    """
+    CalculateDiskFree executes a python script on each host to determine the
+    disk space free for each filesystem.
+    """
 
-    @staticmethod
-    def get_size(name, remote_host, directory):
-        dfCmd = DiskFree(name, directory, ctxt=REMOTE, remoteHost=remote_host)
-        dfCmd.run(validateAfter=True)
-        return dfCmd.get_bytes_free()
+    def __init__(self, remoteHost, directories):
+        name = "calculate disk space free on target host"
+        cmdStr = '$GPHOME/bin/lib/calculate_disk_free.py --directories \"%s\"' % (
+            shlex.quote(",".join(directories)))
 
-    @staticmethod
-    def get_size_local(name, directory):
-        dfCmd = DiskFree(name, directory)
-        dfCmd.run(validateAfter=True)
-        return dfCmd.get_bytes_free()
+        Command.__init__(self, name, cmdStr, ctxt=REMOTE, remoteHost=remoteHost)
 
+    # For local disk free, using plain df command since using the above script
+    # will encode the result to base64, which is not required in local host call.
     @staticmethod
     def get_disk_free_info_local(name, directory):
-        dfCmd = DiskFree(name, directory)
+        cmdStr = "%s %s" % (SYSTEM.getDiskFreeCmd(), directory)
+        dfCmd = Command(name, cmdStr, ctxt=LOCAL)
         dfCmd.run(validateAfter=True)
-        return dfCmd.get_disk_free_output()
-
-    def get_disk_free_output(self):
-        '''expected output of the form:
-           Filesystem   512-blocks      Used Available Capacity  Mounted on
-           /dev/disk0s2  194699744 158681544  35506200    82%    /
-
-           Returns data in list format:
-           ['/dev/disk0s2', '194699744', '158681544', '35506200', '82%', '/']
-        '''
-        rawIn = self.results.stdout.split('\n')[1]
+        rawIn=dfCmd.get_results().stdout.split('\n')[1]
         return rawIn.split()
 
-    def get_bytes_free(self):
-        disk_free = self.get_disk_free_output()
-        bytesFree = int(disk_free[3]) * 1024
-        return bytesFree
+# -------------du----------------------
+class DiskUsage(Command):
+    def __init__(self, name, directory, ctxt=LOCAL, remoteHostAddr=None):
+        self.directory = directory
+        cmdStr = "%s %s" % (SYSTEM.getDiskUsageCmd(), directory)
+        Command.__init__(self, name, cmdStr, ctxt, remoteHostAddr)
 
+    @staticmethod
+    def get_usage(name, remote_host, directory):
+        dfCmd = DiskUsage(name, directory, ctxt=REMOTE, remoteHostAddr=remote_host)
+        dfCmd.run(validateAfter=True)
+        return dfCmd.get_bytes_used()
+
+    @staticmethod
+    def get_usage_local(name, directory):
+        dfCmd = DiskUsage(name, directory)
+        dfCmd.run(validateAfter=True)
+        return dfCmd.get_bytes_used()
+
+    @staticmethod
+    def get_disk_usage_info_local(name, directory):
+        dfCmd = DiskUsage(name, directory)
+        dfCmd.run(validateAfter=True)
+        return dfCmd.disk_usage_output()
+
+    def disk_usage_output(self):
+        '''expected output of the form:
+           194699744  /directory/
+
+           Returns data in list format:
+           ['194699744', '/directory/']
+        '''
+        rawIn = self.results.stdout.split('\n')[0]
+        return rawIn.split()
+
+    def kbytes_used(self):
+        disk_usage = self.disk_usage_output()
+        KbytesUsed = int(disk_usage[0])
+        return KbytesUsed
+
+    def bytes_used(self):
+        disk_usage = self.disk_usage_output()
+        bytesUsed = int(disk_usage[0]) * 1024
+        return bytesUsed
 
 # -------------mkdir------------------
 class MakeDirectory(Command):
@@ -538,8 +574,10 @@ class Rsync(Command):
         if whole_file:
             cmd_tokens.append('--whole-file')
 
+        # Shows the progress of the whole transfer,
+        # Note : It is only supported with rsync 3.1.0 or above
         if progress:
-            cmd_tokens.append('--progress')
+            cmd_tokens.append('--info=progress2,name0')
 
         # To show file transfer stats
         if stats:
@@ -572,11 +610,13 @@ class Rsync(Command):
 
         cmd_tokens.extend(exclude_str)
 
+        # Combines output streams, uses 'sed' to find lines with 'kB/s' or 'MB/s' and appends ':%s' as suffix to the end
+        # of each line and redirects it to progress_file
         if progress_file:
-            cmd_tokens.append('> %s 2>&1' % pipes.quote(progress_file))
+            cmd_tokens.append('2>&1 | tr "\\r" "\\n" |sed -E "/[0-9]+%/ s/$/ :{0}/" > {1}' .format(name, pipes.quote(progress_file)))
 
         cmdStr = ' '.join(cmd_tokens)
-
+        cmdStr = "set -o pipefail; {}".format(cmdStr)
         self.command_tokens = cmd_tokens
 
         Command.__init__(self, name, cmdStr, ctxt, remoteHost)
@@ -754,3 +794,25 @@ elif curr_platform == OPENBSD:
     SYSTEM = OpenBSDPlatform()
 else:
     raise Exception("Platform %s is not supported.  Supported platforms are: %s", SYSTEM, str(platform_list))
+
+
+def validate_rsync_version(min_ver):
+    """
+    checks the version of the 'rsync' command and compares it with a required version.
+    If the current version is lower than the required version, it raises an exception
+    """
+    rsync_version_info = get_rsync_version()
+    pattern = r"version (\d+\.\d+\.\d+)"
+    match = re.search(pattern, rsync_version_info)
+    current_rsync_version = match.group(1)
+    if parse_version(current_rsync_version) < parse_version(min_ver):
+        return False
+    return True
+
+def get_rsync_version():
+    """ get the rsync current version """
+    cmdStr = findCmdInPath("rsync") + " --version"
+    cmd = Command("get rsync version", cmdStr=cmdStr)
+    cmd.run(validateAfter=True)
+    return cmd.get_stdout()
+

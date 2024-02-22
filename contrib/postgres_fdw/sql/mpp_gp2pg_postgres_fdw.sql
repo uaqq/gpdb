@@ -1,4 +1,9 @@
 -- This file is used to test the feature that there are multiple remote postgres servers.
+--
+-- start_matchsubs
+-- m/\(cost=.*\)/
+-- s/\(cost=.*\)//
+-- end_matchsubs
 
 -- ===================================================================
 -- create FDW objects
@@ -70,6 +75,7 @@ ALTER SERVER pgserver OPTIONS (set num_segments '2');
 -- ===================================================================
 EXPLAIN VERBOSE SELECT * FROM mpp_ft1 ORDER BY c1;
 SELECT * FROM mpp_ft1 ORDER BY c1;
+ANALYZE mpp_ft1;
 
 ALTER FOREIGN TABLE mpp_ft1 OPTIONS (add use_remote_estimate 'true');
 EXPLAIN VERBOSE SELECT * FROM mpp_ft1 ORDER BY c1;

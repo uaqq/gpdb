@@ -57,10 +57,11 @@ Feature: gpstart behave tests
 
     @concourse_cluster
     @demo_cluster
-    Scenario: gpstart starts even if a segment host is unreachable
+    Scenario: gpstart starts even if a segment host is unreachable and mirror is promoted
         Given the database is running
-          And the host for the primary on content 0 is made unreachable
-          And the host for the mirror on content 1 is made unreachable
+          And fts probing is disabled
+          And the host for the primary on content 0 is made unreachable and do not wait for failover
+          And the host for the mirror on content 1 is made unreachable and do not wait for failover
 
           And the user runs command "pkill -9 postgres" on all hosts without validation
          When "gpstart" is run with prompts accepted
@@ -69,6 +70,7 @@ Feature: gpstart behave tests
           And gpstart should print unreachable host messages for the down segments
           And the status of the primary on content 0 should be "d"
           And the status of the mirror on content 1 should be "d"
+          And the role of the mirror on content 0 should be "p"
           And the cluster is returned to a good state
 
     @concourse_cluster
@@ -191,3 +193,13 @@ Feature: gpstart behave tests
 
           When the user runs psql with "-c 'drop user foouser;'" against database "postgres"
           Then psql should return a return code of 0
+
+
+    @concourse_cluster
+    Scenario: gpstart with batch size is less than the number of segments host
+        Given the database is not running
+         When the user runs "gpstart -a -B 1"
+         Then "gpstart -a -B 1" should return a return code of 0
+          And gpcheckcat should not print "Number of segments which failed to start:.*" to stdout
+
+

@@ -1,7 +1,52 @@
 @gprecoverseg
 Feature: gprecoverseg tests
 
-    Scenario Outline: <scenario> recovery works with tablespaces
+  @demo_cluster
+  @concourse_cluster
+  Scenario: gprecoverseg recovery with a recovery configuration file and differential flag
+      Given the database is running
+        And all the segments are running
+        And the segments are synchronized
+        And user immediately stops all mirror processes for content 0,1,2
+        And the user waits until mirror on content 0,1,2 is down
+        And user can start transactions
+        And the gprecoverseg input file "recover_config_file" is cleaned up
+       When a gprecoverseg input file "recover_config_file" is created with all the failed segments and valid recovery type
+        And the user runs "gprecoverseg -i /tmp/recover_config_file -a --differential"
+       Then gprecoverseg should return a return code of 0
+        And verify that mirror on content 0,1,2 is up
+        And gprecoverseg should print "Synchronization mode.* = Differential" to stdout 2 times
+        And gprecoverseg should print "Synchronization mode.* = Full" to stdout 1 times
+        And all the segments are running
+        And the segments are synchronized
+
+
+  @demo_cluster
+  @concourse_cluster
+  Scenario: gprecoverseg" with a recovery configuration file specifying the recovery type
+      Given the database is running
+        And all the segments are running
+        And the segments are synchronized
+        And user immediately stops all mirror processes for content 0,1,2
+        And the user waits until mirror on content 0,1,2 is down
+        And user can start transactions
+        And the gprecoverseg input file "recover_config_file" is cleaned up
+       When a gprecoverseg input file "recover_config_file" is created with all the failed segments and invalid recovery type
+        And the user runs "gprecoverseg -i /tmp/recover_config_file -a"
+       Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "Invalid recovery type provided, please provide any of I,D,F,i,d,f as recovery_type" to stdout
+        And verify that mirror on content 0,1,2 is down
+       When a gprecoverseg input file "recover_config_file" is created with all the failed segments and valid recovery type
+        And the user runs "gprecoverseg -i /tmp/recover_config_file -a"
+       Then gprecoverseg should return a return code of 0
+        And verify that mirror on content 0,1,2 is up
+        And gprecoverseg should print "Synchronization mode.*= Incremental" to stdout 1 times
+        And gprecoverseg should print "Synchronization mode.* = Differential" to stdout 1 times
+        And gprecoverseg should print "Synchronization mode.* = Full" to stdout 1 times
+        And all the segments are running
+        And the segments are synchronized
+
+  Scenario Outline: <scenario> recovery works with tablespaces
         Given the database is running
           And user stops all primary processes
           And user can start transactions
@@ -60,10 +105,7 @@ Feature: gprecoverseg tests
         And gprecoverseg should print "Only one of -F and --differential may be specified" to stdout
        When the user runs "gprecoverseg -a --differential -p localhost"
        Then gprecoverseg should return a return code of 2
-        And gprecoverseg should print "Only one of -i, -p, -r and --differential may be specified" to stdout
-       When the user runs gprecoverseg with input file and additional args "-a --differential"
-       Then gprecoverseg should return a return code of 2
-        And gprecoverseg should print "Only one of -i, -p, -r and --differential may be specified" to stdout
+        And gprecoverseg should print "Only one of -p, -r and --differential may be specified" to stdout
        When the user runs "gprecoverseg -a --differential -o outputConfigFile"
        Then gprecoverseg should return a return code of 2
         And gprecoverseg should print "Invalid -o provided with --differential argument" to stdout
@@ -111,6 +153,52 @@ Feature: gprecoverseg tests
           And verify that mirror on content 0,1,2 is up
           And verify replication slot internal_wal_replication_slot is available on all the segments
           And the cluster is rebalanced
+
+
+    @concourse_cluster
+    Scenario: gpstate track of differential recovery for single host
+      Given the database is running
+      And all files in gpAdminLogs directory are deleted on all hosts in the cluster
+      And user immediately stops all mirror processes for content 0
+      And the user waits until mirror on content 0 is down
+      And user can start transactions
+      And sql "DROP TABLE IF EXISTS test_recoverseg; CREATE TABLE test_recoverseg AS SELECT generate_series(1,100000000) AS a;" is executed in "postgres" db
+      And sql "DROP TABLE IF EXISTS test_recoverseg_1; CREATE TABLE test_recoverseg_1 AS SELECT generate_series(1,100000000) AS a;" is executed in "postgres" db
+      When the user asynchronously runs "gprecoverseg -a --differential" and the process is saved
+      Then the user waits until recovery_progress.file is created in gpAdminLogs and verifies that all dbids progress with pg_data are present
+      When the user runs "gpstate -e"
+      Then gpstate should print "Segments in recovery" to stdout
+      And gpstate output contains "differential" entries for mirrors of content 0
+          And gpstate output looks like
+              | Segment | Port   | Recovery type  | Stage                                      | Completed bytes \(kB\) | Percentage completed |
+              | \S+     | [0-9]+ | differential   | Syncing pg_data of dbid 6                  | ([\d,]+)[ \t]          | \d+%                 |
+      And the user waits until saved async process is completed
+      And all files in gpAdminLogs directory are deleted on all hosts in the cluster
+      And sql "DROP TABLE IF EXISTS test_recoverseg;" is executed in "postgres" db
+      And sql "DROP TABLE IF EXISTS test_recoverseg_1;" is executed in "postgres" db
+      And the cluster is rebalanced
+
+
+    @concourse_cluster
+    Scenario: check Tablespace Recovery Progress with gpstate
+       Given the database is running
+      And all files in gpAdminLogs directory are deleted on all hosts in the cluster
+      And user immediately stops all mirror processes for content 0
+      And user can start transactions
+      And a tablespace is created with data
+      And insert additional data into the tablespace
+      When the user asynchronously runs "gprecoverseg -a --differential" and the process is saved
+      Then the user waits until recovery_progress.file is created in gpAdminLogs and verifies that all dbids progress with tablespace are present
+      When the user runs "gpstate -e"
+      Then gpstate should print "Segments in recovery" to stdout
+      And gpstate output contains "differential" entries for mirrors of content 0
+          And gpstate output looks like
+              | Segment | Port   | Recovery type  | Stage                                      | Completed bytes \(kB\) | Percentage completed |
+              | \S+     | [0-9]+ | differential   | Syncing tablespace of dbid 6 for oid \d+   | ([\d,]+)[ \t]          | \d+%                 |
+      And the user waits until saved async process is completed
+      And all files in gpAdminLogs directory are deleted on all hosts in the cluster
+      And the cluster is rebalanced
+
 
     Scenario Outline: full recovery limits number of parallel processes correctly
         Given the database is running
@@ -497,6 +585,49 @@ Feature: gprecoverseg tests
         And the segments are synchronized
         And the cluster is rebalanced
 
+    Scenario: gprecoverseg errors out with restricted options
+      Given the database is running
+        And user stops all primary processes
+        And user can start transactions
+       When the user runs "gprecoverseg -a -F -r"
+       Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "-F option is not supported with -r option" to stdout
+       When the user runs "gprecoverseg -a -p localhost -F"
+       Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "-F option is not supported with -p option" to stdout
+       When the user runs "gprecoverseg xyz"
+       Then gprecoverseg should return a return code of 2
+       And gprecoverseg should print "Recovers a primary or mirror segment instance" to stdout
+       And gprecoverseg should print "too many arguments: only options may be specified" to stdout
+       When the user runs "gprecoverseg -a"
+       Then gprecoverseg should return a return code of 0
+        And the segments are synchronized
+        And the cluster is rebalanced
+
+    Scenario: gprecoverseg recovers segment for valid max-rate options and errors out for others
+      Given the database is running
+        And all the segments are running
+        And the segments are synchronized
+      When user stops all primary processes
+        And user can start transactions
+        And the user runs "gprecoverseg -aF --max-rate 30"
+      Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "error: transfer rate 30 is out of range" to stdout
+      When the user runs "gprecoverseg -aF --max-rate k35"
+      Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "error: transfer rate k35 is not a valid value" to stdout
+      When the user runs "gprecoverseg -aF --max-rate 0"
+      Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "error: Transfer rate must be greater than zero" to stdout
+      When the user runs "gprecoverseg -aF --max-rate 32G"
+      Then gprecoverseg should return a return code of 2
+        And gprecoverseg should print "error: Invalid --max-rate unit: G" to stdout
+      When the user runs "gprecoverseg -aF --max-rate 104857.6k"
+      Then gprecoverseg should return a return code of 0
+        And gprecoverseg should print "Segments successfully recovered" to stdout
+        And gprecoverseg should print "Maximum Transfer Rate.*= 104857.6k" to stdout
+        And the segments are synchronized
+        And the cluster is rebalanced
 
 ########################### @concourse_cluster tests ###########################
 # The @concourse_cluster tag denotes the scenario that requires a remote cluster
@@ -541,6 +672,38 @@ Feature: gprecoverseg tests
         | incremental  | -a                 |
         | differential | -a --differential  |
         | full         | -aF                |
+
+    @demo_cluster
+    @concourse_cluster
+    Scenario: gprecoverseg creates output sample config file correctly when failed segment hosts are unreachable
+      Given the database is running
+      And all the segments are running
+      And the segments are synchronized
+      And the primary on content 1 is stopped
+      And the primary on content 2 is stopped
+      And user can start transactions
+      And the status of the primary on content 1 should be "d"
+      And the status of the primary on content 2 should be "d"
+      And the host for the primary on content 1 is made unreachable
+      When the user runs "gprecoverseg -o /tmp/output_config"
+      Then gprecoverseg should return a return code of 0
+      And gprecoverseg should print "One or more hosts are not reachable via SSH." to stdout
+      And gprecoverseg should print "Host invalid_host is unreachable" to stdout
+      And the created config file /tmp/output_config contains the row for unreachable failed segment
+      And the cluster is returned to a good state
+
+    @demo_cluster
+    @concourse_cluster
+    Scenario: gprecoverseg throws exception when -o flag used with invalid flags
+      Given the database is running
+      And all the segments are running
+      And the segments are synchronized
+      When the user runs "gprecoverseg -o output_config -i input_config"
+      Then gprecoverseg should return a return code of 2
+      And gprecoverseg should print "Invalid -i provided with -o argument" to stdout
+      When the user runs "gprecoverseg -o /tmp/output_config -r"
+      Then gprecoverseg should return a return code of 2
+      And gprecoverseg should print "Invalid -r provided with -o argument" to stdout
 
   @concourse_cluster
   Scenario Outline: <scenario> recovery works with tablespaces on a multi-host environment
@@ -709,6 +872,7 @@ Feature: gprecoverseg tests
     And user immediately stops all mirror processes for content 0,1,2
     And the user waits until mirror on content 0,1,2 is down
     And user can start transactions
+    And sql "DROP TABLE IF EXISTS test_recoverseg; CREATE TABLE test_recoverseg AS SELECT generate_series(1,100000000) AS a;" is executed in "postgres" db
     When the user asynchronously runs "gprecoverseg -a --differential" and the process is saved
     Then the user waits until recovery_progress.file is created in gpAdminLogs and verifies its format
     And verify that lines from recovery_progress.file are present in segment progress files in gpAdminLogs
@@ -777,6 +941,7 @@ Feature: gprecoverseg tests
     And all files in gpAdminLogs directory are deleted on all hosts in the cluster
     And user immediately stops all primary processes for content 0,1,2
     And user can start transactions
+    And sql "DROP TABLE IF EXISTS test_recoverseg; CREATE TABLE test_recoverseg AS SELECT generate_series(1,100000000) AS a;" is executed in "postgres" db
     When the user asynchronously runs "gprecoverseg -a --differential" and the process is saved
     Then the user waits until recovery_progress.file is created in gpAdminLogs and verifies its format
     Then verify if the gprecoverseg.lock directory is present in coordinator_data_directory
@@ -1000,6 +1165,7 @@ Feature: gprecoverseg tests
     And the user waits until saved async process is completed
     And recovery_progress.file should not exist in gpAdminLogs
     And verify that mirror on content 0,1,2 is up
+    And user can start transactions
     When the user runs gprecoverseg with input file and additional args "-av"
     Then gprecoverseg should print "No basebackup running" to stdout
     And gprecoverseg should return a return code of 0
@@ -2305,7 +2471,6 @@ Feature: gprecoverseg tests
         And all the segments are running
         And user can start transactions
 
-
     @remove_rsync_bash
     @concourse_cluster
     Scenario: None of the accumulated wal (after running pg_start_backup and before copying the pg_control file) is lost during differential
@@ -2325,4 +2490,5 @@ Feature: gprecoverseg tests
       Given user immediately stops all primary processes for content 0
         And user can start transactions
        Then the row count of table test_recoverseg in "postgres" should be 2000
-       And the cluster is recovered in full and rebalanced
+        And the cluster is recovered in full and rebalanced
+

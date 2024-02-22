@@ -42,6 +42,7 @@ extern "C" {
 #include "optimizer/clauses.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/plancat.h"
+#include "optimizer/subselect.h"
 #include "parser/parse_agg.h"
 #include "partitioning/partdesc.h"
 #include "storage/lmgr.h"
@@ -1676,10 +1677,22 @@ gpdb::IsOpNDVPreserving(Oid opno)
 {
 	switch (opno)
 	{
-		// for now, we consider only the concatenation op as NDV-preserving
-		// (note that we do additional checks later, e.g. col || 'const' is
-		// NDV-preserving, while col1 || col2 is not)
+		// operators are NDV-preserving if the operation does not change the number
+		// of NDVs when one argument is a constant.
+		// note that we do additional checks later, e.g. col || 'const' is
+		// NDV-preserving, while col1 || col2 is not, same with arithmatic
+		// operators
 		case OIDTextConcatenateOperator:
+		case Int4AddOperator:
+		case Int8AddOperator:
+		case DateIntervalAddOperator:
+		case DateInt4AddOperator:
+		case DateTimeAddOperator:
+		case DateTimetzAddOperator:
+		case NumericAddOperator:
+		case TimestampIntervalAddOperator:
+		case IntervalTimestampAddOperator:
+		case Int4DateAddOperator:
 			return true;
 		default:
 			return false;
@@ -2718,4 +2731,16 @@ gpdb::GPDBRelationRetrievePartitionKey(Relation rel)
 	}
 	GP_WRAP_END;
 }
+
+bool
+gpdb::TestexprIsHashable(Node *testexpr, List *param_ids)
+{
+	GP_WRAP_START;
+	{
+		return testexpr_is_hashable(testexpr, param_ids);
+	}
+	GP_WRAP_END;
+	return false;
+}
+
 // EOF

@@ -302,12 +302,6 @@ private:
 			ctxt_translation_prev_siblings	// translation contexts of previous siblings
 	);
 
-	Plan *TranslateDXLSubQueryScan(
-		const CDXLNode *subquery_scan_dxlnode,
-		CDXLTranslateContext *output_context,
-		CDXLTranslationContextArray *
-			ctxt_translation_prev_siblings	// translation contexts of previous siblings
-	);
 
 	Plan *TranslateDXLProjectSet(const CDXLNode *result_dxlnode);
 
@@ -564,8 +558,7 @@ private:
 		const IMDRelation *md_rel, CDXLTranslateContext *output_context,
 		CDXLTranslateContextBaseTable *base_table_context,
 		CDXLTranslationContextArray *ctxt_translation_prev_siblings,
-		List **index_cond, List **index_orig_cond, List **index_strategy_list,
-		List **index_subtype_list);
+		List **index_cond, List **index_orig_cond);
 
 	// translate the index filters
 	List *TranslateDXLIndexFilter(

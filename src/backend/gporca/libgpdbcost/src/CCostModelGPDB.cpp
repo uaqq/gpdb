@@ -1593,10 +1593,11 @@ CCostModelGPDB::CostSequenceProject(CMemoryPool *mp, CExpressionHandle &exprhdl,
 CDouble
 CCostModelGPDB::ComputeUnusedIndexWeight(CExpressionHandle &exprhdl,
 										 CColRefArray *pdrgpcrIndexColumns,
-										 IStatistics *stats)
+										 IStatistics *pBaseTableStats,
+										 CMemoryPool *mp, IMDId *rel_mdid)
 
 {
-	GPOS_ASSERT(nullptr != stats);
+	GPOS_ASSERT(nullptr != pBaseTableStats);
 
 	CDouble dCummulativeUnusedIndexWeight = 0;
 	CDouble dNdv(1.0);
@@ -1640,11 +1641,16 @@ CCostModelGPDB::ComputeUnusedIndexWeight(CExpressionHandle &exprhdl,
 				// more weightage.
 				dUnusedIndexColWeight = (ulNoOfColumnsInIndex - ulIndexColPos);
 
-				// Finding NDV of the unused column
-				dNdv =
-					CStatistics::CastStats(stats)->GetNDVs(colrefIndexColumn);
+				IStatistics *unusedIndexColStats =
+					CStatistics::CastStats(pBaseTableStats)
+						->ComputeColStats(mp, colrefIndexColumn, rel_mdid);
 
-				CDouble dTableRows = CStatistics::CastStats(stats)->Rows();
+				// Finding NDV of the unused column
+				dNdv = CStatistics::CastStats(unusedIndexColStats)
+						   ->GetNDVs(colrefIndexColumn);
+
+				CDouble dTableRows =
+					CStatistics::CastStats(pBaseTableStats)->Rows();
 
 				GPOS_ASSERT(0 != dTableRows);
 
@@ -1658,6 +1664,8 @@ CCostModelGPDB::ComputeUnusedIndexWeight(CExpressionHandle &exprhdl,
 
 				dCummulativeUnusedIndexWeight =
 					dCummulativeUnusedIndexWeight + dUnusedIndexColWeight;
+
+				unusedIndexColStats->Release();
 			}
 		}
 	}
@@ -1729,6 +1737,8 @@ CCostModelGPDB::CostIndexScan(CMemoryPool *mp GPOS_UNUSED,
 	COperator::EOperatorId op_id = pop->Eopid();
 	GPOS_ASSERT(COperator::EopPhysicalIndexScan == op_id ||
 				COperator::EopPhysicalDynamicIndexScan == op_id);
+
+	IMDId *rel_mdid = CPhysicalScan::PopConvert(pop)->Ptabdesc()->MDId();
 
 	const CDouble dTableWidth =
 		CPhysicalScan::PopConvert(pop)->PstatsBaseTable()->Width();
@@ -1802,7 +1812,8 @@ CCostModelGPDB::CostIndexScan(CMemoryPool *mp GPOS_UNUSED,
 	CDouble dUnindexedPredCost =
 		ulUnindexedPredCount * dIndexCostConversionFactor;
 	CDouble dUnusedIndexCost =
-		ComputeUnusedIndexWeight(exprhdl, pdrgpcrIndexColumns, stats) *
+		ComputeUnusedIndexWeight(exprhdl, pdrgpcrIndexColumns, stats, mp,
+								 rel_mdid) *
 		dIndexCostConversionFactor;
 
 	pdrgpcrIndexColumns->Release();
@@ -1830,8 +1841,14 @@ CCostModelGPDB::CostIndexOnlyScan(CMemoryPool *mp GPOS_UNUSED,	  // mp
 	GPOS_ASSERT(COperator::EopPhysicalIndexOnlyScan == pop->Eopid() ||
 				COperator::EopPhysicalDynamicIndexOnlyScan == pop->Eopid());
 
+	IMDId *rel_mdid = CPhysicalScan::PopConvert(pop)->Ptabdesc()->MDId();
+
 	const CDouble dTableWidth =
 		CPhysicalScan::PopConvert(pop)->PstatsBaseTable()->Width();
+
+	BOOL isAO = CPhysicalScan::PopConvert(exprhdl.Pop())
+					->Ptabdesc()
+					->IsAORowOrColTable();
 
 	CDouble dIndexFilterCostUnit =
 		pcmgpdb->GetCostModelParams()
@@ -1853,9 +1870,7 @@ CCostModelGPDB::CostIndexOnlyScan(CMemoryPool *mp GPOS_UNUSED,	  // mp
 	GPOS_ASSERT(0 < dIndexScanTupCostUnit);
 	GPOS_ASSERT(0 < dIndexScanTupRandomFactor);
 
-	if (CPhysicalScan::PopConvert(exprhdl.Pop())
-			->Ptabdesc()
-			->IsAORowOrColTable())
+	if (isAO)
 	{
 		// AO specific costs related to index-scan/index-only-scan:
 		//
@@ -1924,10 +1939,12 @@ CCostModelGPDB::CostIndexOnlyScan(CMemoryPool *mp GPOS_UNUSED,	  // mp
 			->Get();
 
 	CDouble dUnusedIndexCost =
-		ComputeUnusedIndexWeight(exprhdl, pdrgpcrIndexColumns, stats) *
+		ComputeUnusedIndexWeight(exprhdl, pdrgpcrIndexColumns, stats, mp,
+								 rel_mdid) *
 		dIndexCostConversionFactor;
 
 	pdrgpcrIndexColumns->Release();
+
 	// The cost of index-only-scan is similar to index-scan with the additional
 	// dimension of variable size I/O. More specifically, index-scan I/O is
 	// bound to the fixed width of the relation times the number of output
@@ -1939,12 +1956,31 @@ CCostModelGPDB::CostIndexOnlyScan(CMemoryPool *mp GPOS_UNUSED,	  // mp
 	// approximately equal to the precent of tuples in all-visible blocks
 	// compared to total blocks. It is approximate because there is no
 	// guarantee that blocks are equally filled with live tuples.
+	//
+	// We never scan the underlying append-optimized table relfile for
+	// performing visibility checks. It's as if all blocks are all-visible. See
+	// cdb_estimate_rel_size(). So consider dPartialVisFrac as 0.
 
 	CDouble dPartialVisFrac(1);
-	if (stats->RelPages() != 0)
+	CDouble dCostVisibilityMapLookup(0);
+	if (isAO)
 	{
-		dPartialVisFrac =
-			1 - (CDouble(stats->RelAllVisible()) / CDouble(stats->RelPages()));
+		dPartialVisFrac = 0;
+	}
+	else
+	{
+		if (stats->RelPages() != 0)
+		{
+			dPartialVisFrac = 1 - (CDouble(stats->RelAllVisible()) /
+								   CDouble(stats->RelPages()));
+		}
+
+		// An index-only-scan on a heap table requires a visibility map lookup.
+		// It's a bitmap with compact size, so the cost is mostly negligible.
+		// However, if the projected columns is the same between the two scans,
+		// then there is no advantage to index-only-scan. Here an epsilon cost
+		// is added to tip the cost towards index-scan for that scenario.
+		dCostVisibilityMapLookup = 0.000001;
 	}
 
 	CDouble dCostPerIndexRow =
@@ -1955,8 +1991,9 @@ CCostModelGPDB::CostIndexOnlyScan(CMemoryPool *mp GPOS_UNUSED,	  // mp
 		ulIncludedColWidth * dIndexOnlyScanTupCostUnit;
 
 	return CCost(pci->NumRebinds() *
-				 (dRowsIndex * dCostPerIndexRow + dIndexScanTupRandomFactor +
-				  dUnusedIndexCost));
+					 (dRowsIndex * dCostPerIndexRow +
+					  dIndexScanTupRandomFactor + dUnusedIndexCost) +
+				 dCostVisibilityMapLookup);
 }
 
 CCost

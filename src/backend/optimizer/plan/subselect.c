@@ -50,6 +50,7 @@
 #include "cdb/cdbsubselect.h"
 #include "cdb/cdbvars.h"
 #include "cdb/cdbutil.h"
+#include "cdb/cdbpath.h"
 
 /* source-code-compatibility hacks for pull_varnos() API change */
 #define pull_varnos(a,b) pull_varnos_new(a,b)
@@ -91,7 +92,6 @@ static Node *convert_testexpr_mutator(Node *node,
 									  convert_testexpr_context *context);
 static bool subplan_is_hashable(PlannerInfo *root, Plan *plan);
 static bool subpath_is_hashable(PlannerInfo *root, Path *path);
-static bool testexpr_is_hashable(Node *testexpr, List *param_ids);
 static bool test_opexpr_is_hashable(OpExpr *testexpr, List *param_ids);
 static bool hash_ok_operator(OpExpr *expr);
 #if 0
@@ -123,6 +123,8 @@ static bool finalize_agg_primnode(Node *node, finalize_primnode_context *context
 
 extern	double global_work_mem(PlannerInfo *root);
 static bool contain_outer_selfref_walker(Node *node, Index *depth);
+
+static bool splan_is_initplan(List *plan_params, SubLinkType subLinkType);
 
 /*
  * Get the datatype/typmod/collation of the first column of the plan's output.
@@ -368,11 +370,19 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
-		config->gp_cte_sharing = IsSubqueryCorrelated(subquery) ||
+		/*
+		 * Disable CTE sharing in initplan.
+		 *
+		 * Such subLinkType below could become initplan,
+		 * so we shouldn't apply cte sharing scan inside them
+		 * and then back to normal scan.
+		 */
+		config->gp_cte_sharing = config->gp_cte_sharing ?
 				!(subLinkType == ROWCOMPARE_SUBLINK ||
 				 subLinkType == ARRAY_SUBLINK ||
 				 subLinkType == EXPR_SUBLINK ||
-				 subLinkType == EXISTS_SUBLINK);
+				 subLinkType == MULTIEXPR_SUBLINK ||
+				 subLinkType == EXISTS_SUBLINK) : config->gp_cte_sharing;
 	}
 	/*
 	 * Strictly speaking, the order of rows in a subquery doesn't matter.
@@ -429,9 +439,15 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	subroot->curSlice = palloc0(sizeof(PlanSlice));
 	subroot->curSlice->gangType = GANGTYPE_UNALLOCATED;
 
+	if (splan_is_initplan(plan_params, subLinkType))
+		unset_allow_append_initplan_for_function_scan();
+
 	plan = create_plan(subroot, best_path, subroot->curSlice);
 	/* Decorate the top node of the plan with a Flow node. */
 	plan->flow = cdbpathtoplan_create_flow(subroot, best_path->locus);
+
+	set_allow_append_initplan_for_function_scan();
+	Assert(get_allow_append_initplan_for_function_scan() == true);
 
 	/* And convert to SubPlan or InitPlan format. */
 	result = build_subplan(root, plan, subroot, plan_params,
@@ -529,9 +545,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 	Node	   *result;
 	SubPlan    *splan;
 	ListCell   *lc;
-	Bitmapset  *tmpset;
 	Bitmapset  *plan_param_set;
-	int         paramid;
 
 	/*
 	 * Initialize the SubPlan node.  Note plan_id, plan_name, and cost fields
@@ -580,20 +594,6 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 		splan->parParam = lappend_int(splan->parParam, pitem->paramId);
 		splan->args = lappend(splan->args, arg);
 		plan_param_set = bms_add_member(plan_param_set, pitem->paramId);
-	}
-
-	/*
-	 * For gpdb, we need extParam to evaluate if we can process initplan
-	 * in ExecutorStart.
-	 */
-	if (plan->extParam)
-	{
-		tmpset = bms_difference(plan->extParam, plan_param_set);
-
-		while ((paramid = bms_first_member(tmpset)) >= 0)
-			splan->extParam = lappend_int(splan->extParam, paramid);
-
-		pfree(tmpset);
 	}
 
 	/*
@@ -1000,7 +1000,7 @@ subpath_is_hashable(PlannerInfo *root, Path *path)
  * To identify LHS vs RHS of the hash expression, we must be given the
  * list of output Param IDs of the SubLink's subquery.
  */
-static bool
+bool
 testexpr_is_hashable(Node *testexpr, List *param_ids)
 {
 	/*
@@ -2714,6 +2714,29 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 		{
 			initSetParam = bms_add_member(initSetParam, lfirst_int(l2));
 		}
+
+		/*
+		 * For gpdb, we need extParam to evaluate if we can process initplan
+		 * in ExecutorStart.
+		 */
+		if (initplan->extParam)
+		{
+			int paramid;
+			ListCell *lc;
+			Bitmapset *upperset = NULL;
+			Bitmapset *parentset = NULL;
+			Bitmapset *extset = initplan->extParam;
+
+			foreach(lc, initsubplan->parParam)
+			{
+				int tmpid = lfirst_int(lc);
+				parentset = bms_add_member(parentset, tmpid);
+			}
+
+			upperset = bms_difference(extset, parentset);
+			while ((paramid = bms_first_member(upperset)) >= 0)
+				initsubplan->extParam = lappend_int(initsubplan->extParam, paramid);
+		}
 	}
 
 	/* Any setParams are validly referenceable in this node and children */
@@ -3506,4 +3529,23 @@ SS_make_initplan_from_plan(PlannerInfo *root,
 	 */
 
 	/* NB PostgreSQL calculates subplan cost here, but GPDB does it elsewhere. */
+}
+
+
+bool
+splan_is_initplan(List *plan_params, SubLinkType subLinkType)
+{
+	/*
+	 * un-correlated or undirect correlated plans of EXISTS, EXPR, ARRAY,
+	 * ROWCOMPARE, or MULTIEXPR types can be used as initPlans.
+	 */
+	if (plan_params == NIL && (
+			subLinkType == EXISTS_SUBLINK ||
+			subLinkType == EXPR_SUBLINK ||
+			subLinkType == ARRAY_SUBLINK ||
+			subLinkType == ROWCOMPARE_SUBLINK ||
+			subLinkType == MULTIEXPR_SUBLINK
+	))
+		return true;
+	return false;
 }

@@ -124,10 +124,12 @@ CTranslatorUtils::GetTableDescr(CMemoryPool *mp, CMDAccessor *md_accessor,
 	CMDIdGPDB *mdid = GPOS_NEW(mp) CMDIdGPDB(IMDId::EmdidRel, rel_oid);
 
 	const IMDRelation *rel = md_accessor->RetrieveRel(mdid);
-
 	// look up table name
-	const CWStringConst *tablename = rel->Mdname().GetMDName();
-	CMDName *table_mdname = GPOS_NEW(mp) CMDName(mp, tablename);
+	CMDName *table_mdname =
+		rte->alias
+			? GPOS_NEW(mp) CMDName(
+				  GPOS_NEW(mp) CWStringConst(mp, rte->alias->aliasname), true)
+			: GPOS_NEW(mp) CMDName(mp, rel->Mdname().GetMDName());
 
 	ULONG required_perms = static_cast<ULONG>(rte->requiredPerms);
 	CDXLTableDescr *table_descr = GPOS_NEW(mp) CDXLTableDescr(
@@ -791,57 +793,6 @@ CTranslatorUtils::GetScanDirection(EdxlIndexScanDirection idx_scan_direction)
 	return NoMovementScanDirection;
 }
 
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorUtils::OidCmpOperator
-//
-//	@doc:
-//		Extract comparison operator from an OpExpr, ScalarArrayOpExpr or RowCompareExpr
-//
-//---------------------------------------------------------------------------
-OID
-CTranslatorUtils::OidCmpOperator(Expr *expr)
-{
-	GPOS_ASSERT(IsA(expr, OpExpr) || IsA(expr, ScalarArrayOpExpr) ||
-				IsA(expr, RowCompareExpr));
-
-	switch (expr->type)
-	{
-		case T_OpExpr:
-			return ((OpExpr *) expr)->opno;
-
-		case T_ScalarArrayOpExpr:
-			return ((ScalarArrayOpExpr *) expr)->opno;
-
-		case T_RowCompareExpr:
-			return LInitialOID(((RowCompareExpr *) expr)->opnos);
-
-		default:
-			GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiDXL2PlStmtConversion,
-					   GPOS_WSZ_LIT("Unsupported comparison"));
-			return InvalidOid;
-	}
-}
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorUtils::GetOpFamilyForIndexQual
-//
-//	@doc:
-//		Extract comparison operator family for the given index column
-//
-//---------------------------------------------------------------------------
-OID
-CTranslatorUtils::GetOpFamilyForIndexQual(INT attno, OID index_oid)
-{
-	gpdb::RelationWrapper rel = gpdb::GetRelation(index_oid);
-	GPOS_ASSERT(rel);
-	GPOS_ASSERT(attno <= rel->rd_index->indnatts);
-
-	OID op_family_oid = rel->rd_opfamily[attno - 1];
-
-	return op_family_oid;
-}
 
 //---------------------------------------------------------------------------
 //	@function:

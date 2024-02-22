@@ -329,6 +329,7 @@ extern bool allow_segment_DML;
 extern bool gp_ignore_error_table;
 
 extern bool	Debug_dtm_action_primary;
+extern bool Debug_shareinput_xslice;
 
 extern bool gp_log_optimization_time;
 extern bool log_parser_stats;
@@ -501,6 +502,7 @@ extern bool optimizer_enable_indexscan;
 extern bool optimizer_enable_indexonlyscan;
 extern bool optimizer_enable_tablescan;
 extern bool optimizer_enable_eageragg;
+extern bool optimizer_enable_orderedagg;
 extern bool optimizer_expand_fulljoin;
 extern bool optimizer_enable_hashagg;
 extern bool optimizer_enable_groupagg;
@@ -509,6 +511,7 @@ extern bool optimizer_enable_redistribute_nestloop_loj_inner_child;
 extern bool optimizer_force_comprehensive_join_implementation;
 extern bool optimizer_enable_replicated_table;
 extern bool optimizer_enable_foreign_table;
+extern bool optimizer_enable_right_outer_join;
 
 /* Optimizer plan enumeration related GUCs */
 extern bool optimizer_enumerate_plans;
@@ -578,6 +581,7 @@ extern bool optimizer_replicated_table_insert;
 
 /* GUCs for slice table*/
 extern int	gp_max_slices;
+extern int	gp_max_system_slices;
 
 /**
  * Enable logging of DPE match in optimizer.
@@ -611,6 +615,8 @@ extern bool gp_enable_global_deadlock_detector;
 extern bool gp_log_endpoints;
 
 extern bool gp_allow_date_field_width_5digits;
+
+extern bool gp_enable_blkdir_sampling;
 
 typedef enum
 {
@@ -805,6 +811,7 @@ extern void gpvars_assign_gp_resource_manager_policy(const char *newval, void *e
 extern const char *gpvars_show_gp_resource_manager_policy(void);
 extern const char *gpvars_assign_gp_resqueue_memory_policy(const char *newval, bool doit, GucSource source);
 extern const char *gpvars_show_gp_resqueue_memory_policy(void);
+extern bool gpvars_check_gp_resource_group_cgroup_parent(char **newval, void **extra, GucSource source);
 extern bool gpvars_check_statement_mem(int *newval, void **extra, GucSource source);
 extern bool gpvars_check_rg_query_fixed_mem(int *newval, void **extra, GucSource source);
 extern int guc_name_compare(const char *namea, const char *nameb);

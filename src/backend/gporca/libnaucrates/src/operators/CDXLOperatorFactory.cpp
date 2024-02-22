@@ -41,7 +41,6 @@
 #include "naucrates/dxl/operators/CDXLPhysicalResult.h"
 #include "naucrates/dxl/operators/CDXLPhysicalRoutedDistributeMotion.h"
 #include "naucrates/dxl/operators/CDXLPhysicalSort.h"
-#include "naucrates/dxl/operators/CDXLPhysicalSubqueryScan.h"
 #include "naucrates/dxl/operators/CDXLPhysicalTableScan.h"
 #include "naucrates/dxl/operators/CDXLScalarAggref.h"
 #include "naucrates/dxl/operators/CDXLScalarArray.h"
@@ -98,38 +97,6 @@ CDXLOperatorFactory::MakeDXLTblScan(CDXLMemoryManager *dxl_memory_manager,
 	CMemoryPool *mp = dxl_memory_manager->Pmp();
 
 	return GPOS_NEW(mp) CDXLPhysicalTableScan(mp);
-}
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CDXLOperatorFactory::MakeDXLSubqScan
-//
-//	@doc:
-//		Construct a subquery scan operator
-//
-//---------------------------------------------------------------------------
-CDXLPhysical *
-CDXLOperatorFactory::MakeDXLSubqScan(CDXLMemoryManager *dxl_memory_manager,
-									 const Attributes &attrs)
-{
-	// get the memory pool from the memory manager
-	CMemoryPool *mp = dxl_memory_manager->Pmp();
-
-	// parse subquery name from attributes
-	const XMLCh *subquery_name_xml =
-		ExtractAttrValue(attrs, EdxltokenAlias, EdxltokenPhysicalSubqueryScan);
-
-	CWStringDynamic *subquery_name_str =
-		CDXLUtils::CreateDynamicStringFromXMLChArray(dxl_memory_manager,
-													 subquery_name_xml);
-
-
-	// create a copy of the string in the CMDName constructor
-	CMDName *subquery_name = GPOS_NEW(mp) CMDName(mp, subquery_name_str);
-
-	GPOS_DELETE(subquery_name_str);
-
-	return GPOS_NEW(mp) CDXLPhysicalSubqueryScan(mp, subquery_name);
 }
 
 //---------------------------------------------------------------------------
@@ -2611,7 +2578,6 @@ CDXLOperatorFactory::GetDatumVal(CDXLMemoryManager *dxl_memory_manager,
 		case GPDB_TEXT:
 		case GPDB_CASH:
 		case GPDB_UUID:
-		case GPDB_DATE:
 		{
 			return GetDatumStatsLintMappable(dxl_memory_manager, attrs,
 											 target_elem, mdid, is_const_null);
@@ -2625,6 +2591,7 @@ CDXLOperatorFactory::GetDatumVal(CDXLMemoryManager *dxl_memory_manager,
 		case GPDB_CIDR:
 		case GPDB_MACADDR:
 		// time-related types
+		case GPDB_DATE:
 		case GPDB_TIME:
 		case GPDB_TIMETZ:
 		case GPDB_TIMESTAMP:
@@ -3116,7 +3083,7 @@ CDXLOperatorFactory::ExtractConvertSegmentIdsToArray(
 //		CDXLOperatorFactory::ExtractConvertStrsToArray
 //
 //	@doc:
-//		Parse a semicolon-separated list of strings into a dynamic array.
+//		Parse a comma-separated list of strings into a dynamic array.
 //
 //---------------------------------------------------------------------------
 StringPtrArray *
@@ -3127,8 +3094,8 @@ CDXLOperatorFactory::ExtractConvertStrsToArray(
 
 	StringPtrArray *array_strs = GPOS_NEW(mp) StringPtrArray(mp);
 
-	XMLStringTokenizer mdid_components(
-		xml_val, CDXLTokens::XmlstrToken(EdxltokenSemicolon));
+	XMLStringTokenizer mdid_components(xml_val,
+									   CDXLTokens::XmlstrToken(EdxltokenComma));
 	const ULONG num_tokens = mdid_components.countTokens();
 
 	for (ULONG ul = 0; ul < num_tokens; ul++)

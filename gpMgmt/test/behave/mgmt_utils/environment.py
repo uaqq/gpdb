@@ -77,6 +77,7 @@ def before_feature(context, feature):
         dbconn.execSQL(context.conn, 'analyze t2')
         dbconn.execSQL(context.conn, 'analyze t3')
         dbconn.execSQL(context.conn, 'analyze spiegelungssätze')
+        dbconn.execSQL(context.conn, 'create or replace function select_one() returns integer as $$ select 1 $$ language sql')
         context.conn.commit()
 
 def after_feature(context, feature):
@@ -157,6 +158,12 @@ def after_scenario(context, scenario):
         if 'temp_base_dir' in context and os.path.exists(context.temp_base_dir):
             os.chmod(context.temp_base_dir, 0o700)
             shutil.rmtree(context.temp_base_dir)
+
+        if 'umount_required' in context and context.umount_required:
+            context.execute_steps('''
+                        # unmounting all mounter filesystem in concourse cluster
+                        Then umount all mounted filesystem
+                        ''')
 
     tags_to_not_restart_db = ['analyzedb', 'gpssh-exkeys']
     if not set(context.feature.tags).intersection(tags_to_not_restart_db):

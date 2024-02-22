@@ -80,7 +80,6 @@ extern "C" {
 #include "naucrates/dxl/operators/CDXLPhysicalRoutedDistributeMotion.h"
 #include "naucrates/dxl/operators/CDXLPhysicalSort.h"
 #include "naucrates/dxl/operators/CDXLPhysicalSplit.h"
-#include "naucrates/dxl/operators/CDXLPhysicalSubqueryScan.h"
 #include "naucrates/dxl/operators/CDXLPhysicalTVF.h"
 #include "naucrates/dxl/operators/CDXLPhysicalTableScan.h"
 #include "naucrates/dxl/operators/CDXLPhysicalValuesScan.h"
@@ -90,6 +89,7 @@ extern "C" {
 #include "naucrates/dxl/operators/CDXLScalarBoolExpr.h"
 #include "naucrates/dxl/operators/CDXLScalarFuncExpr.h"
 #include "naucrates/dxl/operators/CDXLScalarHashExpr.h"
+#include "naucrates/dxl/operators/CDXLScalarNullTest.h"
 #include "naucrates/dxl/operators/CDXLScalarOpExpr.h"
 #include "naucrates/dxl/operators/CDXLScalarProjElem.h"
 #include "naucrates/dxl/operators/CDXLScalarSortCol.h"
@@ -166,7 +166,7 @@ CTranslatorDXLToPlStmt::GetPlannedStmtFromDXL(const CDXLNode *dxlnode,
 {
 	GPOS_ASSERT(nullptr != dxlnode);
 
-	CDXLTranslateContext dxl_translate_ctxt(m_mp, false);
+	CDXLTranslateContext dxl_translate_ctxt(m_mp, false, orig_query);
 
 	PlanSlice *topslice;
 
@@ -416,12 +416,6 @@ CTranslatorDXLToPlStmt::TranslateDXLOperatorToPlan(
 		{
 			plan = TranslateDXLSort(dxlnode, output_context,
 									ctxt_translation_prev_siblings);
-			break;
-		}
-		case EdxlopPhysicalSubqueryScan:
-		{
-			plan = TranslateDXLSubQueryScan(dxlnode, output_context,
-											ctxt_translation_prev_siblings);
 			break;
 		}
 		case EdxlopPhysicalResult:
@@ -880,8 +874,6 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexScan(
 	// translate index condition list
 	List *index_cond = NIL;
 	List *index_orig_cond = NIL;
-	List *index_strategy_list = NIL;
-	List *index_subtype_list = NIL;
 
 	// Translate Index Conditions if Index isn't used for order by.
 	if (!IsIndexForOrderBy(&base_table_context, ctxt_translation_prev_siblings,
@@ -893,8 +885,7 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexScan(
 			physical_idx_scan_dxlop->GetDXLTableDescr(),
 			false,	// is_bitmap_index_probe
 			md_index, md_rel, output_context, &base_table_context,
-			ctxt_translation_prev_siblings, &index_cond, &index_orig_cond,
-			&index_strategy_list, &index_subtype_list);
+			ctxt_translation_prev_siblings, &index_cond, &index_orig_cond);
 	}
 
 	index_scan->indexqual = index_cond;
@@ -1034,8 +1025,6 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexOnlyScan(
 	// translate index condition list
 	List *index_cond = NIL;
 	List *index_orig_cond = NIL;
-	List *index_strategy_list = NIL;
-	List *index_subtype_list = NIL;
 
 	// Translate Index Conditions if Index isn't used for order by.
 	if (!IsIndexForOrderBy(&base_table_context, ctxt_translation_prev_siblings,
@@ -1047,8 +1036,7 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexOnlyScan(
 			physical_idx_scan_dxlop->GetDXLTableDescr(),
 			false,	// is_bitmap_index_probe
 			md_index, md_rel, output_context, &base_table_context,
-			ctxt_translation_prev_siblings, &index_cond, &index_orig_cond,
-			&index_strategy_list, &index_subtype_list);
+			ctxt_translation_prev_siblings, &index_cond, &index_orig_cond);
 	}
 
 	index_scan->indexqual = index_cond;
@@ -1107,8 +1095,7 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions(
 	const IMDRelation *md_rel, CDXLTranslateContext *output_context,
 	CDXLTranslateContextBaseTable *base_table_context,
 	CDXLTranslationContextArray *ctxt_translation_prev_siblings,
-	List **index_cond, List **index_orig_cond, List **index_strategy_list,
-	List **index_subtype_list)
+	List **index_cond, List **index_orig_cond)
 {
 	// array of index qual info
 	CIndexQualInfoArray *index_qual_info_array =
@@ -1123,16 +1110,45 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions(
 	for (ULONG ul = 0; ul < arity; ul++)
 	{
 		CDXLNode *index_cond_dxlnode = (*index_cond_list_dxlnode)[ul];
+		CDXLNode *modified_null_test_cond_dxlnode = nullptr;
 
+		// FIXME: Remove this translation from BoolExpr to NullTest when ORCA gets rid of
+		// translation of 'x IS NOT NULL' to 'NOT (x IS NULL)'. Here's the ticket that tracks
+		// the issue: https://github.com/greenplum-db/gpdb/issues/16294
+
+		// Translate index condition CDXLScalarBoolExpr of format 'NOT (col IS NULL)'
+		// to CDXLScalarNullTest 'col IS NOT NULL', because IndexScan only
+		// supports indexquals of types: OpExpr, RowCompareExpr,
+		// ScalarArrayOpExpr and NullTest
+		if (index_cond_dxlnode->GetOperator()->GetDXLOperator() ==
+			EdxlopScalarBoolExpr)
+		{
+			CDXLScalarBoolExpr *boolexpr_dxlop =
+				CDXLScalarBoolExpr::Cast(index_cond_dxlnode->GetOperator());
+			if (boolexpr_dxlop->GetDxlBoolTypeStr() == Edxlnot &&
+				(*index_cond_dxlnode)[0]->GetOperator()->GetDXLOperator() ==
+					EdxlopScalarNullTest)
+			{
+				CDXLNode *null_test_cond_dxlnode = (*index_cond_dxlnode)[0];
+				CDXLNode *scalar_ident_dxlnode = (*null_test_cond_dxlnode)[0];
+				scalar_ident_dxlnode->AddRef();
+				modified_null_test_cond_dxlnode = GPOS_NEW(m_mp) CDXLNode(
+					m_mp, GPOS_NEW(m_mp) CDXLScalarNullTest(m_mp, false),
+					scalar_ident_dxlnode);
+				index_cond_dxlnode = modified_null_test_cond_dxlnode;
+			}
+		}
 		Expr *original_index_cond_expr =
 			m_translator_dxl_to_scalar->TranslateDXLToScalar(
 				index_cond_dxlnode, &colid_var_mapping);
 		Expr *index_cond_expr =
 			m_translator_dxl_to_scalar->TranslateDXLToScalar(
 				index_cond_dxlnode, &colid_var_mapping);
-		GPOS_ASSERT((IsA(index_cond_expr, OpExpr) ||
-					 IsA(index_cond_expr, ScalarArrayOpExpr)) &&
-					"expected OpExpr or ScalarArrayOpExpr in index qual");
+		GPOS_ASSERT(
+			(IsA(index_cond_expr, OpExpr) ||
+			 IsA(index_cond_expr, ScalarArrayOpExpr) ||
+			 IsA(index_cond_expr, NullTest)) &&
+			"expected OpExpr or ScalarArrayOpExpr or NullTest in index qual");
 
 		// allow Index quals with scalar array only for bitmap and btree indexes
 		if (!is_bitmap_index_probe && IsA(index_cond_expr, ScalarArrayOpExpr) &&
@@ -1154,39 +1170,57 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions(
 		{
 			args_list = ((OpExpr *) index_cond_expr)->args;
 		}
-		else
+		else if (IsA(index_cond_expr, ScalarArrayOpExpr))
 		{
 			args_list = ((ScalarArrayOpExpr *) index_cond_expr)->args;
 		}
-
-		Node *left_arg = (Node *) lfirst(gpdb::ListHead(args_list));
-		Node *right_arg = (Node *) lfirst(gpdb::ListTail(args_list));
-
-		BOOL is_relabel_type = false;
-		if (IsA(left_arg, RelabelType) &&
-			IsA(((RelabelType *) left_arg)->arg, Var))
+		else
 		{
-			left_arg = (Node *) ((RelabelType *) left_arg)->arg;
-			is_relabel_type = true;
-		}
-		else if (IsA(right_arg, RelabelType) &&
-				 IsA(((RelabelType *) right_arg)->arg, Var))
-		{
-			right_arg = (Node *) ((RelabelType *) right_arg)->arg;
-			is_relabel_type = true;
+			// NullTest struct doesn't have List argument, hence ignoring
+			// assignment for that type
 		}
 
-		if (is_relabel_type)
+		Node *left_arg;
+		Node *right_arg;
+		if (IsA(index_cond_expr, NullTest))
 		{
-			List *new_args_list = ListMake2(left_arg, right_arg);
-			gpdb::GPDBFree(args_list);
-			if (IsA(index_cond_expr, OpExpr))
+			// NullTest only has one arg
+			left_arg = (Node *) (((NullTest *) index_cond_expr)->arg);
+			right_arg = nullptr;
+		}
+		else
+		{
+			left_arg = (Node *) lfirst(gpdb::ListHead(args_list));
+			right_arg = (Node *) lfirst(gpdb::ListTail(args_list));
+			// Type Coercion doesn't add much value for IS NULL and IS NOT NULL
+			// conditions, and is not supported by ORCA currently
+			BOOL is_relabel_type = false;
+			if (IsA(left_arg, RelabelType) &&
+				IsA(((RelabelType *) left_arg)->arg, Var))
 			{
-				((OpExpr *) index_cond_expr)->args = new_args_list;
+				left_arg = (Node *) ((RelabelType *) left_arg)->arg;
+				is_relabel_type = true;
 			}
-			else
+			else if (IsA(right_arg, RelabelType) &&
+					 IsA(((RelabelType *) right_arg)->arg, Var))
 			{
-				((ScalarArrayOpExpr *) index_cond_expr)->args = new_args_list;
+				right_arg = (Node *) ((RelabelType *) right_arg)->arg;
+				is_relabel_type = true;
+			}
+
+			if (is_relabel_type)
+			{
+				List *new_args_list = ListMake2(left_arg, right_arg);
+				gpdb::GPDBFree(args_list);
+				if (IsA(index_cond_expr, OpExpr))
+				{
+					((OpExpr *) index_cond_expr)->args = new_args_list;
+				}
+				else
+				{
+					((ScalarArrayOpExpr *) index_cond_expr)->args =
+						new_args_list;
+				}
 			}
 		}
 
@@ -1213,23 +1247,14 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions(
 			attno = ((Var *) right_arg)->varattno;
 		}
 
-		// retrieve index strategy and subtype
-		StrategyNumber strategy_num;
-		OID index_subtype_oid = InvalidOid;
-
-		OID cmp_operator_oid =
-			CTranslatorUtils::OidCmpOperator(index_cond_expr);
-		GPOS_ASSERT(InvalidOid != cmp_operator_oid);
-		OID op_family_oid = CTranslatorUtils::GetOpFamilyForIndexQual(
-			attno, CMDIdGPDB::CastMdid(index->MDId())->Oid());
-		GPOS_ASSERT(InvalidOid != op_family_oid);
-		gpdb::IndexOpProperties(cmp_operator_oid, op_family_oid, &strategy_num,
-								&index_subtype_oid);
-
 		// create index qual
 		index_qual_info_array->Append(GPOS_NEW(m_mp) CIndexQualInfo(
-			attno, index_cond_expr, original_index_cond_expr, strategy_num,
-			index_subtype_oid));
+			attno, index_cond_expr, original_index_cond_expr));
+
+		if (modified_null_test_cond_dxlnode != nullptr)
+		{
+			modified_null_test_cond_dxlnode->Release();
+		}
 	}
 
 	// the index quals much be ordered by attribute number
@@ -1242,10 +1267,6 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions(
 		*index_cond = gpdb::LAppend(*index_cond, index_qual_info->m_expr);
 		*index_orig_cond =
 			gpdb::LAppend(*index_orig_cond, index_qual_info->m_original_expr);
-		*index_strategy_list = gpdb::LAppendInt(
-			*index_strategy_list, index_qual_info->m_index_subtype_oid);
-		*index_subtype_list = gpdb::LAppendOid(
-			*index_subtype_list, index_qual_info->m_index_subtype_oid);
 	}
 
 	// clean up
@@ -3238,105 +3259,6 @@ CTranslatorDXLToPlStmt::TranslateDXLSort(
 	return (Plan *) sort;
 }
 
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorDXLToPlStmt::TranslateDXLSubQueryScan
-//
-//	@doc:
-//		Translate DXL subquery scan node into GPDB SubqueryScan plan node
-//
-//---------------------------------------------------------------------------
-Plan *
-CTranslatorDXLToPlStmt::TranslateDXLSubQueryScan(
-	const CDXLNode *subquery_scan_dxlnode, CDXLTranslateContext *output_context,
-	CDXLTranslationContextArray *ctxt_translation_prev_siblings)
-{
-	// create sort plan node
-	SubqueryScan *subquery_scan = MakeNode(SubqueryScan);
-
-	Plan *plan = &(subquery_scan->scan.plan);
-	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
-
-	CDXLPhysicalSubqueryScan *subquery_scan_dxlop =
-		CDXLPhysicalSubqueryScan::Cast(subquery_scan_dxlnode->GetOperator());
-
-	// translate operator costs
-	TranslatePlanCosts(subquery_scan_dxlnode, plan);
-
-	// translate subplan
-	CDXLNode *child_dxlnode = (*subquery_scan_dxlnode)[EdxlsubqscanIndexChild];
-	CDXLNode *project_list_dxlnode =
-		(*subquery_scan_dxlnode)[EdxlsubqscanIndexProjList];
-	CDXLNode *filter_dxlnode =
-		(*subquery_scan_dxlnode)[EdxlsubqscanIndexFilter];
-
-	CDXLTranslateContext child_context(m_mp, false,
-									   output_context->GetColIdToParamIdMap());
-
-	Plan *child_plan = TranslateDXLOperatorToPlan(
-		child_dxlnode, &child_context, ctxt_translation_prev_siblings);
-
-	// create an rtable entry for the subquery scan
-	RangeTblEntry *rte = MakeNode(RangeTblEntry);
-	rte->rtekind = RTE_SUBQUERY;
-
-	Alias *alias = MakeNode(Alias);
-	alias->colnames = NIL;
-
-	// get table alias
-	alias->aliasname = CTranslatorUtils::CreateMultiByteCharStringFromWCString(
-		subquery_scan_dxlop->MdName()->GetMDName()->GetBuffer());
-
-	// get column names from child project list
-	CDXLTranslateContextBaseTable base_table_context(m_mp);
-
-	Index index =
-		gpdb::ListLength(m_dxl_to_plstmt_context->GetRTableEntriesList()) + 1;
-	(subquery_scan->scan).scanrelid = index;
-	base_table_context.SetRelIndex(index);
-
-	ListCell *lc_tgtentry = nullptr;
-
-	CDXLNode *child_proj_list_dxlnode = (*child_dxlnode)[0];
-
-	ULONG ul = 0;
-
-	ForEach(lc_tgtentry, child_plan->targetlist)
-	{
-		TargetEntry *target_entry = (TargetEntry *) lfirst(lc_tgtentry);
-
-		// non-system attribute
-		CHAR *col_name_char_array = PStrDup(target_entry->resname);
-		Value *val_colname = gpdb::MakeStringValue(col_name_char_array);
-		alias->colnames = gpdb::LAppend(alias->colnames, val_colname);
-
-		// get corresponding child project element
-		CDXLScalarProjElem *sc_proj_elem_dxlop = CDXLScalarProjElem::Cast(
-			(*child_proj_list_dxlnode)[ul]->GetOperator());
-
-		// save mapping col id -> index in translate context
-		(void) base_table_context.InsertMapping(sc_proj_elem_dxlop->Id(),
-												target_entry->resno);
-		ul++;
-	}
-
-	rte->eref = alias;
-
-	// add range table entry for the subquery to the list
-	m_dxl_to_plstmt_context->AddRTE(rte);
-
-	// translate proj list and filter
-	TranslateProjListAndFilter(
-		project_list_dxlnode, filter_dxlnode,
-		&base_table_context,  // translate context for the base table
-		nullptr, &plan->targetlist, &plan->qual, output_context);
-
-	subquery_scan->subplan = child_plan;
-
-	SetParamIds(plan);
-	return (Plan *) subquery_scan;
-}
-
 //------------------------------------------------------------------------------
 // If the top level is not a function returning set then we need to check if the
 // project element contains any SRF's deep down the tree. If we found any SRF's
@@ -4414,8 +4336,6 @@ CTranslatorDXLToPlStmt::TranslateDXLDynIdxOnlyScan(
 	// translate index condition list
 	List *index_cond = NIL;
 	List *index_orig_cond = NIL;
-	List *index_strategy_list = NIL;
-	List *index_subtype_list = NIL;
 
 	TranslateIndexConditions(
 		(*dyn_idx_only_scan_dxlnode)
@@ -4423,8 +4343,7 @@ CTranslatorDXLToPlStmt::TranslateDXLDynIdxOnlyScan(
 		dyn_index_only_scan_dxlop->GetDXLTableDescr(),
 		false,	// is_bitmap_index_probe
 		md_index, md_rel, output_context, &base_table_context,
-		ctxt_translation_prev_siblings, &index_cond, &index_orig_cond,
-		&index_strategy_list, &index_subtype_list);
+		ctxt_translation_prev_siblings, &index_cond, &index_orig_cond);
 
 
 	dyn_idx_only_scan->indexscan.indexqual = index_cond;
@@ -4497,8 +4416,6 @@ CTranslatorDXLToPlStmt::TranslateDXLDynIdxScan(
 	// translate index condition list
 	List *index_cond = NIL;
 	List *index_orig_cond = NIL;
-	List *index_strategy_list = NIL;
-	List *index_subtype_list = NIL;
 
 	TranslateIndexConditions(
 		(*dyn_idx_only_scan_dxlnode)
@@ -4506,8 +4423,7 @@ CTranslatorDXLToPlStmt::TranslateDXLDynIdxScan(
 		dyn_index_scan_dxlop->GetDXLTableDescr(),
 		false,	// is_bitmap_index_probe
 		md_index, md_rel, output_context, &base_table_context,
-		ctxt_translation_prev_siblings, &index_cond, &index_orig_cond,
-		&index_strategy_list, &index_subtype_list);
+		ctxt_translation_prev_siblings, &index_cond, &index_orig_cond);
 
 
 	dyn_idx_only_scan->indexscan.indexqual = index_cond;
@@ -5318,6 +5234,51 @@ CTranslatorDXLToPlStmt::ProcessDXLTblDescr(
 
 //---------------------------------------------------------------------------
 //	@function:
+//		update_unknown_locale_walker
+//
+//	@doc:
+//		Given an expression tree and a TargetEntry pointer context, look for a
+//		matching target entry in the expression tree and overwrite the given
+//		TargetEntry context's resname with the original found in the expression
+//		tree.
+//
+//---------------------------------------------------------------------------
+static bool
+update_unknown_locale_walker(Node *node, void *context)
+{
+	if (node == nullptr)
+	{
+		return false;
+	}
+
+	TargetEntry *unknown_target_entry = (TargetEntry *) context;
+
+	if (IsA(node, TargetEntry))
+	{
+		TargetEntry *te = (TargetEntry *) node;
+
+		if (te->resorigtbl == unknown_target_entry->resorigtbl &&
+			te->resno == unknown_target_entry->resno)
+		{
+			unknown_target_entry->resname = te->resname;
+			return false;
+		}
+	}
+	else if (IsA(node, Query))
+	{
+		Query *query = (Query *) node;
+
+		return gpdb::WalkExpressionTree(
+			(Node *) query->targetList,
+			(bool (*)()) update_unknown_locale_walker, (void *) context);
+	}
+
+	return gpdb::WalkExpressionTree(
+		node, (bool (*)()) update_unknown_locale_walker, (void *) context);
+}
+
+//---------------------------------------------------------------------------
+//	@function:
 //		CTranslatorDXLToPlStmt::TranslateDXLProjList
 //
 //	@doc:
@@ -5420,6 +5381,21 @@ CTranslatorDXLToPlStmt::TranslateDXLProjList(
 				}
 				target_entry->resorigtbl = pteOriginal->resorigtbl;
 				target_entry->resorigcol = pteOriginal->resorigcol;
+
+				// ORCA represents strings using wide characters. That can
+				// require converting from multibyte characters using
+				// vswprintf(). However, vswprintf() is dependent on the system
+				// locale which is set at the database level. When that locale
+				// cannot interpret the string correctly, it fails. ORCA
+				// bypasses the failure by using a generic "UNKNOWN" string.
+				// When that happens, the following code translates it back to
+				// the original multibyte string.
+				if (strcmp(target_entry->resname, "UNKNOWN") == 0)
+				{
+					update_unknown_locale_walker(
+						(Node *) output_context->GetQuery(),
+						(void *) target_entry);
+				}
 			}
 		}
 
@@ -6497,14 +6473,11 @@ CTranslatorDXLToPlStmt::TranslateDXLBitmapIndexProbe(
 	CDXLNode *index_cond_list_dxlnode = (*bitmap_index_probe_dxlnode)[0];
 	List *index_cond = NIL;
 	List *index_orig_cond = NIL;
-	List *index_strategy_list = NIL;
-	List *index_subtype_list = NIL;
 
 	TranslateIndexConditions(
 		index_cond_list_dxlnode, table_descr, true /*is_bitmap_index_probe*/,
 		index, md_rel, output_context, base_table_context,
-		ctxt_translation_prev_siblings, &index_cond, &index_orig_cond,
-		&index_strategy_list, &index_subtype_list);
+		ctxt_translation_prev_siblings, &index_cond, &index_orig_cond);
 
 	bitmap_idx_scan->indexqual = index_cond;
 	bitmap_idx_scan->indexqualorig = index_orig_cond;

@@ -1,6 +1,11 @@
 --
 -- Test foreign-data wrapper file_fdw. Greenplum MPP specific
 --
+--
+-- start_matchsubs
+-- m/\(cost=.*\)/
+-- s/\(cost=.*\)//
+-- end_matchsubs
 -- Clean up in case a prior regression run failed
 SET client_min_messages TO 'error';
 SET optimizer_trace_fallback = on;
@@ -49,6 +54,8 @@ SELECT * FROM text_csv_all ORDER BY word1;
  FOO   | bar
 (3 rows)
 
+-- Analyze 'all segments' option table when filename is like "text<SEGID>.csv"
+Analyze text_csv_all;
 CREATE FOREIGN TABLE text_csv_any_from_server (
     word1 text, word2 text
 ) SERVER file_server
@@ -128,7 +135,7 @@ explain  select word1 from text_csv_coordinator ft1, bar where ft1.word1 = bar.a
          Hash Cond: (word1 = bar.a)
          ->  Redistribute Motion 1:3  (slice2)  (cost=0.00..431.00 rows=1 width=8)
                Hash Key: word1
-               ->  Foreign Scan on text_csv_coordinator  (cost=0.00..431.00 rows=1 width=8)
+               ->  Foreign Scan on text_csv_coordinator ft1  (cost=0.00..431.00 rows=1 width=8)
                      Foreign File: @abs_srcdir@/file_fdw/data/text.csv
                      Foreign File Size: 86 b
          ->  Hash  (cost=431.00..431.00 rows=1 width=4)

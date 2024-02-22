@@ -40,6 +40,7 @@ test: insert_root_partition_truncate_deadlock_without_gdd
 test: gdd/prepare
 test: gdd/insert_root_partition_truncate_deadlock
 test: gdd/concurrent_update
+test: gdd/concurrent_insert_on_conflict
 test: gdd/dist-deadlock-01 gdd/dist-deadlock-04 gdd/dist-deadlock-05 gdd/dist-deadlock-06 gdd/dist-deadlock-07 gdd/dist-deadlock-102 gdd/dist-deadlock-103 gdd/dist-deadlock-104 gdd/dist-deadlock-106 gdd/non-lock-105
 test: gdd/dist-deadlock-upsert
 # until we can improve below flaky case please keep it disabled
@@ -69,6 +70,7 @@ test: misc
 
 test: starve_case pg_views_concurrent_drop alter_blocks_for_update_and_viceversa drop_rename reader_waits_for_lock bitmap_index_ao_sparse
 
+test: create_index_deadlock
 
 # below test(s) inject faults so each of them need to be in a separate group
 test: pg_terminate_backend
@@ -145,6 +147,7 @@ test: uao/selectinsert_while_vacuum_row
 test: uao/selectinsertupdate_while_vacuum_row
 test: uao/selectupdate_while_vacuum_row
 test: uao/snapshot_index_corruption_row
+test: uao/tablesample_row
 test: uao/update_while_vacuum_row
 test: uao/vacuum_self_serializable_row
 test: uao/vacuum_self_serializable2_row
@@ -212,6 +215,7 @@ test: uao/selectinsert_while_vacuum_column
 test: uao/selectinsertupdate_while_vacuum_column
 test: uao/selectupdate_while_vacuum_column
 test: uao/snapshot_index_corruption_column
+test: uao/tablesample_column
 test: uao/update_while_vacuum_column
 test: uao/vacuum_self_serializable_column
 test: uao/vacuum_self_serializable2_column
@@ -254,6 +258,7 @@ test: analyze_progress
 test: appendonly_analyze_progress
 test: aoco_analyze_progress
 test: ao_index_build_progress
+test: autostats_locking
 
 # this test contains some fault injection that might get mis-hit by autovacuum process,
 # so it needs to be run with autovacuum being disabled
@@ -262,6 +267,7 @@ test: segwalrep/die_commit_pending_replication
 test: enable_autovacuum
 test: idle_gang_cleaner
 # test idle_in_transaction_session_timeout
+test: autovacuum-temp-table
 
 test: copy_progress
 

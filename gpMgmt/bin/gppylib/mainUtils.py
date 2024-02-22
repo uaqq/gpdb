@@ -83,6 +83,12 @@ class PIDLockFile:
             if self.PID == self.read_pid():
                 # remove the dir and PID file inside of it
                 shutil.rmtree(self.path)
+
+                # Eventhough we remove the directory, it is not guaranteed that the directory is removed
+                # at the disk level. So it is necessary to make this call to sync the changes at the disk level.
+                # Refer https://stackoverflow.com/questions/7127075/what-exactly-is-file-flush-doing for more context.
+                os.sync()
+
         except EnvironmentError as e:
             if e.errno == errno.ENOENT:
                 pass
@@ -162,7 +168,11 @@ class SimpleMainLock:
             return None
 
         # look for a lock file
-        self.pidfilepid = self.pidlockfile.read_pid()
+        try:
+            self.pidfilepid = self.pidlockfile.read_pid()
+        except ValueError:
+            shutil.rmtree(self.ppath)
+
         if self.pidfilepid is not None:
 
             # we found a lock file
@@ -294,13 +304,13 @@ def simple_main_internal(createOptionParserFn, createCommandFn, mainOptions):
 
     # at this point we have whatever lock we require
     try:
-        simple_main_locked(parserOptions, parserArgs, createCommandFn, mainOptions)
+        simple_main_locked(parser, parserOptions, parserArgs, createCommandFn, mainOptions)
     finally:
         if sml is not None:
             sml.release()
 
 
-def simple_main_locked(parserOptions, parserArgs, createCommandFn, mainOptions):
+def simple_main_locked(parser, parserOptions, parserArgs, createCommandFn, mainOptions):
     """
     Not to be called externally -- use simple_main instead
     """
@@ -313,7 +323,6 @@ def simple_main_locked(parserOptions, parserArgs, createCommandFn, mainOptions):
     faultProberInterface.registerFaultProber(faultProberImplGpdb.GpFaultProberImplGpdb())
 
     commandObject = None
-    parser = None
 
     forceQuiet = mainOptions is not None and mainOptions.get("forceQuietOutput")
 

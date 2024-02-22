@@ -681,6 +681,7 @@ ProcessClientReadInterrupt(bool blocked)
 		/* Process notify interrupts, if any */
 		if (notifyInterruptPending)
 			ProcessNotifyInterrupt();
+
 	}
 	else if (ProcDiePending)
 	{
@@ -4038,9 +4039,25 @@ ProcessInterrupts(const char* filename, int lineno)
 						(errcode(ERRCODE_GP_OPERATION_CANCELED),
 						 errmsg("canceling MPP operation%s", cancel_msg_str.data)));
 			else
-				ereport(ERROR,
-						(errcode(ERRCODE_QUERY_CANCELED),
-						 errmsg("canceling statement due to user request%s", cancel_msg_str.data)));
+			{
+				char		msec_str[32];
+
+				switch (check_log_duration(msec_str, false))
+				{
+					case 0:
+						ereport(ERROR,
+								(errcode(ERRCODE_QUERY_CANCELED),
+										errmsg("canceling statement due to user request%s", cancel_msg_str.data)));
+						break;
+					case 1:
+					case 2:
+						ereport(ERROR,
+								(errcode(ERRCODE_QUERY_CANCELED),
+										errmsg("canceling statement due to user request%s, duration:%s",
+											   cancel_msg_str.data, msec_str)));
+						break;
+				}
+			}
 		}
 	}
 
@@ -5391,6 +5408,7 @@ PostgresMain(int argc, char *argv[],
 					const char *serializedQueryDispatchDesc = NULL;
 					const char *resgroupInfoBuf = NULL;
 
+					int is_hs_dispatch;
 					int query_string_len = 0;
 					int serializedDtxContextInfolen = 0;
 					int serializedPlantreelen = 0;
@@ -5427,6 +5445,20 @@ PostgresMain(int argc, char *argv[],
 					cuid = pq_getmsgint(&input_message, 4);
 
 					statementStart = pq_getmsgint64(&input_message);
+
+					/* check if the message is from standby QD and is expected */
+					is_hs_dispatch = pq_getmsgint(&input_message, 4);
+					if (is_hs_dispatch == 0 && IS_STANDBY_QE())
+						ereport(ERROR,
+								(errcode(ERRCODE_PROTOCOL_VIOLATION),
+								 errmsg("mirror segments can only process MPP protocol messages from standby QD"),
+								 errhint("Exit the current session and re-connect.")));
+					else if (is_hs_dispatch != 0 && !IS_STANDBY_QE())
+						ereport(ERROR,
+								(errcode(ERRCODE_PROTOCOL_VIOLATION),
+								 errmsg("primary segments can only process MPP protocol messages from primary QD"),
+								 errhint("Exit the current session and re-connect.")));
+
 					query_string_len = pq_getmsgint(&input_message, 4);
 					serializedPlantreelen = pq_getmsgint(&input_message, 4);
 					serializedQueryDispatchDesclen = pq_getmsgint(&input_message, 4);

@@ -116,7 +116,7 @@ DefineExternalRelation(CreateExternalStmt *createExtStmt)
 	createStmt->tablespacename = NULL;
 	createStmt->distributedBy = createExtStmt->distributedBy; /* policy was set in transform */
 	createStmt->ownerid = userid;
-	createStmt->gp_style_alter_part = false;
+	createStmt->origin = ORIGIN_NO_GEN;
 
 	switch (exttypeDesc->exttabletype)
 	{
@@ -593,7 +593,7 @@ list_join(List *list, char delimiter)
 		const char *cellval;
 
 		cellval = strVal(lfirst(cell));
-		appendStringInfo(&buf, "%s%c", quote_identifier(cellval), delimiter);
+		appendStringInfo(&buf, "%s%c", cellval, delimiter);
 	}
 
 	/*

@@ -490,3 +490,57 @@ select count(*) from rcte;
 RESET enable_nestloop;
 RESET enable_hashjoin;
 RESET enable_mergejoin;
+
+-- using union rather than union all for recursive union
+CREATE TABLE tmp(a int, b int);
+INSERT INTO tmp SELECT generate_series(1,5);
+INSERT INTO tmp SELECT * FROM tmp;
+EXPLAIN (costs off)
+WITH RECURSIVE x(a) as
+(
+    select a from tmp
+    union
+    select a+1 from x where a<10
+)
+select * from x ;
+
+WITH RECURSIVE x(a) as
+(
+    select a from tmp
+    union
+    select a+1 from x where a<10
+)
+select * from x ;
+-- issues: https://github.com/greenplum-db/gpdb/issues/16422
+-- Without a reference to CTE in subselect and with a group clause
+CREATE TABLE test_cte (a int, b int);
+EXPLAIN (costs off)
+WITH RECURSIVE r(c1, c2) as
+(
+  select a as c1, b as c2 from test_cte
+  union all
+  select r.c1, r.c2 from r
+  join
+  (
+    select a as c1 , max(b) as c2 from test_cte group by c1
+  ) as tmp_table
+  on r.c1 = tmp_table.c1
+)
+select * from r join test_cte on r.c1 = a;
+
+-- Without a reference to CTE in subselect and with a distinct clause
+EXPLAIN (costs off)
+WITH RECURSIVE r(c1, c2) as
+(
+  select a as c1, b as c2 from test_cte
+  union all
+  select r.c1, r.c2 from r
+  join
+  (
+    select max (distinct a )as c1 ,max (distinct b) as c2 from test_cte
+  ) as tmp_table
+  on r.c1 = tmp_table.c1
+)
+select * from r join test_cte on r.c1 = a;
+
+Drop TABLE test_cte;

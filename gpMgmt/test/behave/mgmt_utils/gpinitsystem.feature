@@ -352,7 +352,7 @@ Feature: gpinitsystem tests
 
     Scenario: gpinitsystem should pass the default value of trusted_shell properly to gpcreateseg
         Given create demo cluster config
-        When the user runs command "gpinitsystem -a -c ../gpAux/gpdemo/clusterConfigFile -h ../gpAux/gpdemo/hostfile --ignore-warnings"
+        When the user runs command "gpinitsystem -a -c ../gpAux/gpdemo/clusterConfigFile -h ../gpAux/gpdemo/hostfile"
         Then gpinitsystem should return a return code of 0
         When the user runs command "grep -q '.*gpcreateseg\.sh.*Completed .*lalshell.*' ~/gpAdminLogs/gpinitsystem*log"
         Then grep should return a return code of 0
@@ -366,3 +366,30 @@ Feature: gpinitsystem tests
         Then grep should return a return code of 0
         And the user runs command "mv ../gpAux/gpdemo/clusterConfigFile.bak ../gpAux/gpdemo/clusterConfigFile"
 
+    @postmaster
+    Scenario: gpinitsystem creates a cluster with GUC gp_postmaster_inet_address_family
+        Given the database is initialized with checksum "off"
+        When the user runs "gpconfig -s gp_postmaster_inet_address_family"
+        Then gpconfig should return a return code of 0
+        And gpconfig should print "Coordinator value: auto" to stdout
+        And gpconfig should print "Segment     value: auto" to stdout
+        When the user runs "gpconfig --skipvalidation -c gp_postmaster_inet_address_family -v ipv4"
+        Then gpconfig should return a return code of 0
+        When the user runs "gpstop -ar"
+        Then gpstop should return a return code of 0
+        When the user runs "gpconfig -s gp_postmaster_inet_address_family"
+        Then gpconfig should return a return code of 0
+        And gpconfig should print "Coordinator value: ipv4" to stdout
+        And gpconfig should print "Segment     value: ipv4" to stdout
+        When the user runs "gpconfig --skipvalidation -c gp_postmaster_inet_address_family -v auto"
+        Then gpconfig should return a return code of 0
+        When the user runs "gpstop -ar"
+        Then gpstop should return a return code of 0
+
+    Scenario: gpinitsystem exits with status 1 when the user provides invalid option
+        Given create demo cluster config
+         When the user runs command "gpinitsystem -a -c ../gpAux/gpdemo/clusterConfigFile --ignore-warnings" eok
+         Then gpinitsystem should return a return code of 1
+          And gpinitsystem should print "Unknown option --ignore-warnings" to stdout
+        Given the user runs "gpstate"
+         Then gpstate should return a return code of 2

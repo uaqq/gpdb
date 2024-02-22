@@ -2,6 +2,10 @@
 -- Test extensions to functions (MPP-16060)
 -- 	1. data access indicators
 -- -----------------------------------------------------------------
+-- start_matchsubs
+-- m/\(cost=.*\)/
+-- s/\(cost=.*\)//
+-- end_matchsubs
 -- start_ignore
 CREATE LANGUAGE plpython3u;
 -- end_ignore
@@ -263,11 +267,12 @@ SELECT count(*) FROM t3_function_scan;
 DROP TABLE IF EXISTS t4_function_scan;
 CREATE TABLE t4_function_scan AS SELECT 444, (1 / (0* random()))::text UNION ALL SELECT * FROM get_country();
 
--- Temp file number after running INITPLAN function. All the files should've
--- been cleaned up
+-- Temp file number after running INITPLAN function. All the files generated during this time should've
+-- been cleaned up, so the number of files should not be more than previously (it could be less, if some
+-- existing temp file happens to be cleaned up at the same time).
 SELECT get_temp_file_num() AS num_temp_files_after
 \gset
-SELECT :num_temp_files_before = :num_temp_files_after;
+SELECT :num_temp_files_before >= :num_temp_files_after;
 
 -- test join case with two INITPLAN functions
 DROP TABLE IF EXISTS t5_function_scan;
@@ -282,3 +287,16 @@ SELECT count(*) FROM t6_function_scan;
 DROP TABLE IF EXISTS t7_function_scan;
 CREATE TABLE t7_function_scan AS SELECT * FROM  get_country() UNION ALL SELECT 100/(1+ 1* random())::int, 'cc'::text;
 SELECT count(*) FROM t7_function_scan;
+
+-- Test INITPLAN functions in INITPLAN
+-- more details could be found at https://github.com/greenplum-db/gpdb/issues/16679
+create or replace function hello_initplan() returns setof text as $$
+return ["hello"]
+$$ language plpython3u
+execute on initplan;
+
+explain select array(select f from hello_initplan() as f);
+select array(select f from hello_initplan() as f);
+
+
+

@@ -190,17 +190,6 @@ struct ConnHashTable
 								(a)->srcPid == (b)->srcPid &&			\
 								(a)->dstPid == (b)->dstPid && (a)->icId == (b)->icId))
 
-
-/*
- * Cursor IC table definition.
- *
- * For cursor case, there may be several concurrent interconnect
- * instances on QD. The table is used to track the status of the
- * instances, which is quite useful for "ACK the past and NAK the future" paradigm.
- *
- */
-#define CURSOR_IC_TABLE_SIZE (128)
-
 /*
  * CursorICHistoryEntry
  *
@@ -233,8 +222,9 @@ struct CursorICHistoryEntry
 typedef struct CursorICHistoryTable CursorICHistoryTable;
 struct CursorICHistoryTable
 {
+	uint32		size;
 	uint32		count;
-	CursorICHistoryEntry *table[CURSOR_IC_TABLE_SIZE];
+	CursorICHistoryEntry **table;
 };
 
 /*
@@ -284,6 +274,13 @@ struct ReceiveControlInfo
 
 	/* Cursor history table. */
 	CursorICHistoryTable cursorHistoryTable;
+
+	/*
+	 * Last distributed transaction id when SetupUDPInterconnect is called.
+	 * Coupled with cursorHistoryTable, it is used to handle multiple
+	 * concurrent cursor cases.
+	 */
+	DistributedTransactionId lastDXatId;
 };
 
 /*
@@ -641,8 +638,8 @@ typedef struct ICStatistics
 /* Statistics for UDP interconnect. */
 static ICStatistics ic_statistics;
 
-static struct addrinfo udp_dummy_packet_addrinfo;
-static struct sockaddr udp_dummy_packet_sockaddr;
+/* Cached sockaddr of the listening udp socket */
+static struct sockaddr_storage udp_dummy_packet_sockaddr;
 
 /*=========================================================================
  * STATIC FUNCTIONS declarations
@@ -665,10 +662,15 @@ static void setRxThreadError(int eno);
 static void resetRxThreadError(void);
 static void SendDummyPacket(void);
 
+static void ConvertToIPv4MappedAddr(struct sockaddr_storage *sockaddr, socklen_t *o_len);
+#if defined(__darwin__)
+#define	s6_addr32 __u6_addr.__u6_addr32
+static void ConvertIPv6WildcardToLoopback(struct sockaddr_storage* dest);
+#endif
 static void getSockAddr(struct sockaddr_storage *peer, socklen_t *peer_len, const char *listenerAddr, int listenerPort);
 static uint32 setUDPSocketBufferSize(int ic_socket, int buffer_type);
 static void setupUDPListeningSocket(int *listenerSocketFd, uint16 *listenerPort,
-							int *txFamily, struct addrinfo *listenerAddrinfo, struct sockaddr *listenerSockaddr);
+							int *txFamily, struct sockaddr_storage *listenerSockaddr);
 static ChunkTransportStateEntry *startOutgoingUDPConnections(ChunkTransportState *transportStates,
 							ExecSlice *sendSlice,
 							int *pOutgoingCount);
@@ -928,8 +930,13 @@ dumpTransProtoStats()
 static void
 initCursorICHistoryTable(CursorICHistoryTable *t)
 {
+	MemoryContext old;
 	t->count = 0;
-	memset(t->table, 0, sizeof(t->table));
+	t->size = Gp_interconnect_cursor_ic_table_size;
+
+	old = MemoryContextSwitchTo(ic_control_info.memContext);
+	t->table = palloc0(sizeof(struct CursorICHistoryEntry *) * t->size);
+	MemoryContextSwitchTo(old);
 }
 
 /*
@@ -941,7 +948,7 @@ addCursorIcEntry(CursorICHistoryTable *t, uint32 icId, uint32 cid)
 {
 	MemoryContext old;
 	CursorICHistoryEntry *p;
-	uint32		index = icId % CURSOR_IC_TABLE_SIZE;
+	uint32		index = icId % t->size;
 
 	old = MemoryContextSwitchTo(ic_control_info.memContext);
 	p = palloc0(sizeof(struct CursorICHistoryEntry));
@@ -971,7 +978,7 @@ static void
 updateCursorIcEntry(CursorICHistoryTable *t, uint32 icId, uint8 status)
 {
 	struct CursorICHistoryEntry *p;
-	uint8		index = icId % CURSOR_IC_TABLE_SIZE;
+	uint8		index = icId % t->size;
 
 	for (p = t->table[index]; p; p = p->next)
 	{
@@ -992,7 +999,7 @@ static CursorICHistoryEntry *
 getCursorIcEntry(CursorICHistoryTable *t, uint32 icId)
 {
 	struct CursorICHistoryEntry *p;
-	uint8		index = icId % CURSOR_IC_TABLE_SIZE;
+	uint8		index = icId % t->size;
 
 	for (p = t->table[index]; p; p = p->next)
 	{
@@ -1014,7 +1021,7 @@ pruneCursorIcEntry(CursorICHistoryTable *t, uint32 icId)
 {
 	uint8		index;
 
-	for (index = 0; index < CURSOR_IC_TABLE_SIZE; index++)
+	for (index = 0; index < t->size; index++)
 	{
 		struct CursorICHistoryEntry *p,
 				   *q;
@@ -1063,7 +1070,7 @@ purgeCursorIcEntry(CursorICHistoryTable *t)
 {
 	uint8		index;
 
-	for (index = 0; index < CURSOR_IC_TABLE_SIZE; index++)
+	for (index = 0; index < t->size; index++)
 	{
 		struct CursorICHistoryEntry *trash;
 
@@ -1163,7 +1170,7 @@ resetRxThreadError()
  * 		Setup udp listening socket.
  */
 static void
-setupUDPListeningSocket(int *listenerSocketFd, uint16 *listenerPort, int *txFamily, struct addrinfo *listenerAddrinfo, struct sockaddr *listenerSockaddr)
+setupUDPListeningSocket(int *listenerSocketFd, uint16 *listenerPort, int *txFamily, struct sockaddr_storage *listenerSockaddr)
 {
 	struct addrinfo 		*addrs = NULL;
 	struct addrinfo 		*addr;
@@ -1284,16 +1291,6 @@ setupUDPListeningSocket(int *listenerSocketFd, uint16 *listenerPort, int *txFami
 	if (!addr || ic_socket == PGINVALID_SOCKET)
 		goto startup_failed;
 
-	/*
-	 * cache the successful addrinfo and sockaddr of the listening socket, so
-	 * we can use this information to connect to the listening socket.
-	 */
-	if (listenerAddrinfo != NULL && listenerSockaddr != NULL )
-	{
-		memcpy(listenerAddrinfo, addr, sizeof(udp_dummy_packet_addrinfo));
-		memcpy(listenerSockaddr, addr->ai_addr, sizeof(udp_dummy_packet_sockaddr));
-	}
-
 	/* Memorize the socket fd, kernel assigned port and address family */
 	*listenerSocketFd = ic_socket;
 	if (listenerAddr.ss_family == AF_INET6)
@@ -1306,6 +1303,13 @@ setupUDPListeningSocket(int *listenerSocketFd, uint16 *listenerPort, int *txFami
 		*listenerPort = ntohs(((struct sockaddr_in *) &listenerAddr)->sin_port);
 		*txFamily = AF_INET;
 	}
+
+	/*
+	 * cache the successful sockaddr of the listening socket, so
+	 * we can use this information to connect to the listening socket.
+	 */
+	if (listenerSockaddr != NULL)
+		memcpy(listenerSockaddr, &listenerAddr, sizeof(struct sockaddr_storage));
 
 	/* Set up socket non-blocking mode */
 	if (!pg_set_noblock(ic_socket))
@@ -1439,15 +1443,15 @@ InitMotionUDPIFC(int *listenerSocketFd, uint16 *listenerPort)
 	/*
 	 * setup listening socket and sending socket for Interconnect.
 	 */
-	setupUDPListeningSocket(listenerSocketFd, listenerPort, &txFamily,
-			&udp_dummy_packet_addrinfo, &udp_dummy_packet_sockaddr);
-	setupUDPListeningSocket(&ICSenderSocket, &ICSenderPort, &ICSenderFamily, NULL, NULL);
+	setupUDPListeningSocket(listenerSocketFd, listenerPort, &txFamily, &udp_dummy_packet_sockaddr);
+	setupUDPListeningSocket(&ICSenderSocket, &ICSenderPort, &ICSenderFamily, NULL);
 
 	/* Initialize receive control data. */
 	resetMainThreadWaiting(&rx_control_info.mainWaitingState);
 
 	/* allocate a buffer for sending disorder messages */
 	rx_control_info.disorderBuffer = palloc0(MIN_PACKET_SIZE);
+	rx_control_info.lastDXatId = InvalidTransactionId;
 	rx_control_info.lastTornIcId = 0;
 	initCursorICHistoryTable(&rx_control_info.cursorHistoryTable);
 
@@ -1541,7 +1545,6 @@ CleanupMotionUDPIFC(void)
 	ICSenderPort = 0;
 	ICSenderFamily = 0;
 
-	memset(&udp_dummy_packet_addrinfo, 0, sizeof(udp_dummy_packet_addrinfo));
 	memset(&udp_dummy_packet_sockaddr, 0, sizeof(udp_dummy_packet_sockaddr));
 
 #ifdef USE_ASSERT_CHECKING
@@ -2812,30 +2815,8 @@ setupOutgoingUDPConnection(ChunkTransportState *transportStates, ChunkTransportS
 			 */
 			if (pEntry->txfd_family == AF_INET6)
 			{
-				struct sockaddr_storage temp;
-				const struct sockaddr_in *in = (const struct sockaddr_in *) &conn->peer;
-				struct sockaddr_in6 *in6_new = (struct sockaddr_in6 *) &temp;
-
-				memset(&temp, 0, sizeof(temp));
-
 				elog(DEBUG1, "We are inet6, remote is inet.  Converting to v4 mapped address.");
-
-				/* Construct a V4-to-6 mapped address.  */
-				temp.ss_family = AF_INET6;
-				in6_new->sin6_family = AF_INET6;
-				in6_new->sin6_port = in->sin_port;
-				in6_new->sin6_flowinfo = 0;
-
-				memset(&in6_new->sin6_addr, '\0', sizeof(in6_new->sin6_addr));
-				/* in6_new->sin6_addr.s6_addr16[5] = 0xffff; */
-				((uint16 *) &in6_new->sin6_addr)[5] = 0xffff;
-				/* in6_new->sin6_addr.s6_addr32[3] = in->sin_addr.s_addr; */
-				memcpy(((char *) &in6_new->sin6_addr) + 12, &(in->sin_addr), 4);
-				in6_new->sin6_scope_id = 0;
-
-				/* copy it back */
-				memcpy(&conn->peer, &temp, sizeof(struct sockaddr_in6));
-				conn->peer_len = sizeof(struct sockaddr_in6);
+				ConvertToIPv4MappedAddr(&conn->peer, &conn->peer_len);
 			}
 			else
 			{
@@ -3039,34 +3020,66 @@ SetupUDPIFCInterconnect_Internal(SliceTable *sliceTable)
 	set_test_mode();
 #endif
 
+	/* Prune the QD's history table if it is too large */
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
-		/* 
-		 * Prune the history table if it is too large
-		 * 
-		 * We only keep history of constant length so that
-		 * - The history table takes only constant amount of memory.
-		 * - It is long enough so that it is almost impossible to receive 
-		 *   packets from an IC instance that is older than the first one 
-		 *   in the history.
-		 */
-		if (rx_control_info.cursorHistoryTable.count > (2 * CURSOR_IC_TABLE_SIZE))
-		{
-			uint32 prune_id = sliceTable->ic_instance_id - CURSOR_IC_TABLE_SIZE;
+		CursorICHistoryTable *ich_table = &rx_control_info.cursorHistoryTable;
+		DistributedTransactionId distTransId = getDistributedTransactionId();
 
-			/* 
-			 * Only prune if we didn't underflow -- also we want the prune id
-			 * to be newer than the limit (hysteresis)
+		if (ich_table->count > (2 * ich_table->size))
+		{
+			/*
+			 * distTransId != lastDXatId
+			 * Means the last transaction is finished, it's ok to make a prune.
 			 */
-			if (prune_id < sliceTable->ic_instance_id)
+			if (distTransId != rx_control_info.lastDXatId)
 			{
 				if (gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG)
-					elog(DEBUG1, "prune cursor history table (count %d), icid %d", rx_control_info.cursorHistoryTable.count, sliceTable->ic_instance_id);
-				pruneCursorIcEntry(&rx_control_info.cursorHistoryTable, prune_id);
+					elog(DEBUG1, "prune cursor history table (count %d), icid %d, prune_id %d",
+						 ich_table->count, sliceTable->ic_instance_id, sliceTable->ic_instance_id);
+				pruneCursorIcEntry(ich_table, sliceTable->ic_instance_id);
+			}
+			/*
+			 * distTransId == lastDXatId and they are not InvalidTransactionId(0)
+			 * Means current (non Read-Only) transaction isn't finished, should not prune.
+			 */
+			else if (rx_control_info.lastDXatId != InvalidTransactionId)
+			{
+				;
+			}
+			/*
+			 * distTransId == lastDXatId and they are InvalidTransactionId(0)
+			 * Means they are the same transaction or different Read-Only transactions.
+			 *
+			 * For the latter, it's hard to get a perfect timepoint to prune: prune eagerly may
+			 * cause problems (pruned current Txn's Ic instances), but prune in low frequency
+			 * causes memory leak.
+			 *
+			 * So, we choose a simple algorithm to prune it here. And if it mistakenly prune out
+			 * the still-in-used Ic instance (with lower id), the query may hang forever.
+			 * Then user have to set a bigger gp_interconnect_cursor_ic_table_size value and
+			 * try the query again, it is a workaround.
+			 *
+			 * More backgrounds please see: https://github.com/greenplum-db/gpdb/pull/16458
+			 */
+			else
+			{
+				if (sliceTable->ic_instance_id > ich_table->size)
+				{
+					uint32 prune_id = sliceTable->ic_instance_id - ich_table->size;
+					Assert(prune_id < sliceTable->ic_instance_id);
+
+					if (gp_log_interconnect >= GPVARS_VERBOSITY_DEBUG)
+						elog(DEBUG1, "prune cursor history table (count %d), icid %d, prune_id %d",
+							ich_table->count, sliceTable->ic_instance_id, prune_id);
+					pruneCursorIcEntry(ich_table, prune_id);
+				}
 			}
 		}
 
-		addCursorIcEntry(&rx_control_info.cursorHistoryTable, sliceTable->ic_instance_id, gp_command_count);
+		addCursorIcEntry(ich_table, sliceTable->ic_instance_id, gp_command_count);
+		/* save the latest transaction id */
+		rx_control_info.lastDXatId = distTransId;
 	}
 
 	/* now we'll do some setup for each of our Receiving Motion Nodes. */
@@ -6902,27 +6915,93 @@ WaitInterconnectQuitUDPIFC(void)
 }
 
 /*
+ * If the socket was created AF_INET6, but the address we want to
+ * send to is IPv4 (AF_INET), we need to change the address
+ * format. On Linux, this is not necessary: glibc automatically
+ * handles this. But on MAC OSX and Solaris, we need to convert
+ * the IPv4 address to IPv4-mapped IPv6 address in AF_INET6 format.
+ *
+ * The comment above relies on getaddrinfo() via function getSockAddr to get
+ * the correct V4-mapped address. We need to be careful here as we need to
+ * ensure that the platform we are using is POSIX 1003-2001 compliant.
+ * Just to be on the safeside, we'll be keeping this function for
+ * now to be used for all platforms and not rely on POSIX.
+ *
+ * Since this can be called in a signal handler, we avoid the use of
+ * async-signal unsafe functions such as memset/memcpy
+ */
+static void
+ConvertToIPv4MappedAddr(struct sockaddr_storage *sockaddr, socklen_t *o_len)
+{
+	const struct sockaddr_in *in = (const struct sockaddr_in *) sockaddr;
+	struct sockaddr_storage temp = {0};
+	struct sockaddr_in6 *in6_new = (struct sockaddr_in6 *) &temp;
+
+	/* Construct a IPv4-to-IPv6 mapped address.  */
+	temp.ss_family = AF_INET6;
+	in6_new->sin6_family = AF_INET6;
+	in6_new->sin6_port = in->sin_port;
+	in6_new->sin6_flowinfo = 0;
+
+	((uint16 *) &in6_new->sin6_addr)[5] = 0xffff;
+
+	in6_new->sin6_addr.s6_addr32[3] = in->sin_addr.s_addr;
+	in6_new->sin6_scope_id = 0;
+
+	/* copy it back */
+	*sockaddr = temp;
+	*o_len = sizeof(struct sockaddr_in6);
+}
+
+#if defined(__darwin__)
+/* macos does not accept :: as the destination, we will need to covert this to the IPv6 loopback */
+static void
+ConvertIPv6WildcardToLoopback(struct sockaddr_storage* dest)
+{
+	char address[INET6_ADDRSTRLEN];
+	/* we want to terminate our own process, so this should be local */
+	const struct sockaddr_in6 *in6 = (const struct sockaddr_in6 *) &udp_dummy_packet_sockaddr;
+	inet_ntop(AF_INET6, &in6->sin6_addr, address, sizeof(address));
+	if (strcmp("::", address) == 0)
+		((struct sockaddr_in6 *)dest)->sin6_addr = in6addr_loopback;
+}
+#endif
+
+/*
  * Send a dummy packet to interconnect thread to exit poll() immediately
  */
 static void
 SendDummyPacket(void)
 {
 	int					ret;
-	in_port_t			udp_listener_port;
 	char				*dummy_pkt = "stop it";
 	int					counter;
-	struct sockaddr_in	*addr_in = NULL;
-	struct sockaddr_in	dest_addr;
-	/*
-	 * Get address info from interconnect udp listener port
-	 */
-	udp_listener_port = (Gp_listener_port >> 16) & 0x0ffff;
+	struct sockaddr_storage dest;
+	socklen_t	dest_len;
 
-	addr_in = (struct sockaddr_in *) &udp_dummy_packet_sockaddr;
-	memset(&dest_addr, 0, sizeof(dest_addr));
-	dest_addr.sin_family = addr_in->sin_family;
-	dest_addr.sin_port = htons(udp_listener_port);
-	dest_addr.sin_addr.s_addr = addr_in->sin_addr.s_addr;
+	Assert(udp_dummy_packet_sockaddr.ss_family == AF_INET || udp_dummy_packet_sockaddr.ss_family == AF_INET6);
+	Assert(ICSenderFamily == AF_INET || ICSenderFamily == AF_INET6);
+
+	dest = udp_dummy_packet_sockaddr;
+	dest_len = (ICSenderFamily == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+
+	if (ICSenderFamily == AF_INET6)
+	{
+#if defined(__darwin__)
+		if (udp_dummy_packet_sockaddr.ss_family == AF_INET6)
+			ConvertIPv6WildcardToLoopback(&dest);
+#endif
+		if (udp_dummy_packet_sockaddr.ss_family == AF_INET)
+			ConvertToIPv4MappedAddr(&dest, &dest_len);
+	}
+
+	if (ICSenderFamily == AF_INET && udp_dummy_packet_sockaddr.ss_family == AF_INET6)
+	{
+		/* the size of AF_INET6 is bigger than the side of IPv4, so
+		 * converting from IPv6 to IPv4 may potentially not work. */
+		ereport(LOG, errmsg("sending dummy packet failed: cannot send from AF_INET to receiving on AF_INET6"));
+		return;
+	}
 
 	/*
 	 * Send a dummy package to the interconnect listener, try 10 times.
@@ -6933,14 +7012,14 @@ SendDummyPacket(void)
 	while (counter < 10)
 	{
 		counter++;
-		ret = sendto(ICSenderSocket, dummy_pkt, strlen(dummy_pkt), 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
+		ret = sendto(ICSenderSocket, dummy_pkt, strlen(dummy_pkt), 0, (struct sockaddr *) &dest, dest_len);
 		if (ret < 0)
 		{
 			if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
 				continue;
 			else
 			{
-				elog(LOG, "send dummy packet failed, sendto failed: %m");
+				ereport(LOG, errmsg("send dummy packet failed, sendto failed: %m"));
 				return;
 			}
 		}
@@ -6948,9 +7027,7 @@ SendDummyPacket(void)
 	}
 
 	if (counter >= 10)
-	{
-		elog(LOG, "send dummy packet failed, sendto failed with 10 times: %m");
-	}
+		ereport(LOG, errmsg("send dummy packet failed, sendto failed with 10 times: %m"));
 }
 
 uint32

@@ -55,8 +55,8 @@
 #include "cdb/cdbpath.h"
 #include "cdb/cdbsetop.h"
 #include "cdb/cdbvars.h"
+#include "cdb/cdbutil.h"
 #include "commands/tablecmds.h"
-
 
 static RelOptInfo *recurse_set_operations(Node *setOp, PlannerInfo *root,
 										  List *colTypes, List *colCollations,
@@ -301,13 +301,8 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 		 * the SubqueryScanPath with nil pathkeys.  (XXX that should change
 		 * soon too, likely.)
 		 */
-		/*
-		 * GPDB_96_MERGE_FIXME: can we really use the subpath's locus here unmodified?
-		 * Shouldn't we convert it to use Vars pointing to the outputs of the subquery,
-		 * like in subquery_pathlist()
-		 */
 		path = (Path *) create_subqueryscan_path(root, rel, subpath,
-												 NIL, subpath->locus, NULL);
+												 NIL, cdbpathlocus_from_subquery(root, rel, subpath), NULL);
 
 		add_path(rel, path);
 
@@ -325,7 +320,7 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 			partial_subpath = linitial(final_rel->partial_pathlist);
 			partial_path = (Path *)
 				create_subqueryscan_path(root, rel, partial_subpath,
-										 NIL, partial_subpath->locus, NULL);
+										 NIL, cdbpathlocus_from_subquery(root, rel, partial_subpath), NULL);
 			add_partial_path(rel, partial_path);
 		}
 
@@ -496,6 +491,22 @@ generate_recursion_path(SetOperationStmt *setOp, PlannerInfo *root,
 		CdbPathLocus_MakeSingleQE(&gather_locus, lpath->locus.numsegments);
 		lpath = cdbpath_create_motion_path(root, lpath, NIL, false, gather_locus);
 	}
+	/*
+	 * If the non-recursive side is General, the result of following sql
+	 * is wrong. The worktable scan we build on the recursive
+	 * side will use the same locus as the non-recursive side, and if it's
+	 * General, the result of the join may end up having a different locus.
+	 * So force it to be executed on exactly one segment.
+	 * with recursive cte (a) as (
+	 *     select 1
+	 *     union all
+	 *     select a from (select cte.a+1 from cte offset 0) foo, tmp1)
+	 * select * from cte;
+	 */
+	if (CdbPathLocus_IsGeneral(lpath->locus))
+	{
+		CdbPathLocus_MakeSingleQE(&(lpath->locus), getgpsegmentCount());
+	}
 
 	/* The right path will want to look at the left one ... */
 	root->non_recursive_path = lpath;
@@ -561,6 +572,21 @@ generate_recursion_path(SetOperationStmt *setOp, PlannerInfo *root,
 											   root->wt_param_id,
 											   dNumGroups);
 	path->locus = rpath->locus;
+
+	/*
+	 * GPDB:
+	 * https://github.com/greenplum-db/gpdb/issues/16772
+	 * If we use union rather than union all we should deduplicate the tuples.
+	 * When the locus of recursive union path is Partitioned,
+	 * It recursive union node only deduplicates the tuples on its segment.
+	 * There are duplicated tuples between different segments.
+	 * So we redistribute tuples and add a unique path above recursive union path.
+	 */
+	if (!setOp->all && CdbPathLocus_IsPartitioned(path->locus))
+	{
+		path = make_motion_hash_all_targets(root, path, tlist);
+		path = make_union_unique(setOp, path, tlist, root);
+	}
 
 	add_path(result_rel, path);
 	postprocess_setop_rel(root, result_rel);

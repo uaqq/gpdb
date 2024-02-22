@@ -10,6 +10,7 @@ import copy
 import datetime
 import os
 import random
+import re
 import sys
 import json
 import shutil
@@ -1255,6 +1256,20 @@ class gpexpand:
 
         tablespace_inputfile = self.options.filename + ".ts"
 
+        """
+        Check if the tablespace input file exists or not
+        In cases where the user manually creates an input file, the file
+        will not be present. In such cases create the file and exit giving the
+        user a chance to review it and re-run gpexpand.
+        """
+        if not os.path.exists(tablespace_inputfile):
+            self.generate_tablespace_inputfile(tablespace_inputfile)
+            self.logger.warning("Could not locate tablespace input configuration file '{0}'. A new tablespace input configuration file is written " \
+                                "to '{0}'. Please review the file and re-run with: gpexpand -i {1}".format(tablespace_inputfile, self.options.filename))
+
+            logger.info("Exiting...")
+            sys.exit(1)
+
         new_tblspc_info = {}
 
         with open(tablespace_inputfile) as f:
@@ -1367,7 +1382,7 @@ class gpexpand:
         dbconn.execSQL(self.conn, "CHECKPOINT")
         self.conn.close()
 
-        # increase expand version 
+        # increase expand version
         self.conn = dbconn.connect(self.dburl, utility=True, encoding='UTF8')
         dbconn.execSQL(self.conn, "select gp_expand_bump_version()")
         self.conn.close()
@@ -1746,7 +1761,7 @@ class gpexpand:
             FROM
                 pg_inherits a,
                 pg_partitioned_table b,
-                pg_class c, 
+                pg_class c,
                 pg_class d,
                 pg_namespace n
             WHERE
@@ -2058,8 +2073,17 @@ class ExpandTable():
 
         # check is atomic in python
         if not cancel_flag:
-            dbconn.execSQL(table_conn, sql)
-            # the ALTER TABLE command requires a commit to execute
+            try:
+                dbconn.execSQL(table_conn, sql)
+            except DatabaseError as e:
+                if re.search('DETAIL:\s*table has already been expanded', str(e)):
+                    logger.info('Table %s.%s seems to be already expanded, marking as done' % (self.dbname, self.fq_name))
+                elif re.search('\s*could not open relation with (OID \d+ )?', str(e)):
+                    logger.warning('Encountered unexpected issue when expanding table %s.%s, skipping' % (self.dbname, self.fq_name))
+                    table_conn.rollback()
+                    return False
+                else:
+                    raise
             table_conn.commit()
             if self.options.analyze:
                 sql = 'ANALYZE %s' % (self.fq_name)
@@ -2472,7 +2496,7 @@ def main(options, args, parser):
             logger.error('Failed to connect to database.  Make sure the')
             logger.error('Greenplum instance you wish to expand is running')
             logger.error('and that your environment is correct, then rerun')
-            logger.error('gexpand ' + ' '.join(sys.argv[1:]))
+            logger.error('gpexpand ' + ' '.join(sys.argv[1:]))
             sys.exit(1)
 
         _gp_expand = gpexpand(logger, gparray, dburl, options, parallel=options.parallel)
@@ -2525,10 +2549,10 @@ def main(options, args, parser):
             _gp_expand.validate_heap_checksums()
             newSegList = _gp_expand.read_input_files()
             _gp_expand.addNewSegments(newSegList)
+            newTableSpaceInfo = _gp_expand.read_tablespace_file()
             _gp_expand.sync_packages()
             _gp_expand.start_prepare()
             _gp_expand.lock_catalog()
-            newTableSpaceInfo = _gp_expand.read_tablespace_file()
             _gp_expand.add_segments(newTableSpaceInfo)
             _gp_expand.update_original_segments()
             _gp_expand.cleanup_new_segments()

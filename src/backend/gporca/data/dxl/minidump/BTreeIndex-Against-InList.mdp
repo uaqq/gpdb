@@ -217,7 +217,7 @@ SELECT * FROM test WHERE a in (1, 47);
         </dxl:StatsBucket>
       </dxl:ColumnStatistics>
       <dxl:RelationStatistics Mdid="2.41665.1.1" Name="test" Rows="1000809.000000" EmptyRelation="false"/>
-      <dxl:Relation Mdid="6.41665.1.1" Name="test" IsTemporary="false" StorageType="Heap" DistributionPolicy="Random" Keys="7,1">
+      <dxl:Relation Mdid="6.41665.1.1" Name="test" IsTemporary="false" Rows="1000809.000000" StorageType="Heap" DistributionPolicy="Random" Keys="7,1">
         <dxl:Columns>
           <dxl:Column Name="a" Attno="1" Mdid="0.23.1.0" Nullable="true" ColWidth="4">
           </dxl:Column>
@@ -293,7 +293,7 @@ SELECT * FROM test WHERE a in (1, 47);
         </dxl:LogicalGet>
       </dxl:LogicalSelect>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="4">
+    <dxl:Plan Id="0" SpaceSize="3">
       <dxl:GatherMotion InputSegments="0,1,2" OutputSegments="-1">
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="6.000228" Rows="2.000000" Width="4"/>

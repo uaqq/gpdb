@@ -108,6 +108,7 @@ OBJS        = CParseHandlerAgg.o \
               CParseHandlerPhysicalTVF.o \
               CParseHandlerPhysicalWindow.o \
               CParseHandlerPlan.o \
+              CParseHandlerPlanHint.o \
               CParseHandlerProjElem.o \
               CParseHandlerProjList.o \
               CParseHandlerProperties.o \
@@ -181,7 +182,6 @@ OBJS        = CParseHandlerAgg.o \
               CParseHandlerStatsBound.o \
               CParseHandlerStatsDerivedColumn.o \
               CParseHandlerStatsDerivedRelation.o \
-              CParseHandlerSubqueryScan.o \
               CParseHandlerTableDescr.o \
               CParseHandlerTableScan.o \
               CParseHandlerTraceFlags.o \

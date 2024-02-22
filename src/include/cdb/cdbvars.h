@@ -19,6 +19,7 @@
 #ifndef CDBVARS_H
 #define CDBVARS_H
 
+#include "access/xlog.h"  /*RecoveryInProgress*/
 #include "access/xlogdefs.h"  /*XLogRecPtr*/
 #include "catalog/gp_segment_configuration.h" /* COORDINATOR_CONTENT_ID */
 
@@ -312,6 +313,15 @@ typedef enum GpVars_Interconnect_Address_Type
 
 extern int Gp_interconnect_address_type;
 
+typedef enum GpVars_Postmaster_Address_Family_Type
+{
+	POSTMASTER_ADDRESS_FAMILY_TYPE_AUTO = 0,
+	POSTMASTER_ADDRESS_FAMILY_TYPE_IPV4 = 1,
+	POSTMASTER_ADDRESS_FAMILY_TYPE_IPV6 = 2,
+} GpVars_Postmaster_Address_Family_Type;
+
+extern int Gp_postmaster_address_family_type;
+
 extern char *gp_interconnect_proxy_addresses;
 
 typedef enum GpVars_Interconnect_Method
@@ -344,6 +354,16 @@ extern int	Gp_interconnect_queue_depth;
  *
  */
 extern int	Gp_interconnect_snd_queue_depth;
+
+/*
+ * Cursor IC table size.
+ *
+ * For cursor case, there may be several concurrent interconnect
+ * instances on QD. The table is used to track the status of the
+ * instances, which is quite useful for "ACK the past and NAK the future" paradigm.
+ *
+ */
+extern int  Gp_interconnect_cursor_ic_table_size;
 extern int	Gp_interconnect_timer_period;
 extern int	Gp_interconnect_timer_checking_period;
 extern int	Gp_interconnect_default_rtt;
@@ -673,6 +693,7 @@ typedef enum
 									 * insert if no stats are present */
 } GpAutoStatsModeValue;
 
+extern bool	gp_autostats_lock_wait;
 extern int	gp_autostats_mode;
 extern int	gp_autostats_mode_in_functions;
 extern int	gp_autostats_on_change_threshold;
@@ -729,8 +750,10 @@ extern GpId GpIdentity;
 
 #define UNINITIALIZED_GP_IDENTITY_VALUE (-10000)
 #define IS_QUERY_DISPATCHER() (GpIdentity.segindex == COORDINATOR_CONTENT_ID)
+#define IS_HOT_STANDBY_QD() (EnableHotStandby && IS_QUERY_DISPATCHER() && RecoveryInProgress())
 
 #define IS_QUERY_EXECUTOR_BACKEND() (Gp_role == GP_ROLE_EXECUTE && gp_session_id > 0)
+#define IS_STANDBY_QE() (EnableHotStandby && IS_QUERY_EXECUTOR_BACKEND() && RecoveryInProgress())
 
 /* Stores the listener port that this process uses to listen for incoming
  * Interconnect connections from other Motion nodes.

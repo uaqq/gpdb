@@ -77,6 +77,7 @@ CreateGangFunc pCreateGangFunc = cdbgang_createGang_async;
 
 static bool NeedResetSession = false;
 static Oid	OldTempNamespace = InvalidOid;
+static Oid	OldTempToastNamespace = InvalidOid;
 
 /* WaitEventSet for dispatch */
 WaitEventSet *DispWaitSet = NULL;
@@ -227,6 +228,29 @@ segment_failure_due_to_missing_writer(const char *error_message)
 	return false;
 }
 
+#ifdef FAULT_INJECTOR
+bool
+segment_failure_due_to_fault_injector(const char *error_message)
+{
+	char	   *fatal = NULL,
+			   *ptr = NULL;
+	int			fatal_len = 0;
+
+	if (error_message == NULL)
+		return false;
+
+	fatal = _("FATAL");
+	fatal_len = strlen(fatal);
+
+	ptr = strstr(error_message, fatal);
+	if ((ptr != NULL) && ptr[fatal_len] == ':' &&
+		strstr(error_message, "fault triggered"))
+		return true;
+
+	return false;
+}
+#endif
+
 
 /*
  * Reads the GP catalog tables and build a CdbComponentDatabases structure.
@@ -318,8 +342,13 @@ addOneOption(StringInfo option, StringInfo diff, struct config_generic *guc)
 			}
 		case PGC_STRING:
 			{
+				/*
+				 * We should be more wary about NULL values for GUC string variables.
+				 * See PR #16694 for the details.
+				 */
 				struct config_string *sguc = (struct config_string *) guc;
-				const char *str = sguc->reset_val;
+				const char *reset_val = sguc->reset_val ? sguc->reset_val : "";
+				const char *variable = *sguc->variable ? *sguc->variable : "";
 				int			i;
 
 				appendStringInfo(option, " -c %s=", guc->name);
@@ -328,23 +357,22 @@ addOneOption(StringInfo option, StringInfo diff, struct config_generic *guc)
 				 * All whitespace characters must be escaped. See
 				 * pg_split_opts() in the backend.
 				 */
-				for (i = 0; str[i] != '\0'; i++)
+				for (i = 0; reset_val[i] != '\0'; i++)
 				{
-					if (isspace((unsigned char) str[i]))
+					if (isspace((unsigned char) reset_val[i]))
 						appendStringInfoChar(option, '\\');
 
-					appendStringInfoChar(option, str[i]);
+					appendStringInfoChar(option, reset_val[i]);
 				}
-				if (strcmp(str, *sguc->variable) != 0)
+				if (strcmp(reset_val, variable) != 0)
 				{
-					const char *p = *sguc->variable;
 					appendStringInfo(diff, " %s=", guc->name);
-					for (i = 0; p[i] != '\0'; i++)
+					for (i = 0; variable[i] != '\0'; i++)
 					{
-						if (isspace((unsigned char) p[i]))
+						if (isspace((unsigned char) variable[i]))
 							appendStringInfoChar(diff, '\\');
 
-						appendStringInfoChar(diff, p[i]);
+						appendStringInfoChar(diff, variable[i]);
 					}
 				}
 				break;
@@ -668,8 +696,7 @@ getCdbProcessesForQD(int isPrimary)
 
 	qdinfo = cdbcomponent_getComponentInfo(COORDINATOR_CONTENT_ID);
 
-	Assert(qdinfo->config->segindex == -1);
-	Assert(SEGMENT_IS_ACTIVE_PRIMARY(qdinfo));
+	Assert((qdinfo->config->segindex == -1 && SEGMENT_IS_ACTIVE_PRIMARY(qdinfo)) || IS_HOT_STANDBY_QD());
 	Assert(qdinfo->config->hostip != NULL);
 
 	proc = makeNode(CdbProcess);
@@ -761,6 +788,7 @@ GpDropTempTables(void)
 	int			oldSessionId = 0;
 	int			newSessionId = 0;
 	Oid			dropTempNamespaceOid;
+	Oid			dropTempToastNamespaceOid;
 
 	/* No need to reset session or drop temp tables */
 	if (!NeedResetSession && OldTempNamespace == InvalidOid)
@@ -802,14 +830,20 @@ GpDropTempTables(void)
 	}
 
 	dropTempNamespaceOid = OldTempNamespace;
+	dropTempToastNamespaceOid = OldTempToastNamespace;
 	OldTempNamespace = InvalidOid;
+	OldTempToastNamespace = InvalidOid;
 	NeedResetSession = false;
 
 	if (dropTempNamespaceOid != InvalidOid)
 	{
+		MemoryContext oldcontext = CurrentMemoryContext;
+
 		PG_TRY();
 		{
 			DropTempTableNamespaceForResetSession(dropTempNamespaceOid);
+			/* drop pg_temp_N schema entry from pg_namespace */
+			DropTempTableNamespaceEntryForResetSession(dropTempNamespaceOid, dropTempToastNamespaceOid);
 		} PG_CATCH();
 		{
 			/*
@@ -822,7 +856,10 @@ GpDropTempTables(void)
 			}
 
 			EmitErrorReport();
+
+			MemoryContextSwitchTo(oldcontext);
 			FlushErrorState();
+			AbortCurrentTransaction();
 		} PG_END_TRY();
 	}
 }
@@ -830,7 +867,13 @@ GpDropTempTables(void)
 void
 resetSessionForPrimaryGangLoss(void)
 {
-	if (ProcCanSetMppSessionId())
+	/*
+ 	 * resetSessionForPrimaryGangLoss could be called twice in a transacion,
+ 	 * we need to use NeedResetSession to double check if we should do the
+ 	 * real work to avoid that OldTempToastNamespace be makred invalid before
+ 	 * cleaning up the temp namespace.
+ 	 */
+	if (ProcCanSetMppSessionId() && !NeedResetSession)
 	{
 		/*
 		 * Not too early.
@@ -846,6 +889,8 @@ resetSessionForPrimaryGangLoss(void)
 		 */
 		if (TempNamespaceOidIsValid())
 		{
+
+			OldTempToastNamespace = GetTempToastNamespace();
 			/*
 			 * Here we indicate we don't have a temporary table namespace
 			 * anymore so all temporary tables of the previous session will be
@@ -861,7 +906,10 @@ resetSessionForPrimaryGangLoss(void)
 				 gp_session_id);
 		}
 		else
+		{
 			OldTempNamespace = InvalidOid;
+			OldTempToastNamespace = InvalidOid;
+		}
 	}
 }
 

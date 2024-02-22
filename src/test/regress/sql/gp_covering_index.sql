@@ -19,6 +19,8 @@
 -- s/Hash chain length \d+\.\d+ avg, \d+ max/Hash chain length ###/
 -- m/using \d+ of \d+ buckets/
 -- s/using \d+ of \d+ buckets/using ## of ### buckets/
+-- m/\(cost=.*\)/
+-- s/\(cost=.*\)//
 -- end_matchsubs
 
 set optimizer_trace_fallback=on;
@@ -264,12 +266,12 @@ SELECT a, b, c FROM test_cover_index_on_pt WHERE b<10;
 EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
 SELECT a, b FROM test_cover_index_on_pt WHERE a<10 and b=2;
 
--- Expect both sides of join to perform index only scan
+-- Expect join to perform dynamic index only scan
 EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
 SELECT pt.a, pt.b FROM test_cover_index_on_pt AS pt JOIN test_basic_cover_index AS t ON pt.a=t.a WHERE pt.a<10 and pt.b=2;
 SELECT pt.a, pt.b FROM test_cover_index_on_pt AS pt JOIN test_basic_cover_index AS t ON pt.a=t.a WHERE pt.a<10 and pt.b=2;
 
--- Expect both sides of join to perform index only scan
+-- Expect join to perform dynamic index only scan
 EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
 SELECT pt.a, pt.b FROM test_cover_index_on_pt AS pt LEFT JOIN test_basic_cover_index AS t ON pt.a=t.a WHERE pt.a<10 and pt.b=2;
 SELECT pt.a, pt.b FROM test_cover_index_on_pt AS pt LEFT JOIN test_basic_cover_index AS t ON pt.a=t.a WHERE pt.a<10 and pt.b=2;
@@ -360,6 +362,27 @@ VACUUM ANALYZE test_index_types;
 -- Check support index-only-scan on GIST indexes
 EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
 SELECT a, b FROM test_index_types WHERE a<@ box '(0,0,3,3)';
+
+-- KEYS: [a]    INCLUDED: []
+CREATE TABLE tsvector_table(t text, a tsvector) DISTRIBUTED BY (t);
+INSERT INTO tsvector_table values('\n', '');
+CREATE INDEX a_gist_index ON tsvector_table USING GIST (a);
+
+-- Check index-only-scan is not used when index can not return column
+SET optimizer_enable_indexscan=off;
+SET optimizer_enable_bitmapscan=off;
+SET optimizer_enable_tablescan=off;
+
+-- expect fallback
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF)
+SELECT count(*) FROM tsvector_table WHERE a @@ 'w:*|q:*';
+SELECT count(*) FROM tsvector_table WHERE a @@ 'w:*|q:*';
+
+RESET optimizer_enable_indexscan;
+RESET optimizer_enable_bitmapscan;
+RESET optimizer_enable_tablescan;
+
+
 
 -- KEYS: [a]    INCLUDED: [b]
 -- Check support dynamic-index-only-scan on GIST indexes

@@ -10,7 +10,7 @@ Greenplum Database 7 runs on the following operating system platforms:
 -   Oracle Linux 64-bit 8.7 or later, using the Red Hat Compatible Kernel \(RHCK\)
 -   Rocky Linux 8.7 or later
 
-> **Caution** Do not install anti-virus software of any type on Greenplum Database hosts. VMware Greenplum is not supported for use with anti-virus software because the additional CPU and IO load interferes with Greenplum Database operations.
+> **Note** If you use endpoint security software on your Greenplum Database hosts, it may affect your database performance and stability. See [About Endpoint Security Sofware](../security-guide/topics/preface.html#endpoint_security) for more information.
 
 > **Caution** A kernel issue in Red Hat Enterprise Linux 8.5 and 8.6 can cause I/O freezes and synchronization problems with XFS filesystems. This issue is fixed in RHEL 8.7. See [RHEL8: xfs_buf deadlock between inode deletion and block allocation](https://access.redhat.com/solutions/6984334).
 
@@ -25,32 +25,50 @@ Greenplum Database 7 requires the following software packages on RHEL systems. T
 -   bash
 -   bzip2
 -   curl
--   krb5
+-   iproute
+-   krb5-devel
 -   libcgroup-tools
 -   libcurl
 -   libevent
+-   libuuid
+-   libuv
 -   libxml2
 -   libyaml
--   zlib
+-   libzstd
 -   openldap
+-   openssh
 -   openssh-client
+-   openssh-server
 -   openssl
 -   openssl-libs
 -   perl
+-   python3
+-   python3-psycopg2
+-   python3-psutil
+-   python3-pyyaml
 -   python39
 -   readline
 -   rsync
--   R
--   sed \(used by `gpinitsystem`\)
+-   sed
 -   tar
+-   which
 -   zip
+-   zlib
 
 VMware Greenplum Database 7 client software requires these operating system packages:
 
 -   apr
--   apr-util
+-   bzip2
+-   libedit
 -   libyaml
 -   libevent
+-   libzstd
+-   openssh
+-   python3
+-   python3-psycopg2
+-   python3-psutil
+-   python3-pyyaml
+-   zlib
 
 > **Important** SSL is supported only on the Greenplum Database coordinator host system. It cannot be used on the segment host systems.
 
@@ -141,7 +159,7 @@ This table lists the versions of the Greenplum Extensions that are compatible wi
 </tr>
 <tr class="row">
 <td class="entry nocellnorowborder" style="vertical-align:top;" headers="d78288e683 "><a class="xref" href="../analytics/madlib.html">MADlib Machine Learning</a></td>
-<td class="entry nocellnorowborder" style="vertical-align:top;" headers="d78288e686 ">2.0.0</td>
+<td class="entry nocellnorowborder" style="vertical-align:top;" headers="d78288e686 ">2.1.0</td>
 <td class="entry cell-norowborder" style="vertical-align:top;" headers="d78288e689 ">Support matrix at <a class="xref" href="https://cwiki.apache.org/confluence/display/MADLIB/FAQ#FAQ-Q1-2WhatdatabaseplatformsdoesMADlibsupportandwhatistheupgradematrix?" target="_blank">MADlib FAQ</a>.</td>
 </tr>
 <tr class="row">
@@ -166,20 +184,15 @@ These Greenplum Database extensions are installed with Greenplum Database
 -   Greenplum Platform Extension Framework \(PXF\) - PXF provides access to Hadoop, object store, and SQL external data stores. Refer to [Accessing External Data with PXF](../admin_guide/external/pxf-overview.html) in the *Greenplum Database Administrator Guide* for PXF configuration and usage information.
 
     > **Note** VMware Greenplum Database versions starting with 6.19.0 no longer bundle a version of PXF. You can install PXF in your Greenplum cluster by installing [the independent distribution of PXF](https://docs.vmware.com/en/VMware-Greenplum-Platform-Extension-Framework/index.html) as described in the PXF documentation.
--   Greenplum Streaming Server v1.5.3 - The VMware Greenplum Streaming Server is an ETL tool that provides high speed, parallel data transfer from Informatica, Kafka, Apache NiFi and custom client data sources to a VMware Greenplum cluster. Refer to the [VMware Greenplum Streaming Server](https://docs.vmware.com/en/VMware-Greenplum-Streaming-Server/index.html) Documentation for more information about this feature.
+-   Greenplum Streaming Server v1.5.3 - The VMware Greenplum Streaming Server is an ETL tool that provides high speed, parallel data transfer from Kafka, Apache NiFi and custom client data sources to a VMware Greenplum cluster. Refer to the [VMware Greenplum Streaming Server](https://docs.vmware.com/en/VMware-Greenplum-Streaming-Server/index.html) Documentation for more information about this feature.
 -   Greenplum Streaming Server Kafka integration - The Kafka integration provides high speed, parallel data transfer from a Kafka cluster to a Greenplum Database cluster for batch and streaming ETL operations. It requires Kafka version 0.11 or newer for exactly-once delivery assurance. Refer to the [VMware Greenplum Streaming Server](https://docs.vmware.com/en/VMware-Greenplum-Streaming-Server/index.html) Documentation for more information about this feature.
 -   Greenplum Connector for Apache Spark v1.6.2 - The VMware Greenplum Connector for Apache Spark supports high speed, parallel data transfer between Greenplum and an Apache Spark cluster using Spark’s Scala API.
 -   Greenplum Connector for Apache NiFi v1.0.0 - The VMware Greenplum Connector for Apache NiFi enables you to set up a NiFi dataflow to load record-oriented data from any source into Greenplum Database.
--   Greenplum Informatica Connector v1.0.5 - The VMware Greenplum Connector for Informatica supports high speed data transfer from an Informatica PowerCenter cluster to a VMware Greenplum cluster for batch and streaming ETL operations.
--   Progress DataDirect JDBC Drivers v5.1.4+275, v6.0.0+181 - The Progress DataDirect JDBC drivers are compliant with the Type 4 architecture, but provide advanced features that define them as Type 5 drivers.
--   Progress DataDirect ODBC Drivers v7.1.6+7.16.389 - The Progress DataDirect ODBC drivers enable third party applications to connect via a common interface to the VMware Greenplum system.
+- Progress DataDirect JDBC Drivers v6.0.0+109 - The Progress DataDirect JDBC drivers are compliant with the Type 4 architecture, but provide advanced features that define them as Type 5 drivers.
+- Progress DataDirect ODBC Drivers 7.1.6+7.16.1058 - The Progress DataDirect ODBC drivers enable third party applications to connect via a common interface to the VMware Greenplum system.
 -   R2B X-LOG v5.x and v6.x - Real-time data replication solution that achieves high-speed database replication through the use of Redo Log Capturing method.
 
-> **Note** Greenplum 5.x clients (gpload, gpfdist) are supported with Greenplum 6.x and 7x Server and Informatica PowerCenter and PowerExchange 10.4.
-
-> **Note** VMware Greenplum 7 does not support the ODBC driver for Cognos Analytics V11.
-
-Connecting to IBM Cognos software with an ODBC driver is not supported. Greenplum Database supports connecting to IBM Cognos software with the DataDirect JDBC driver for VMware Greenplum. This driver is available as a download from [VMware Tanzu Network](https://network.pivotal.io/products/pivotal-gpdb).
+> **Note** Greenplum 5.x clients (gpload, gpfdist) are supported with Greenplum 6.x and 7x Server.
 
 ## <a id="topic_tnl_3mx_zgb"></a>Hardware Requirements
 

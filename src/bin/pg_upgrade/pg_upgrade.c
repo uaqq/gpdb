@@ -38,7 +38,8 @@
 
 #include "postgres_fe.h"
 
-#include "pg_upgrade.h"
+#include <time.h>
+
 #include "catalog/pg_class_d.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
@@ -56,6 +57,7 @@ static void prepare_new_globals(void);
 static void create_new_objects(void);
 static void copy_xact_xlog_xid(void);
 static void set_frozenxids(bool minmxid_only);
+static void make_outputdirs(char *pgdata);
 static void setup(char *argv0, bool *live_check);
 static void cleanup(void);
 
@@ -114,6 +116,22 @@ main(int argc, char **argv)
 	if(!is_skip_target_check())
 		adjust_data_dir(&new_cluster);
 
+	/*
+	 * Set mask based on PGDATA permissions, needed for the creation of the
+	 * output directories with correct permissions.
+	 */
+	if (!GetDataDirectoryCreatePerm(new_cluster.pgdata))
+		pg_fatal("could not read permissions of directory \"%s\": %s\n",
+				 new_cluster.pgdata, strerror(errno));
+
+	umask(pg_mode_mask);
+
+	/*
+	 * This needs to happen after adjusting the data directory of the new
+	 * cluster in adjust_data_dir().
+	 */
+	make_outputdirs(new_cluster.pgdata);
+
 	setup(argv[0], &live_check);
 
 	report_progress(NULL, CHECK, "Checking cluster compatibility");
@@ -131,21 +149,7 @@ main(int argc, char **argv)
 	 */
 	check_cluster_compatibility(live_check);
 
-	/* Set mask based on PGDATA permissions */
-	if (!is_skip_target_check())
-	{
-		if (!GetDataDirectoryCreatePerm(new_cluster.pgdata))
-		{
-			pg_log(PG_FATAL, "could not read permissions of directory \"%s\": %s\n",
-					 new_cluster.pgdata, strerror(errno));
-			exit(1);
-		}
-	}
-
-	umask(pg_mode_mask);
-
 	check_and_dump_old_cluster(live_check, &sequence_script_file_name);
-
 
 	/* -- NEW -- */
 
@@ -388,16 +392,82 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, const char 
 }
 #endif
 
+/*
+ * Create and assign proper permissions to the set of output directories
+ * used to store any data generated internally, filling in log_opts in
+ * the process.
+ */
+static void
+make_outputdirs(char *pgdata)
+{
+	FILE	   *fp;
+	char	  **filename;
+	time_t		run_time = time(NULL);
+	char		filename_path[MAXPGPATH];
+
+	log_opts.basedir = (char *) pg_malloc(MAXPGPATH);
+	snprintf(log_opts.basedir, MAXPGPATH, "%s/%s", pgdata, BASE_OUTPUTDIR);
+	log_opts.dumpdir = (char *) pg_malloc(MAXPGPATH);
+	snprintf(log_opts.dumpdir, MAXPGPATH, "%s/%s", pgdata, DUMP_OUTPUTDIR);
+	log_opts.logdir = (char *) pg_malloc(MAXPGPATH);
+	snprintf(log_opts.logdir, MAXPGPATH, "%s/%s", pgdata, LOG_OUTPUTDIR);
+
+	if (mkdir(log_opts.basedir, pg_dir_create_mode))
+		pg_fatal("could not create directory \"%s\": %m\n", log_opts.basedir);
+	if (mkdir(log_opts.dumpdir, pg_dir_create_mode))
+		pg_fatal("could not create directory \"%s\": %m\n", log_opts.dumpdir);
+	if (mkdir(log_opts.logdir, pg_dir_create_mode))
+		pg_fatal("could not create directory \"%s\": %m\n", log_opts.logdir);
+
+	snprintf(filename_path, sizeof(filename_path), "%s/%s", log_opts.logdir,
+			 INTERNAL_LOG_FILE);
+	if ((log_opts.internal = fopen_priv(filename_path, "a")) == NULL)
+		pg_fatal("could not open log file \"%s\": %m\n", filename_path);
+
+	/* label start of upgrade in logfiles */
+	for (filename = output_files; *filename != NULL; filename++)
+	{
+		snprintf(filename_path, sizeof(filename_path), "%s/%s",
+				 log_opts.logdir, *filename);
+		if ((fp = fopen_priv(filename_path, "a")) == NULL)
+			pg_fatal("could not write to log file \"%s\": %m\n", filename_path);
+
+		/* Start with newline because we might be appending to a file. */
+		fprintf(fp, "\n"
+				"-----------------------------------------------------------------\n"
+				"  pg_upgrade run on %s"
+				"-----------------------------------------------------------------\n\n",
+				ctime(&run_time));
+		fclose(fp);
+	}
+}
+
+
 static void
 setup(char *argv0, bool *live_check)
 {
-	char		exec_path[MAXPGPATH];	/* full path to my executable */
-
 	/*
 	 * make sure the user has a clean environment, otherwise, we may confuse
 	 * libpq when we connect to one (or both) of the servers.
 	 */
 	check_pghost_envvar();
+
+	/*
+	 * In case the user hasn't specified the directory for the new binaries
+	 * with -B, default to using the path of the currently executed pg_upgrade
+	 * binary.
+	 */
+	if (!new_cluster.bindir)
+	{
+		char		exec_path[MAXPGPATH];
+
+		if (find_my_exec(argv0, exec_path) < 0)
+			pg_fatal("%s: could not find own program executable\n", argv0);
+		/* Trim off program name and keep just path */
+		*last_dir_separator(exec_path) = '\0';
+		canonicalize_path(exec_path);
+		new_cluster.bindir = pg_strdup(exec_path);
+	}
 
 	verify_directories();
 
@@ -437,15 +507,6 @@ setup(char *argv0, bool *live_check)
 						 "Please shutdown that postmaster and try again.\n");
 		}
 	}
-
-	/* get path to pg_upgrade executable */
-	if (find_my_exec(argv0, exec_path) < 0)
-		pg_fatal("%s: could not find own program executable\n", argv0);
-
-	/* Trim off program name and keep just path */
-	*last_dir_separator(exec_path) = '\0';
-	canonicalize_path(exec_path);
-	os_info.exec_path = pg_strdup(exec_path);
 }
 
 
@@ -503,9 +564,10 @@ prepare_new_globals(void)
 	prep_status("Restoring global objects in the new cluster");
 
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "%s \"%s/psql\" " EXEC_PSQL_ARGS " %s -f \"%s\"",
+			  "%s \"%s/psql\" " EXEC_PSQL_ARGS " %s -f \"%s/%s\"",
 			  PG_OPTIONS_UTILITY_MODE_VERSION(new_cluster.major_version),
 			  new_cluster.bindir, cluster_conn_opts(&new_cluster),
+			  log_opts.dumpdir,
 			  GLOBALS_DUMP_FILE);
 	check_ok();
 }
@@ -516,7 +578,7 @@ create_new_objects(void)
 {
 	int			dbnum;
 
-	prep_status("Restoring database schemas in the new cluster\n");
+	prep_status_progress("Restoring database schemas in the new cluster");
 
 	/*
 	 * We cannot process the template1 database concurrently with others,
@@ -539,10 +601,9 @@ create_new_objects(void)
 		snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_LOG_FILE_MASK, old_db->db_oid);
 
 		/*
-		 * template1 and postgres databases will already exist in the target
-		 * installation, so tell pg_restore to drop and recreate them;
-		 * otherwise we would fail to propagate their database-level
-		 * properties.
+		 * template1 database will already exist in the target installation,
+		 * so tell pg_restore to drop and recreate it; otherwise we would fail
+		 * to propagate its database-level properties.
 		 */
 		create_opts = "--clean --create";
 
@@ -552,10 +613,11 @@ create_new_objects(void)
 				  true,
 				  "\"%s/pg_restore\" %s %s --exit-on-error --verbose "
 				  "--binary-upgrade "
-				  "--dbname postgres \"%s\"",
+				  "--dbname postgres \"%s/%s\"",
 				  new_cluster.bindir,
 				  cluster_conn_opts(&new_cluster),
 				  create_opts,
+				  log_opts.dumpdir,
 				  sql_file_name);
 
 		break;					/* done once we've processed template1 */
@@ -577,10 +639,9 @@ create_new_objects(void)
 		snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_LOG_FILE_MASK, old_db->db_oid);
 
 		/*
-		 * template1 and postgres databases will already exist in the target
-		 * installation, so tell pg_restore to drop and recreate them;
-		 * otherwise we would fail to propagate their database-level
-		 * properties.
+		 * postgres database will already exist in the target installation, so
+		 * tell pg_restore to drop and recreate it; otherwise we would fail to
+		 * propagate its database-level properties.
 		 */
 		if (strcmp(old_db->db_name, "postgres") == 0)
 			create_opts = "--clean --create";
@@ -591,11 +652,12 @@ create_new_objects(void)
 						   NULL,
 						   "%s \"%s/pg_restore\" %s %s --exit-on-error --verbose "
 						   "--binary-upgrade "
-						   "--dbname template1 \"%s\"",
+						   "--dbname template1 \"%s/%s\"",
 						   PG_OPTIONS_UTILITY_MODE_VERSION(new_cluster.major_version),
 						   new_cluster.bindir,
 						   cluster_conn_opts(&new_cluster),
 						   create_opts,
+						   log_opts.dumpdir,
 						   sql_file_name);
 	}
 
@@ -941,28 +1003,5 @@ cleanup(void)
 
 	/* Remove dump and log files? */
 	if (!log_opts.retain)
-	{
-		int			dbnum;
-		char	  **filename;
-
-		for (filename = output_files; *filename != NULL; filename++)
-			unlink(*filename);
-
-		/* remove dump files */
-		unlink(GLOBALS_DUMP_FILE);
-
-		if (old_cluster.dbarr.dbs)
-			for (dbnum = 0; dbnum < old_cluster.dbarr.ndbs; dbnum++)
-			{
-				char		sql_file_name[MAXPGPATH],
-							log_file_name[MAXPGPATH];
-				DbInfo	   *old_db = &old_cluster.dbarr.dbs[dbnum];
-
-				snprintf(sql_file_name, sizeof(sql_file_name), DB_DUMP_FILE_MASK, old_db->db_oid);
-				unlink(sql_file_name);
-
-				snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_LOG_FILE_MASK, old_db->db_oid);
-				unlink(log_file_name);
-			}
-	}
+		rmtree(log_opts.basedir, true);
 }

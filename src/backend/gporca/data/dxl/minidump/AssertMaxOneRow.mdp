@@ -760,7 +760,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
         </dxl:Opfamilies>
       </dxl:Index>
       <dxl:RelationStatistics Mdid="2.1259.1.1" Name="pg_class" Rows="337.000000" EmptyRelation="false"/>
-      <dxl:Relation Mdid="6.1259.1.0" Name="pg_class" IsTemporary="false" StorageType="Heap" DistributionPolicy="CoordinatorOnly" Keys="37,30">
+      <dxl:Relation Mdid="6.1259.1.0" Name="pg_class" IsTemporary="false" Rows="337.000000" StorageType="Heap" DistributionPolicy="CoordinatorOnly" Keys="37,30">
         <dxl:Columns>
           <dxl:Column Name="relname" Attno="1" Mdid="0.19.1.0" Nullable="false" ColWidth="64">
           </dxl:Column>
@@ -845,7 +845,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
         </dxl:IndexInfoList>
         <dxl:CheckConstraints/>
       </dxl:Relation>
-      <dxl:Relation Mdid="6.1259.1.1" Name="pg_class" IsTemporary="false" StorageType="Heap" DistributionPolicy="CoordinatorOnly" Keys="37,30">
+      <dxl:Relation Mdid="6.1259.1.1" Name="pg_class" IsTemporary="false" Rows="337.000000" StorageType="Heap" DistributionPolicy="CoordinatorOnly" Keys="37,30">
         <dxl:Columns>
           <dxl:Column Name="relname" Attno="1" Mdid="0.19.1.0" Nullable="false" ColWidth="64">
           </dxl:Column>
@@ -1488,7 +1488,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
     <dxl:Plan Id="0" SpaceSize="50">
       <dxl:NestedLoopJoin JoinType="Inner" IndexNestedLoopJoin="true" OuterRefAsParam="false">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="75.124253" Rows="337.000000" Width="4"/>
+          <dxl:Cost StartupCost="0" TotalCost="75.123856" Rows="337.000000" Width="4"/>
         </dxl:Properties>
         <dxl:ProjList>
           <dxl:ProjElem ColId="5" Alias="pg_toast_relidx">
@@ -1501,7 +1501,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
         </dxl:JoinFilter>
         <dxl:Assert ErrorCode="P0003">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="12.464146" Rows="1.000000" Width="4"/>
+            <dxl:Cost StartupCost="0" TotalCost="12.464047" Rows="1.000000" Width="4"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="48" Alias="reltoastidxid">
@@ -1518,7 +1518,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
           </dxl:AssertConstraintList>
           <dxl:Window PartitionColumns="">
             <dxl:Properties>
-              <dxl:Cost StartupCost="0" TotalCost="12.464142" Rows="337.000000" Width="12"/>
+              <dxl:Cost StartupCost="0" TotalCost="12.464043" Rows="337.000000" Width="12"/>
             </dxl:Properties>
             <dxl:ProjList>
               <dxl:ProjElem ColId="115" Alias="row_number">
@@ -1531,7 +1531,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
             <dxl:Filter/>
             <dxl:NestedLoopJoin JoinType="Inner" IndexNestedLoopJoin="true" OuterRefAsParam="false">
               <dxl:Properties>
-                <dxl:Cost StartupCost="0" TotalCost="12.464142" Rows="337.000000" Width="4"/>
+                <dxl:Cost StartupCost="0" TotalCost="12.464043" Rows="337.000000" Width="4"/>
               </dxl:Properties>
               <dxl:ProjList>
                 <dxl:ProjElem ColId="48" Alias="reltoastidxid">
@@ -1544,7 +1544,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
               </dxl:JoinFilter>
               <dxl:Assert ErrorCode="P0003">
                 <dxl:Properties>
-                  <dxl:Cost StartupCost="0" TotalCost="6.147225" Rows="1.000000" Width="4"/>
+                  <dxl:Cost StartupCost="0" TotalCost="6.147126" Rows="1.000000" Width="4"/>
                 </dxl:Properties>
                 <dxl:ProjList>
                   <dxl:ProjElem ColId="85" Alias="reltoastrelid">
@@ -1561,7 +1561,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
                 </dxl:AssertConstraintList>
                 <dxl:Window PartitionColumns="">
                   <dxl:Properties>
-                    <dxl:Cost StartupCost="0" TotalCost="6.147221" Rows="134.800000" Width="12"/>
+                    <dxl:Cost StartupCost="0" TotalCost="6.147122" Rows="134.800000" Width="12"/>
                   </dxl:Properties>
                   <dxl:ProjList>
                     <dxl:ProjElem ColId="114" Alias="row_number">
@@ -1574,7 +1574,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
                   <dxl:Filter/>
                   <dxl:IndexScan IndexScanDirection="Forward">
                     <dxl:Properties>
-                      <dxl:Cost StartupCost="0" TotalCost="6.146218" Rows="134.800000" Width="4"/>
+                      <dxl:Cost StartupCost="0" TotalCost="6.146119" Rows="134.800000" Width="4"/>
                     </dxl:Properties>
                     <dxl:ProjList>
                       <dxl:ProjElem ColId="85" Alias="reltoastrelid">
@@ -1585,7 +1585,7 @@ where oid= (select reltoastrelid from pg_class where relname='fsts_alter_set_sto
                     <dxl:IndexCondList>
                       <dxl:Comparison ComparisonOperator="=" OperatorMdid="0.93.1.0">
                         <dxl:Ident ColId="76" ColName="relname" TypeMdid="0.19.1.0"/>
-                        <dxl:ConstValue TypeMdid="0.19.1.0" Value="ZnN0c19hbHRlcl9zZXRfc3RvcmFnZV90YWJsZQAAAAAAAAAAAAAAAAAAAAAA&#xA;AAAAAAAAAAAAAAAAAAAAAAAAAA=="/>
+                        <dxl:ConstValue TypeMdid="0.19.1.0" Value="ZnN0c19hbHRlcl9zZXRfc3RvcmFnZV90YWJsZQAAAAAAAAAAAAAAAAAAAAAA&#10;AAAAAAAAAAAAAAAAAAAAAAAAAA=="/>
                       </dxl:Comparison>
                     </dxl:IndexCondList>
                     <dxl:Partitions/>

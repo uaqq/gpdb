@@ -24,10 +24,14 @@ The following Greenplum Database and PostgreSQL `contrib` modules are installed;
 -   [pageinspect](pageinspect.html) - Provides functions for low level inspection of the contents of database pages; available to superusers only.
 -   [pg\_trgm](pg_trgm.html) - Provides functions and operators for determining the similarity of alphanumeric text based on trigram matching. The module also provides index operator classes that support fast searching for similar strings.
 -   [pgcrypto](pgcrypto.html) - Provides cryptographic functions for Greenplum Database.
+-   [postgresml](postgresml.html) - Provides functions for using tens of thousands of pre-trained open source AI/machine learning models in VMware Greenplum.
 -   [pgvector](pgvector/pgvector.html) - Provides vector similarity search capabilities for Greenplum Database that enable searching, storing, and querying machine language-generated embeddings at large scale.
 -   [postgres\_fdw](postgres_fdw.html) - Provides a foreign data wrapper \(FDW\) for accessing data stored in an external PostgreSQL or Greenplum database.
 -   [postgresql-hll](postgresql-hll.html) - Provides HyperLogLog data types for PostgreSQL and Greenplum Database.
 -   [sslinfo](sslinfo.html) - Provides information about the SSL certificate that the current client provided when connecting to Greenplum.
+-   [tablefunc](tablefunc.html) - Provides various functions that return tables (multiple rows).
 -   [timestamp9](timestamp9.html) - Provides an efficient nanosecond-precision timestamp data type for Greenplum Database.
+-   [tsm_system_rows](tsm_system_rows.html) - Implements the `SYSTEM_ROWS` table sampling method.
+-   [tsm_system_time](tsm_system_time.html) - implements the `SYSTEM_TIME` table sampling method.
 -   [uuid-ossp](uuid-ossp.html) - Provides functions to generate universally unique identifiers (UUIDs).
 

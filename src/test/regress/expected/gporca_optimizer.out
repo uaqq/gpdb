@@ -1,6 +1,13 @@
 --
 -- ORCA tests
 --
+-- start_matchsubs
+-- m/\(cost=.*\)/
+-- s/\(cost=.*\)//
+--
+-- m/\(slice\d+; segments: \d+\)/
+-- s/\(slice\d+; segments: \d+\)//
+-- end_matchsubs
 -- show version
 SELECT count(*) from gp_opt_version();
  count 
@@ -13249,6 +13256,26 @@ explain (costs off) select count(*), t2.c from roj1 t1 left join roj2 t2 on t1.a
  Optimizer: Pivotal Optimizer (GPORCA)
 (12 rows)
 
+-- check that ROJ can be disabled via GUC
+set optimizer_enable_right_outer_join=off;
+explain (costs off) select count(*), t2.c from roj1 t1 left join roj2 t2 on t1.a = t2.c group by t2.c;
+                            QUERY PLAN
+------------------------------------------------------------------
+ GroupAggregate
+   Group Key: roj2.c
+   ->  Sort
+         Sort Key: roj2.c
+         ->  Hash Left Join
+               Hash Cond: (roj1.a = roj2.c)
+               ->  Gather Motion 3:1  (slice1; segments: 3)
+                     ->  Seq Scan on roj1
+               ->  Hash
+                     ->  Gather Motion 3:1  (slice2; segments: 3)
+                           ->  Seq Scan on roj2
+ Optimizer: GPORCA
+(12 rows)
+
+reset optimizer_enable_right_outer_join;
 reset optimizer_enable_motion_redistribute;
 reset enable_sort;
 -- simple check for btree indexes on AO tables
@@ -13290,9 +13317,8 @@ explain (costs off) select * from tpart_dim d join t_ao_btree f on d.a=f.a where
  Gather Motion 3:1  (slice1; segments: 3)
    ->  Nested Loop
          Join Filter: true
-         ->  Broadcast Motion 3:3  (slice2; segments: 3)
-               ->  Seq Scan on tpart_dim
-                     Filter: (b = 1)
+         ->  Seq Scan on tpart_dim
+               Filter: (b = 1)
          ->  Index Only Scan using t_ao_btree_ix on t_ao_btree
                Index Cond: (a = tpart_dim.a)
  Optimizer: Pivotal Optimizer (GPORCA)
@@ -14874,3 +14900,75 @@ SELECT CAST(a AS TEXT[]) FROM array_coerceviaio;
 (1 row)
 
 ---------------------------------------------------------------------------------
+DROP TABLE IF EXISTS schema_test_table;
+CREATE TABLE schema_test_table(a numeric, b numeric(5,2), c char(10) NOT NULL) distributed by (a);
+-- In 7x, redundant Result nodes in planned_stmt are being removed by ORCA,
+-- which caused the loss of typmod info of column type in plan.
+-- Below query is used by external libraries to fetch schema of table.
+-- Test that the typmod of column type is correct in explain plan.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM schema_test_table WHERE 1=0;
+                                                            QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------------
+ Result
+   Output: NULL::numeric, NULL::numeric(5,2), NULL::character(10)
+   One-Time Filter: false
+ Optimizer: GPORCA
+ Settings: optimizer_enable_coordinator_only_queries = 'on', optimizer_enable_master_only_queries = 'on', optimizer_segments = '3'
+(5 rows)
+
+---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+-- Test ALL NULL scalar array compare 
+create table DatumSortedSet_core (a int, b character varying NOT NULL) distributed by (a);
+explain select * from DatumSortedSet_core where b in (NULL, NULL);
+                QUERY PLAN
+-------------------------------------------
+ Result  (cost=0.00..0.00 rows=0 width=12)
+   One-Time Filter: false
+ Optimizer: GPORCA
+(3 rows)
+
+---------------------------------------------------------------------------------
+-- Testcases to validate the behavior of the GUC gp_max_system_slices
+-- start_ignore
+drop table if exists foo;
+drop table if exists bar;
+-- end_ignore
+create table foo (a int, b int) distributed by(a);
+create table bar (a int, b int) distributed by(a);
+-- gp_max_slices : 0 (unlimited) and gp_max_system_slices : 0 (unlimited)
+explain (costs off) select foo.a, foo.b from foo, bar where foo.b=bar.b;
+                          QUERY PLAN
+---------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)
+   ->  Hash Join
+         Hash Cond: (foo.b = bar.b)
+         ->  Seq Scan on foo
+         ->  Hash
+               ->  Broadcast Motion 3:3  (slice2; segments: 3)
+                     ->  Seq Scan on bar
+ Optimizer: GPORCA
+(8 rows)
+
+-- gp_max_slices : 1 and gp_max_system_slices : 0 (unlimited)
+-- Query should generate an error because the number of slices in the query exceeds the gp_max_slices
+set gp_max_slices=1;
+explain (costs off) select foo.a, foo.b from foo, bar where foo.b=bar.b;
+ERROR:  at most 1 slices are allowed in a query, current number: 3
+HINT:  rewrite your query
+-- gp_max_slices : 0 (unlimited) and gp_max_system_slices : 1
+-- Query should generate an error because the number of slices in the query exceeds the gp_max_system_slices
+set gp_max_system_slices=1;
+reset gp_max_slices;
+explain (costs off) select foo.a, foo.b from foo, bar where foo.b=bar.b;
+ERROR:  at most 1 slices are allowed in a query, current number: 3
+HINT:  rewrite your query
+reset gp_max_system_slices;
+-- Ensure that a regular user cannot set the GUC gp_max_system_slices
+create user ruser;
+set session authorization ruser;
+set gp_max_system_slices=10;
+ERROR:  permission denied to set parameter "gp_max_system_slices"
+reset session authorization;
+drop user ruser;
+drop table foo, bar;

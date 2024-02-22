@@ -270,6 +270,11 @@ CConfigParamMapping::SConfigMappingElem CConfigParamMapping::m_elements[] = {
 	 false,	 // m_negate_param
 	 GPOS_WSZ_LIT(
 		 "Enable Eager Agg transform for pushing aggregate below an innerjoin.")},
+
+	{EopttraceDisableOrderedAgg, &optimizer_enable_orderedagg,
+	 true,	// m_negate_param
+	 GPOS_WSZ_LIT("Disable ordered aggregate plans.")},
+
 	{EopttraceExpandFullJoin, &optimizer_expand_fulljoin,
 	 false,	 // m_negate_param
 	 GPOS_WSZ_LIT(
@@ -432,14 +437,14 @@ CConfigParamMapping::PackConfigParamInBitset(
 	{
 		// disable index only scan if the corresponding GUC is turned off
 		traceflag_bitset->ExchangeSet(
-			GPOPT_DISABLE_XFORM_TF(CXform::ExfIndexGet2IndexOnlyScan));
+			GPOPT_DISABLE_XFORM_TF(CXform::ExfIndexOnlyGet2IndexOnlyScan));
 	}
 
 	if (!optimizer_enable_dynamicindexonlyscan)
 	{
 		// disable dynamic index only scan if the corresponding GUC is turned off
 		traceflag_bitset->ExchangeSet(GPOPT_DISABLE_XFORM_TF(
-			CXform::ExfDynamicIndexGet2DynamicIndexOnlyScan));
+			CXform::ExfDynamicIndexOnlyGet2DynamicIndexOnlyScan));
 	}
 
 	if (!optimizer_enable_hashagg)
@@ -511,6 +516,15 @@ CConfigParamMapping::PackConfigParamInBitset(
 
 	// enable using opfamilies in distribution specs for GPDB 6
 	traceflag_bitset->ExchangeSet(EopttraceConsiderOpfamiliesForDistribution);
+
+	if (!optimizer_enable_right_outer_join)
+	{
+		// disable right outer join if the corresponding GUC is turned off
+		traceflag_bitset->ExchangeSet(
+			GPOPT_DISABLE_XFORM_TF(CXform::ExfLeftJoin2RightJoin));
+		traceflag_bitset->ExchangeSet(
+			GPOPT_DISABLE_XFORM_TF(CXform::ExfRightOuterJoin2HashJoin));
+	}
 
 	return traceflag_bitset;
 }

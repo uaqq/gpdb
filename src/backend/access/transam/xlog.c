@@ -6516,7 +6516,7 @@ StartupXLOG(void)
 	XLogCtlInsert *Insert;
 	CheckPoint	checkPoint;
 	bool		wasShutdown;
-	bool		reachedStopPoint = false;
+	bool		reachedRecoveryTarget = false;
 	bool		haveBackupLabel = false;
 	bool		haveTblspcMap = false;
 	XLogRecPtr	RecPtr,
@@ -7299,17 +7299,8 @@ StartupXLOG(void)
 			 */
 			StartupCLOG();
 			StartupSUBTRANS(oldestActiveXID);
-			/*
-			 * Do not initialize DistributedLog subsystem. Hot standby /
-			 * mirror cannot advance distributed xmin because QD does not
-			 * dispatch queries to mirrors.	 To align with upstream, we still
-			 * want a functional hot standby as far as a single primary/mirror
-			 * pair is concerned.  Initializing distributed log subsystem
-			 * affects oldest xmin computation in hot standby, the oldest xmin
-			 * never advances.	Therefore, avoid initializing distributed log
-			 * in hot standby.	If, in future, queries from QD need to be
-			 * dispatched to mirrors, this will have to change.
-			 */
+			DistributedLog_Startup(oldestActiveXID,
+								   XidFromFullTransactionId(ShmemVariableCache->nextFullXid));
 
 			/*
 			 * If we're beginning at a shutdown checkpoint, we know that
@@ -7475,7 +7466,7 @@ StartupXLOG(void)
 				 */
 				if (recoveryStopsBefore(xlogreader))
 				{
-					reachedStopPoint = true;	/* see below */
+					reachedRecoveryTarget = true;
 					break;
 				}
 
@@ -7655,7 +7646,7 @@ StartupXLOG(void)
 				/* Exit loop if we reached inclusive recovery target */
 				if (recoveryStopsAfter(xlogreader))
 				{
-					reachedStopPoint = true;
+					reachedRecoveryTarget = true;
 					break;
 				}
 
@@ -7667,7 +7658,7 @@ StartupXLOG(void)
 			 * end of main redo apply loop
 			 */
 
-			if (reachedStopPoint)
+			if (reachedRecoveryTarget)
 			{
 				if (!reachedConsistency)
 					ereport(FATAL,
@@ -7724,7 +7715,18 @@ StartupXLOG(void)
 			/* there are no WAL records following the checkpoint */
 			ereport(LOG,
 					(errmsg("redo is not required")));
+
 		}
+
+		/*
+		 * This check is intentionally after the above log messages that
+		 * indicate how far recovery went.
+		 */
+		if (ArchiveRecoveryRequested &&
+			recoveryTarget != RECOVERY_TARGET_UNSET &&
+			!reachedRecoveryTarget)
+			ereport(FATAL,
+					(errmsg("recovery ended before configured recovery target was reached")));
 	}
 
 	/*
@@ -8151,6 +8153,8 @@ StartupXLOG(void)
 	 * Okay, we're officially UP.
 	 */
 	InRecovery = false;
+
+	SIMPLE_FAULT_INJECTOR("out_of_recovery_in_startupxlog");
 
 	/*
 	 * If we are a standby with contentid -1 and undergoing promotion,

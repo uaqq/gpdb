@@ -59,7 +59,7 @@ NestedInSubqWithPrjListOuterRefNoInnerRef  InEqualityJoin Correlated-SemiJoin
 CorrelatedSemiJoin-True CorrelatedIN-LeftSemiJoin-True CorrelatedIN-LeftSemiNotIn-True
 InSubqWithPrjListOuterRefNoInnerRefColumnPlusConstIn CorrelatedIN-LeftSemiJoin-Limit
 CorrelatedLeftSemiNLJoinWithLimit PushFilterToSemiJoinLeftChild SubqOuterReferenceInClause
-SemiJoinDPE InSubqWithPrjListReturnSet;
+SemiJoinDPE InSubqWithPrjListReturnSet LeftSemiJoinWithRepOuterTab;
 
 CAntiSemiJoinTest:
 AntiSemiJoin2Select-1 AntiSemiJoin2Select-2 NOT-IN-NotNullBoth NOT-IN-NullInner NOT-IN-NullOuter
@@ -85,7 +85,7 @@ InferPredicatesJoinSubquery JoinPredFalseFilter;
 
 CLikeIDFTest:
 LIKE-Pattern-green LIKE-Pattern-green-2 LIKE-Pattern-Empty Nested-Or-Predicates Join-IDF
-LikePredStatsNotComparable PredStatsNotComparable ExtractPredicateFromDisj CollapseNot
+LikePredStatsNotComparable PredStatsNotComparable CollapseNot
 IDF-NotNullConstant IDF-NullConstant INDF-NotNullConstant INDF-NullConstant NullConstant-INDF-Col
 Join-INDF Join-INDF-NoBroadcast Join-INDF-Nulls-Not-Collocated;
 
@@ -109,7 +109,8 @@ IndexScan-ORPredsNonPart IndexScan-ORPredsAOPart IndexScan-AndedIn SubqInIndexPr
 IndexScan-OrderBy-on-Single-IndexCol IndexScan-OrderBy-on-Multiple-IndexCols IndexScan-OrderBy-on-NonIndexCol
 Forward-IndexScan-OrderBy-on-SingleCol-Index Backward-IndexScan-OrderBy-on-SingleCol-Index
 Forward-IndexScan-OrderBy-on-MultiCol-Index Backward-IndexScan-OrderBy-on-MultiCol-Index
-IndexScan-OrderBy-on-MultiCol-NonIndex;
+IndexScan-OrderBy-on-MultiCol-NonIndex Max-Aggregate-uses-IndexScan-and-Limit
+Min-Aggregate-uses-IndexScan-and-Limit IndexScan-IsNullPred IndexScan-IsNotNullPred;
 
 CBitmapScanTest:
 IndexedNLJBitmap BitmapIndex-ChooseHashJoin BitmapTableScan-AO-Btree-PickOnlyHighNDV
@@ -165,7 +166,7 @@ SingleColumnHomogenousIndexOnRoot-AO SingleColumnHomogenousIndexOnRoot-HEAP;
 
 CStatsTest:
 Stat-Derivation-Leaf-Pattern MissingBoolColStats JoinColWithOnlyNDV UnsupportedStatsPredicate
-StatsFilter-AnyWithNewColStats EquiJoinOnExpr-Supported EquiJoinOnExpr-Unsupported;
+StatsFilter-AnyWithNewColStats EquiJoinOnExpr-Supported EquiJoinOnExpr-Unsupported NdvPreservingExprProjectionEquiJoin NdvPreservingExprProjectionNonEquiJoin;
 
 CCorrelatedStatsTest:
 Correlated-Stat-Function-Dependency Correlated-Stat-Function-Dependency-2 Correlated-Stat-Function-Dependency-3
@@ -242,7 +243,7 @@ CPartTblDPETest:
 PartTbl-AvoidRangePred-DPE PartTbl-DPE-Correlated-NLOuter
 PartTbl-DPE PartTbl-DPE-GroupBy PartTbl-DPE-Limit
 DPE-with-unsupported-pred DPE-SemiJoin DPE-IN DPE-NOT-IN HJN-DPE-Bitmap-Outer-Child
-NLJ-Broadcast-DPE-Outer-Child PartTbl-MultiWayJoinWithDPE PartTbl-MultiWayJoinWithDPE-2
+NLJ-Broadcast-DPE-Outer-Child PartTbl-MultiWayJoinWithDPE-2
 PartTbl-LeftOuterHashJoin-DPE-IsNull PartTbl-LeftOuterNLJoin-DPE-IsNull
 PartTbl-List-DPE-Int-Predicates JoinOrderDPE PartTbl-DPE-Opfamily
 PartTbl-DPE-DynamicIndexOnlyScan-Range;
@@ -295,7 +296,7 @@ LeftJoinPruning LeftJoinPruningOuterQuery LeftJoinPruningInnerQuery LeftJoinPrun
 
 COuterJoin2Test:
 LOJ-IsNullPred Select-Proj-OuterJoin OuterJoin-With-OuterRefs Join-Disj-Subqs
-EffectOfLocalPredOnJoin EffectOfLocalPredOnJoin2 EffectOfLocalPredOnJoin3
+EffectOfLocalPredOnJoin EffectOfLocalPredOnJoin3
 LeftJoin-UnsupportedFilter-Cardinality LeftOuter2InnerUnionAllAntiSemiJoin
 LOJ-With-Single-Pred-On-Outer LOJ_NULLTEST-On-SelfCheck-Pred;
 
@@ -412,6 +413,12 @@ OrderedAgg_skewed_data;
 CoveringIndexTest:
 CoveringIndex-1 CoveringIndex-2 CoveringIndex-3 CoveringIndex-Cost-1 CoveringIndex-Cost-2
 CoveringIndex-DoesSupport-Gist CoveringIndex-DoesNotSupport-Gin;
+
+CPlanHintsTest:
+Hint-SeqScan-Over-Table Hint-SeqScan-Over-Join
+Hint-IndexScan-Over-Table Hint-IndexScan-Over-Join Hint-NoIndexScan-Over-Table
+Hint-IndexOnlyScan-Over-Table Hint-NoIndexOnlyScan-Over-Table
+Hint-BitmapScan-Over-Table Hint-NoBitmapScan-Over-Table;
 
 CForeignPartTest:
 ForeignPartUniform PartForeignMixed PartForeignDifferentServer PartForeignDifferentExecLocation PartForeignMixedDPE PartForeignMixedSPE PartForeignUniformSPE ForeignScanExecLocAnySimpleScan ForeignScanExecLocAnyJoin ForeignPartOneTimeFilterDPE

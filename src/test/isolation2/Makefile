@@ -60,7 +60,11 @@ clean distclean:
 	rm -f data
 	rm -rf $(pg_regress_clean_files)
 
-install: all gpdiff.pl gpstringsubs.pl
+# GPDB: tsm_system_rows module is needed by some tests.
+install-tests:
+	$(MAKE) -C $(top_builddir)/contrib/tsm_system_rows install
+
+install: all gpdiff.pl gpstringsubs.pl install-tests
 
 installcheck: install installcheck-resource-queue installcheck-parallel-retrieve-cursor installcheck-ic-tcp installcheck-ic-proxy
 	$(pg_isolation2_regress_installcheck) --init-file=$(top_builddir)/src/test/regress/init_file --init-file=./init_file_isolation2 --schedule=$(srcdir)/isolation2_schedule
@@ -76,6 +80,9 @@ installcheck-parallel-retrieve-cursor: install
 
 installcheck-mirrorless: install
 	$(pg_isolation2_regress_installcheck) $(EXTRA_REGRESS_OPTS) --init-file=$(top_builddir)/src/test/regress/init_file --init-file=./init_file_isolation2 --schedule=$(srcdir)/mirrorless_schedule --dbname=isolation2-mirrorless
+
+installcheck-hot-standby: install
+	$(pg_isolation2_regress_installcheck) $(EXTRA_REGRESS_OPTS) --init-file=$(top_builddir)/src/test/regress/init_file --init-file=./init_file_isolation2 --schedule=$(srcdir)/hot_standby_schedule --dbname=isolation2-hot-standby
 
 installcheck-ic-tcp: install
 ifeq ($(findstring gp_interconnect_type=tcp,$(PGOPTIONS)),gp_interconnect_type=tcp)

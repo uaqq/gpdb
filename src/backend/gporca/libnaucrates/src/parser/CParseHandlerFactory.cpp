@@ -61,6 +61,7 @@ CParseHandlerFactory::Init(CMemoryPool *mp)
 		{EdxltokenCTEConfig, &CreateCTECfgParseHandler},
 		{EdxltokenCostModelConfig, &CreateCostModelCfgParseHandler},
 		{EdxltokenHint, &CreateHintParseHandler},
+		{EdxltokenPlanHint, &CreatePlanHintParseHandler},
 		{EdxltokenWindowOids, &CreateWindowOidsParseHandler},
 
 		{EdxltokenRelation, &CreateMDRelationParseHandler},
@@ -106,7 +107,6 @@ CParseHandlerFactory::Init(CMemoryPool *mp)
 		{EdxltokenPhysicalRoutedDistributeMotion,
 		 &CreateRoutedMotionParseHandler},
 		{EdxltokenPhysicalRandomMotion, &CreateRandomMotionParseHandler},
-		{EdxltokenPhysicalSubqueryScan, &CreateSubqueryScanParseHandler},
 		{EdxltokenPhysicalResult, &CreateResultParseHandler},
 		{EdxltokenPhysicalLimit, &CreateLimitParseHandler},
 		{EdxltokenPhysicalSort, &CreateSortParseHandler},
@@ -436,6 +436,16 @@ CParseHandlerFactory::CreateHintParseHandler(
 		CParseHandlerHint(mp, parse_handler_mgr, parse_handler_root);
 }
 
+// creates a parse handler for parsing plan hint configuration
+CParseHandlerBase *
+CParseHandlerFactory::CreatePlanHintParseHandler(
+	CMemoryPool *mp, CParseHandlerManager *parse_handler_mgr,
+	CParseHandlerBase *parse_handler_root)
+{
+	return GPOS_NEW(mp)
+		CParseHandlerPlanHint(mp, parse_handler_mgr, parse_handler_root);
+}
+
 // creates a parse handler for parsing window oids configuration
 CParseHandlerBase *
 CParseHandlerFactory::CreateWindowOidsParseHandler(
@@ -748,16 +758,6 @@ CParseHandlerFactory::CreateForeignScanParseHandler(
 {
 	return GPOS_NEW(mp)
 		CParseHandlerForeignScan(mp, parse_handler_mgr, parse_handler_root);
-}
-
-// creates a parse handler for parsing a subquery scan
-CParseHandlerBase *
-CParseHandlerFactory::CreateSubqueryScanParseHandler(
-	CMemoryPool *mp, CParseHandlerManager *parse_handler_mgr,
-	CParseHandlerBase *parse_handler_root)
-{
-	return GPOS_NEW(mp)
-		CParseHandlerSubqueryScan(mp, parse_handler_mgr, parse_handler_root);
 }
 
 // creates a parse handler for parsing a result node

@@ -281,7 +281,7 @@
       <dxl:ColumnStatistics Mdid="1.503834.1.1.7" Name="cmax" Width="4.000000"/>
       <dxl:ColumnStatistics Mdid="1.503834.1.1.6" Name="xmax" Width="4.000000"/>
       <dxl:RelationStatistics Mdid="2.503834.1.1" Name="r" Rows="101432.000000"/>
-      <dxl:Relation Mdid="6.503834.1.1" Name="r" IsTemporary="false" StorageType="Heap" DistributionPolicy="Hash" DistributionColumns="0" Keys="9,3">
+      <dxl:Relation Mdid="6.503834.1.1" Name="r" IsTemporary="false" Rows="101432.000000" StorageType="Heap" DistributionPolicy="Hash" DistributionColumns="0" Keys="9,3">
         <dxl:Columns>
           <dxl:Column Name="a" Attno="1" Mdid="0.23.1.0" Nullable="true" ColWidth="4">
           </dxl:Column>
@@ -373,7 +373,7 @@
         </dxl:UnionAll>
       </dxl:LogicalSelect>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="1">
+    <dxl:Plan Id="0" SpaceSize="3">
       <dxl:GatherMotion InputSegments="0,1" OutputSegments="-1">
         <dxl:Properties>
           <dxl:Cost StartupCost="0" TotalCost="438.672316" Rows="101432.000000" Width="8"/>

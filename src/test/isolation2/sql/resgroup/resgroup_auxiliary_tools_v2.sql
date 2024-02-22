@@ -21,6 +21,7 @@ CREATE LANGUAGE plpython3u;
 -- enable resource group and restart cluster.
 -- start_ignore
 ! gpconfig -c gp_resource_manager -v group-v2;
+! gpconfig -c gp_resource_group_cgroup_parent -v "gpdb"
 ! gpconfig -c max_connections -v 250 -m 25;
 ! gpconfig -c runaway_detector_activation_percent -v 100;
 ! gpstop -rai;
@@ -259,7 +260,7 @@ $$ LANGUAGE plpython3u;
                                 capture_output=True, check=True).stdout
         session_pids = stdout.splitlines()
 
-        path = "/sys/fs/cgroup/gpdb/{}/cgroup.procs".format(groupid)
+        path = "/sys/fs/cgroup/gpdb/{}/queries/cgroup.procs".format(groupid)
         stdout = subprocess.run(["ssh", "{}".format(host), "cat {}".format(path)], capture_output=True, check=True).stdout
         cgroups_pids = stdout.splitlines()
 

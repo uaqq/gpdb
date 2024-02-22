@@ -89,6 +89,11 @@ extern List *get_qual_from_partbound(Relation rel, Relation parent,
 									 PartitionBoundSpec *spec);
 extern PartitionBoundInfo partition_bounds_create(PartitionBoundSpec **boundspecs,
 												  int nparts, PartitionKey key, int **mapping);
+extern PartitionBoundInfo partition_bounds_create_and_validate(PartitionBoundSpec **boundspecs,
+															   int nparts,
+															   PartitionKey key,
+															   int **mapping,
+															   Oid *oids);
 extern bool partition_bounds_equal(int partnatts, int16 *parttyplen,
 								   bool *parttypbyval, PartitionBoundInfo b1,
 								   PartitionBoundInfo b2);
@@ -115,5 +120,20 @@ extern int	partition_range_datum_bsearch(FmgrInfo *partsupfunc,
 										  int nvalues, Datum *values, bool *is_equal);
 extern int	partition_hash_bsearch(PartitionBoundInfo boundinfo,
 								   int modulus, int remainder);
+static inline const char *
+PartitionStrategyGetName(char strategy)
+{
+	switch (strategy)
+	{
+		case PARTITION_STRATEGY_LIST:
+			return "list";
+		case PARTITION_STRATEGY_HASH:
+			return "hash";
+		case PARTITION_STRATEGY_RANGE:
+			return "range";
+		default:
+			ereport(ERROR, (errmsg("unrecognized partitioning strategy")));
+	}
+}
 
 #endif							/* PARTBOUNDS_H */

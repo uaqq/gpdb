@@ -166,11 +166,11 @@ CLogicalDynamicIndexGet::PopCopyWithRemappedColumns(
 	CColRef2dArray *pdrgpdrgpcrPart = CUtils::PdrgpdrgpcrRemap(
 		mp, m_pdrgpdrgpcrPart, colref_mapping, must_exist);
 
-	m_ptabdesc->AddRef();
+	Ptabdesc()->AddRef();
 	m_partition_mdids->AddRef();
 
 	return GPOS_NEW(mp) CLogicalDynamicIndexGet(
-		mp, pmdindex, m_ptabdesc, m_ulOriginOpId, pnameAlias, m_scan_id,
+		mp, pmdindex, Ptabdesc(), m_ulOriginOpId, pnameAlias, m_scan_id,
 		pdrgpcrOutput, pdrgpdrgpcrPart, m_partition_mdids,
 		m_ulUnindexedPredColCount);
 }
@@ -202,8 +202,6 @@ CLogicalDynamicIndexGet::PxfsCandidates(CMemoryPool *mp) const
 {
 	CXformSet *xform_set = GPOS_NEW(mp) CXformSet(mp);
 	(void) xform_set->ExchangeSet(CXform::ExfDynamicIndexGet2DynamicIndexScan);
-	(void) xform_set->ExchangeSet(
-		CXform::ExfDynamicIndexGet2DynamicIndexOnlyScan);
 	return xform_set;
 }
 

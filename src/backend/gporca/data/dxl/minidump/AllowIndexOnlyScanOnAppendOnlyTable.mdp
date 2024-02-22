@@ -569,7 +569,7 @@
       </dxl:GPDBScalarOp>
       <dxl:RelationExtendedStatistics Mdid="10.90470.1.0" Name="mytable"/>
       <dxl:RelationStatistics Mdid="2.90470.1.0" Name="mytable" Rows="1000.000000" RelPages="1" RelAllVisible="0" EmptyRelation="false"/>
-      <dxl:Relation Mdid="6.90470.1.0" Name="mytable" IsTemporary="false" StorageType="AppendOnly, Row-oriented" AppendOnlyVersion="2" DistributionPolicy="Hash" DistributionColumns="0" Keys="7,1">
+      <dxl:Relation Mdid="6.90470.1.0" Name="mytable" IsTemporary="false" Rows="1000.000000" StorageType="AppendOnly, Row-oriented" AppendOnlyVersion="2" DistributionPolicy="Hash" DistributionColumns="0" Keys="7,1">
         <dxl:Columns>
           <dxl:Column Name="a" Attno="1" Mdid="0.20.1.0" Nullable="true" ColWidth="8">
           </dxl:Column>
@@ -628,10 +628,10 @@
         </dxl:LogicalGet>
       </dxl:LogicalSelect>
     </dxl:Query>
-    <dxl:Plan Id="0" SpaceSize="3">
+    <dxl:Plan Id="0" SpaceSize="2">
       <dxl:GatherMotion InputSegments="0,1,2" OutputSegments="-1">
         <dxl:Properties>
-          <dxl:Cost StartupCost="0" TotalCost="6.005581" Rows="1.000000" Width="8"/>
+          <dxl:Cost StartupCost="0" TotalCost="6.005535" Rows="1.000000" Width="8"/>
         </dxl:Properties>
         <dxl:ProjList>
           <dxl:ProjElem ColId="0" Alias="a">
@@ -642,7 +642,7 @@
         <dxl:SortingColumnList/>
         <dxl:IndexOnlyScan IndexScanDirection="Forward">
           <dxl:Properties>
-            <dxl:Cost StartupCost="0" TotalCost="6.005546" Rows="1.000000" Width="8"/>
+            <dxl:Cost StartupCost="0" TotalCost="6.005500" Rows="1.000000" Width="8"/>
           </dxl:Properties>
           <dxl:ProjList>
             <dxl:ProjElem ColId="0" Alias="a">

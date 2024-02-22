@@ -9,7 +9,7 @@ Recovers a primary or mirror segment instance that has been marked as down \(if 
 gprecoverseg [[-p <new_recover_host>[,...]] | -i <recover_config_file>] [-d <coordinator_data_directory>] 
              [-b <segment_batch_size>] [-B <batch_size>] [-F [-s]] [-a] [-q] [--differential]
 	           [--hba-hostnames <boolean>] 
-             [--no-progress] [-l <logfile_directory>]
+             [--no-progress] [-l <logfile_directory>] [--max-rate <max_rate>]
 
 gprecoverseg -r [--replay-lag <replay_lag>] [--disable-replay-lag]
 
@@ -102,7 +102,7 @@ The recovery process marks the segment as up again in the Greenplum Database sys
 -i recover\_config\_file
 :   Specifies the name of a file with the details about failed segments to recover.
 
-    Each line in the config file specifies a segment to recover. This line can have one of two formats. In the event of in-place \(incremental\) recovery, enter one group of pipe-delimited fields in the line. For example:
+    Each line in the config file specifies a segment to recover. This line can have one of three formats. In the event of in-place \(incremental\) recovery, enter one group of pipe-delimited fields in the line. For example:
 
     ```
     failedAddress|failedPort|failedDataDirectory
@@ -125,6 +125,18 @@ The recovery process marks the segment as up again in the Greenplum Database sys
     ```
     failedHostname|failedAddress|failedPort|failedDataDirectory<SPACE>newHostname|newAddress|newPort|newDataDirectory
     ```
+    
+    To do mix recovery, include a field with values I/D/F/i/d/f on each line. Default is incremental recovery if recovery_type field is not provided.
+  
+    ```
+    recoveryType|failedAddress|failedPort|failedDataDirectory
+    ```
+
+    recoveryType field supports below values:
+        I/i for incremental recovery
+        D/d for differential recovery
+        F/f for full recovery
+
 
     > **Note** Lines beginning with `#` are treated as comments and ignored.
 
@@ -142,12 +154,28 @@ The recovery process marks the segment as up again in the Greenplum Database sys
     sdw1-1|50001|/data1/mirror/gpseg16<SPACE>sdw4-1|50001|/data1/recover1/gpseg16
     ```
 
+    In-place recovery of down mirrors with recovery type:
+
+    ```
+    sdw1-1|50001|/data1/mirror/gpseg1   // Does incremental recovery (By default)
+    I|sdw1-1|50001|/data1/mirror/gpseg1   // Does incremental recovery
+    i|sdw1-1|50001|/data1/mirror/gpseg1   // Does incremental recovery
+    D|sdw2-1|50002|/data1/mirror/gpseg2   // Does Differential recovery
+    d|sdw2-1|50002|/data1/mirror/gpseg2   // Does Differential recovery
+    F|sdw3-1|50003|/data1/mirror/gpseg3   // Does Full recovery
+    f|sdw3-1|50003|/data1/mirror/gpseg3   // Does Full recovery
+    ```
+    
     **Obtaining a Sample File**
 
     You can use the `-o` option to output a sample recovery configuration file to use as a starting point. The output file lists the currently invalid segments and their default recovery location. This file format can be used with the `-i` option for in-place \(incremental\) recovery.
 
 -l logfile\_directory
 :   The directory to write the log file. Defaults to `~/gpAdminLogs`.
+
+--max-rate <max_rate>
+
+:   Optional. Specifies the maximum bandwidth rate for a full recovery of failed segments. The rate is specified in kB/s. You may use the suffix `k` or `M` to signify kB/s or MB/s. The valid values ranges from 32kB/s to 1048576kB/s (1024MB/s). The default value is to use the entire available network bandwidth to perform the full recovery. Note that incremental and differential recoveries do not support this option, they use the entire available network bandwidth.
 
 -o output\_recover\_config\_file
 :   Specifies a file name and location to output a sample recovery configuration file. This file can be edited to supply alternate recovery locations if needed. The following example outputs the default recovery configuration file:

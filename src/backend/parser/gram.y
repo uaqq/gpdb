@@ -4583,7 +4583,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $12;
 					n->tablespacename = $13;
 					n->if_not_exists = false;
-					n->gp_style_alter_part = false;
+					n->origin = ORIGIN_NO_GEN;
 					n->distributedBy = (DistributedBy *) $14;
 					n->relKind = RELKIND_RELATION;
 
@@ -4614,7 +4614,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $15;
 					n->tablespacename = $16;
 					n->if_not_exists = true;
-					n->gp_style_alter_part = false;
+					n->origin = ORIGIN_NO_GEN;
 					n->distributedBy = (DistributedBy *) $17;
 					n->relKind = RELKIND_RELATION;
 
@@ -4646,7 +4646,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $11;
 					n->tablespacename = $12;
 					n->if_not_exists = false;
-					n->gp_style_alter_part = false;
+					n->origin = ORIGIN_NO_GEN;
 					n->distributedBy = (DistributedBy *) $13;
 					n->relKind = RELKIND_RELATION;
 
@@ -4678,7 +4678,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $14;
 					n->tablespacename = $15;
 					n->if_not_exists = true;
-					n->gp_style_alter_part = false;
+					n->origin = ORIGIN_NO_GEN;
 					n->distributedBy = (DistributedBy *) $16;
 					n->relKind = RELKIND_RELATION;
 
@@ -4710,7 +4710,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $13;
 					n->tablespacename = $14;
 					n->if_not_exists = false;
-					n->gp_style_alter_part = false;
+					n->origin = ORIGIN_NO_GEN;
 					n->distributedBy = NULL;
 					n->relKind = RELKIND_RELATION;
 
@@ -4742,7 +4742,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $16;
 					n->tablespacename = $17;
 					n->if_not_exists = true;
-					n->gp_style_alter_part = false;
+					n->origin = ORIGIN_NO_GEN;
 					n->distributedBy = NULL;
 					n->relKind = RELKIND_RELATION;
 
@@ -5461,6 +5461,10 @@ OptFirstPartitionSpec: PartitionSpec opt_list_subparts OptTabPartitionSpec
 					if ($1->gpPartDef)
 						check_expressions_in_partition_key($1, yyscanner);
 					$$ = $1;
+					/* Do not allow SUBPARTITION BY clause for empty partition hierarchy */
+					if (!$1->gpPartDef && $1->subPartSpec)
+						ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("SUBPARTITION BY clause is not allowed when no partitions specified at depth 1")));
 
 					pg_yyget_extra(yyscanner)->tail_partition_magic = true;
 				}
@@ -5488,6 +5492,12 @@ OptSecondPartitionSpec:
 					 */
 					if (n->gpPartDef)
 						check_expressions_in_partition_key(n, yyscanner);
+
+					/* Do not allow SUBPARTITION BY clause for empty partition hierarchy */
+					if (!n->gpPartDef && n->subPartSpec)
+						ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("SUBPARTITION BY clause is not allowed when no partitions specified at depth 1")));
+
 					$$ = n;
 
 					pg_yyget_extra(yyscanner)->tail_partition_magic = false;

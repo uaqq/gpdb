@@ -1090,6 +1090,7 @@ _outDQAExpr(StringInfo str, const DQAExpr *node)
     WRITE_INT_FIELD(agg_expr_id);
     WRITE_BITMAPSET_FIELD(agg_args_id_bms);
     WRITE_NODE_FIELD(agg_filter);
+	WRITE_BITMAPSET_FIELD(agg_vars_ref);
 }
 
 static void
@@ -3168,7 +3169,7 @@ _outCreateStmtInfo(StringInfo str, const CreateStmt *node)
 	WRITE_STRING_FIELD(tablespacename);
 	WRITE_STRING_FIELD(accessMethod);
 	WRITE_BOOL_FIELD(if_not_exists);
-	WRITE_BOOL_FIELD(gp_style_alter_part);
+	WRITE_ENUM_FIELD(origin, CreateStmtOrigin);
 
 	WRITE_NODE_FIELD(distributedBy);
 	WRITE_NODE_FIELD(partitionBy);

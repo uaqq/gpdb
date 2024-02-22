@@ -1299,7 +1299,15 @@ appendonly_getblock(AppendOnlyScanDesc scan, int64 targrow, int64 *startrow)
 			Assert(rowcount > 0);
 			if (*startrow + rowcount - 1 >= targrow)
 			{
+				int64 blocksRead;
+
 				AppendOnlyExecutorReadBlock_GetContents(varblock);
+
+				AppendOnlyScanDesc_UpdateTotalBytesRead(scan);
+				blocksRead = RelationGuessNumberOfBlocksFromSize(scan->totalBytesRead);
+				pgstat_count_buffer_read_ao(scan->aos_rd,
+											blocksRead);
+
 				/* got a new buffer to consume */
 				scan->needNextBuffer = false;
 				return;
@@ -1353,11 +1361,7 @@ appendonly_blkdirscan_get_target_tuple(AppendOnlyScanDesc scan, int64 targrow, T
 						RelationGetRelationName(blkdir->aoRel))));
 	}
 
-	/*
-	 * Set the current segfile info in the blkdir struct, so we can
-	 * reuse the (cached) block directory entry during the tuple fetch
-	 * operation below. See AppendOnlyBlockDirectory_GetCachedEntry().
-	 */
+	/* Set the current segfile info to the target one. */
 	blkdir->currentSegmentFileNum = blkdir->segmentFileInfo[segidx]->segno;
 	blkdir->currentSegmentFileInfo = blkdir->segmentFileInfo[segidx];
 
@@ -1378,9 +1382,9 @@ appendonly_blkdirscan_get_target_tuple(AppendOnlyScanDesc scan, int64 targrow, T
 									&rowsprocessed);
 
 	elog(DEBUG2, "AOBlkDirScan_GetRowNum(segno: %d, col: %d, targrow: %ld): "
-		 "[segfirstrow: %ld, segrowsprocessed: %ld, rownum: %ld, cached_mpentry_num: %d]",
+		 "[segfirstrow: %ld, segrowsprocessed: %ld, rownum: %ld, cached_entry_no: %d]",
 		 segno, 0, targrow, scan->segfirstrow, scan->segrowsprocessed, rownum,
-		 blkdir->cached_mpentry_num);
+		 blkdir->minipages[0].cached_entry_no);
 	
 	if (rownum < 0)
 		return false;
@@ -1391,8 +1395,16 @@ appendonly_blkdirscan_get_target_tuple(AppendOnlyScanDesc scan, int64 targrow, T
 	AOTupleIdInit(&aotid, segno, rownum);
 
 	/* ensure the target minipage entry was stored in fetch descriptor */
-	Assert(blkdir->cached_mpentry_num != InvalidEntryNum);
+	Assert(scan->blkdirscan->mpentryno != InvalidEntryNum);
 	Assert(blkdir->minipages == &blkdir->minipages[0]);
+
+	/*
+	 * Update cached_entry_no to the entry obtained from
+	 * AOBlkDirScan_GetRowNum(), then we can reuse it directly
+	 * during fetch below.
+	 * See cached_entry_no in find_minipage_entry().
+	 */
+	blkdir->minipages[0].cached_entry_no = scan->blkdirscan->mpentryno;
 
 	/* fetch the target tuple */
 	if(!appendonly_fetch(scan->aofetch, &aotid, slot))
@@ -1410,6 +1422,9 @@ appendonly_blkdirscan_get_target_tuple(AppendOnlyScanDesc scan, int64 targrow, T
  * the corresponding tuple in 'slot'.
  *
  * If the tuple is visible, return true. Otherwise, return false.
+ *
+ * Note: for the duration of the scan, we expect targrow to be monotonically
+ * increasing in between successive calls.
  */
 bool
 appendonly_get_target_tuple(AppendOnlyScanDesc aoscan, int64 targrow, TupleTableSlot *slot)
@@ -1480,8 +1495,9 @@ appendonlygettup(AppendOnlyScanDesc scan,
 				 TupleTableSlot *slot)
 {
 	Assert(ScanDirectionIsForward(dir));
-	/* should not be in ANALYZE - we use a different API */
+	/* should not be in ANALYZE/SampleScan - we use a different API */
 	Assert((scan->rs_base.rs_flags & SO_TYPE_ANALYZE) == 0);
+	Assert((scan->rs_base.rs_flags & SO_TYPE_SAMPLESCAN) == 0);
 	Assert(scan->usableBlockSize > 0);
 
 	bool		isSnapshotAny = (scan->snapshot == SnapshotAny);
@@ -1793,12 +1809,14 @@ appendonly_beginrangescan_internal(Relation relation,
 
 	scan->blockDirectory = NULL;
 
-	if ((flags & SO_TYPE_ANALYZE) != 0)
+	if ((flags & SO_TYPE_ANALYZE) != 0 || (flags & SO_TYPE_SAMPLESCAN) != 0)
 	{
 		scan->segrowsprocessed = 0;
 		scan->segfirstrow = 0;
 		scan->targrow = 0;
 	}
+
+	scan->blkdirscan = NULL;
 
 	if (segfile_count > 0)
 	{
@@ -1815,14 +1833,20 @@ appendonly_beginrangescan_internal(Relation relation,
 							   AccessShareLock,
 							   appendOnlyMetaDataSnapshot);
 
-		if ((flags & SO_TYPE_ANALYZE) != 0)
+		/*
+		 * Initialize a AOBlkdirScan only if we are doing sampling and if we
+		 * have a blkdir relation.
+		 */
+		if ((flags & SO_TYPE_ANALYZE) != 0 || (flags & SO_TYPE_SAMPLESCAN) != 0)
 		{
-			if (OidIsValid(blkdirrelid))
+			if (OidIsValid(blkdirrelid) && gp_enable_blkdir_sampling)
 				appendonly_blkdirscan_init(scan);
 		}
 	}
 
 	scan->totalBytesRead = 0;
+
+	scan->sampleTargetBlk = -1;
 
 	return scan;
 }
@@ -1920,8 +1944,7 @@ appendonly_beginscan(Relation relation,
  * GPDB_12_MERGE_FEATURE_NOT_SUPPORTED: When doing an initial rescan with `table_rescan`,
  * the values for the new flags (introduced by Table AM API) are
  * set to false. This means that whichever ScanOptions flags that were initially set will be
- * used for the rescan. However with TABLESAMPLE, which is currently not
- * supported for AO/CO, the new flags may be modified.
+ * used for the rescan. However with TABLESAMPLE, the new flags may be modified.
  * Additionally, allow_sync, allow_strat, and allow_pagemode may
  * need to be implemented for AO/CO in order to properly use them.
  * You may view `syncscan.c` as an example to see how heap added scan
@@ -1949,6 +1972,17 @@ appendonly_rescan(TableScanDesc scan, ScanKey key,
 	 * reinitialize scan descriptor
 	 */
 	initscan(aoscan, key);
+
+	/* TABLESAMPLE related state */
+	aoscan->segrowsprocessed = 0;
+	aoscan->segfirstrow = 0;
+	aoscan->targrow = 0;
+	aoscan->sampleTargetBlk = -1;
+	if (aoscan->blkdirscan)
+	{
+		appendonly_blkdirscan_finish(aoscan);
+		appendonly_blkdirscan_init(aoscan);
+	}
 }
 
 /*

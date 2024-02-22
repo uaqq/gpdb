@@ -115,9 +115,9 @@ def create_pipeline(args, git_remote, git_branch):
         "rhel8" : "rocky8",
         "rocky8": "rocky8",
         "oel8" : "rocky8",
-        "rhel9" : "rocky9",
-        "rocky9": "rocky9",
-        "oel9" : "rocky9"
+        "rhel9" : "rhel9",
+        "rocky9": "rhel9",
+        "oel9" : "rhel9"
     }
     dist = {
         "rhel8" : "el8",
@@ -174,7 +174,6 @@ def gen_pipeline(args, pipeline_name, variable_files, git_remote, git_branch):
 
     return '''fly --target {target} \
 set-pipeline \
---check-creds \
 --pipeline {name} \
 --config {output_path} \
 {variables} \

@@ -1740,6 +1740,15 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 	 * If specific tables are being dumped, do not dump any complete
 	 * namespaces. If specific namespaces are being dumped, dump just those
 	 * namespaces. Otherwise, dump all non-system namespaces.
+	 *
+	 * GPDB: dump the gp_toolkit schema only in binary upgrade, where the
+	 * new cluster expects the schema of an extension to exist before it
+	 * creates the *empty* extension and copy the objects from old cluster. 
+	 * In non-binary-upgrade cases, gp_toolkit schema should be created when
+	 * creating the extension itself, so no need to dump it; in fact, 
+	 * dumping it could result in error during replaying the script on a new
+	 * database, because new database would inherit the gp_toolkit schema 
+	 * and extension from 'template1' already.
 	 */
 	if (table_include_oids.head != NULL)
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_NONE;
@@ -1760,7 +1769,7 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 	}
 	else if (strncmp(nsinfo->dobj.name, "pg_", 3) == 0 ||
 			 strcmp(nsinfo->dobj.name, "information_schema") == 0 ||
-			 strcmp(nsinfo->dobj.name, "gp_toolkit") == 0)
+			 (!dopt->binary_upgrade && strcmp(nsinfo->dobj.name, "gp_toolkit") == 0))
 	{
 		/* Other system schemas don't get dumped */
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_NONE;
@@ -1897,20 +1906,49 @@ selectDumpableType(TypeInfo *tyinfo, Archive *fout)
  *		Mark a function as to be dumped or not
  */
 static void
-selectDumpableFunction(FuncInfo *finfo)
+selectDumpableFunction(FuncInfo *finfo, Archive *fout)
 {
+
+	if (checkExtensionMembership(&finfo->dobj, fout))
+		return;					/* extension membership overrides all else */
+
 	/*
 	 * If specific functions are being dumped, dump just those functions; else, dump
 	 * according to the parent namespace's dump flag if parent namespace is not null;
 	 * else, always dump the function.
 	 */
-	if (function_include_oids.head != NULL)
-		finfo->dobj.dump = simple_oid_list_member(&function_include_oids,
-												   finfo->dobj.catId.oid);
+	if (function_include_oids.head != NULL && 
+			simple_oid_list_member(&function_include_oids, finfo->dobj.catId.oid))
+		finfo->dobj.dump = DUMP_COMPONENT_ALL;
 	else if (finfo->dobj.namespace)
 		finfo->dobj.dump = finfo->dobj.namespace->dobj.dump;
 	else
-		finfo->dobj.dump = true;
+		finfo->dobj.dump = DUMP_COMPONENT_ALL;
+}
+
+/*
+ * selectDumpableAggregate: policy-setting subroutine
+ *		Mark a function as to be dumped or not
+ */
+static void
+selectDumpableAggregate(AggInfo *agginfo, Archive *fout)
+{
+
+	if (checkExtensionMembership(&agginfo->aggfn.dobj, fout))
+		return;					/* extension membership overrides all else */
+
+	/*
+	 * If specific aggregates are being dumped, dump just those aggregates; else, dump
+	 * according to the parent namespace's dump flag if parent namespace is not null;
+	 * else, always dump the function.
+	 */
+	if (function_include_oids.head != NULL && 
+			simple_oid_list_member(&function_include_oids, agginfo->aggfn.dobj.catId.oid))
+		agginfo->aggfn.dobj.dump = DUMP_COMPONENT_ALL;
+	else if (agginfo->aggfn.dobj.namespace)
+		agginfo->aggfn.dobj.dump = agginfo->aggfn.dobj.namespace->dobj.dump;
+	else
+		agginfo->aggfn.dobj.dump = DUMP_COMPONENT_ALL;
 }
 
 /*
@@ -3838,6 +3876,7 @@ void
 getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 {
 	PQExpBuffer query;
+	PQExpBuffer tbloids;
 	PGresult   *res;
 	PolicyInfo *polinfo;
 	int			i_oid;
@@ -3853,15 +3892,17 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 				j,
 				ntups;
 
+	/* No policies before 9.5 */
 	if (fout->remoteVersion < 90500)
 		return;
 
 	query = createPQExpBuffer();
+	tbloids = createPQExpBuffer();
 
 	/*
-	 * First, check which tables have RLS enabled.  We represent RLS being
-	 * enabled on a table by creating a PolicyInfo object with null polname.
+	 * Identify tables of interest, and check which ones have RLS enabled.
 	 */
+	appendPQExpBufferChar(tbloids, '{');
 	for (i = 0; i < numTables; i++)
 	{
 		TableInfo  *tbinfo = &tblinfo[i];
@@ -3870,11 +3911,25 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		if (!(tbinfo->dobj.dump & DUMP_COMPONENT_POLICY))
 			continue;
 
+		/* It can't have RLS or policies if it's not a table */
+		if (tbinfo->relkind != RELKIND_RELATION &&
+			tbinfo->relkind != RELKIND_PARTITIONED_TABLE)
+			continue;
+
+		/* Add it to the list of table OIDs to be probed below */
+		if (tbloids->len > 1)	/* do we have more than the '{'? */
+			appendPQExpBufferChar(tbloids, ',');
+		appendPQExpBuffer(tbloids, "%u", tbinfo->dobj.catId.oid);
+
+		/* Is RLS enabled?  (That's separate from whether it has policies) */
 		if (tbinfo->rowsec)
 		{
 			tbinfo->dobj.components |= DUMP_COMPONENT_POLICY;
 
 			/*
+			 * We represent RLS being enabled on a table by creating a
+			 * PolicyInfo object with null polname.
+			 *
 			 * Note: use tableoid 0 so that this object won't be mistaken for
 			 * something that pg_depend entries apply to.
 			 */
@@ -3894,15 +3949,18 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 			polinfo->polwithcheck = NULL;
 		}
 	}
+	appendPQExpBufferChar(tbloids, '}');
 
 	/*
-	 * Now, read all RLS policies, and create PolicyInfo objects for all those
-	 * that are of interest.
+	 * Now, read all RLS policies belonging to the tables of interest, and
+	 * create PolicyInfo objects for them.  (Note that we must filter the
+	 * results server-side not locally, because we dare not apply pg_get_expr
+	 * to tables we don't have lock on.)
 	 */
 	pg_log_info("reading row-level security policies");
 
 	printfPQExpBuffer(query,
-					  "SELECT oid, tableoid, pol.polrelid, pol.polname, pol.polcmd, ");
+					  "SELECT pol.oid, pol.tableoid, pol.polrelid, pol.polname, pol.polcmd, ");
 	if (fout->remoteVersion >= 100000)
 		appendPQExpBuffer(query, "pol.polpermissive, ");
 	else
@@ -3912,7 +3970,9 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 					  "   pg_catalog.array_to_string(ARRAY(SELECT pg_catalog.quote_ident(rolname) from pg_catalog.pg_roles WHERE oid = ANY(pol.polroles)), ', ') END AS polroles, "
 					  "pg_catalog.pg_get_expr(pol.polqual, pol.polrelid) AS polqual, "
 					  "pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid) AS polwithcheck "
-					  "FROM pg_catalog.pg_policy pol");
+					  "FROM unnest('%s'::pg_catalog.oid[]) AS src(tbloid)\n"
+					  "JOIN pg_catalog.pg_policy pol ON (src.tbloid = pol.polrelid)",
+					  tbloids->data);
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -3935,13 +3995,6 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		{
 			Oid			polrelid = atooid(PQgetvalue(res, j, i_polrelid));
 			TableInfo  *tbinfo = findTableByOid(polrelid);
-
-			/*
-			 * Ignore row security on tables not to be dumped.  (This will
-			 * result in some harmless wasted slots in polinfo[].)
-			 */
-			if (!(tbinfo->dobj.dump & DUMP_COMPONENT_POLICY))
-				continue;
 
 			tbinfo->dobj.components |= DUMP_COMPONENT_POLICY;
 
@@ -3979,6 +4032,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 	PQclear(res);
 
 	destroyPQExpBuffer(query);
+	destroyPQExpBuffer(tbloids);
 }
 
 /*
@@ -5986,7 +6040,7 @@ getAggregates(Archive *fout, int *numAggs)
 		}
 
 		/* Decide whether we want to dump it */
-		selectDumpableObject(&(agginfo[i].aggfn.dobj), fout);
+		selectDumpableAggregate(&(agginfo[i]), fout);
 
 		/* Mark whether aggregate has an ACL */
 		if (!PQgetisnull(res, i, i_aggacl))
@@ -6319,8 +6373,7 @@ getFuncs(Archive *fout, int *numFuncs)
 		}
 
 		/* Decide whether we want to dump it */
-		selectDumpableFunction(&finfo[i]);
-		selectDumpableObject(&(finfo[i].dobj), fout);
+		selectDumpableFunction(&finfo[i], fout);
 
 		/* Mark whether function has an ACL */
 		if (!PQgetisnull(res, i, i_proacl))

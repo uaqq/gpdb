@@ -409,8 +409,14 @@ typedef struct HashJoinTableData
 	/* Statistic info of work file set, copied from work_set */
 	uint32		workset_num_files;
 	uint32		workset_num_files_compressed;
-	uint64		workset_max_file_size;
-	uint64		workset_min_file_size;
+	uint64		workset_avg_file_size;
+	/*
+	 * GP_ABI_BUMP_FIXME
+	 *
+	 * Not used, just for ABI compatibility, remove this when we decide to bump
+	 * the ABI version.
+	 */
+	uint64		workset_abi_reserved;
 	uint64		workset_compression_buf_total;
 }			HashJoinTableData;
 
