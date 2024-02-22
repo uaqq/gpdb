@@ -304,6 +304,18 @@ drop tablespace space_12871;
 --
 -- temp_file_tablespaces:
 --
+
+-- start_ignore
+DROP TABLE IF EXISTS tts_foo;
+DROP TABLE IF EXISTS tts_bar;
+DROP TABLE IF EXISTS tts_jazz;
+DROP TABLESPACE IF EXISTS temp_tables;
+DROP TABLESPACE IF EXISTS temp_files0;
+DROP TABLESPACE IF EXISTS temp_files1;
+DROP TABLESPACE IF EXISTS temp_files2;
+DROP TABLESPACE IF EXISTS temp_files3;
+-- end_ignore
+
 CREATE TABLE tts_foo (a int, b int) DISTRIBUTED BY (a);
 CREATE TABLE tts_bar (c int, d int) DISTRIBUTED BY (d);
 CREATE TABLE tts_jazz (e int, f int) DISTRIBUTED BY (e);
@@ -322,20 +334,43 @@ CREATE TABLESPACE temp_files1 LOCATION '@testtablespace@_temp_files1';
 CREATE TABLESPACE temp_files2 LOCATION '@testtablespace@_temp_files2';
 CREATE TABLESPACE temp_files3 LOCATION '@testtablespace@_temp_files3';
 
+RESET temp_tablespaces;
+RESET temp_file_tablespaces;
+
 SET optimizer = off;
 SET statement_mem = '2MB';
+
+-- Multiple tablespaces in 'temp_file_tablespaces' and 'g_temp_file_tablespaces'
+-- need to be specified in increasing order.
+CREATE OR REPLACE FUNCTION gp_tablespace_set_gucs(
+    temp_tablespaces text,
+    temp_file_tablespaces text
+) RETURNS void AS $$
+BEGIN
+    RESET temp_tablespaces;
+    RESET temp_file_tablespaces;
+
+    IF temp_tablespaces IS NOT NULL THEN
+        EXECUTE format('SET temp_tablespaces = %s', temp_tablespaces);
+    END IF;
+
+    IF temp_file_tablespaces IS NOT NULL THEN
+        EXECUTE format('SET temp_file_tablespaces = %s', temp_file_tablespaces);
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Creates a temporary table and remembers the tablespace it was created in.
 -- Runs a query that creates some temporary files, calculates the tablespace for
 -- temporary files that will be used for current session, and checks if any
 -- files were created in that tablespace.
 --
+-- We set GUCs and perform the report in two separate function calls
+-- (transactions). Otherwise, global configuration will not be reloaded.
+--
 -- 'n_temp_file_tablespaces' is the count of tablespaces specified in
--- 'temp_file_tablespaces'. Multiple tablespaces in 'temp_file_tablespaces' need
--- to be specified in increasing order.
+-- 'temp_file_tablespaces', either global or session-wide.
 CREATE OR REPLACE FUNCTION gp_tablespace_file_report(
-    temp_tablespaces text,
-    temp_file_tablespaces text,
     n_temp_file_tablespaces int
 ) RETURNS TABLE (
         temp_table_in text,
@@ -349,17 +384,6 @@ DECLARE
     session_file_ts_name text;
     temp_table_ts_name text;
 BEGIN
-    RESET temp_tablespaces;
-    RESET temp_file_tablespaces;
-
-    IF temp_tablespaces IS NOT NULL THEN
-        EXECUTE format('SET temp_tablespaces = %s', temp_tablespaces);
-    END IF;
-
-    IF temp_file_tablespaces IS NOT NULL THEN
-        EXECUTE format('SET temp_file_tablespaces = %s', temp_file_tablespaces);
-    END IF;
-
     CREATE TEMPORARY TABLE tts_baz (a int) DISTRIBUTED BY (a);
 
     -- See the tablespace where temporary table was created. If there is no
@@ -427,23 +451,92 @@ SELECT gp_temptablespace_path((SELECT oid FROM pg_tablespace WHERE spcname = 'te
 SELECT gp_temptablespace_path((SELECT oid FROM pg_tablespace WHERE spcname = 'temp_files3' LIMIT 1));
 -- end_ignore
 
+--
+-- Global GUC value tests:
+--
+
 -- Both files and the table should be in the default tablespace.
-SELECT * FROM gp_tablespace_file_report(NULL, NULL, 1);
+-- start_ignore
+\! gpconfig -r temp_tablespaces
+\! gpconfig -r temp_file_tablespaces
+\! gpstop -u
+-- end_ignore
+SELECT * FROM gp_tablespace_file_report(1);
+
 -- Both files and the table should be in temp_tables.
-SELECT * FROM gp_tablespace_file_report('temp_tables', NULL, 1);
+-- start_ignore
+\! gpconfig -c temp_tablespaces -v temp_tables
+\! gpconfig -r temp_file_tablespaces
+\! gpstop -u
+-- end_ignore
+SELECT * FROM gp_tablespace_file_report(1);
+
+-- Files should be in temp_files0, table should be in the default tablespace.
+--start_ignore
+SELECT setting as gp_session_id, setting::int % 1 as n FROM pg_settings WHERE name = 'gp_session_id';
+
+\! gpconfig -r temp_tablespaces
+\! gpconfig -c temp_file_tablespaces -v temp_files0
+\! gpstop -u
+-- end_ignore
+SELECT * FROM gp_tablespace_file_report(1);
+
+-- Files should be in temp_files0, table should be in temp_tables.
+-- start_ignore
+\! gpconfig -c temp_tablespaces -v temp_tables
+\! gpconfig -c temp_file_tablespaces -v temp_files0
+\! gpstop -u
+-- end_ignore
+SELECT * FROM gp_tablespace_file_report(1);
+
+-- Files should be in temp_filesN, where N = gp_session_id % 4, table should be
+-- in the default tablespace.
+--start_ignore
+SELECT setting as gp_session_id, setting::int % 4 as n FROM pg_settings WHERE name = 'gp_session_id';
+
+\! gpconfig -r temp_tablespaces
+\! gpconfig -c temp_file_tablespaces -v temp_files0,temp_files1,temp_files2,temp_files3
+\! gpstop -u
+-- end_ignore
+SELECT * FROM gp_tablespace_file_report(4);
+
+-- Reset the global config before testing session-only values.
+-- start_ignore
+\! gpconfig -r temp_tablespaces
+\! gpconfig -r temp_file_tablespaces
+\! gpstop -u
+-- end_ignore
+
+--
+-- Session-only GUC value tests:
+--
+
+-- Both files and the table should be in the default tablespace.
+SELECT * FROM gp_tablespace_set_gucs(NULL, NULL);
+SELECT * FROM gp_tablespace_file_report(1);
+
+-- Both files and the table should be in temp_tables.
+SELECT * FROM gp_tablespace_set_gucs('temp_tables', NULL);
+SELECT * FROM gp_tablespace_file_report(1);
+
+-- Files should be in temp_files0, table should be in the default tablespace.
 --start_ignore
 SELECT setting as gp_session_id, setting::int % 1 as n FROM pg_settings WHERE name = 'gp_session_id';
 --end_ignore
--- Files should be in temp_files0, table should be in the default tablespace.
-SELECT * FROM gp_tablespace_file_report(NULL, 'temp_files0', 1);
+SELECT * FROM gp_tablespace_set_gucs(NULL, 'temp_files0');
+SELECT * FROM gp_tablespace_file_report(1);
+
 -- Files should be in temp_files0, table should be in temp_tables.
-SELECT * FROM gp_tablespace_file_report('temp_tables', 'temp_files0', 1);
+SELECT * FROM gp_tablespace_set_gucs('temp_tables', 'temp_files0');
+SELECT * FROM gp_tablespace_file_report(1);
+
+-- Files should be in temp_filesN, where N = gp_session_id % 4, table should be
+-- in the default tablespace.
 --start_ignore
 SELECT setting as gp_session_id, setting::int % 4 as n FROM pg_settings WHERE name = 'gp_session_id';
 --end_ignore
--- Files should be in temp_filesN, where N = gp_session_id % 4, table should be
--- in the default tablespace.
-SELECT * FROM gp_tablespace_file_report(NULL, 'temp_files0,temp_files1,temp_files2,temp_files3', 4);
+SELECT * FROM gp_tablespace_set_gucs(NULL, 'temp_files0,temp_files1,temp_files2,temp_files3');
+SELECT * FROM gp_tablespace_file_report(4);
 
 DROP TABLE tts_foo;
 DROP TABLE tts_bar;
