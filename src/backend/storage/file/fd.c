@@ -2633,7 +2633,9 @@ closeAllVfds(void)
 void
 SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 {
-	Assert(numSpaces >= 0);
+	AssertImply(tableSpaces == NULL, numSpaces == -1 || numSpaces == 0);
+	AssertImply(tableSpaces != NULL, numSpaces >= 0);
+
 	tempTableSpaces = tableSpaces;
 	numTempTableSpaces = numSpaces;
 
@@ -2663,7 +2665,9 @@ SetTempTablespaces(Oid *tableSpaces, int numSpaces)
 void
 SetTempFileTablespaces(Oid *tableSpaces, int numSpaces)
 {
-	Assert(numSpaces >= 0);
+	AssertImply(tableSpaces == NULL, numSpaces == -1 || numSpaces == 0);
+	AssertImply(tableSpaces != NULL, numSpaces >= 0);
+
 	tempFileTableSpaces = tableSpaces;
 	numTempFileTableSpaces = numSpaces;
 
