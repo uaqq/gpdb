@@ -120,6 +120,7 @@ STRING			\'([^'\\\n]|\\.|\'\')*\'
 %%
 
 
+static List *ProcessConfigFileImpl(GucContext context, bool return_changed);
 
 /*
  * Exported function to read and process the configuration file. The
@@ -131,6 +132,22 @@ STRING			\'([^'\\\n]|\\.|\'\')*\'
 void
 ProcessConfigFile(GucContext context)
 {
+	(void) ProcessConfigFileImpl(context, false);
+}
+
+/*
+ * This works the same way as the ProcessConfigFile(), except that it returns a
+ * list of option names that were changed.
+ */
+List *
+ProcessConfigFileForSync(GucContext context)
+{
+	return ProcessConfigFileImpl(context, true);
+}
+
+static List *
+ProcessConfigFileImpl(GucContext context, bool return_changed)
+{
 	bool		error = false;
 	bool		apply = false;
 	int			elevel;
@@ -139,6 +156,7 @@ ProcessConfigFile(GucContext context)
 			   *head,
 			   *tail;
 	int			i;
+	List	   *changed_gucs = NIL;
 
 	/*
 	 * Config files are processed on startup (by the postmaster only)
@@ -221,7 +239,7 @@ ProcessConfigFile(GucContext context)
 		 * the config file.
 		 */
 		if (head == NULL)
-			return;
+			return NIL;
 	}
 
 	/*
@@ -356,6 +374,8 @@ ProcessConfigFile(GucContext context)
 				ereport(elevel,
 						(errmsg("parameter \"%s\" removed from configuration file, reset to default",
 								gconf->name)));
+			if (return_changed)
+				changed_gucs = lappend(changed_gucs, pstrdup(gconf->name));
 		}
 	}
 
@@ -423,6 +443,9 @@ ProcessConfigFile(GucContext context)
 							(errmsg("parameter \"%s\" changed to \"%s\"",
 									item->name, item->value)));
 			}
+
+			if (return_changed)
+				changed_gucs = lappend(changed_gucs, pstrdup(item->name));
 		}
 		else if (scres == 0)
 		{
@@ -475,6 +498,10 @@ ProcessConfigFile(GucContext context)
 	 * freed here.
 	 */
 	FreeConfigVariables(head);
+
+	AssertImply(!return_changed, changed_gucs == NIL);
+
+	return changed_gucs;
 }
 
 /*

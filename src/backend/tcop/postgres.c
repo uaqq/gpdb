@@ -95,6 +95,7 @@
 #include "cdb/cdbgang.h"
 #include "cdb/ml_ipc.h"
 #include "utils/guc.h"
+#include "utils/guc_tables.h"
 #include "access/twophase.h"
 #include "postmaster/backoff.h"
 #include "utils/resource_manager.h"
@@ -1560,16 +1561,22 @@ CheckDebugDtmActionSqlCommandTag(const char *sqlCommandTag)
 }
 
 static void
-restore_guc_to_QE(void )
+send_guc_to_QE(List *guc_list)
 {
-	Assert(Gp_role == GP_ROLE_DISPATCH && gp_guc_restore_list);
+	Assert(Gp_role == GP_ROLE_DISPATCH && guc_list);
 	ListCell *lc;
+	MemoryContext oldcontext = CurrentMemoryContext;
 
 	start_xact_command();
 
-	foreach(lc, gp_guc_restore_list)
+	foreach(lc, guc_list)
 	{
 		struct config_generic* gconfig = (struct config_generic *)lfirst(lc);
+
+		/* We can't SET GUCs whose context is too high. */
+		if (gconfig->context < PGC_SUSET || !(gconfig->flags & GUC_GPDB_NEED_SYNC))
+			continue;
+
 		PG_TRY();
 		{
 			DispatchSyncPGVariable(gconfig);
@@ -1587,13 +1594,16 @@ restore_guc_to_QE(void )
 			 * by FlushErrorState.
 			 */
 			FlushErrorState();
+			/*
+			 * this is a top-level catch block and we are responsible for
+			 * restoring the right memory context.
+			 */
+			MemoryContextSwitchTo(oldcontext);
 		}
 		PG_END_TRY();
 	}
 
 	finish_xact_command();
-	list_free(gp_guc_restore_list);
-	gp_guc_restore_list = NIL;
 }
 
 /*
@@ -5303,7 +5313,38 @@ PostgresMain(int argc, char *argv[],
 		if (ConfigReloadPending)
 		{
 			ConfigReloadPending = false;
-			ProcessConfigFile(PGC_SIGHUP);
+
+			/*
+			 * On QE backends, GUC options are not actually read from the file,
+			 * but rather sent to us by QD. It means that default settings on
+			 * segments have source of PGC_S_CLIENT instead of PGC_S_FILE, which
+			 * is higher.
+			 *
+			 * We repeat the process and send the GUCs to the QEs again.
+			 * NOTE: This will will increase changed GUCs' source from
+			 * PGC_S_CLIENT all the way up to PGC_S_SESSION.
+			 */
+			if (Gp_role != GP_ROLE_DISPATCH)
+				ProcessConfigFile(PGC_SIGHUP);
+			else
+			{
+				ListCell   *lc;
+				List	   *changed_gucs = NIL;
+				List	   *changed_guc_names = ProcessConfigFileForSync(PGC_SIGHUP);
+
+				foreach (lc, changed_guc_names)
+				{
+					struct config_generic *guc = find_option(lfirst(lc), false, DEBUG2);
+					if (guc != NULL)
+						changed_gucs = lappend(changed_gucs, guc);
+				}
+
+				if (changed_gucs != NIL)
+					send_guc_to_QE(changed_gucs);
+
+				list_free(changed_guc_names);
+				list_free(changed_gucs);
+			}
 		}
 
 		/*
@@ -5315,7 +5356,11 @@ PostgresMain(int argc, char *argv[],
 
 		/* last txn abort, try to synchronize guc to cached QE */
 		if(Gp_role == GP_ROLE_DISPATCH && gp_guc_restore_list)
-			restore_guc_to_QE();
+		{
+			send_guc_to_QE(gp_guc_restore_list);
+			list_free(gp_guc_restore_list);
+			gp_guc_restore_list = NIL;
+		}
 
 
 		elogif(Debug_print_full_dtm, LOG,
