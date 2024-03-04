@@ -625,3 +625,70 @@ reset gp_print_create_gang_time;
 reset optimizer;
 drop function cleanupAllGangs();
 drop table t_create_gang_time;
+
+--
+-- On QE backends, GUC options are not actually read from the file, but rather
+-- sent to QEs by QD. It means that default settings on segments have source of
+-- PGC_S_CLIENT instead of PGC_S_FILE, which is higher.
+--
+-- GUCs that were changed in the configuration file of the QD should be re-sent
+-- to segments on gpstop -u, if GUC_GPDB_NEED_SYNC is present if the flags.
+--
+
+CREATE OR REPLACE FUNCTION show_on_segments(show_name text)
+RETURNS table (guc_name text, guc_setting text)
+EXECUTE ON ALL SEGMENTS AS $$
+BEGIN
+	RETURN QUERY SELECT name, setting FROM pg_settings WHERE show_name = name;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Explicitly set GUCs through gpconfig, then run gpstop -u.
+--
+-- statment_mem has GUC_GPDB_NEED_SYNC in flags, so it should be synchronized
+-- across the segments. backslash_quote is not synchronized, so it should
+-- remain unchanged on segments.
+
+--start_ignore
+-- Set default values and reconnect.
+\!gpconfig -c statement_mem -v '125MB'
+\!gpconfig -c backslash_quote -v 'safe_encoding'
+\!gpstop -u
+\c
+--end_ignore
+
+SHOW statement_mem;
+SELECT * from show_on_segments('statement_mem');
+
+SHOW backslash_quote;
+SELECT * from show_on_segments('backslash_quote');
+
+--start_ignore
+\!gpconfig -c statement_mem -v '50MB' -m '100MB'
+\!gpconfig -c backslash_quote -v 'off' -m 'on'
+\!gpstop -u
+--end_ignore
+
+-- Should be 100MB, synchronized with segments.
+SHOW statement_mem;
+SELECT * from show_on_segments('statement_mem');
+
+-- Should be 'on' on QD, 'off' on QEs.
+SHOW backslash_quote;
+SELECT * from show_on_segments('backslash_quote');
+
+--start_ignore
+\!gpconfig -r statement_mem
+\!gpconfig -r backslash_quote
+\!gpstop -u
+--end_ignore
+
+-- After reset, QD and QE should hold the default value, 125MB.
+SHOW statement_mem;
+SELECT * from show_on_segments('statement_mem');
+
+-- After reset, QD and QE should hold the default value, safe_encoding.
+SHOW backslash_quote;
+SELECT * from show_on_segments('backslash_quote');
+
+DROP FUNCTION show_on_segments(show_name text);
