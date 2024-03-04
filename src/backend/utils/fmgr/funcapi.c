@@ -170,6 +170,14 @@ shutdown_MultiFuncCall(Datum arg)
 	FmgrInfo   *flinfo = (FmgrInfo *) DatumGetPointer(arg);
 	FuncCallContext *funcctx = (FuncCallContext *) flinfo->fn_extra;
 
+	/*
+		Updated SRF call protocol might have SRF never called, that's why
+		context might not exist.
+	 */
+	if (funcctx == NULL) {
+		return;
+	}
+
 	/* unbind from flinfo */
 	flinfo->fn_extra = NULL;
 

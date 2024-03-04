@@ -972,3 +972,34 @@ tupledesc_match(TupleDesc dst_tupdesc, TupleDesc src_tupdesc)
 							   i + 1)));
 	}
 }
+
+
+void
+ExecSquelchFunctionResultSet(SetExprState *fcache,
+							 ExprContext *econtext, 
+							 MemoryContext *argcontext)
+{
+	ReturnSetInfo rsinfo;
+	FunctionCallInfo fcinfo = fcache->fcinfo;
+
+	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg) {
+		return;
+	}
+
+	/* Prepare a resultinfo node for communication. */
+	fcinfo->resultinfo = (Node *) &rsinfo;
+	rsinfo.type = T_ReturnSetInfo;
+	rsinfo.econtext = econtext;
+	rsinfo.expectedDesc = fcache->funcResultDesc;
+	rsinfo.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize);
+	/* note we do not set SFRM_Materialize_Random or _Preferred */
+	rsinfo.returnMode = SFRM_ValuePerCall;
+	/* isDone is filled below */
+	rsinfo.setResult = NULL;
+	rsinfo.setDesc = NULL;
+
+	fcinfo->isnull = false;
+	rsinfo.returnMode = SFRM_SquelchInProgress;
+
+	FunctionCallInvoke(fcinfo);
+}

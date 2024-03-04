@@ -349,3 +349,32 @@ ExecReScanProjectSet(ProjectSetState *node)
 	if (node->ps.lefttree->chgParam == NULL)
 		ExecReScan(node->ps.lefttree);
 }
+
+void
+ExecSquelchpRrojectSetNode(ProjectSetState *node)
+{
+	ExecSquelchProjectSRF(node);
+
+	ExecSquelchNode(outerPlanState(node));
+	ExecSquelchNode(innerPlanState(node));
+}
+
+void
+ExecSquelchProjectSRF(ProjectSetState *node)
+{
+	int			argno;
+	ExprContext *econtext = node->ps.ps_ExprContext;
+	
+	for (argno = 0; argno < node->nelems; argno++)		{
+		Node	   *elem = node->elems[argno];		
+
+		if (IsA(elem, SetExprState)) {
+			ExecSquelchFunctionResultSet((SetExprState *) elem,
+												econtext, node->argcontext);
+		} else
+		{
+			/* Non-SRF tlist expression. */
+			ExecSquelchEvalExpr((ExprState *) elem, econtext);
+		}
+	}
+}

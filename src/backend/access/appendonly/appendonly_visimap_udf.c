@@ -32,6 +32,13 @@ Datum gp_aovisimap(PG_FUNCTION_ARGS);
 Datum
 gp_aovisimap(PG_FUNCTION_ARGS)
 {
+	FuncCallContext *funcctx;
+
+	if (SRF_IS_SQUELCH_CALL()) {
+		funcctx = SRF_PERCALL_SETUP();
+		goto exit;
+	}
+
 	Oid			aoRelOid = PG_GETARG_OID(0);
 	Datum		values[3];
 	bool		nulls[3];
@@ -47,7 +54,6 @@ gp_aovisimap(PG_FUNCTION_ARGS)
 
 	} Context;
 
-	FuncCallContext *funcctx;
 	Context    *context;
 
 	if (SRF_IS_FIRSTCALL())
@@ -58,7 +64,7 @@ gp_aovisimap(PG_FUNCTION_ARGS)
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
 
-		/*
+		/*	
 		 * switch to memory context appropriate for multiple function calls
 		 */
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -73,7 +79,7 @@ gp_aovisimap(PG_FUNCTION_ARGS)
 						   INT8OID, -1, 0);
 
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
-
+	
 		/*
 		 * Collect all the locking information that we will format and send
 		 * out as a result set.
@@ -126,11 +132,14 @@ gp_aovisimap(PG_FUNCTION_ARGS)
 
 		SRF_RETURN_NEXT(funcctx, result);
 	}
-
-	AppendOnlyVisimapScan_Finish(&context->visiMapScan, AccessShareLock);
-	table_close(context->aorel, AccessShareLock);
-	pfree(context);
-	funcctx->user_fctx = NULL;
+exit:
+	if (funcctx->user_fctx != NULL) {
+		context = (Context *) funcctx->user_fctx;
+		AppendOnlyVisimapScan_Finish(&context->visiMapScan, AccessShareLock);
+		table_close(context->aorel, AccessShareLock);
+		pfree(context);
+		funcctx->user_fctx = NULL;
+	}
 	SRF_RETURN_DONE(funcctx);
 }
 
