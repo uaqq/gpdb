@@ -976,13 +976,14 @@ tupledesc_match(TupleDesc dst_tupdesc, TupleDesc src_tupdesc)
 
 void
 ExecSquelchFunctionResultSet(SetExprState *fcache,
-							 ExprContext *econtext, 
+							 ExprContext *econtext,
 							 MemoryContext *argcontext)
 {
 	ReturnSetInfo rsinfo;
 	FunctionCallInfo fcinfo = fcache->fcinfo;
 
-	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg) {
+	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg)
+	{
 		return;
 	}
 

@@ -286,7 +286,7 @@ typedef enum
 {
 	ExprSingleResult,			/* expression does not return a set */
 	ExprMultipleResult,			/* this result is an element of a set */
-	ExprEndResult				/* there are no more elements in the set */	
+	ExprEndResult				/* there are no more elements in the set */
 } ExprDoneCond;
 
 /*
@@ -301,7 +301,7 @@ typedef enum
 	SFRM_Materialize = 0x02,	/* result set instantiated in Tuplestore */
 	SFRM_Materialize_Random = 0x04, /* Tuplestore needs randomAccess */
 	SFRM_Materialize_Preferred = 0x08,	/* caller prefers Tuplestore */
-	SFRM_SquelchInProgress      /* Squelch in progress, clean up resources */
+	SFRM_SquelchInProgress = 0x10,          /* Squelch in progress, clean up resources */
 } SetFunctionReturnMode;
 
 /*
