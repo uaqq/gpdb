@@ -1469,7 +1469,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 							 * number of receivers can be less if we are
 							 * expanding a cluster.
 							 */
-							scaleFactor = /* motion_recv; */ list_length(es->currentSlice->segments);
+							scaleFactor = motion_recv;
 						}
 						else if (plan->lefttree->flow->locustype == CdbLocusType_Replicated)
 						{
@@ -1494,11 +1494,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					default:
 						sname = "???";
 						break;
-				}
-
-				if (es->pstmt->planGen == PLANGEN_PLANNER && plan->flow != NULL)
-				{
-					motion_recv = plan->flow->numsegments;
 				}
 
 				pname = psprintf("%s %d:%d", sname, motion_snd, motion_recv);
