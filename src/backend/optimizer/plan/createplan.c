@@ -2901,7 +2901,9 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
 								  scan_relid,
 								  best_path->parent->subplan);
 
-	copy_path_costsize(root, &scan_plan->scan.plan, best_path);
+	/* If subplan is not NULL, all costs copied inside make_subqueryscan() */
+	if (!best_path->parent->subplan)
+		copy_path_costsize(root, &scan_plan->scan.plan, best_path);
 
 	return scan_plan;
 }
@@ -5760,7 +5762,15 @@ make_material(Plan *lefttree)
 	Plan	   *plan = &node->plan;
 
 	/* cost should be inserted by caller */
-	plan->targetlist = lefttree->targetlist;
+	if (lefttree->targetlist != NIL)
+		plan->targetlist = lefttree->targetlist;
+	else if (IsA(lefttree, ModifyTable))
+	{
+		ModifyTable *mt = (ModifyTable *)lefttree;
+		Assert(mt->returningLists);
+		plan->targetlist = copyObject(linitial(mt->returningLists));
+	}
+
 	plan->qual = NIL;
 	plan->lefttree = lefttree;
 	plan->righttree = NULL;
@@ -6589,12 +6599,15 @@ adjust_modifytable_flow(PlannerInfo *root, ModifyTable *node, List *is_split_upd
 				 * Obviously, tmp_tab in new segments can't get data if we don't
 				 * add a broadcast here. 
 				 */
-				if (optimizer_replicated_table_insert &&
-					subplan->flow->flotype == FLOW_SINGLETON &&
-					subplan->flow->locustype == CdbLocusType_SegmentGeneral &&
-					!contain_volatile_functions((Node *)subplan->targetlist))
+				if (subplan->flow->flotype == FLOW_SINGLETON &&
+					subplan->flow->locustype == CdbLocusType_SegmentGeneral)
 				{
-					if (subplan->flow->numsegments >= targetPolicy->numsegments)
+					if (contain_volatile_functions((Node *)subplan->targetlist))
+					{
+						subplan->flow->locustype = CdbLocusType_SingleQE;
+					}
+					else if (optimizer_replicated_table_insert &&
+							 subplan->flow->numsegments >= targetPolicy->numsegments)
 					{
 						/*
 						 * A query to reach here:

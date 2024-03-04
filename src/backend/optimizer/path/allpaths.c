@@ -1717,21 +1717,6 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		/* XXX rel->onerow = ??? */
 	}
 
-	if (rel->subplan->flow->locustype == CdbLocusType_General &&
-		(contain_volatile_functions((Node *) rel->subplan->targetlist) ||
-		 contain_volatile_functions(subquery->havingQual)))
-	{
-		rel->subplan->flow->locustype = CdbLocusType_SingleQE;
-		rel->subplan->flow->flotype = FLOW_SINGLETON;
-	}
-
-	if (rel->subplan->flow->locustype == CdbLocusType_SegmentGeneral &&
-		(contain_volatile_functions((Node *) rel->subplan->targetlist) ||
-		 contain_volatile_functions(subquery->havingQual)))
-	{
-		rel->subplan = (Plan *) make_motion_gather(subroot, rel->subplan, NIL, CdbLocusType_SingleQE);
-	}
-
 	rel->subroot = subroot;
 
 	/* Isolate the params needed by this specific subplan */
@@ -2033,6 +2018,15 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	 */
 	if (!root->config->gp_cte_sharing || cte->cterefcount == 1)
 	{
+		/*
+		 * If plan sharing is disabled, we avoid performing DML inside CTE for
+		 * each reference. It'll cause duplicated DML operations or mutation
+		 * errors during cdbparallelize().
+		 */
+		if (cte->cterefcount > 1 &&
+			((Query *) cte->ctequery)->commandType != CMD_SELECT)
+			elog(ERROR, "Too much references to non-SELECT CTE");
+
 		PlannerConfig *config = CopyPlannerConfig(root->config);
 
 		/*
@@ -2049,7 +2043,12 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 		config->honor_order_by = false;
 
-		if (!cte->cterecursive)
+		/*
+		 * Additionally to recursive CTE queries, don't try to push down quals
+		 * to non-SELECT queries. There can be DML operation with RETURNING
+		 * clause, and it's incorrect to push down upper quals to it.
+		*/
+		if (!cte->cterecursive && subquery->commandType == CMD_SELECT)
 		{
 			/*
 			 * Adjust the subquery so that 'root', i.e. this subquery, is the

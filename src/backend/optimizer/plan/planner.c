@@ -371,13 +371,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	 *
 	 * apply_shareinput will fix shared_id, and change the DAG to a tree.
 	 */
-	forboth(lp, glob->subplans, lr, glob->subroots)
-	{
-		Plan	   *subplan = (Plan *) lfirst(lp);
-		PlannerInfo	   *subroot = (PlannerInfo *) lfirst(lr);
-
-		lfirst(lp) = apply_shareinput_dag_to_tree(subroot, subplan);
-	}
 	top_plan = apply_shareinput_dag_to_tree(root, top_plan);
 
 	/* final cleanup of the plan */
@@ -435,12 +428,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	bms_free(subplan_context.bms_subplans);
 
 	/* fix ShareInputScans for EXPLAIN */
-	foreach(lp, glob->subplans)
-	{
-		Plan	   *subplan = (Plan *) lfirst(lp);
-
-		lfirst(lp) = replace_shareinput_targetlists(root, subplan);
-	}
 	top_plan = replace_shareinput_targetlists(root, top_plan);
 
 	/* build the PlannedStmt result */
@@ -934,6 +921,24 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	{
 		Assert(root->parse == parse); /* GPDB isn't always careful about this. */
 		SS_finalize_plan(root, plan, true);
+	}
+
+	/*
+	 * If plan contains volatile functions in the target list, then we need
+	 * bring it to SingleQE
+	 */
+	if (plan->flow->locustype == CdbLocusType_General &&
+		(contain_volatile_functions((Node *) plan->targetlist) ||
+		 contain_volatile_functions(parse->havingQual)))
+	{
+		plan->flow->locustype = CdbLocusType_SingleQE;
+		plan->flow->flotype = FLOW_SINGLETON;
+	}
+	else if (plan->flow->locustype == CdbLocusType_SegmentGeneral &&
+		(contain_volatile_functions((Node *) plan->targetlist) ||
+		 contain_volatile_functions(parse->havingQual)))
+	{
+		plan = (Plan *) make_motion_gather(root, plan, NIL, CdbLocusType_SingleQE);
 	}
 
 	/* Return internal info if caller wants it */
