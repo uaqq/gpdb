@@ -982,6 +982,11 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 	ReturnSetInfo rsinfo;
 	FunctionCallInfo fcinfo = fcache->fcinfo;
 
+	/*
+	 * if fcache->shutdown_reg  is set to true, the function is known to be
+	 * called at least once. Otherwise it was not called and it has no need
+	 * to release resources.
+	 */
 	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg)
 	{
 		return;
