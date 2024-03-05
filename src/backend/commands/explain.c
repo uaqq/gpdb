@@ -2619,7 +2619,7 @@ show_sort_info(SortState *sortstate, ExplainState *es)
 	CdbExplain_NodeSummary *ns;
 	int			i;
 
-	if (!es->analyze)
+	if (!es->analyze || !((PlanState *) sortstate)->instrument)
 		return;
 
 	ns = ((PlanState *) sortstate)->instrument->cdbNodeSummary;
