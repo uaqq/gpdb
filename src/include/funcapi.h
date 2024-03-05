@@ -294,8 +294,9 @@ extern void end_MultiFuncCall(PG_FUNCTION_ARGS, FuncCallContext *funcctx);
 
 #define SRF_IS_FIRSTCALL() (fcinfo->flinfo->fn_extra == NULL)
 
-#define SRF_IS_SQUELCH_CALL() (((ReturnSetInfo *)fcinfo->resultinfo)->returnMode \
-	== SFRM_SquelchInProgress)
+/* Set squelch flag for this function and test if it's squelching already */
+#define SRF_IS_SQUELCH_CALL() ( (fcinfo->isSquelchSupported = true) && \
+	((ReturnSetInfo *)fcinfo->resultinfo)->returnMode == SFRM_SquelchInProgress)
 
 #define SRF_FIRSTCALL_INIT() init_MultiFuncCall(fcinfo)
 

@@ -984,10 +984,10 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 
 	/*
 	 * if fcache->shutdown_reg  is set to true, the function is known to be
-	 * called at least once. Otherwise it was not called and it has no need
-	 * to release resources.
+	 * called at least once. Otherwise it was not called and it has no need to
+	 * release resources.
 	 */
-	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg)
+	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg || !fcinfo->isSquelchSupported)
 	{
 		return;
 	}
@@ -998,14 +998,12 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 	rsinfo.econtext = econtext;
 	rsinfo.expectedDesc = fcache->funcResultDesc;
 	rsinfo.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize);
-	/* note we do not set SFRM_Materialize_Random or _Preferred */
-	rsinfo.returnMode = SFRM_ValuePerCall;
-	/* isDone is filled below */
+
 	rsinfo.setResult = NULL;
 	rsinfo.setDesc = NULL;
 
 	fcinfo->isnull = false;
-	rsinfo.returnMode = SFRM_SquelchInProgress;
+	rsinfo.returnMode = SFRM_ValuePerCall | SFRM_SquelchInProgress;
 
 	FunctionCallInvoke(fcinfo);
 }
