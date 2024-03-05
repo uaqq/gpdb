@@ -446,7 +446,8 @@ CExpression::SetMotionInputSegmentsNumberForChildren()
 			opid != COperator::EopPhysicalMotionHashDistribute &&
 			opid != COperator::EopPhysicalMotionRoutedDistribute &&
 			opid != COperator::EopPhysicalMotionRandom)
-			pexprChild->SetMotionInputSegmentsNumber(m_motionInputSegmentsNumber);
+			pexprChild->SetMotionInputSegmentsNumber(
+				m_motionInputSegmentsNumber);
 	}
 }
 
