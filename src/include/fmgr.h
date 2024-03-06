@@ -91,14 +91,7 @@ typedef struct FunctionCallInfoBaseData
 #define FIELDNO_FUNCTIONCALLINFODATA_ISNULL 4
 	bool		isnull;			/* function must set true if result is NULL */
 	short		nargs;			/* # arguments actually passed */
-
-	/*
-	 * SRF can optionally support squelching. To make a squelch call of
-	 * function it should evidently set flag in it's result. The flag is
-	 * translated to this field.
-	 */
-	bool		isSquelchSupported;
-#define FIELDNO_FUNCTIONCALLINFODATA_ARGS 7
+#define FIELDNO_FUNCTIONCALLINFODATA_ARGS 6
 	NullableDatum args[FLEXIBLE_ARRAY_MEMBER];
 } FunctionCallInfoBaseData;
 
@@ -161,7 +154,6 @@ extern void fmgr_symbol(Oid functionId, char **mod, char **fn);
 		(Fcinfo).resultinfo = (Resultinfo); \
 		(Fcinfo).fncollation = (Collation); \
 		(Fcinfo).isnull = false; \
-		(Fcinfo).isSquelchSupported = false; \
 		(Fcinfo).nargs = (Nargs); \
 	} while (0)
 

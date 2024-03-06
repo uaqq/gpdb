@@ -143,6 +143,20 @@ per_MultiFuncCall(PG_FUNCTION_ARGS)
 }
 
 /*
+ * is_SquelchFuncCall
+ * Set squelch flag for this function and test if it's squelching already
+ */
+bool 
+is_SquelchFuncCall(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsi = (ReturnSetInfo *)fcinfo->resultinfo;
+	rsi->returnMode |= SFRM_Squelch;
+
+	return rsi->allowedModes & SFRM_Squelch;
+}
+
+
+/*
  * end_MultiFuncCall
  * Clean up after init_MultiFuncCall
  */

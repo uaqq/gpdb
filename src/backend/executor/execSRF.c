@@ -236,6 +236,9 @@ ExecMakeTableFunctionResult(SetExprState *setexpr,
 			fcinfo->isnull = false;
 			rsinfo.isDone = ExprSingleResult;
 			result = FunctionCallInvoke(fcinfo);
+			setexpr->isSquelchSupported = rsinfo.returnMode & SFRM_Squelch;
+			/* Reset SFRM_Squelch bit*/
+			rsinfo.returnMode &= ~SFRM_Squelch;
 
 			pgstat_end_function_usage(&fcusage,
 									  rsinfo.isDone != ExprMultipleResult);
@@ -618,6 +621,8 @@ restart:
 		result = FunctionCallInvoke(fcinfo);
 		*isNull = fcinfo->isnull;
 		*isDone = rsinfo.isDone;
+		fcache->isSquelchSupported = rsinfo.returnMode & SFRM_Squelch;
+		rsinfo.returnMode &= ~SFRM_Squelch;
 
 		pgstat_end_function_usage(&fcusage,
 								  rsinfo.isDone != ExprMultipleResult);
@@ -794,6 +799,7 @@ init_sexpr(Oid foid, Oid input_collation, Expr *node,
 	sexpr->funcResultStore = NULL;
 	sexpr->funcResultSlot = NULL;
 	sexpr->shutdown_reg = false;
+	sexpr->isSquelchSupported = false;
 }
 
 /*
@@ -987,7 +993,7 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 	 * called at least once. Otherwise it was not called and it has no need to
 	 * release resources.
 	 */
-	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg || !fcinfo->isSquelchSupported)
+	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg || !fcache->isSquelchSupported)
 	{
 		return;
 	}
@@ -997,13 +1003,13 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 	rsinfo.type = T_ReturnSetInfo;
 	rsinfo.econtext = econtext;
 	rsinfo.expectedDesc = fcache->funcResultDesc;
-	rsinfo.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize);
+	rsinfo.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize | SFRM_Squelch);
 
 	rsinfo.setResult = NULL;
 	rsinfo.setDesc = NULL;
 
 	fcinfo->isnull = false;
-	rsinfo.returnMode = SFRM_ValuePerCall | SFRM_SquelchInProgress;
+	rsinfo.returnMode = SFRM_ValuePerCall;
 
 	FunctionCallInvoke(fcinfo);
 }
