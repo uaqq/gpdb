@@ -32,14 +32,6 @@ Datum gp_aovisimap(PG_FUNCTION_ARGS);
 Datum
 gp_aovisimap(PG_FUNCTION_ARGS)
 {
-	FuncCallContext *funcctx;
-
-	if (SRF_IS_SQUELCH_CALL())
-	{
-		funcctx = SRF_PERCALL_SETUP();
-		goto exit;
-	}
-
 	Oid			aoRelOid = PG_GETARG_OID(0);
 	Datum		values[3];
 	bool		nulls[3];
@@ -55,6 +47,7 @@ gp_aovisimap(PG_FUNCTION_ARGS)
 
 	} Context;
 
+	FuncCallContext *funcctx;
 	Context    *context;
 
 	if (SRF_IS_FIRSTCALL())
@@ -133,15 +126,11 @@ gp_aovisimap(PG_FUNCTION_ARGS)
 
 		SRF_RETURN_NEXT(funcctx, result);
 	}
-exit:
-	if (funcctx->user_fctx != NULL)
-	{
-		context = (Context *) funcctx->user_fctx;
-		AppendOnlyVisimapScan_Finish(&context->visiMapScan, AccessShareLock);
-		table_close(context->aorel, AccessShareLock);
-		pfree(context);
-		funcctx->user_fctx = NULL;
-	}
+
+	AppendOnlyVisimapScan_Finish(&context->visiMapScan, AccessShareLock);
+	table_close(context->aorel, AccessShareLock);
+	pfree(context);
+	funcctx->user_fctx = NULL;
 	SRF_RETURN_DONE(funcctx);
 }
 

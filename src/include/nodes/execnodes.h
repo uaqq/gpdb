@@ -301,7 +301,7 @@ typedef enum
 	SFRM_Materialize = 0x02,	/* result set instantiated in Tuplestore */
 	SFRM_Materialize_Random = 0x04, /* Tuplestore needs randomAccess */
 	SFRM_Materialize_Preferred = 0x08,	/* caller prefers Tuplestore */
-	SFRM_Squelch = 0x10,          /* Squelch protocol is used  */
+	SFRM_Squelch = 0x10,		/* Squelch protocol is used  */
 } SetFunctionReturnMode;
 
 /*

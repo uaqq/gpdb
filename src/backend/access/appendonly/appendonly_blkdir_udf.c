@@ -42,33 +42,34 @@ gp_aoblkdir(PG_FUNCTION_ARGS)
 {
 	typedef struct Context
 	{
-		Relation 				aorel;
-		SysScanDesc 			scan;
-		MinipagePerColumnGroup	currMinipage;
-		bool					currMinipageValid;
-		int 					currMinipageEntryIdx;
-		Relation				blkdirrel;
-	} Context;
+		Relation	aorel;
+		SysScanDesc scan;
+		MinipagePerColumnGroup currMinipage;
+		bool		currMinipageValid;
+		int			currMinipageEntryIdx;
+		Relation	blkdirrel;
+	}			Context;
 
 	FuncCallContext *funcctx;
-	Context			*context;
+	Context    *context;
+	HeapTuple	tuple;
+	Oid			aoRelOid;
 
 	if (SRF_IS_SQUELCH_CALL())
 	{
 		funcctx = SRF_PERCALL_SETUP();
-		context = (Context *) funcctx->user_fctx;		
+		context = (Context *) funcctx->user_fctx;
 		goto srf_done;
 	}
 
-	Oid       	aoRelOid = PG_GETARG_OID(0);
-	HeapTuple 	tuple;
+	aoRelOid = PG_GETARG_OID(0);
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		TupleDesc     tupdesc;
+		TupleDesc	tupdesc;
 		MemoryContext oldcontext;
-		Snapshot      sst;
-		Oid           blkdirrelid;
+		Snapshot	sst;
+		Oid			blkdirrelid;
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();

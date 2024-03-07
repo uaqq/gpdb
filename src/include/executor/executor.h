@@ -343,8 +343,9 @@ ExecEvalExpr(ExprState *state,
 	return state->evalfunc(state, econtext, isNull);
 }
 
-static inline void ExecSquelchEvalExpr(ExprState *state, ExprContext *econtext)
-{	
+static inline void
+ExecSquelchEvalExpr(ExprState *state, ExprContext *econtext)
+{
 }
 #endif
 
@@ -478,8 +479,8 @@ extern Datum ExecMakeFunctionResultSet(SetExprState *fcache,
 									   bool *isNull,
 									   ExprDoneCond *isDone);
 extern void ExecSquelchFunctionResultSet(SetExprState *fcache,
-							 ExprContext *econtext, 
-							 MemoryContext *argcontext);
+										 ExprContext *econtext,
+										 MemoryContext *argcontext);
 
 /*
  * prototypes from functions in execScan.c

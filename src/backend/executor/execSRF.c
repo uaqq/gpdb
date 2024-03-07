@@ -237,7 +237,7 @@ ExecMakeTableFunctionResult(SetExprState *setexpr,
 			rsinfo.isDone = ExprSingleResult;
 			result = FunctionCallInvoke(fcinfo);
 			setexpr->isSquelchSupported = rsinfo.returnMode & SFRM_Squelch;
-			/* Reset SFRM_Squelch bit*/
+			/* Reset SFRM_Squelch bit */
 			rsinfo.returnMode &= ~SFRM_Squelch;
 
 			pgstat_end_function_usage(&fcusage,
