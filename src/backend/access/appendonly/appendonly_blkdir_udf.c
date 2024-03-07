@@ -40,7 +40,7 @@ Datum gp_aoblkdir(PG_FUNCTION_ARGS);
 Datum
 gp_aoblkdir(PG_FUNCTION_ARGS)
 {
-	Oid       	aoRelOid = PG_GETARG_OID(0);
+	Oid	aoRelOid;
 	HeapTuple 	tuple;
 
 	typedef struct Context
@@ -55,6 +55,15 @@ gp_aoblkdir(PG_FUNCTION_ARGS)
 
 	FuncCallContext *funcctx;
 	Context			*context;
+
+	if (SRF_IS_SQUELCH_CALL())
+	{
+		funcctx = SRF_PERCALL_SETUP();
+		context = (Context *) funcctx->user_fctx;
+		goto srf_done;
+	}
+
+	aoRelOid = PG_GETARG_OID(0);
 
 	if (SRF_IS_FIRSTCALL())
 	{

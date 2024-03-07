@@ -62,3 +62,13 @@ SELECT * FROM t_outer WHERE t_outer.b IN (SELECT generate_series(1, t_outer.b) F
 EXPLAIN (VERBOSE, COSTS OFF)
   SELECT * FROM t_outer WHERE t_outer.b IN (SELECT generate_series(1, t_outer.b)  FROM t_inner);
 DROP TABLE t_outer, t_inner;
+
+-- Check for proper resource deallocation for SRF which has been squelched
+
+-- start_ignore
+DROP TABLE IF EXISTS ao1_srf_test;
+-- end_ignore
+CREATE TABLE ao1_srf_test (a int primary key) WITH (appendonly=true);
+INSERT INTO ao1_srf_test VALUES (1),(2),(3);
+SELECT (gp_toolkit.__gp_aoblkdir('ao1_srf_test'::regclass)).* FROM gp_dist_random('gp_id') ORDER BY row_count LIMIT 1;
+DROP TABLE ao1_srf_test;
