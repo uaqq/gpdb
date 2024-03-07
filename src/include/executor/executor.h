@@ -342,11 +342,6 @@ ExecEvalExpr(ExprState *state,
 {
 	return state->evalfunc(state, econtext, isNull);
 }
-
-static inline void
-ExecSquelchEvalExpr(ExprState *state, ExprContext *econtext)
-{
-}
 #endif
 
 /*

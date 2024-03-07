@@ -985,7 +985,6 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 							 ExprContext *econtext,
 							 MemoryContext *argcontext)
 {
-	ReturnSetInfo rsinfo;
 	FunctionCallInfo fcinfo = fcache->fcinfo;
 
 	/*
@@ -999,15 +998,16 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 	}
 
 	/* Prepare a resultinfo node for communication. */
+	ReturnSetInfo rsinfo = {
+		.type = T_ReturnSetInfo,
+		.econtext = econtext,
+		.expectedDesc = fcache->funcResultDesc,
+		.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize | SFRM_Squelch),
+		.setResult = NULL,
+		.setDesc = NULL
+	};
+
 	fcinfo->resultinfo = (Node *) &rsinfo;
-	rsinfo.type = T_ReturnSetInfo;
-	rsinfo.econtext = econtext;
-	rsinfo.expectedDesc = fcache->funcResultDesc;
-	rsinfo.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize | SFRM_Squelch);
-
-	rsinfo.setResult = NULL;
-	rsinfo.setDesc = NULL;
-
 	fcinfo->isnull = false;
 	rsinfo.returnMode = SFRM_ValuePerCall;
 

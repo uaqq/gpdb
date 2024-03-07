@@ -362,10 +362,9 @@ ExecSquelchpRrojectSetNode(ProjectSetState *node)
 void
 ExecSquelchProjectSRF(ProjectSetState *node)
 {
-	int			argno;
 	ExprContext *econtext = node->ps.ps_ExprContext;
 
-	for (argno = 0; argno < node->nelems; argno++)
+	for (int argno = 0; argno < node->nelems; argno++)
 	{
 		Node	   *elem = node->elems[argno];
 
@@ -373,11 +372,6 @@ ExecSquelchProjectSRF(ProjectSetState *node)
 		{
 			ExecSquelchFunctionResultSet((SetExprState *) elem,
 										 econtext, node->argcontext);
-		}
-		else
-		{
-			/* Non-SRF tlist expression. */
-			ExecSquelchEvalExpr((ExprState *) elem, econtext);
 		}
 	}
 }
