@@ -749,6 +749,10 @@ ExecSquelchNode(PlanState *node)
 			ExecSquelchSubqueryScan((SubqueryScanState *) node);
 			break;
 
+		case T_ProjectSetState:
+			ExecSquelchpRrojectSetNode((ProjectSetState *) node);
+			break;
+
 			/*
 			 * Node types that need no special handling, just recurse to
 			 * children.
@@ -769,10 +773,6 @@ ExecSquelchNode(PlanState *node)
 		case T_ResultState:
 			ExecSquelchNode(outerPlanState(node));
 			ExecSquelchNode(innerPlanState(node));
-			break;
-
-		case T_ProjectSetState:
-			ExecSquelchpRrojectSetNode((ProjectSetState *) node);
 			break;
 
 			/*
