@@ -40,20 +40,21 @@ Datum gp_aoblkdir(PG_FUNCTION_ARGS);
 Datum
 gp_aoblkdir(PG_FUNCTION_ARGS)
 {
+	Oid	aoRelOid;
+	HeapTuple 	tuple;
+
 	typedef struct Context
 	{
-		Relation	aorel;
-		SysScanDesc scan;
-		MinipagePerColumnGroup currMinipage;
-		bool		currMinipageValid;
-		int			currMinipageEntryIdx;
-		Relation	blkdirrel;
-	}			Context;
+		Relation 				aorel;
+		SysScanDesc 			scan;
+		MinipagePerColumnGroup	currMinipage;
+		bool					currMinipageValid;
+		int 					currMinipageEntryIdx;
+		Relation				blkdirrel;
+	} Context;
 
 	FuncCallContext *funcctx;
-	Context    *context;
-	HeapTuple	tuple;
-	Oid			aoRelOid;
+	Context			*context;
 
 	if (SRF_IS_SQUELCH_CALL())
 	{
@@ -66,10 +67,10 @@ gp_aoblkdir(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		TupleDesc	tupdesc;
+		TupleDesc     tupdesc;
 		MemoryContext oldcontext;
-		Snapshot	sst;
-		Oid			blkdirrelid;
+		Snapshot      sst;
+		Oid           blkdirrelid;
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
