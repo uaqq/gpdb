@@ -449,21 +449,12 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 
 		return dxlnode;
 	}
-	if (COperator::EopPhysicalMotionGather == ulOpId ||
-		COperator::EopPhysicalMotionBroadcast == ulOpId ||
-		COperator::EopPhysicalMotionHashDistribute == ulOpId ||
-		COperator::EopPhysicalMotionRoutedDistribute == ulOpId ||
-		COperator::EopPhysicalMotionRandom == ulOpId)
+	if (CUtils::FPhysicalMotion(pexpr->Pop()))
 	{
 		gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexpr);
 
-		if (NULL != inputSegmentInfo)
-		{
-			pexpr->SetMotionInputSegmentsNumber(inputSegmentInfo->Size());
-			CRefCount::SafeRelease(inputSegmentInfo);
-		}
-		else
-			pexpr->SetMotionInputSegmentsNumber(0);
+		pexpr->SetMotionInputSegmentsNumber(inputSegmentInfo->Size());
+		inputSegmentInfo->Release();
 	}
 	PfPdxlnPhysical pf = m_rgpfPhysicalTranslators[ulOpId];
 	if (NULL == pf)
