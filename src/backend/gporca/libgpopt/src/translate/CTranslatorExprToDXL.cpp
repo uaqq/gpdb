@@ -428,6 +428,16 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 {
 	GPOS_ASSERT(NULL != pexpr);
 	ULONG ulOpId = (ULONG) pexpr->Pop()->Eopid();
+
+	if (CUtils::FPhysicalMotion(pexpr->Pop()))
+	{
+		gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexpr);
+
+		pexpr->SetMotionInputSegmentsNumber(inputSegmentInfo->Size());
+		inputSegmentInfo->Release();
+	}
+	pexpr->SetMotionInputSegmentsNumberForChildren();
+
 	if (COperator::EopPhysicalTableScan == ulOpId ||
 		COperator::EopPhysicalExternalScan == ulOpId)
 	{
@@ -449,13 +459,7 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 
 		return dxlnode;
 	}
-	if (CUtils::FPhysicalMotion(pexpr->Pop()))
-	{
-		gpos::IntPtrArray *inputSegmentInfo = GetInputSegIdsArray(pexpr);
-
-		pexpr->SetMotionInputSegmentsNumber(inputSegmentInfo->Size());
-		inputSegmentInfo->Release();
-	}
+	
 	PfPdxlnPhysical pf = m_rgpfPhysicalTranslators[ulOpId];
 	if (NULL == pf)
 	{
@@ -467,9 +471,6 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 	// for instance, if the grouping /order by /partition/ distribution columns
 	// are no longer needed
 	CDXLNode *pdxlnNew = NULL;
-
-	pexpr->SetMotionInputSegmentsNumberForChildren();
-
 	CDXLNode *dxlnode = (this->*pf)(pexpr, colref_array, pdrgpdsBaseTables,
 									pulNonGatherMotions, pfDML);
 
