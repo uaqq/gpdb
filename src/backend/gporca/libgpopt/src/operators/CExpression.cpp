@@ -441,7 +441,8 @@ CExpression::SetMotionInputSegmentsNumberForChildren()
 		CExpression *pexprChild = (*m_pdrgpexpr)[ul];
 		if (!CUtils::FPhysicalMotion(pexprChild->Pop()))
 		{
-			pexprChild->SetMotionInputSegmentsNumber(m_motionInputSegmentsNumber);
+			pexprChild->SetMotionInputSegmentsNumber(
+				m_motionInputSegmentsNumber);
 		}
 	}
 }
