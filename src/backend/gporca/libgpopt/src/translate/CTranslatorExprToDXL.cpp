@@ -459,7 +459,6 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 
 		return dxlnode;
 	}
-	
 	PfPdxlnPhysical pf = m_rgpfPhysicalTranslators[ulOpId];
 	if (NULL == pf)
 	{
