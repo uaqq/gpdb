@@ -339,10 +339,10 @@ DROP TABLE t_outer, t_inner;
 -- Check for proper resource deallocation for SRF which has been squelched
 CREATE TABLE ao1_srf_test (a int primary key) WITH (appendonly=true);
 INSERT INTO ao1_srf_test VALUES (1),(2),(3);
-SELECT (gp_toolkit.__gp_aoblkdir('ao1_srf_test'::regclass)).* FROM gp_dist_random('gp_id') ORDER BY row_count LIMIT 1;
- tupleid | segno | columngroup_no | entry_no | first_row_no | file_offset | row_count 
----------+-------+----------------+----------+--------------+-------------+-----------
- (0,2)   |     1 |              0 |        0 |            1 |           0 |         1
+SELECT COUNT (*) FROM (SELECT (gp_toolkit.__gp_aoblkdir('ao1_srf_test'::regclass)).* FROM gp_dist_random('gp_id') LIMIT 1) as onerow;
+ count 
+-------
+     1
 (1 row)
 
 DROP TABLE ao1_srf_test;
