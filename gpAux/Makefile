@@ -130,6 +130,7 @@ rocky9_x86_64_CONFIGFLAGS=--with-gssapi --enable-orafce --enable-ic-proxy ${ORCA
 rhel9_x86_64_CONFIGFLAGS=--with-gssapi --enable-orafce --enable-ic-proxy ${ORCA_CONFIG} --enable-gpcloud --with-libxml --with-openssl --with-pam --with-ldap --with-uuid=e2fs --with-llvm
 ol8_x86_64_CONFIGFLAGS=--with-gssapi --enable-orafce --enable-ic-proxy ${ORCA_CONFIG} --enable-gpcloud --with-libxml --with-openssl --with-pam --with-ldap --with-uuid=e2fs --with-llvm
 ubuntu18.04_x86_64_CONFIGFLAGS=--with-gssapi --enable-orafce --enable-ic-proxy ${ORCA_CONFIG} --enable-gpcloud --with-libxml --with-openssl --with-pam --with-ldap --with-uuid=e2fs --with-llvm
+ubuntu22.04_x86_64_CONFIGFLAGS=--with-gssapi --enable-orafce --enable-ic-proxy ${ORCA_CONFIG} --enable-gpcloud --with-libxml --with-openssl --with-pam --with-ldap --with-uuid=e2fs --with-llvm
 sles12_x86_64_CONFIGFLAGS=--with-gssapi --enable-orafce --enable-ic-proxy ${ORCA_CONFIG} --enable-gpcloud --with-libxml --with-openssl --with-pam --with-ldap --with-uuid=e2fs --with-llvm
 BLD_CONFIGFLAGS=$($(BLD_ARCH)_CONFIGFLAGS)
 
