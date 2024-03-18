@@ -26,6 +26,16 @@ begin
             from get_explain_xml_output($$' || query_string || '$$) as x';
 end;
 $_$ language plpgsql;
+
+create or replace function simplified_xml_plan(query_string text)
+returns setof text as
+$_$
+begin
+  return query
+  select (regexp_matches(x::text, '(.*<(Node-Type|Senders|Receivers|Plan-Rows)>.*)', 'gm'))[1]
+  from get_explain_xml_output (query_string) as x;
+end;
+$_$ language plpgsql;
 -- end_ignore
 
 create table scale_factor_repl(c1 int, c2 int) distributed replicated;
@@ -61,33 +71,49 @@ analyze scale_factor_master_only;
 -- Gather Motion has fractional number of rows, which is 3.3... and this number was rounded up
 -- to 4. Also, Hash Semi Join below this motion has the same rows number, but scaled by
 -- segments number, which is 3 in our case. That is, we get 1.1 rows and round them to 2.
-explain select * from scale_factor_distr where c2 in (select c1/2 from scale_factor_rand_distr limit 3);
+select simplified_xml_plan($$
+  select * from scale_factor_distr where c2 in (select c1/2 from scale_factor_rand_distr limit 3);
+$$);
 
-explain select * from scale_factor_repl limit 1;
+select simplified_xml_plan($$
+  select * from scale_factor_repl limit 1;
+$$);
 
-explain select * from scale_factor_distr where c1 = 2 or c1 = 5 or c1 = 9;
+select simplified_xml_plan($$
+  select * from scale_factor_distr where c1 = 2 or c1 = 5 or c1 = 9;
+$$);
 
-explain select count(*) from scale_factor_partitioned where a = 1;
+select simplified_xml_plan($$
+  select count(*) from scale_factor_partitioned where a = 1;
+$$);
 
-explain select * from scale_factor_part_distr;
+select simplified_xml_plan($$
+  select * from scale_factor_part_distr;
+$$);
 
 select * from get_motion_snd_recv($$
   update scale_factor_repl a set c1 = b.c2 from scale_factor_part_distr b returning *;
 $$);
 
-explain update scale_factor_repl a set c1 = b.c2 from scale_factor_part_distr b returning *;
+select * from get_motion_snd_recv($$
+  update scale_factor_repl a set c1 = b.c2 from scale_factor_part_distr b returning *;
+$$);
 
 select * from get_motion_snd_recv ($$
   delete from scale_factor_part_distr a using scale_factor_rand_distr b where b.c1=a.c2;
 $$);
 
-explain delete from scale_factor_part_distr a using scale_factor_rand_distr b where b.c1=a.c2;
+select * from get_motion_snd_recv($$
+  delete from scale_factor_part_distr a using scale_factor_rand_distr b where b.c1=a.c2;
+$$);
 
 select * from get_motion_snd_recv($$
   select t1.c1, row_number() over (order by t1.c1 desc) from scale_factor_distr t1 join scale_factor_distr t2 using(c2);
 $$);
 
-explain select t1.c1, row_number() over (order by t1.c1 desc) from scale_factor_distr t1 join scale_factor_distr t2 using(c2);
+select * from get_motion_snd_recv($$
+  select t1.c1, row_number() over (order by t1.c1 desc) from scale_factor_distr t1 join scale_factor_distr t2 using(c2);
+$$);
 
 -- start_ignore
 drop table scale_factor_repl;
@@ -98,4 +124,5 @@ drop table scale_factor_partitioned;
 drop table scale_factor_master_only;
 drop function get_motion_snd_recv(text);
 drop function get_explain_xml_output(text);
+drop function simplified_xml_plan(text);
 -- end_ignore
