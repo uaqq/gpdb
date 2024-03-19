@@ -1561,7 +1561,7 @@ CheckDebugDtmActionSqlCommandTag(const char *sqlCommandTag)
 }
 
 static void
-send_guc_to_QE(List *guc_list)
+send_guc_to_QE(List *guc_list, bool is_restore)
 {
 	Assert(Gp_role == GP_ROLE_DISPATCH && guc_list);
 	ListCell *lc;
@@ -1574,7 +1574,8 @@ send_guc_to_QE(List *guc_list)
 		struct config_generic* gconfig = (struct config_generic *)lfirst(lc);
 
 		/* We can't SET GUCs whose context is too high. */
-		if (gconfig->context < PGC_SUSET || !(gconfig->flags & GUC_GPDB_NEED_SYNC))
+		if (gconfig->context < PGC_SUSET ||
+			(!is_restore && !(gconfig->flags & GUC_GPDB_NEED_SYNC)))
 			continue;
 
 		PG_TRY();
@@ -5340,7 +5341,7 @@ PostgresMain(int argc, char *argv[],
 				}
 
 				if (changed_gucs != NIL)
-					send_guc_to_QE(changed_gucs);
+					send_guc_to_QE(changed_gucs, false);
 
 				list_free(changed_guc_names);
 				list_free(changed_gucs);
@@ -5357,7 +5358,7 @@ PostgresMain(int argc, char *argv[],
 		/* last txn abort, try to synchronize guc to cached QE */
 		if(Gp_role == GP_ROLE_DISPATCH && gp_guc_restore_list)
 		{
-			send_guc_to_QE(gp_guc_restore_list);
+			send_guc_to_QE(gp_guc_restore_list, true);
 			list_free(gp_guc_restore_list);
 			gp_guc_restore_list = NIL;
 		}
