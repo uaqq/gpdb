@@ -654,7 +654,6 @@ $$ LANGUAGE plpgsql;
 \!gpconfig -c statement_mem -v '125MB'
 \!gpconfig -c backslash_quote -v 'safe_encoding'
 \!gpstop -u
-\c
 --end_ignore
 
 SHOW statement_mem;
