@@ -5,3 +5,5 @@ Some of these could be moved to the main isolation test suite, in
 src/test/isolation, but for historical reasons, these tests use a different
 syntax for specifying the tests. See sql_isolation_testcase.py for more
 details on the syntax.
+
+<placeholder to allow commit PR creation and CI runs>
