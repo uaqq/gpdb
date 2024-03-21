@@ -137,7 +137,7 @@ ProcessConfigFile(GucContext context)
 
 /*
  * This works the same way as the ProcessConfigFile(), except that it returns a
- * list of option names that were changed.
+ * list of options (config_generic *) that were changed.
  */
 List *
 ProcessConfigFileForSync(GucContext context)
@@ -375,7 +375,7 @@ ProcessConfigFileImpl(GucContext context, bool return_changed)
 						(errmsg("parameter \"%s\" removed from configuration file, reset to default",
 								gconf->name)));
 			if (return_changed)
-				changed_gucs = lappend(changed_gucs, pstrdup(gconf->name));
+				changed_gucs = lappend(changed_gucs, gconf);
 		}
 	}
 
@@ -445,7 +445,11 @@ ProcessConfigFileImpl(GucContext context, bool return_changed)
 			}
 
 			if (return_changed)
-				changed_gucs = lappend(changed_gucs, pstrdup(item->name));
+			{
+				struct config_generic *gconf = find_option(item->name, false, elevel);
+				if (gconf != NULL)
+					changed_gucs = lappend(changed_gucs, gconf);
+			}
 		}
 		else if (scres == 0)
 		{

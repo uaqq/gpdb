@@ -5329,21 +5329,11 @@ PostgresMain(int argc, char *argv[],
 				ProcessConfigFile(PGC_SIGHUP);
 			else
 			{
-				ListCell   *lc;
-				List	   *changed_gucs = NIL;
-				List	   *changed_guc_names = ProcessConfigFileForSync(PGC_SIGHUP);
-
-				foreach (lc, changed_guc_names)
-				{
-					struct config_generic *guc = find_option(lfirst(lc), false, DEBUG2);
-					if (guc != NULL)
-						changed_gucs = lappend(changed_gucs, guc);
-				}
+				List	   *changed_gucs = ProcessConfigFileForSync(PGC_SIGHUP);
 
 				if (changed_gucs != NIL)
 					send_guc_to_QE(changed_gucs, false);
 
-				list_free(changed_guc_names);
 				list_free(changed_gucs);
 			}
 		}
