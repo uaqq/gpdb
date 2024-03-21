@@ -67,8 +67,30 @@ DROP TABLE t_outer, t_inner;
 
 -- start_ignore
 DROP TABLE IF EXISTS ao1_srf_test;
+DROP TABLE IF EXISTS ao2_srf_test;
+DROP TABLE IF EXISTS srf_test_t1;
 -- end_ignore
+
 CREATE TABLE ao1_srf_test (a int primary key) WITH (appendonly=true);
 INSERT INTO ao1_srf_test VALUES (1);
 SELECT (gp_toolkit.__gp_aoblkdir('ao1_srf_test'::regclass)).* FROM gp_dist_random('gp_id') LIMIT 1;
+
+-- Check that SRF suelch performs  when rescan is happens
+create view ao_tables as select pc.oid, relname from 
+    pg_class pc join pg_am am on am.oid = pc.relam where amname = 'ao_column' or amname = 'ao_row';
+
+create table srf_test_t1 (a int primary key, b int);
+CREATE TABLE ao2_srf_test (a int primary key) WITH (appendonly=true);
+
+insert into ao1_srf_test select a from generate_series(2, 10000)a;
+insert into ao2_srf_test select a from generate_series(1, 10000)a;
+
+select * from gp_dist_random('ao_tables'), srf_test_t1 
+    join 
+      lateral (select (gp_toolkit.__gp_aoblkdir(ao_tables.oid)).row_count 
+        from gp_dist_random('gp_id') limit 1) pc 
+    on srf_test_t1.a = row_count;
+
 DROP TABLE ao1_srf_test;
+DROP TABLE ao2_srf_test;
+DROP TABLE srf_test_t1;

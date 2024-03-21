@@ -321,6 +321,11 @@ void
 ExecEndProjectSet(ProjectSetState *node)
 {
 	/*
+	 * Notify SRF(s) that we will not consume results anymore
+	 */
+	ExecSquelchpRrojectSetNode(node);
+
+	/*
 	 * Free the exprcontext
 	 */
 	ExecFreeExprContext(&node->ps);

@@ -153,9 +153,15 @@ ExecReScan(PlanState *node)
 			UpdateChangedParamSet(node->righttree, node->chgParam);
 	}
 
-	/* Call expression callbacks */
 	if (node->ps_ExprContext)
+	{
+		if (IsA(node, ProjectSetState))
+		{
+			ExecSquelchProjectSRF((ProjectSetState *) node);
+		}
+		/* Call expression callbacks */
 		ReScanExprContext(node->ps_ExprContext);
+	}
 
 	/* And do node-type-specific processing */
 	switch (nodeTag(node))
