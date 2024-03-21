@@ -1574,8 +1574,8 @@ send_guc_to_QE(List *guc_list, bool is_restore)
 		struct config_generic* gconfig = (struct config_generic *)lfirst(lc);
 
 		/* We can't SET GUCs whose context is too high. */
-		if (gconfig->context < PGC_SUSET ||
-			(!is_restore && !(gconfig->flags & GUC_GPDB_NEED_SYNC)))
+		if (!is_restore &&
+			(gconfig->context < PGC_SUSET || !(gconfig->flags & GUC_GPDB_NEED_SYNC)))
 			continue;
 
 		PG_TRY();
