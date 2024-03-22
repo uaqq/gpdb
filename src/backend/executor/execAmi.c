@@ -756,7 +756,7 @@ ExecSquelchNode(PlanState *node)
 			break;
 
 		case T_ProjectSetState:
-			ExecSquelchpRrojectSetNode((ProjectSetState *) node);
+			ExecSquelchProjectSetNode((ProjectSetState *) node);
 			break;
 
 			/*

@@ -323,7 +323,7 @@ ExecEndProjectSet(ProjectSetState *node)
 	/*
 	 * Notify SRF(s) that we will not consume results anymore
 	 */
-	ExecSquelchpRrojectSetNode(node);
+	ExecSquelchProjectSetNode(node);
 
 	/*
 	 * Free the exprcontext
@@ -356,7 +356,7 @@ ExecReScanProjectSet(ProjectSetState *node)
 }
 
 void
-ExecSquelchpRrojectSetNode(ProjectSetState *node)
+ExecSquelchProjectSetNode(ProjectSetState *node)
 {
 	ExecSquelchProjectSRF(node);
 
