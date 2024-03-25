@@ -19,11 +19,8 @@
 -- This number is selected to be larger than the 15-second retry window
 -- which makes a meaningful test, meanwhile reduce the chance that FTS sees
 -- a "recovery not in progress" primary as much as possible.
-select gp_inject_fault('fault_in_background_writer_quickdie', 'sleep', '', '', '', 1, 1, 17, dbid) 
-from gp_segment_configuration where role = 'p' and content = 0;
-
--- Do not let the postmaster send SIGKILL to the bgwriter
-select gp_inject_fault_infinite('postmaster_server_loop_no_sigkill', 'skip', dbid) 
+-- It also will not let the postmaster send SIGKILL to the bgwriter.
+select gp_inject_fault('postmaster_delay_termination_bg_writer', 'skip', '', '', '', 1, -1, 17, dbid, -1)
 from gp_segment_configuration where role = 'p' and content = 0;
 
 -- Now bring down primary of seg0. There're a lot of ways to do that, in order
@@ -48,8 +45,7 @@ from gp_segment_configuration where role = 'p' AND content = 0;
 select gp_request_fts_probe_scan();
 select dbid, role, preferred_role, status from gp_segment_configuration where content = 0;
 
-select gp_inject_fault('postmaster_server_loop_no_sigkill', 'reset', dbid) from gp_segment_configuration where role = 'p' and content = 0;
-select gp_inject_fault('fault_in_background_writer_quickdie', 'reset', dbid) from gp_segment_configuration where role = 'p' and content = 0;
+select gp_inject_fault('postmaster_delay_termination_bg_writer', 'reset', dbid) from gp_segment_configuration where role = 'p' and content = 0;
 
 -- The only table that should have been created successfully
 drop table fts_reset_t3;
