@@ -233,7 +233,8 @@ FaultInjector_InjectFaultIfSet_out_of_line(
 							   const char*				 faultName,
 							   DDLStatement_e			 ddlStatement,
 							   const char*				 databaseName,
-							   const char*				 tableName)
+							   const char*				 tableName,
+							   int*						 extraArgOut)
 {
 
 	FaultInjectorEntry_s   *entryShared, localEntry,
@@ -339,6 +340,9 @@ FaultInjector_InjectFaultIfSet_out_of_line(
 
 	if (retvalue == FaultInjectorTypeNotSpecified)
 		return FaultInjectorTypeNotSpecified;
+
+	if (extraArgOut != NULL)
+		*extraArgOut = entryLocal->extraArg;
 
 	/* Inject fault */
 	switch (entryLocal->faultInjectorType) {
