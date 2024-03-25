@@ -95,17 +95,23 @@ extern FaultInjectorType_e FaultInjector_InjectFaultIfSet_out_of_line(
 							   const char*				 faultName,
 							   DDLStatement_e			 ddlStatement,
 							   const char*				 databaseName,
+							   const char*				 tableName);
+
+extern FaultInjectorType_e FaultInjector_InjectFaultIfSet_out_of_line_with_param(
+							   const char*				 faultName,
+							   DDLStatement_e			 ddlStatement,
+							   const char*				 databaseName,
 							   const char*				 tableName,
 							   int*						 extraArgOut);
 
 #define FaultInjector_InjectFaultIfSet(faultName, ddlStatement, databaseName, tableName) \
 	(((*numActiveFaults_ptr) > 0) ? \
-	 FaultInjector_InjectFaultIfSet_out_of_line(faultName, ddlStatement, databaseName, tableName, NULL) : \
+	 FaultInjector_InjectFaultIfSet_out_of_line(faultName, ddlStatement, databaseName, tableName) : \
 	 FaultInjectorTypeNotSpecified)
 
 #define FaultInjector_InjectFaultIfSetWithParam(faultName, ddlStatement, databaseName, tableName, paramPtr) \
 	(((*numActiveFaults_ptr) > 0) ? \
-	 FaultInjector_InjectFaultIfSet_out_of_line(faultName, ddlStatement, databaseName, tableName, paramPtr) : \
+	 FaultInjector_InjectFaultIfSet_out_of_line_with_param(faultName, ddlStatement, databaseName, tableName, paramPtr) : \
 	 FaultInjectorTypeNotSpecified)
 
 extern int *numActiveFaults_ptr;
