@@ -2554,7 +2554,7 @@ static int
 InitializeLDAPConnection(Port *port, LDAP **ldap)
 {
 	int			ldapversion = LDAP_VERSION3;
-	int			ldaprestart = LDAP_OPT_ON;
+	int			ldaprestart = 1;
 	int			r;
 
 	if (strncmp(port->hba->ldapserver, "ldaps://", 8) == 0 ||
