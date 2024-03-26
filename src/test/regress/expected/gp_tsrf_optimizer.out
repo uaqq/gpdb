@@ -362,3 +362,49 @@ select * from srf_test_t1 where a in
 DROP TABLE ao1_srf_test;
 DROP TABLE ao2_srf_test;
 DROP TABLE srf_test_t1;
+--  Check various SRFs switched to squenched Value-Per-Call
+create table test_ao1(i int ) with (appendonly=true);
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+insert into test_ao1 values (generate_series(1,1000));
+select count(*) from (select get_ao_distribution('test_ao1') limit 1) sdist;
+ count 
+-------
+     1
+(1 row)
+
+DROP TABLE test_ao1;
+create table test_ao2 (a int, b int) with (appendonly=true, orientation=column) distributed by(a);
+create index on test_ao2(b);
+insert into test_ao2 select i, i from generate_series(1, 10) i;
+update test_ao2 set b = 100 where a in (2, 5);
+delete from test_ao2 where a in (4, 8);
+select (gp_toolkit.__gp_aovisimap('test_ao2'::regclass)).* from gp_dist_random('gp_id') limit 1;
+     tid      | segno | row_num 
+--------------+-------+---------
+ (33554432,2) |     1 |       1
+(1 row)
+
+select count (*) from (
+  select (gp_toolkit.__gp_aovisimap_entry('test_ao2'::regclass)).* from gp_dist_random('gp_id') limit 1) vme1;
+ count 
+-------
+     1
+(1 row)
+
+select count(*) from (select * from (select gp_toolkit.__gp_aovisimap_hidden_info('test_ao2'::regclass)) hi limit 1) hi1;
+ count 
+-------
+     1
+(1 row)
+
+DROP TABLE test_ao2;
+create table test_ao3(id int, key int) distributed by(id);
+insert into test_ao3 values(1,2),(2,3),(3,4);
+select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1;
+ gp_acquire_sample_rows 
+------------------------
+ (0,0,,,)
+(1 row)
+
+DROP TABLE test_ao3;

@@ -40,7 +40,6 @@ Datum gp_aoblkdir(PG_FUNCTION_ARGS);
 Datum
 gp_aoblkdir(PG_FUNCTION_ARGS)
 {
-	Oid	aoRelOid;
 	HeapTuple 	tuple;
 
 	typedef struct Context
@@ -63,14 +62,13 @@ gp_aoblkdir(PG_FUNCTION_ARGS)
 		goto srf_done;
 	}
 
-	aoRelOid = PG_GETARG_OID(0);
-
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc     tupdesc;
 		MemoryContext oldcontext;
 		Snapshot      sst;
 		Oid           blkdirrelid;
+		Oid           aoRelOid = PG_GETARG_OID(0);
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();

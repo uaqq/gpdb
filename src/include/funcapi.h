@@ -295,7 +295,11 @@ extern void end_MultiFuncCall(PG_FUNCTION_ARGS, FuncCallContext *funcctx);
 
 #define SRF_IS_FIRSTCALL() (fcinfo->flinfo->fn_extra == NULL)
 
-/* Set squelch flag for this function and test if it's squelching already */
+/*
+ *	Set squelch flag for this function and test if it's squelching already
+ *  Note, that during squelch call function arguments are inaccessible,
+ *  so this call must appear before PG_GETARG_XXX() macros
+*/
 #define SRF_IS_SQUELCH_CALL() is_SquelchFuncCall(fcinfo)
 
 #define SRF_FIRSTCALL_INIT() init_MultiFuncCall(fcinfo)

@@ -94,3 +94,45 @@ select * from srf_test_t1 where a in
 DROP TABLE ao1_srf_test;
 DROP TABLE ao2_srf_test;
 DROP TABLE srf_test_t1;
+
+
+--  Check various SRFs switched to squenched Value-Per-Call
+-- start_ignore
+DROP TABLE IF EXISTS test_ao1;
+-- end_ignore
+
+create table test_ao1(i int ) with (appendonly=true);
+insert into test_ao1 values (generate_series(1,1000));
+select count(*) from (select get_ao_distribution('test_ao1') limit 1) sdist;
+DROP TABLE test_ao1;
+
+
+-- start_ignore
+DROP TABLE IF EXISTS test_ao2;
+-- end_ignore
+
+create table test_ao2 (a int, b int) with (appendonly=true, orientation=column) distributed by(a);
+create index on test_ao2(b);
+insert into test_ao2 select i, i from generate_series(1, 10) i;
+update test_ao2 set b = 100 where a in (2, 5);
+delete from test_ao2 where a in (4, 8);
+select (gp_toolkit.__gp_aovisimap('test_ao2'::regclass)).* from gp_dist_random('gp_id') limit 1;
+
+select count (*) from (
+  select (gp_toolkit.__gp_aovisimap_entry('test_ao2'::regclass)).* from gp_dist_random('gp_id') limit 1) vme1;
+
+select count(*) from (select * from (select gp_toolkit.__gp_aovisimap_hidden_info('test_ao2'::regclass)) hi limit 1) hi1;
+
+DROP TABLE test_ao2;
+
+-- start_ignore
+DROP TABLE IF EXISTS test_ao3;
+-- end_ignore
+
+create table test_ao3(id int, key int) distributed by(id);
+
+insert into test_ao3 values(1,2),(2,3),(3,4);
+
+select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1;
+
+DROP TABLE test_ao3;

@@ -1335,7 +1335,6 @@ typedef struct
 Datum
 get_ao_distribution(PG_FUNCTION_ARGS)
 {
-	Oid			relid = PG_GETARG_OID(0);
 	FuncCallContext *funcctx;
 	MemoryContext oldcontext;
 	AclResult	aclresult;
@@ -1344,6 +1343,12 @@ get_ao_distribution(PG_FUNCTION_ARGS)
 	Relation	parentrel;
 	Relation	aosegrel;
 	int			ret;
+
+	if (SRF_IS_SQUELCH_CALL())
+	{
+		funcctx = SRF_PERCALL_SETUP();
+		goto srf_done;
+	}
 
 	Assert(Gp_role == GP_ROLE_DISPATCH);
 
@@ -1354,6 +1359,7 @@ get_ao_distribution(PG_FUNCTION_ARGS)
 	 */
 	if (SRF_IS_FIRSTCALL())
 	{
+		Oid			relid = PG_GETARG_OID(0);
 		volatile bool		connected = false;
 		Oid			segrelid;
 
@@ -1501,6 +1507,7 @@ get_ao_distribution(PG_FUNCTION_ARGS)
 	 */
 	pfree(query_block);
 
+srf_done:
 	SPI_finish();
 
 	funcctx->user_fctx = NULL;
