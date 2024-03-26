@@ -1990,9 +1990,8 @@ ServerLoop(void)
 			 * they will soon be terminated anyway. Thus, the fault injector
 			 * is accessed only when the Postmaster state is PM_RUN.
 			 */
-			if (SIMPLE_FAULT_INJECTOR_WITH_PARAM("postmaster_delay_termination_bg_writer", \
-										 &delay_bg_writer_termination_sec) ==
-				FaultInjectorTypeSkip)
+			if (SIMPLE_FAULT_INJECTOR_WITH_PARAM("postmaster_delay_termination_bg_writer",
+				  &delay_bg_writer_termination_sec) == FaultInjectorTypeSkip)
 				postmaster_no_sigkill = true;
 			else
 			{
@@ -3931,12 +3930,12 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 			 * process - send SIGSTOP to the bg writer process and start a
 			 * timer that will wake up and then immediately terminate it.
 			 */
+			static TimeoutId id = 0;
+
 			ereport(DEBUG2,
 					(errmsg_internal("sending SIGSTOP to process %d and starting timer",
 									 (int) BgWriterPID)));
 			signal_child(BgWriterPID, SIGSTOP);
-
-			static TimeoutId id = 0;
 
 			if (id == 0)
 				id = RegisterTimeout(USER_TIMEOUT, TerminateBgWriterHandler);
