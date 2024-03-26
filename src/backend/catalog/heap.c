@@ -1778,9 +1778,14 @@ heap_create_with_catalog(const char *relname,
 	 *
 	 * Also, skip this in bootstrap mode, since we don't make dependencies
 	 * while bootstrapping.
+	 *
+	 * GPDB: The section about TOAST is still relevant for AO aux tables.
 	 */
 	if (relkind != RELKIND_COMPOSITE_TYPE &&
 		relkind != RELKIND_TOASTVALUE &&
+		relkind != RELKIND_AOSEGMENTS &&
+		relkind != RELKIND_AOBLOCKDIR &&
+		relkind != RELKIND_AOVISIMAP &&
 		!IsBootstrapProcessingMode())
 	{
 		ObjectAddress myself,
