@@ -1995,7 +1995,6 @@ ServerLoop(void)
 				postmaster_no_sigkill = true;
 			else
 			{
-
 				delay_bg_writer_termination_sec = 0;
 				postmaster_no_sigkill = false;
 			}
