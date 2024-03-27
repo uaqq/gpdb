@@ -1095,8 +1095,8 @@ $$ LANGUAGE plpgsql;
 -- Explicitly set GUCs through gpconfig, then run gpstop -u.
 --
 -- log_min_messages has GUC_GPDB_NEED_SYNC in flags, so it should be
--- synchronized across the segments and a context of PGC_SUSET, so it should not
--- be possible to change it without superuser priveleges.
+-- synchronized across the segments, and a context of PGC_SUSET, that it should
+-- not be possible to change it without superuser priveleges.
 --
 -- backslash_quote is not synchronized, so it should remain unchanged on
 -- segments.
@@ -1133,11 +1133,11 @@ SELECT * from show_on_segments('backslash_quote');
 \!gpconfig -c backslash_quote -v 'off' -m 'on'
 \!gpstop -u
 --end_ignore
--- Should be notice, synchronized with segments.
-SHOW statement_mem;
- statement_mem 
----------------
- 125MB
+-- Should be 'notice', synchronized with segments.
+SHOW log_min_messages;
+ log_min_messages 
+------------------
+ notice
 (1 row)
 
 SELECT * from show_on_segments('log_min_messages');
@@ -1164,11 +1164,11 @@ SELECT * from show_on_segments('backslash_quote');
 (3 rows)
 
 --start_ignore
-\!gpconfig -r statement_mem
+\!gpconfig -r log_min_messages
 \!gpconfig -r backslash_quote
 \!gpstop -u
 --end_ignore
--- After reset, QD and QE should hold the default value, warning.
+-- After reset, QD and QE should hold the default value, 'warning'.
 SHOW log_min_messages;
  log_min_messages 
 ------------------
@@ -1183,7 +1183,7 @@ SELECT * from show_on_segments('log_min_messages');
  log_min_messages | warning
 (3 rows)
 
--- After reset, QD and QE should hold the default value, safe_encoding.
+-- After reset, QD and QE should hold the default value, 'safe_encoding'.
 SHOW backslash_quote;
  backslash_quote 
 -----------------
