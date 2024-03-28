@@ -845,3 +845,27 @@ explain select cmax, * from test_reporting_r;
 drop table test_reporting;
 drop table test_reporting_r;
 drop table test_reporting_c;
+
+-- Test AO functions with execution location on dispatcher.
+drop table if exists t;
+drop table if exists d;
+
+create table t (a int) with (appendoptimized=true, orientation=row);
+create table d (tname text);
+insert into d values ('t');
+
+-- Queries below should fail with a proper error message.
+select get_ao_compression_ratio(tname) from d;
+select get_ao_distribution(tname) from d;
+select gp_update_ao_master_stats(tname) from d;
+
+-- Query below is an example how to get the result
+-- intended by the failing query above.
+explain (costs off) select get_ao_compression_ratio(tname) from
+	unnest(array(select tname from d)) as tname;
+
+select get_ao_compression_ratio(tname) from
+	unnest(array(select tname from d)) as tname;
+
+drop table t;
+drop table d;
