@@ -407,10 +407,10 @@ select count(*) from (select * from (select gp_toolkit.__gp_aovisimap_hidden_inf
 DROP TABLE test_ao2;
 create table test_ao3(id int, key int) distributed by(id);
 insert into test_ao3 values(1,2),(2,3),(3,4);
-select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1;
- gp_acquire_sample_rows 
-------------------------
- (0,0,,,)
+select count(*) from (select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1) ss1;
+ count 
+-------
+     1
 (1 row)
 
 DROP TABLE test_ao3;

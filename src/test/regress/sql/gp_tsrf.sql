@@ -133,6 +133,6 @@ create table test_ao3(id int, key int) distributed by(id);
 
 insert into test_ao3 values(1,2),(2,3),(3,4);
 
-select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1;
+select count(*) from (select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1) ss1;
 
 DROP TABLE test_ao3;

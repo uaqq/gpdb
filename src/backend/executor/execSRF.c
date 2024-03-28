@@ -1002,7 +1002,7 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 		.type = T_ReturnSetInfo,
 		.econtext = econtext,
 		.expectedDesc = fcache->funcResultDesc,
-		.allowedModes = (int) (SFRM_ValuePerCall | SFRM_Materialize | SFRM_Squelch),
+		.allowedModes = (int) SFRM_Squelch,
 		.setResult = NULL,
 		.setDesc = NULL
 	};
