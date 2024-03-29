@@ -24,15 +24,14 @@ RUN dnf makecache && \
     pip3 install pytest gsutil behave~=1.2.6 coverage~=4.5 'mock<=5.0.0' allure-behave
 
 RUN dnf -y install \
-                --repofrompath=devel_external,https://dl.rockylinux.org/vault/rocky/8.8/devel/x86_64/os \
-                llvm-libs-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                llvm-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                llvm-test-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                llvm-static-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                llvm-devel-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                clang-resource-filesystem-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                clang-libs-15.0.7-1.module+el8.8.0+1144+0a4e73bd \
-                clang-15.0.7-1.module+el8.8.0+1144+0a4e73bd && \
+                llvm-libs \
+                llvm \
+                llvm-test \
+                llvm-static \
+                llvm-devel \
+                clang-resource-filesystem \
+                clang-libs \
+                clang && \
     dnf clean all
 
 # setup ssh configuration
