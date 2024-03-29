@@ -1990,9 +1990,18 @@ ServerLoop(void)
 			 * they will soon be terminated anyway. Thus, the fault injector
 			 * is accessed only when the Postmaster state is PM_RUN.
 			 */
-			if (SIMPLE_FAULT_INJECTOR_WITH_PARAM("postmaster_delay_termination_bg_writer",
-				  &delay_bg_writer_termination_sec) == FaultInjectorTypeSkip)
+			if (SIMPLE_FAULT_INJECTOR("postmaster_delay_termination_bg_writer") ==
+				FaultInjectorTypeSkip)
+			{
+				/*
+				 * Let the background writer sleep a little bit larger than
+				 * the FTS retry window (which is gp_fts_probe_retries * 1 sec).
+				 * Currently test will set gp_fts_probe_retries to 15, so
+				 * the bg writer will sleep for 17 sec.
+				 */
+				delay_bg_writer_termination_sec = gp_fts_probe_retries + 2;
 				postmaster_no_sigkill = true;
+			}
 			else
 			{
 				delay_bg_writer_termination_sec = 0;

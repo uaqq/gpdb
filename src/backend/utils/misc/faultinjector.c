@@ -235,22 +235,6 @@ FaultInjector_InjectFaultIfSet_out_of_line(
 							   const char*				 databaseName,
 							   const char*				 tableName)
 {
-	return FaultInjector_InjectFaultIfSet_out_of_line_with_param(
-																 faultName,
-																 ddlStatement,
-																 databaseName,
-																 tableName,
-																 NULL);
-}
-
-FaultInjectorType_e
-FaultInjector_InjectFaultIfSet_out_of_line_with_param(
-							   const char*				 faultName,
-							   DDLStatement_e			 ddlStatement,
-							   const char*				 databaseName,
-							   const char*				 tableName,
-							   int*						 extraArgOut)
-{
 
 	FaultInjectorEntry_s   *entryShared, localEntry,
 						   *entryLocal = &localEntry;
@@ -355,9 +339,6 @@ FaultInjector_InjectFaultIfSet_out_of_line_with_param(
 
 	if (retvalue == FaultInjectorTypeNotSpecified)
 		return FaultInjectorTypeNotSpecified;
-
-	if (extraArgOut != NULL)
-		*extraArgOut = entryLocal->extraArg;
 
 	/* Inject fault */
 	switch (entryLocal->faultInjectorType) {

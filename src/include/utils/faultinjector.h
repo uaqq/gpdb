@@ -97,21 +97,9 @@ extern FaultInjectorType_e FaultInjector_InjectFaultIfSet_out_of_line(
 							   const char*				 databaseName,
 							   const char*				 tableName);
 
-extern FaultInjectorType_e FaultInjector_InjectFaultIfSet_out_of_line_with_param(
-							   const char*				 faultName,
-							   DDLStatement_e			 ddlStatement,
-							   const char*				 databaseName,
-							   const char*				 tableName,
-							   int*						 extraArgOut);
-
 #define FaultInjector_InjectFaultIfSet(faultName, ddlStatement, databaseName, tableName) \
 	(((*numActiveFaults_ptr) > 0) ? \
 	 FaultInjector_InjectFaultIfSet_out_of_line(faultName, ddlStatement, databaseName, tableName) : \
-	 FaultInjectorTypeNotSpecified)
-
-#define FaultInjector_InjectFaultIfSetWithParam(faultName, ddlStatement, databaseName, tableName, paramPtr) \
-	(((*numActiveFaults_ptr) > 0) ? \
-	 FaultInjector_InjectFaultIfSet_out_of_line_with_param(faultName, ddlStatement, databaseName, tableName, paramPtr) : \
 	 FaultInjectorTypeNotSpecified)
 
 extern int *numActiveFaults_ptr;
@@ -127,13 +115,9 @@ extern void HandleFaultMessage(const char* msg);
 extern bool am_faulthandler;
 #define SIMPLE_FAULT_INJECTOR(FaultName) \
 	FaultInjector_InjectFaultIfSet(FaultName, DDLNotSpecified, "", "")
-
-#define SIMPLE_FAULT_INJECTOR_WITH_PARAM(FaultName, ParamPtr) \
-	FaultInjector_InjectFaultIfSetWithParam(FaultName, DDLNotSpecified, "", "", ParamPtr)
 #else
 #define am_faulthandler false
 #define SIMPLE_FAULT_INJECTOR(FaultName)
-#define SIMPLE_FAULT_INJECTOR_WITH_PARAM(FaultName, ParamPtr)
 #endif
 
 #endif	/* FAULTINJECTOR_H */

@@ -13,7 +13,7 @@
 -- to restart, and potentially makes FTS think it's in "recovery not
 -- in progress" stage and promote the mirror, we would need the FTS
 -- to make that decision a bit less frequently.
-!\retcode gpconfig -c gp_fts_probe_retries -v 15 --masteronly;
+!\retcode gpconfig -c gp_fts_probe_retries -v 15;
 (exited with code 0)
 !\retcode gpstop -u;
 (exited with code 0)
@@ -23,10 +23,10 @@
 -- which makes a meaningful test, meanwhile reduce the chance that FTS sees
 -- a "recovery not in progress" primary as much as possible.
 -- It also will not let the postmaster send SIGKILL to the bgwriter.
-select gp_inject_fault('postmaster_delay_termination_bg_writer', 'skip', '', '', '', 1, -1, 17, dbid, -1) from gp_segment_configuration where role = 'p' and content = 0;
- gp_inject_fault 
------------------
- Success:        
+select gp_inject_fault_infinite('postmaster_delay_termination_bg_writer', 'skip', dbid) from gp_segment_configuration where role = 'p' and content = 0;
+ gp_inject_fault_infinite 
+--------------------------
+ Success:                 
 (1 row)
 
 -- Now bring down primary of seg0. There're a lot of ways to do that, in order
