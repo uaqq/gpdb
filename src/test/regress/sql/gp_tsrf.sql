@@ -66,18 +66,18 @@ DROP TABLE t_outer, t_inner;
 -- Check for proper resource deallocation for SRF which has been squelched
 
 -- start_ignore
-DROP TABLE IF EXISTS ao1_srf_test;
-DROP TABLE IF EXISTS ao2_srf_test;
-DROP TABLE IF EXISTS srf_test_t1;
+drop table if exists ao1_srf_test;
+drop table if exists ao2_srf_test;
+drop table if exists srf_test_t1;
 -- end_ignore
 
-CREATE TABLE ao1_srf_test (a int primary key) WITH (appendonly=true);
-INSERT INTO ao1_srf_test VALUES (1);
-SELECT (gp_toolkit.__gp_aoblkdir('ao1_srf_test'::regclass)).* FROM gp_dist_random('gp_id') LIMIT 1;
+create table ao1_srf_test (a int primary key) with (appendonly=true);
+insert into ao1_srf_test values (1);
+select (gp_toolkit.__gp_aoblkdir('ao1_srf_test'::regclass)).* from gp_dist_random('gp_id') limit 1;
 
--- Check that SRF suelch performs  when rescan is happens
+-- Check that SRF squelch performs when rescan is happens
 
-CREATE TABLE ao2_srf_test (a int primary key) WITH (appendonly=true);
+create table ao2_srf_test (a int primary key) with (appendonly=true);
 
 insert into ao1_srf_test select a from generate_series(2, 10000)a;
 insert into ao2_srf_test select a from generate_series(1, 10000)a;
@@ -91,24 +91,24 @@ select * from srf_test_t1 where a in
        (select (gp_toolkit.__gp_aoblkdir(srf_test_t1.a)).row_count 
         from gp_dist_random('gp_id') limit 1);
 
-DROP TABLE ao1_srf_test;
-DROP TABLE ao2_srf_test;
-DROP TABLE srf_test_t1;
+drop table ao1_srf_test;
+drop table ao2_srf_test;
+drop table srf_test_t1;
 
 
---  Check various SRFs switched to squenched Value-Per-Call
+-- Check various SRFs switched to squenched Value-Per-Call
 -- start_ignore
-DROP TABLE IF EXISTS test_ao1;
+drop table if exists test_ao1;
 -- end_ignore
 
-create table test_ao1(i int ) with (appendonly=true);
+create table test_ao1(i int) with (appendonly=true);
 insert into test_ao1 values (generate_series(1,1000));
 select count(*) from (select get_ao_distribution('test_ao1') limit 1) sdist;
-DROP TABLE test_ao1;
+drop table test_ao1;
 
 
 -- start_ignore
-DROP TABLE IF EXISTS test_ao2;
+drop table if exists test_ao2;
 -- end_ignore
 
 create table test_ao2 (a int, b int) with (appendonly=true, orientation=column) distributed by(a);
@@ -123,10 +123,10 @@ select count (*) from (
 
 select count(*) from (select * from (select gp_toolkit.__gp_aovisimap_hidden_info('test_ao2'::regclass)) hi limit 1) hi1;
 
-DROP TABLE test_ao2;
+drop table test_ao2;
 
 -- start_ignore
-DROP TABLE IF EXISTS test_ao3;
+drop table if exists test_ao3;
 -- end_ignore
 
 create table test_ao3(id int, key int) distributed by(id);
@@ -135,4 +135,4 @@ insert into test_ao3 values(1,2),(2,3),(3,4);
 
 select count(*) from (select * from (select pg_catalog.gp_acquire_sample_rows('test_ao3'::regclass, 400, 'f')) ss limit 1) ss1;
 
-DROP TABLE test_ao3;
+drop table test_ao3;

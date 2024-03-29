@@ -186,7 +186,7 @@ shutdown_MultiFuncCall(Datum arg)
 	FuncCallContext *funcctx = (FuncCallContext *) flinfo->fn_extra;
 
 	/*
-	 * Updated SRF call protocol might have SRF never called, that's why
+	 * SRF call protocol might have SRF never called, that's why
 	 * context might not exist.
 	 */
 	if (funcctx == NULL)
