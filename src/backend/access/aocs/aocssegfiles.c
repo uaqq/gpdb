@@ -1708,6 +1708,8 @@ aocol_compression_ratio_internal(Relation parentrel)
 
 	Oid			segrelid = InvalidOid;
 
+	Assert(Gp_role == GP_ROLE_DISPATCH);
+
 	GetAppendOnlyEntryAuxOids(RelationGetRelid(parentrel), NULL,
 							  &segrelid, NULL, NULL, NULL, NULL);
 	Assert(OidIsValid(segrelid));
@@ -1724,16 +1726,10 @@ aocol_compression_ratio_internal(Relation parentrel)
 	 * namespace, too.
 	 */
 	initStringInfo(&sqlstmt);
-	if (Gp_role == GP_ROLE_DISPATCH)
-		appendStringInfo(&sqlstmt, "select vpinfo "
-						 "from gp_dist_random('%s.%s')",
-						 get_namespace_name(RelationGetNamespace(aosegrel)),
-						 RelationGetRelationName(aosegrel));
-	else
-		appendStringInfo(&sqlstmt, "select vpinfo "
-						 "from %s.%s",
-						 get_namespace_name(RelationGetNamespace(aosegrel)),
-						 RelationGetRelationName(aosegrel));
+	appendStringInfo(&sqlstmt, "select vpinfo "
+					 "from gp_dist_random('%s.%s')",
+					 get_namespace_name(RelationGetNamespace(aosegrel)),
+					 RelationGetRelationName(aosegrel));
 
 	heap_close(aosegrel, AccessShareLock);
 

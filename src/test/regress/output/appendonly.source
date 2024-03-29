@@ -1777,11 +1777,15 @@ drop table test_reporting;
 drop table test_reporting_r;
 drop table test_reporting_c;
 -- Test AO functions with execution location on dispatcher.
-drop table if exists t;
+drop table if exists t1;
+drop table if exists t2;
 drop table if exists d;
-create table t (a int) with (appendoptimized=true, orientation=row);
+create table t1 (a int) with (appendoptimized=true, orientation=row);
+create table t2 (a int) with (appendoptimized=true, orientation=column);
 create table d (tname text);
-insert into d values ('t');
+insert into t1 values (0);
+insert into t2 values (0);
+insert into d values ('t1'), ('t2');
 -- Queries below should fail with a proper error message.
 select get_ao_compression_ratio(tname) from d;
 ERROR:  Function 'get_ao_compression_ratio' can run only on dispatcher.
@@ -1807,7 +1811,9 @@ select get_ao_compression_ratio(tname) from
  get_ao_compression_ratio 
 --------------------------
                         1
-(1 row)
+                        1
+(2 rows)
 
-drop table t;
+drop table t1;
+drop table t2;
 drop table d;

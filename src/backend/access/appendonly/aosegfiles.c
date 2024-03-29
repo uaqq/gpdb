@@ -1778,6 +1778,8 @@ aorow_compression_ratio_internal(Relation parentrel)
 										 * available" */
 	Oid			segrelid = InvalidOid;
 
+	Assert(Gp_role == GP_ROLE_DISPATCH);
+
 	GetAppendOnlyEntryAuxOids(RelationGetRelid(parentrel), NULL,
 							  &segrelid,
 							  NULL, NULL, NULL, NULL);
