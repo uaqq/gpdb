@@ -374,9 +374,7 @@ ExecSquelchProjectSRF(ProjectSetState *node)
 		Node	   *elem = node->elems[argno];
 
 		if (IsA(elem, SetExprState))
-		{
 			ExecSquelchFunctionResultSet((SetExprState *) elem,
 										 econtext, node->argcontext);
-		}
 	}
 }

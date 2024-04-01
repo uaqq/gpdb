@@ -622,6 +622,7 @@ restart:
 		*isNull = fcinfo->isnull;
 		*isDone = rsinfo.isDone;
 		fcache->isSquelchSupported = rsinfo.returnMode & SFRM_Squelch;
+		/* Reset SFRM_Squelch bit */
 		rsinfo.returnMode &= ~SFRM_Squelch;
 
 		pgstat_end_function_usage(&fcusage,
@@ -993,9 +994,7 @@ ExecSquelchFunctionResultSet(SetExprState *fcache,
 	 * release resources.
 	 */
 	if (SRF_IS_FIRSTCALL() || !fcache->shutdown_reg || !fcache->isSquelchSupported)
-	{
 		return;
-	}
 
 	/* Prepare a resultinfo node for communication. */
 	ReturnSetInfo rsinfo = {

@@ -190,9 +190,7 @@ shutdown_MultiFuncCall(Datum arg)
 	 * context might not exist.
 	 */
 	if (funcctx == NULL)
-	{
 		return;
-	}
 
 	/* unbind from flinfo */
 	flinfo->fn_extra = NULL;

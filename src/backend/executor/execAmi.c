@@ -156,9 +156,7 @@ ExecReScan(PlanState *node)
 	if (node->ps_ExprContext)
 	{
 		if (IsA(node, ProjectSetState))
-		{
 			ExecSquelchProjectSRF((ProjectSetState *) node);
-		}
 		/* Call expression callbacks */
 		ReScanExprContext(node->ps_ExprContext);
 	}
