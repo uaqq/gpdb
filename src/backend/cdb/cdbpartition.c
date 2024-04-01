@@ -5405,7 +5405,7 @@ atpxPart_validate_spec(PartitionBy *pBy,
 		List	   *pbyopclass = NIL;
 		Oid			accessMethodId = BTREE_AM_OID;
 
-		while (pNode2)
+		while (true)
 		{
 			pbykeys = NIL;
 			pbyopclass = NIL;
@@ -5644,10 +5644,10 @@ atpxPart_validate_spec(PartitionBy *pBy,
 
 				}
 				else
-					pNode2 = NULL;
+					break;
 			}
 			else
-				pNode2 = NULL;
+				break;
 
 		}						/* end while */
 	}
