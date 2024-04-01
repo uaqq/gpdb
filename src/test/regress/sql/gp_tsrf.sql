@@ -112,7 +112,6 @@ drop table if exists test_ao2;
 -- end_ignore
 
 create table test_ao2 (a int, b int) with (appendonly=true, orientation=column) distributed by(a);
-create index on test_ao2(b);
 insert into test_ao2 select i, i from generate_series(1, 10) i;
 update test_ao2 set b = 100 where a in (2, 5);
 delete from test_ao2 where a in (4, 8);
