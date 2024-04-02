@@ -1506,7 +1506,8 @@ srf_done:
 	/*
 	 * do when there is no more left
 	 */
-	pfree(query_block);
+	if (query_block != NULL)
+		pfree(query_block);
 
 	SPI_finish();
 
