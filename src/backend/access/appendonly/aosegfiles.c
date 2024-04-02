@@ -1502,12 +1502,12 @@ get_ao_distribution(PG_FUNCTION_ARGS)
 		SRF_RETURN_NEXT(funcctx, result);
 	}
 
+srf_done:
 	/*
 	 * do when there is no more left
 	 */
 	pfree(query_block);
 
-srf_done:
 	SPI_finish();
 
 	funcctx->user_fctx = NULL;

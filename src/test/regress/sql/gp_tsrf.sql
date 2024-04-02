@@ -101,7 +101,7 @@ drop table srf_test_t1;
 drop table if exists test_ao1;
 -- end_ignore
 
-create table test_ao1(i int) with (appendonly=true);
+create table test_ao1(i int) with (appendonly=true) distributed by (i);
 insert into test_ao1 values (generate_series(1,1000));
 select count(*) from (select get_ao_distribution('test_ao1') limit 1) sdist;
 drop table test_ao1;
